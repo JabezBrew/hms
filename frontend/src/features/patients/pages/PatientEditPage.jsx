@@ -46,14 +46,14 @@ const PatientEditPage = () => {
               <CardTitle><Skeleton className="h-7 w-32" /></CardTitle>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="personal">
+              <Tabs defaultValue="identity">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="personal">Personal Information</TabsTrigger>
-                  <TabsTrigger value="medical">Medical Information</TabsTrigger>
-                  <TabsTrigger value="contact">Contact Information</TabsTrigger>
+                  <TabsTrigger value="identity">Identity</TabsTrigger>
+                  <TabsTrigger value="contact">Contact</TabsTrigger>
+                  <TabsTrigger value="review">Review</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="personal" className="space-y-4 mt-4">
+                <TabsContent value="identity" className="space-y-4 mt-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Skeleton className="h-4 w-24 mb-2" />

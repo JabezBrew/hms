@@ -6,7 +6,6 @@ Tests for:
 - ConsultationWorkflow model
 - ClinicalNoteWorkflow model
 - WardRoundWorkflow model
-- AdmissionWorkflow model
 - DischargeWorkflow model
 - WorkflowTemplate model
 """
@@ -16,14 +15,14 @@ from django.utils import timezone
 
 from apps.workflows.models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
-    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WardRoundWorkflow, DischargeWorkflow,
     WorkflowTemplate, WorkflowType, WorkflowStatus, ClinicalNoteType
 )
 from apps.users.tests.factories import PatientProfileFactory, DoctorUserFactory
 from .factories import (
     ClinicalWorkflowFactory, InProgressWorkflowFactory, CompletedWorkflowFactory,
     ConsultationWorkflowFactory, ClinicalNoteWorkflowFactory,
-    WardRoundWorkflowFactory, AdmissionWorkflowFactory, DischargeWorkflowFactory,
+    WardRoundWorkflowFactory, DischargeWorkflowFactory,
     WorkflowTemplateFactory, ConsultationTemplateFactory
 )
 
@@ -72,7 +71,6 @@ class TestClinicalWorkflowModel:
         workflow_types = [
             WorkflowType.CONSULTATION,
             WorkflowType.WARD_ROUND,
-            WorkflowType.ADMISSION,
             WorkflowType.DISCHARGE,
             WorkflowType.EMERGENCY,
             WorkflowType.CLINICAL_NOTE,
@@ -397,59 +395,6 @@ class TestWardRoundWorkflowModel:
 
 
 # =============================================================================
-# AdmissionWorkflow Model Tests
-# =============================================================================
-
-@pytest.mark.tier1
-class TestAdmissionWorkflowModel:
-    """Tests for AdmissionWorkflow model."""
-
-    def test_admission_workflow_creation(self, db):
-        """Test creating an admission workflow."""
-        admission = AdmissionWorkflowFactory(
-            admission_reason='Chest pain',
-            admission_type='emergency',
-            chief_complaint='Chest pain radiating to left arm'
-        )
-
-        assert admission.admission_reason == 'Chest pain'
-        assert admission.admission_type == 'emergency'
-
-    def test_admission_string_representation(self, db):
-        """Test __str__ returns patient name."""
-        admission = AdmissionWorkflowFactory()
-
-        str_repr = str(admission)
-        assert 'Admission' in str_repr
-
-    def test_admission_emergency_contact(self, db):
-        """Test emergency contact fields."""
-        admission = AdmissionWorkflowFactory(
-            emergency_contact_name='Jane Doe',
-            emergency_contact_relationship='Spouse',
-            emergency_contact_phone='555-1234'
-        )
-
-        assert admission.emergency_contact_name == 'Jane Doe'
-        assert admission.emergency_contact_relationship == 'Spouse'
-
-    def test_admission_orders(self, db):
-        """Test admission order fields."""
-        admission = AdmissionWorkflowFactory(
-            diet='NPO',
-            activity='Strict bed rest',
-            vitals_frequency='Q1H',
-            medications=[{'name': 'Aspirin', 'dose': '325mg'}],
-            labs=[{'name': 'Troponin'}]
-        )
-
-        assert admission.diet == 'NPO'
-        assert admission.activity == 'Strict bed rest'
-        assert len(admission.medications) == 1
-        assert len(admission.labs) == 1
-
-
-# =============================================================================
 # DischargeWorkflow Model Tests
 # =============================================================================
 
@@ -536,13 +481,13 @@ class TestWorkflowTemplateModel:
     def test_template_string_representation(self, db):
         """Test __str__ returns name and type."""
         template = WorkflowTemplateFactory(
-            name='Emergency Admission',
-            workflow_type=WorkflowType.ADMISSION
+            name='Home Discharge',
+            workflow_type=WorkflowType.DISCHARGE
         )
 
         str_repr = str(template)
-        assert 'Emergency Admission' in str_repr
-        assert 'Admission' in str_repr
+        assert 'Home Discharge' in str_repr
+        assert 'Discharge' in str_repr
 
     def test_template_increment_usage(self, db):
         """Test incrementing template usage count."""
@@ -653,16 +598,6 @@ class TestWorkflowRelationships:
         workflow.delete()
 
         assert not WardRoundWorkflow.objects.filter(id=ward_round_id).exists()
-
-    def test_workflow_cascade_delete_admission(self, db):
-        """Test admission data is deleted with workflow."""
-        admission = AdmissionWorkflowFactory()
-        workflow = admission.workflow
-        admission_id = admission.id
-
-        workflow.delete()
-
-        assert not AdmissionWorkflow.objects.filter(id=admission_id).exists()
 
     def test_workflow_cascade_delete_discharge(self, db):
         """Test discharge data is deleted with workflow."""

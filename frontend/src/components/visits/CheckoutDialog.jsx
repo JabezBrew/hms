@@ -5,7 +5,6 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import TestTube from 'lucide-react/dist/esm/icons/test-tube.js';
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
-import React from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useVisitActions } from '@/hooks/useVisitQueries';
+import { useVisit, useVisitActions } from '@/hooks/useVisitQueries';
 import { useAuth } from '@/lib/auth';
 
 /**
@@ -36,13 +35,18 @@ export function CheckoutDialog({
   onSuccess,
 }) {
   const { user } = useAuth();
+  const { data: visit, isLoading: isVisitLoading } = useVisit(encounterId, {
+    enabled: open && Boolean(encounterId),
+  });
   const { checkout } = useVisitActions();
 
   const isAdmin = user?.user_type === 'admin';
+  const resolvedRequirements = requirements || visit?.checkout_requirements;
 
   // Check if all requirements are met
-  const allMet = requirements
-    ? Object.values(requirements).every((v) => v === true)
+  const allMet = resolvedRequirements
+    ? Object.keys(resolvedRequirements).length > 0
+      && Object.values(resolvedRequirements).every((v) => v === true)
     : false;
 
   const handleCheckout = (force = false) => {
@@ -81,8 +85,8 @@ export function CheckoutDialog({
   ];
 
   const getRequirementStatus = (key) => {
-    if (!requirements) return null;
-    return requirements[key];
+    if (!resolvedRequirements) return null;
+    return resolvedRequirements[key];
   };
 
   return (
@@ -98,6 +102,12 @@ export function CheckoutDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {isVisitLoading && (
+            <div className="text-sm text-muted-foreground">
+              Loading checkout requirements...
+            </div>
+          )}
+
           {/* Requirements List */}
           <div className="space-y-3">
             {requirementItems.map((item) => {
@@ -135,7 +145,7 @@ export function CheckoutDialog({
           </div>
 
           {/* Warning if requirements not met */}
-          {!allMet && (
+          {!isVisitLoading && !allMet && (
             <div className="flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5">
               <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
               <div className="text-sm">
@@ -169,7 +179,7 @@ export function CheckoutDialog({
           <Button
             type="button"
             onClick={() => handleCheckout(false)}
-            disabled={checkout.isPending || !allMet}
+            disabled={checkout.isPending || isVisitLoading || !allMet}
           >
             {checkout.isPending ? 'Processing...' : 'Checkout'}
           </Button>

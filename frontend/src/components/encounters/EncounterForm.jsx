@@ -61,6 +61,18 @@ const encounterFormSchema = z.object({
   }, {
     message: "Admission source is required for inpatient encounters",
     path: ["admission_source"]
+  })
+  .refine(data => {
+    if (data.encounter_type !== 'outpatient') {
+      return true;
+    }
+    if (!['in-progress', 'finished'].includes(data.status)) {
+      return true;
+    }
+    return data.start_time <= new Date();
+  }, {
+    message: "Future outpatient encounters cannot be in progress or finished",
+    path: ["status"]
   });
 
 export function EncounterForm({ isEditing = false }) {

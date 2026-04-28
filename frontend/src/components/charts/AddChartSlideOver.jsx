@@ -40,7 +40,9 @@ const AddChartSlideOver = ({
   open,
   onClose,
   patient,
+  encounter,
   admission,
+  allHistory = false,
   onChartAssigned,
 }) => {
   // Fetch templates and options (lazy - only when slide-over is open)
@@ -80,6 +82,15 @@ const AddChartSlideOver = ({
   const patientName = patient?.local_data?.user_details
     ? `${patient.local_data.user_details.first_name || ''} ${patient.local_data.user_details.last_name || ''}`.trim()
     : patient?.name || 'Patient';
+  const encounterId = encounter?.id || null;
+  const admissionId = admission?.id || null;
+  const scopeContextLabel = allHistory
+    ? 'All history'
+    : encounterId
+      ? 'Selected visit'
+      : admissionId
+        ? 'Selected admission'
+        : 'Patient record';
 
   // Filter templates
   const templates = templatesData?.results || templatesData || [];
@@ -88,7 +99,12 @@ const AddChartSlideOver = ({
       t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = !categoryFilter || t.category === categoryFilter;
-    return matchesSearch && matchesCategory;
+    const isScopeCompatible = (
+      t.scope_type === 'patient'
+      || (t.scope_type === 'encounter' && !!encounterId)
+      || (t.scope_type === 'admission' && !!admissionId)
+    );
+    return matchesSearch && matchesCategory && isScopeCompatible;
   });
 
   // Handle template selection
@@ -118,7 +134,8 @@ const AddChartSlideOver = ({
       await createMutation.mutateAsync({
         template_id: selectedTemplate.id,
         patient: patientId,
-        admission: admission?.id || null,
+        admission: selectedTemplate.scope_type === 'admission' ? admissionId : null,
+        encounter: selectedTemplate.scope_type === 'encounter' ? encounterId : null,
         monitoring_interval: formData.monitoring_interval || undefined,
         reason: formData.reason || undefined,
         instructions: formData.instructions || undefined,
@@ -152,7 +169,7 @@ const AddChartSlideOver = ({
               {step === 1 ? 'Assign Chart' : selectedTemplate?.name}
             </h2>
             <p className="font-mono text-xs text-muted-foreground mt-0.5">
-              {patientName}
+              {patientName} • {scopeContextLabel}
             </p>
           </div>
         </div>
@@ -238,6 +255,10 @@ const AddChartSlideOver = ({
               </Select>
             </div>
 
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Showing templates compatible with {scopeContextLabel.toLowerCase()}.
+            </p>
+
             {/* Template list */}
             {templatesLoading ? (
               <div className="flex items-center justify-center py-12">
@@ -276,7 +297,7 @@ const AddChartSlideOver = ({
                 <div>
                   <p className="font-display text-base">{selectedTemplate?.name}</p>
                   <p className="font-mono text-xs text-muted-foreground">
-                    {selectedTemplate?.category_display} • {selectedTemplate?.field_count} fields
+                    {selectedTemplate?.category_display} • {selectedTemplate?.scope_type_display} • {selectedTemplate?.field_count} fields
                   </p>
                 </div>
               </div>

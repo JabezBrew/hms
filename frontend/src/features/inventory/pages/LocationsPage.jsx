@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -33,7 +32,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  LocationCard,
   LocationCardSkeleton,
   getLocationConfig,
   getTempZoneConfig,
@@ -46,8 +44,6 @@ import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
@@ -82,11 +78,6 @@ export default function LocationsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // View mode from localStorage
-  const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('locations-view-mode') || 'grid';
-  });
-
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const locationType = searchParams.get('type') || '';
@@ -99,11 +90,6 @@ export default function LocationsPage() {
   // Sheet state from URL
   const action = searchParams.get('action');
   const isCreateOpen = action === 'create';
-
-  // Persist view mode to localStorage
-  useEffect(() => {
-    localStorage.setItem('locations-view-mode', viewMode);
-  }, [viewMode]);
 
   // Build query params
   const queryParams = {
@@ -464,62 +450,20 @@ export default function LocationsPage() {
         )}
       </div>
 
-      {/* View Toggle Row */}
-      <div className="flex items-center justify-end">
-        <div className="flex items-center border rounded-lg p-1 bg-muted/30">
-          <Button
-            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            className="h-8 w-8 p-0"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="h-8 w-8 p-0"
-          >
-            <List className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
       {/* Locations Display */}
       {locations.length > 0 ? (
-        viewMode === 'grid' ? (
-          <VirtualizedGrid
-            items={locations}
-            minItemWidth={260}
-            rowHeight={260}
-            gap={16}
-            getItemKey={(location) => location.id}
-            renderItem={(location, index) => (
-              <LocationCard
-                location={location}
-                index={index}
-                onClick={() => handleLocationClick(location.id)}
-                onViewStock={() => handleViewStock(location.id)}
-                onEdit={() => handleEditLocation(location.id)}
-                onTransfer={() => handleTransferTo(location.id)}
-              />
-            )}
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={locations}
+            rowKey={(location) => location.id}
+            rowHeight={64}
+            columns={locationColumns}
+            onRowClick={(location) => handleLocationClick(location.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[980px]"
+            headerClassName="bg-muted/50 border-b border-border"
           />
-        ) : (
-          <div className="overflow-x-auto">
-            <VirtualizedTable
-              rows={locations}
-              rowKey={(location) => location.id}
-              rowHeight={64}
-              columns={locationColumns}
-              onRowClick={(location) => handleLocationClick(location.id)}
-              rowClassName="hover:bg-muted/30"
-              className="min-w-[980px]"
-              headerClassName="bg-muted/50 border-b border-border"
-            />
-          </div>
-        )
+        </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

@@ -1,7 +1,9 @@
 import base64
 import hashlib
+import sys
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 try:
     from cryptography.fernet import Fernet
@@ -20,6 +22,8 @@ def get_fernet():
 
     key = getattr(settings, 'RECORD_EXPORT_FERNET_KEY', None)
     if not key:
+        if not settings.DEBUG and "pytest" not in sys.modules:
+            raise ImproperlyConfigured("RECORD_EXPORT_FERNET_KEY is required outside development/test.")
         key = _derive_fernet_key(settings.SECRET_KEY).decode('utf-8')
     return Fernet(key)
 

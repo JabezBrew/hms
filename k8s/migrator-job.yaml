@@ -1,0 +1,56 @@
+# Kubernetes Job for HMS schema migrations and bootstrap.
+#
+# Apply before API and Celery deployments:
+#   kubectl apply -f k8s/migrator-job.yaml
+#   kubectl wait --for=condition=complete job/hms-migrator -n hms --timeout=10m
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hms-migrator
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: migrator
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hms
+        app.kubernetes.io/component: migrator
+    spec:
+      serviceAccountName: hms-migrator
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: migrator
+          image: ${DOCKER_REGISTRY}/hms-backend:${VERSION}
+          imagePullPolicy: Always
+          command: ["python", "/app/run_migrations.py"]
+          envFrom:
+            - configMapRef:
+                name: hms-config
+            - secretRef:
+                name: hms-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hms-migrator
+  namespace: hms
+  labels:
+    app.kubernetes.io/name: hms
+    app.kubernetes.io/component: migrator

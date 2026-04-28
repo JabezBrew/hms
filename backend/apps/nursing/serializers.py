@@ -58,6 +58,22 @@ class VitalSignsCreateSerializer(serializers.ModelSerializer):
         return data
 
 
+class VitalSignsTrendSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for graphing vital-sign trends.
+
+    Excludes free-text notes and nested patient/practitioner payloads.
+    """
+
+    class Meta:
+        model = VitalSigns
+        fields = [
+            'id', 'encounter', 'recorded_at', 'temperature', 'heart_rate',
+            'blood_pressure_systolic', 'blood_pressure_diastolic',
+            'respiratory_rate', 'oxygen_saturation', 'pain_level',
+        ]
+
+
 class NursingTaskSerializer(serializers.ModelSerializer):
     """
     Serializer for NursingTask model.
@@ -341,6 +357,7 @@ class MedicationAdministrationListSerializer(serializers.ModelSerializer):
             'id', 'patient', 'patient_name', 'patient_mrn',
             'medication_name', 'dosage', 'route', 'frequency',
             'scheduled_time', 'status', 'status_display',
+            'administered_time',
             'prescriber_name', 'prescription', 'is_dispensed'
         ]
 
@@ -824,3 +841,12 @@ class FluidBalanceSummarySerializer(serializers.Serializer):
     # Optional breakdown by category
     intake_breakdown = serializers.DictField(required=False)
     output_breakdown = serializers.DictField(required=False)
+
+
+class FluidBalanceTrendPointSerializer(serializers.Serializer):
+    """Serializer for aggregated fluid-balance trend points."""
+
+    date = serializers.DateField()
+    intake = serializers.IntegerField()
+    output = serializers.IntegerField()
+    balance = serializers.IntegerField()

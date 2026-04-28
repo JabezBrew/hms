@@ -1,6 +1,6 @@
 #!/bin/bash
 # Backend entrypoint script
-# Runs migrations and seeds before starting the application
+# Validates dependencies and migration state before starting the application.
 
 set -e
 
@@ -19,28 +19,15 @@ connection.ensure_connection()
 done
 echo "Database is ready!"
 
-# Run migrations
-echo "Running migrations..."
-python manage.py migrate --noinput
+echo "Running startup preflight checks..."
+python manage.py preflight_migration_checks --strict
 
-# Seed data (only if tables are empty or users don't exist)
-echo "Checking seed data..."
-
-# Seed test users if admin doesn't exist
-python manage.py shell -c "
-from apps.users.models import User
-if not User.objects.filter(email='admin@hms.local').exists():
-    print('Seeding test users...')
-    exit(1)
-else:
-    print('Test users already exist, skipping seed.')
-    exit(0)
-" || python manage.py seed_test_users
-
-# Seed other data
-python manage.py seed_default_templates 2>/dev/null || echo "Note: seed_default_templates skipped or already done"
-python manage.py seed_lab_catalog 2>/dev/null || echo "Note: seed_lab_catalog skipped or already done"
-python manage.py seed_bed_amenities 2>/dev/null || echo "Note: seed_bed_amenities skipped or already done"
+FAIL_ON_PENDING_MIGRATIONS="${FAIL_ON_PENDING_MIGRATIONS:-true}"
+if [ "${FAIL_ON_PENDING_MIGRATIONS}" = "true" ] || [ "${FAIL_ON_PENDING_MIGRATIONS}" = "1" ]; then
+    python manage.py check_pending_migrations --fail-on-pending
+else
+    python manage.py check_pending_migrations
+fi
 
 echo "=== Starting application ==="
 

@@ -10,8 +10,28 @@ app_name = 'core'
 
 router = DefaultRouter()
 router.register(r'facilities', views.FacilityViewSet, basename='facility')
+router.register(
+    r'settings/feature-entitlements',
+    views.FeatureEntitlementOverrideViewSet,
+    basename='feature-entitlement',
+)
 
 urlpatterns = [
+    path(
+        'system/jobs/',
+        views.celery_operability,
+        name='celery-operability',
+    ),
+    path(
+        'settings/deployment-capabilities/',
+        views.deployment_capabilities,
+        name='deployment-capabilities',
+    ),
+    path(
+        'search/omni/',
+        views.omni_search,
+        name='omni-search',
+    ),
     # Fluid Balance Settings
     path(
         'settings/fluid-balance/',

@@ -39,7 +39,6 @@ def sync_encounter_to_fhir(self, encounter_id: str):
         dict: Result of the sync operation
     """
     from .models import Encounter
-    from .proxies import EncounterProxy
     from apps.fhir_client.client import fhir_client
 
     logger.info(f"Starting FHIR sync for encounter {encounter_id}")

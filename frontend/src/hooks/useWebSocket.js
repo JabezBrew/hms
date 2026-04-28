@@ -32,17 +32,54 @@ import { referralKeys } from '@/hooks/useReferralQueries';
  */
 export function useAlertWebSocket(options = {}) {
   const { wardId, enabled = true, onAlert, onAcknowledged, onEscalated } = options;
-  const { token, isAuthenticated } = useAuth();
+  const { getAccessToken, refreshAccessToken, isAuthenticated } = useAuth();
 
   const wsRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [connectionError, setConnectionError] = useState(null);
+  const [token, setToken] = useState(null);
 
   // Use refs for callbacks to prevent effect re-runs
   const onAlertRef = useLatest(onAlert);
   const onAcknowledgedRef = useLatest(onAcknowledged);
   const onEscalatedRef = useLatest(onEscalated);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!enabled || !isAuthenticated) {
+      setToken(null);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const existingToken = getAccessToken?.();
+    if (existingToken) {
+      setToken(existingToken);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const refreshed = await refreshAccessToken?.();
+        if (isMounted) {
+          setToken(refreshed || null);
+        }
+      } catch {
+        if (isMounted) {
+          setToken(null);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [enabled, isAuthenticated, getAccessToken, refreshAccessToken]);
 
   // Create WebSocket instance
   useEffect(() => {
@@ -144,16 +181,53 @@ export function useAlertWebSocket(options = {}) {
  */
 export function useVitalsWebSocket(patientId, options = {}) {
   const { enabled = true, onVitals, onCritical } = options;
-  const { token, isAuthenticated } = useAuth();
+  const { getAccessToken, refreshAccessToken, isAuthenticated } = useAuth();
 
   const wsRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [latestVitals, setLatestVitals] = useState(null);
   const [vitalsHistory, setVitalsHistory] = useState([]);
+  const [token, setToken] = useState(null);
 
   // Use refs for callbacks to prevent effect re-runs
   const onVitalsRef = useLatest(onVitals);
   const onCriticalRef = useLatest(onCritical);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!enabled || !isAuthenticated) {
+      setToken(null);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const existingToken = getAccessToken?.();
+    if (existingToken) {
+      setToken(existingToken);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const refreshed = await refreshAccessToken?.();
+        if (isMounted) {
+          setToken(refreshed || null);
+        }
+      } catch {
+        if (isMounted) {
+          setToken(null);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [enabled, isAuthenticated, getAccessToken, refreshAccessToken]);
 
   useEffect(() => {
     if (!enabled || !isAuthenticated || !token || !patientId) {
@@ -230,19 +304,56 @@ export function useWebSocketStatus() {
  */
 export function useNotificationWebSocket(options = {}) {
   const { enabled = true, onNotification } = options;
-  const { token, isAuthenticated, user } = useAuth();
+  const { getAccessToken, refreshAccessToken, isAuthenticated, user } = useAuth();
   const queryClient = useQueryClient();
 
   const wsRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [connectionError, setConnectionError] = useState(null);
+  const [token, setToken] = useState(null);
 
   // Use ref for callback to prevent effect re-runs
   const onNotificationRef = useLatest(onNotification);
 
   // Only enable for doctors
   const shouldConnect = enabled && isAuthenticated && token && ['doctor', 'inpatient_doctor'].includes(user?.role);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!enabled || !isAuthenticated) {
+      setToken(null);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const existingToken = getAccessToken?.();
+    if (existingToken) {
+      setToken(existingToken);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const refreshed = await refreshAccessToken?.();
+        if (isMounted) {
+          setToken(refreshed || null);
+        }
+      } catch {
+        if (isMounted) {
+          setToken(null);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [enabled, isAuthenticated, getAccessToken, refreshAccessToken]);
 
   useEffect(() => {
     if (!shouldConnect) {

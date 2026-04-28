@@ -6,6 +6,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 
 from .models import PasswordResetToken
 from .serializers import (
@@ -126,7 +127,9 @@ class PasswordResetConfirmView(APIView):
 
         # Set new password
         user.set_password(new_password)
-        user.save()
+        user.must_change_password = False
+        user.password_changed_at = timezone.now()
+        user.save(update_fields=['password', 'must_change_password', 'password_changed_at'])
 
         # Mark token as used
         token_obj.mark_as_used()
@@ -226,7 +229,9 @@ class AdminForceResetView(APIView):
 
         # Set the temporary password
         user.set_password(temp_password)
-        user.save()
+        user.must_change_password = True
+        user.password_changed_at = None
+        user.save(update_fields=['password', 'must_change_password', 'password_changed_at'])
 
         # Invalidate all existing sessions/tokens
         from rest_framework_simplejwt.token_blacklist.models import OutstandingToken

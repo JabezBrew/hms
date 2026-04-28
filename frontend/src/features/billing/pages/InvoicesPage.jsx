@@ -10,9 +10,10 @@ import X from 'lucide-react/dist/esm/icons/x.js';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -116,6 +117,106 @@ export default function InvoicesPage() {
   const invoices = invoicesData?.results || [];
   const totalCount = invoicesData?.count || 0;
   const totalPages = Math.ceil(totalCount / 20);
+
+  const invoiceColumns = [
+    {
+      key: 'invoice',
+      header: 'Invoice #',
+      width: '180px',
+      render: (invoice) => (
+        <span className="font-mono text-sm font-medium text-primary">
+          {invoice.invoice_number || invoice.number}
+        </span>
+      ),
+    },
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '220px',
+      render: (invoice) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{invoice.patient_name || 'Unknown Patient'}</p>
+          <p className="truncate text-xs text-muted-foreground">{invoice.invoice_type_display || invoice.invoice_type || 'Invoice'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'date',
+      header: 'Issued',
+      width: '160px',
+      render: (invoice) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {formatDate(invoice.issued_at || invoice.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (invoice) => {
+        const statusStyles = {
+          draft: 'border-border bg-muted text-muted-foreground',
+          pending: 'border-amber-200 bg-amber-50 text-amber-700',
+          partially_paid: 'border-sky-200 bg-sky-50 text-sky-700',
+          paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+          overdue: 'border-rose-200 bg-rose-50 text-rose-700',
+          cancelled: 'border-border bg-muted text-muted-foreground',
+        };
+        return (
+          <Badge variant="outline" className={cn('text-xs capitalize', statusStyles[invoice.status] || statusStyles.draft)}>
+            {(invoice.status || 'draft').replaceAll('_', ' ')}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'amounts',
+      header: 'Amounts',
+      width: '180px',
+      render: (invoice) => (
+        <div className="text-right">
+          <p className="font-mono text-sm font-semibold text-foreground">
+            {formatCurrency(invoice.total_amount || invoice.amount || 0)}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            Balance: {formatCurrency(invoice.balance_due || invoice.balance || 0)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '160px',
+      render: (invoice) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              handlePatientContext(invoice);
+            }}
+          >
+            Patient
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/billing/invoices/${invoice.id}`);
+            }}
+          >
+            View
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   // Update search input
   const handleSearchChange = (e) => {
@@ -286,21 +387,18 @@ export default function InvoicesPage() {
       {/* Invoice List */}
       <main className="p-4 sm:p-6">
         {invoices.length > 0 ? (
-          <VirtualizedList
-            items={invoices}
-            estimateSize={150}
-            gap={12}
-            className="space-y-3"
-            getItemKey={(invoice) => invoice.id}
-            renderItem={(invoice, index) => (
-              <InvoiceCard
-                invoice={invoice}
-                index={index}
-                onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
-                onPatientContext={handlePatientContext}
-              />
-            )}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={invoices}
+              rowKey={(invoice) => invoice.id}
+              rowHeight={68}
+              columns={invoiceColumns}
+              onRowClick={(invoice) => navigate(`/billing/invoices/${invoice.id}`)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1120px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         ) : (
           <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

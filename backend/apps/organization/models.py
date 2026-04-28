@@ -489,6 +489,14 @@ class ClinicalUnit(MPTTModel):
 
 class Clinic(models.Model):
     """Outpatient clinic configuration for visit management."""
+    class BookingMode(models.TextChoices):
+        CLINIC_POOL = 'clinic_pool', 'Clinic Pool'
+        PRACTITIONER_DIRECT = 'practitioner_direct', 'Practitioner Direct'
+
+    class AssignmentTiming(models.TextChoices):
+        BOOKING = 'booking', 'At Booking'
+        CHECK_IN = 'check_in', 'At Check-In'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
         'core.Facility',
@@ -509,6 +517,46 @@ class Clinic(models.Model):
     operating_hours_end = models.TimeField(null=True, blank=True)
     operates_24_hours = models.BooleanField(default=False)
     accepts_walk_ins = models.BooleanField(default=True)
+    booking_mode = models.CharField(
+        max_length=24,
+        choices=BookingMode.choices,
+        default=BookingMode.PRACTITIONER_DIRECT,
+        help_text='Clinic pool = book to session; practitioner direct = book to a named clinician.'
+    )
+    assignment_timing = models.CharField(
+        max_length=24,
+        choices=AssignmentTiming.choices,
+        default=AssignmentTiming.BOOKING,
+        help_text='When to lock the final practitioner assignment.'
+    )
+    soft_preassignment_minutes = models.PositiveSmallIntegerField(
+        default=60,
+        help_text='Lead time for soft prep assignment before session start.'
+    )
+    waitlist_enabled = models.BooleanField(
+        default=True,
+        help_text='Enable waitlist promotions when a session is full.'
+    )
+    overbook_percent = models.PositiveSmallIntegerField(
+        default=0,
+        help_text='Percentage-based overbook allowance for clinic pool sessions.'
+    )
+    overbook_hard_cap = models.PositiveSmallIntegerField(
+        default=0,
+        help_text='Absolute max overbooked appointments allowed per session.'
+    )
+    standard_reschedule_window_hours = models.PositiveSmallIntegerField(
+        default=24,
+        help_text='Standard reschedule window before session start.'
+    )
+    late_reschedule_cutoff_hours = models.PositiveSmallIntegerField(
+        default=2,
+        help_text='Cutoff before session start after which cancellation is considered late.'
+    )
+    no_show_grace_minutes = models.PositiveSmallIntegerField(
+        default=30,
+        help_text='Minutes after appointment start before no-show is applied.'
+    )
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
@@ -8,6 +8,7 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from .models import (
     Appointment,
@@ -21,24 +22,110 @@ from .serializers import (
     RecurringScheduleSerializer, BlockedTimeSerializer
 )
 from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
-from .services import AvailabilityService, ConflictPreventionService, AppointmentTypeService
+from .services import (
+    AvailabilityService,
+    ConflictPreventionService,
+    AppointmentTypeService,
+    ClinicBookingService,
+)
 from ..fhir_client.client import fhir_client
 from ..fhir_client.utils import (
     create_reference, create_period, generate_fhir_id
 )
-from ..users.permissions import IsAdminOrOwner
+from ..users.permissions import IsAdminOrOwner, IsAdminOrReadOnly
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
-    check_clinical_access,
     check_demographics_access,
     get_user_facility,
 )
 from apps.users.models import PatientProfile, PractitionerProfile
+from apps.organization.models import Clinic
 from apps.encounters.models import Encounter
 from ..users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 
 logger = logging.getLogger(__name__)
+
+
+def _format_local_datetime(value):
+    if not value:
+        return None
+    return timezone.localtime(value).strftime('%B %d, %Y %I:%M %p %Z')
+
+
+def _get_visit_check_in_window(appointment):
+    clinic = getattr(appointment, 'clinic', None)
+    early_minutes = getattr(clinic, 'soft_preassignment_minutes', 0) or 0
+    grace_minutes = getattr(clinic, 'no_show_grace_minutes', 30) or 30
+    earliest = appointment.start_time - datetime.timedelta(minutes=early_minutes)
+    latest = appointment.start_time + datetime.timedelta(minutes=grace_minutes)
+    return earliest, latest
+
+
+def _validate_visit_check_in_window(appointment, now=None):
+    now = now or timezone.now()
+    earliest, latest = _get_visit_check_in_window(appointment)
+
+    if now < earliest:
+        raise serializers.ValidationError(
+            (
+                "This visit cannot be checked in yet. "
+                f"Check-in opens at {_format_local_datetime(earliest)} "
+                f"for the appointment scheduled at {_format_local_datetime(appointment.start_time)}."
+            )
+        )
+
+    if now > latest:
+        raise serializers.ValidationError(
+            (
+                "This appointment is outside the allowed check-in window. "
+                f"The latest allowed check-in was {_format_local_datetime(latest)} "
+                f"for the appointment scheduled at {_format_local_datetime(appointment.start_time)}."
+            )
+        )
+
+
+def _flatten_error_messages(detail):
+    messages = []
+    if isinstance(detail, dict):
+        for value in detail.values():
+            messages.extend(_flatten_error_messages(value))
+        return messages
+    if isinstance(detail, (list, tuple)):
+        for item in detail:
+            messages.extend(_flatten_error_messages(item))
+        return messages
+    messages.append(str(detail))
+    return messages
+
+
+def _parse_optional_bool_param(raw_value, param_name):
+    """Parse optional boolean query params and return None when omitted."""
+    if raw_value is None:
+        return None
+
+    value = str(raw_value).strip().lower()
+    if value in {'1', 'true', 'yes', 'on'}:
+        return True
+    if value in {'0', 'false', 'no', 'off'}:
+        return False
+    raise ValueError(
+        f"Invalid value for '{param_name}'. Use true/false."
+    )
+
+
+class WalkInCheckInSerializer(serializers.Serializer):
+    """
+    Front-desk walk-in check-in to an active roster-backed clinic session.
+
+    NOTE: This is intentionally appointment-backed because OutpatientVisit
+    requires a local Appointment record.
+    """
+
+    patient = serializers.UUIDField()
+    clinic = serializers.UUIDField()
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    appointment_type = serializers.UUIDField(required=False)
 
 
 def _resolve_patient_profile(patient_id):
@@ -170,6 +257,92 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             return AppointmentListSerializer
         return AppointmentSerializer
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        is_valid = serializer.is_valid()
+        if not is_valid:
+            auto_waitlist = str(request.data.get('auto_waitlist', '')).lower() in ('true', '1', 'yes')
+            if auto_waitlist:
+                waitlist_payload = self._maybe_create_waitlist_on_booking_failure(request, serializer.errors)
+                if waitlist_payload:
+                    return Response(waitlist_payload, status=status.HTTP_202_ACCEPTED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def _maybe_create_waitlist_on_booking_failure(self, request, errors):
+        messages = [message.lower() for message in _flatten_error_messages(errors)]
+        capacity_error = any(
+            marker in message
+            for message in messages
+            for marker in (
+                'capacity reached',
+                'published roster clinic session',
+                'no active practitioner capacity',
+                'not available for this time',
+            )
+        )
+        if not capacity_error:
+            return None
+
+        facility = get_user_facility(request)
+        if not facility:
+            return None
+
+        clinic_id = request.data.get('clinic')
+        patient_id = request.data.get('patient')
+        start_time = parse_datetime(request.data.get('start_time') or '')
+        end_time = parse_datetime(request.data.get('end_time') or '')
+        if not all([clinic_id, patient_id, start_time, end_time]):
+            return None
+
+        clinic = Clinic.objects.filter(id=clinic_id, facility=facility, is_active=True).first()
+        if not clinic or clinic.booking_mode != Clinic.BookingMode.CLINIC_POOL or not clinic.waitlist_enabled:
+            return None
+
+        patient = PatientProfile.objects.filter(id=patient_id, facility=facility).first()
+        if not patient:
+            return None
+        check_demographics_access(request.user, patient)
+
+        referral = None
+        referral_id = request.data.get('referral_id')
+        if referral_id:
+            from apps.referrals.models import Referral
+            referral = Referral.objects.filter(id=referral_id, facility=facility).first()
+
+        preferred_practitioner = None
+        practitioner_id = request.data.get('practitioner')
+        if practitioner_id:
+            preferred_practitioner = PractitionerProfile.objects.filter(id=practitioner_id).first()
+
+        from apps.referrals.services import ClinicWaitlistService
+
+        entry = ClinicWaitlistService.create_or_update_entry(
+            facility=facility,
+            clinic=clinic,
+            patient=patient,
+            requested_start_time=start_time,
+            requested_end_time=end_time,
+            urgency=request.data.get('urgency') or 'routine',
+            referral=referral,
+            preferred_practitioner=preferred_practitioner,
+            vulnerability_flag=str(request.data.get('vulnerability_flag', '')).lower() in ('true', '1', 'yes'),
+            source='booking',
+            notes='Auto-created after booking capacity rejection.',
+            actor=request.user,
+        )
+
+        return {
+            'waitlisted': True,
+            'waitlist_entry_id': str(entry.id),
+            'clinic_id': str(clinic.id),
+            'status': entry.status,
+            'detail': 'Clinic session is full; patient has been placed on waitlist.',
+        }
+
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
         if not facility:
@@ -192,10 +365,19 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             if practitioner_profile and practitioner != practitioner_profile:
                 raise PermissionDenied("Clinicians can only create appointments for themselves.")
 
+        assignment_kwargs = {}
+        if practitioner:
+            assignment_kwargs.update({
+                'assignment_status': Appointment.AssignmentStatus.ASSIGNED,
+                'assignment_source': Appointment.AssignmentSource.BOOKING,
+                'assigned_at': timezone.now(),
+            })
+
         serializer.save(
             facility=facility,
             created_by=self.request.user,
-            updated_by=self.request.user
+            updated_by=self.request.user,
+            **assignment_kwargs,
         )
 
     def perform_update(self, serializer):
@@ -203,7 +385,32 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility or appointment.facility_id != facility.id:
             raise PermissionDenied("Facility context is required.")
-        serializer.save(updated_by=self.request.user)
+        previous_status = appointment.status
+        updated = serializer.save(updated_by=self.request.user)
+
+        if (
+            previous_status != 'cancelled'
+            and updated.status == 'cancelled'
+            and updated.clinic_id
+            and updated.clinic.waitlist_enabled
+        ):
+            from apps.referrals.services import ClinicWaitlistService
+            try:
+                ClinicWaitlistService.promote_next_waiting(
+                    clinic=updated.clinic,
+                    appointment_type=updated.appointment_type,
+                    start_time=updated.start_time,
+                    end_time=updated.end_time,
+                    actor=self.request.user,
+                    practitioner=(updated.practitioner if updated.clinic.booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT else None),
+                )
+            except ValueError:
+                logger.info(
+                    "No promotable waitlist entry for clinic=%s slot=%s-%s",
+                    updated.clinic_id,
+                    updated.start_time,
+                    updated.end_time,
+                )
 
     @action(detail=True, methods=['post'])
     def start_visit(self, request, pk=None):
@@ -213,13 +420,224 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 {"error": "Cannot start a visit for a terminal appointment."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        encounter = Encounter.objects.filter(appointment=appointment).first()
-        if encounter:
-            return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_200_OK)
 
-        check_clinical_access(request.user, appointment.patient)
+        # SECURITY: check-in is a front-desk operation; enforce demographics access,
+        # not clinical access (receptionists must be allowed to check in).
+        check_demographics_access(request.user, appointment.patient)
 
         with transaction.atomic():
+            appointment = (
+                Appointment.objects
+                .select_for_update()
+                .get(pk=appointment.pk)
+            )
+            encounter = Encounter.objects.select_for_update().filter(appointment=appointment).first()
+            encounter_created = encounter is None
+            existing_visit = bool(encounter and hasattr(encounter, 'outpatient_visit'))
+
+            if not existing_visit:
+                _validate_visit_check_in_window(appointment)
+
+            if (
+                appointment.clinic
+                and appointment.clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL
+                and not appointment.practitioner_id
+            ):
+                ClinicBookingService.assign_pool_practitioner_at_check_in(
+                    appointment=appointment,
+                    assigned_by=request.user,
+                )
+
+            if not encounter:
+                encounter = Encounter.objects.create(
+                    patient=appointment.patient,
+                    facility=appointment.facility,
+                    practitioner=appointment.practitioner,
+                    clinic=appointment.clinic,
+                    department=appointment.clinic.department if appointment.clinic else None,
+                    appointment=appointment,
+                    encounter_type='outpatient',
+                    status='planned',
+                    start_time=appointment.start_time,
+                    reason=appointment.reason,
+                    created_by=request.user,
+                    updated_by=request.user,
+                )
+
+                from apps.organization.services import TeamAssignmentService
+                TeamAssignmentService.assign_initial_team(
+                    encounter=encounter,
+                    use_roster=True,
+                    context='outpatient'
+                )
+            elif encounter.encounter_type != 'outpatient':
+                return Response(
+                    {"error": "The linked appointment encounter is not an outpatient encounter."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            from apps.encounters.services import VisitService
+            visit = VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+            if visit.visit_status == 'checked_in':
+                # Front desk check-in should place the patient into the waiting room queue by default.
+                VisitService.add_to_waiting(visit)
+
+            appointment.status = 'arrived'
+            appointment.updated_by = request.user
+            appointment.save(update_fields=['status', 'updated_by', 'updated_at'])
+
+        response_status = status.HTTP_201_CREATED if encounter_created or not existing_visit else status.HTTP_200_OK
+        return Response({"encounter_id": str(encounter.id)}, status=response_status)
+
+    @action(detail=False, methods=['post'], url_path='walk-in-check-in')
+    def walk_in_check_in(self, request):
+        """
+        Front-desk "Arrived now" flow for existing patients.
+
+        Creates a local walk-in Appointment aligned to the next available roster slot
+        for a clinic-pool clinic, then checks the patient in (Encounter + OutpatientVisit)
+        and places them into the waiting room queue.
+        """
+        serializer = WalkInCheckInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        patient = PatientProfile.objects.filter(
+            id=serializer.validated_data['patient'],
+            facility=facility,
+        ).select_related('user').first()
+        if not patient:
+            return Response({"error": "Patient not found in active facility."}, status=status.HTTP_404_NOT_FOUND)
+        check_demographics_access(request.user, patient)
+
+        clinic = Clinic.objects.filter(
+            id=serializer.validated_data['clinic'],
+            facility=facility,
+            is_active=True,
+        ).select_related('department').first()
+        if not clinic:
+            return Response({"error": "Clinic not found in active facility."}, status=status.HTTP_404_NOT_FOUND)
+        if not clinic.accepts_walk_ins:
+            return Response({"error": "This clinic does not accept walk-ins."}, status=status.HTTP_400_BAD_REQUEST)
+        if clinic.booking_mode != Clinic.BookingMode.CLINIC_POOL:
+            return Response(
+                {"error": "Arrived-now check-in is supported only for clinic-pool clinics."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appointment_type_id = serializer.validated_data.get('appointment_type')
+        if appointment_type_id:
+            appointment_type = AppointmentType.objects.filter(id=appointment_type_id, is_active=True).first()
+        else:
+            appointment_type = AppointmentType.objects.filter(is_active=True, category='walk_in').first()
+            if not appointment_type:
+                appointment_type = AppointmentType.objects.filter(is_active=True).order_by('name').first()
+        if not appointment_type:
+            return Response(
+                {"error": "No active appointment types configured."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tz = timezone.get_current_timezone()
+        now = timezone.now()
+        local_now = timezone.localtime(now, tz)
+        date_str = local_now.date().isoformat()
+        slot_payload = ClinicBookingService.get_clinic_roster_slots(
+            clinic=clinic,
+            start_date=date_str,
+            end_date=date_str,
+            facility=facility,
+        )
+        all_slots = slot_payload.get('all_slots') or []
+        if not all_slots:
+            return Response(
+                {"error": "No published roster clinic session found for this clinic today."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Pick the earliest roster slot that is in-progress or upcoming and has remaining capacity.
+        local_now_naive = local_now.replace(tzinfo=None)
+        grouped = {}
+        for slot in all_slots:
+            start_str = slot.get('start')
+            end_str = slot.get('end')
+            if not start_str or not end_str:
+                continue
+            grouped.setdefault((start_str, end_str), []).append(slot)
+
+        candidate_windows = []
+        for (start_str, end_str), slots in grouped.items():
+            try:
+                window_start = datetime.datetime.fromisoformat(start_str)
+                window_end = datetime.datetime.fromisoformat(end_str)
+            except ValueError:
+                continue
+            if window_end <= local_now_naive:
+                continue
+
+            remaining = 0
+            for slot in slots:
+                if slot.get('status') != 'free':
+                    continue
+                cap = slot.get('capacity') or {}
+                cap_remaining = cap.get('remaining')
+                if cap_remaining is None:
+                    cap_remaining = max(0, int(cap.get('max', 1)) - int(cap.get('booked', 0)))
+                if cap_remaining > 0:
+                    remaining += cap_remaining
+
+            if remaining > 0:
+                candidate_windows.append((window_start, window_end))
+
+        if not candidate_windows:
+            return Response(
+                {"error": "No available roster slot remaining for this clinic today."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        candidate_windows.sort(key=lambda pair: pair[0])
+        chosen_start_naive, chosen_end_naive = candidate_windows[0]
+        start_time = timezone.make_aware(chosen_start_naive, tz)
+        end_time = timezone.make_aware(chosen_end_naive, tz)
+
+        # Prevent double-booking for the same patient.
+        if not ConflictPreventionService.check_patient_availability(
+            patient_id=str(patient.id),
+            start_time=start_time,
+            end_time=end_time,
+        ):
+            return Response(
+                {"error": "Patient already has an appointment during this time."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = (serializer.validated_data.get('reason') or '').strip() or 'Walk-in visit'
+
+        with transaction.atomic():
+            appointment = Appointment.objects.create(
+                facility=facility,
+                patient=patient,
+                practitioner=None,
+                clinic=clinic,
+                appointment_type=appointment_type,
+                status='booked',
+                source='walk_in',
+                start_time=start_time,
+                end_time=end_time,
+                reason=reason,
+                assignment_status=Appointment.AssignmentStatus.PENDING,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+
+            ClinicBookingService.assign_pool_practitioner_at_check_in(
+                appointment=appointment,
+                assigned_by=request.user,
+            )
+
             encounter = Encounter.objects.create(
                 patient=appointment.patient,
                 facility=appointment.facility,
@@ -228,8 +646,8 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 department=appointment.clinic.department if appointment.clinic else None,
                 appointment=appointment,
                 encounter_type='outpatient',
-                status='in-progress',
-                start_time=timezone.now(),
+                status='planned',
+                start_time=appointment.start_time,
                 reason=appointment.reason,
                 created_by=request.user,
                 updated_by=request.user,
@@ -243,13 +661,23 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
             )
 
             from apps.encounters.services import VisitService
-            VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+            visit = VisitService.create_visit(encounter, appointment, checked_in_by=request.user)
+            VisitService.add_to_waiting(visit)
 
             appointment.status = 'arrived'
             appointment.updated_by = request.user
             appointment.save(update_fields=['status', 'updated_by', 'updated_at'])
 
-        return Response({"encounter_id": str(encounter.id)}, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "appointment_id": str(appointment.id),
+                "encounter_id": str(encounter.id),
+                "clinic_id": str(clinic.id),
+                "queue_number": visit.queue_number,
+                "visit_status": visit.visit_status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=['get'])
     def available_slots(self, request):
@@ -258,34 +686,80 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
         This computes slots on-demand from recurring schedules without pre-generation.
         """
         practitioner_id = request.query_params.get('practitioner_id')
+        clinic_id = request.query_params.get('clinic_id')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         appointment_type_id = request.query_params.get('appointment_type_id')
+        use_roster_raw = request.query_params.get('use_roster')
 
-        if not all([practitioner_id, start_date, end_date]):
+        if not all([start_date, end_date]) or (not practitioner_id and not clinic_id):
             return Response(
-                {"error": "Missing required parameters: practitioner_id, start_date, end_date"},
+                {"error": "Missing required parameters: start_date, end_date, and practitioner_id or clinic_id"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            facility = get_user_facility(request)
-            slots = AvailabilityService.compute_available_slots(
-                practitioner_id=practitioner_id,
-                start_date=start_date,
-                end_date=end_date,
-                appointment_type_id=appointment_type_id,
-                facility=facility,
-            )
+            try:
+                use_roster = _parse_optional_bool_param(use_roster_raw, 'use_roster')
+            except ValueError as exc:
+                return Response(
+                    {"error": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-            status_filter = request.query_params.get('status', 'free')
+            facility = get_user_facility(request)
+            practitioners = []
+            mode = None
+
+            if clinic_id and not practitioner_id:
+                clinic = Clinic.objects.filter(id=clinic_id, facility=facility, is_active=True).first()
+                if not clinic:
+                    return Response(
+                        {"error": "Clinic not found in active facility."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                mode = clinic.booking_mode
+                if clinic.booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT:
+                    return Response(
+                        {"error": "practitioner_id is required for practitioner-direct clinics."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                slot_payload = ClinicBookingService.get_clinic_roster_slots(
+                    clinic=clinic,
+                    start_date=start_date,
+                    end_date=end_date,
+                    facility=facility,
+                )
+                raw_slots = slot_payload.get('all_slots', [])
+                practitioners = slot_payload.get('practitioners', [])
+                # Pool clinics are returned as bucketed windows with capacity already computed.
+                slots = list(raw_slots)
+            else:
+                slots = AvailabilityService.compute_available_slots(
+                    practitioner_id=practitioner_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    appointment_type_id=appointment_type_id,
+                    facility=facility,
+                    use_roster=use_roster,
+                )
+
+            status_filter = request.query_params.get('status')
+            if status_filter is None and not clinic_id:
+                # Preserve legacy behavior for practitioner-based queries.
+                status_filter = 'free'
             if status_filter:
                 slots = [slot for slot in slots if slot['status'] == status_filter]
 
-            return Response({
+            response_payload = {
                 "total": len(slots),
-                "slots": slots
-            })
+                "slots": slots,
+            }
+            if practitioners:
+                response_payload["practitioners"] = practitioners
+            if mode:
+                response_payload["clinic_mode"] = mode
+            return Response(response_payload)
 
         except Exception as e:
             return Response(
@@ -300,7 +774,7 @@ class AppointmentTypeViewSet(viewsets.ModelViewSet):
     """
     queryset = AppointmentType.objects.all()
     serializer_class = AppointmentTypeSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
@@ -320,7 +794,7 @@ class AppointmentFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = AppointmentFHIRMapping.objects.all()
     serializer_class = AppointmentFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
@@ -805,7 +1279,7 @@ class ScheduleFHIRMappingViewSet(viewsets.ModelViewSet):
     """
     queryset = ScheduleFHIRMapping.objects.all()
     serializer_class = ScheduleFHIRMappingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
@@ -887,7 +1361,7 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
     """
     queryset = RecurringAppointmentRule.objects.all()
     serializer_class = RecurringAppointmentRuleSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
@@ -1060,6 +1534,28 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        created_schedules = getattr(serializer, 'created_schedules', None)
+        created_count = getattr(serializer, 'created_count', 1)
+        if created_schedules and created_count > 1:
+            output_serializer = self.get_serializer(created_schedules, many=True)
+            return Response(
+                {
+                    "created_count": created_count,
+                    "template_key": getattr(serializer, 'created_template_key', None),
+                    "template_name": created_schedules[0].template_name,
+                    "created_schedules": output_serializer.data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(detail=False, methods=['post'])
     def preview_slots(self, request):
@@ -1316,3 +1812,8 @@ class BlockedTimeViewSet(viewsets.ModelViewSet):
                 {"error": "Failed to create blocked times. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'appointments')

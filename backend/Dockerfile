@@ -1,5 +1,5 @@
 # Backend Dockerfile for Railway deployment
-# Multi-stage build: builds dependencies, then runs Django with Gunicorn
+# Multi-stage build: builds dependencies, then runs Django with ASGI server
 #
 # This Dockerfile is designed to be built from the backend/ directory
 

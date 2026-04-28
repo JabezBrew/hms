@@ -2,6 +2,7 @@
 Encounter serializers for API data transformation.
 """
 from rest_framework import serializers
+from django.utils import timezone
 
 from .models import Encounter, OutpatientVisit, TriageQueue, EncounterCareTeam
 from apps.users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
@@ -32,6 +33,8 @@ class EncounterCareTeamListSerializer(serializers.ModelSerializer):
 
 class OutpatientVisitSerializer(serializers.ModelSerializer):
     """Serializer for outpatient visit lifecycle data."""
+    encounter_status = serializers.CharField(source='encounter.status', read_only=True)
+    checkout_requirements = serializers.SerializerMethodField()
 
     class Meta:
         model = OutpatientVisit
@@ -40,8 +43,13 @@ class OutpatientVisitSerializer(serializers.ModelSerializer):
             'checked_in_at', 'checked_in_by', 'called_at',
             'consultation_started_at', 'consultation_ended_at',
             'checked_out_at', 'checked_out_by',
+            'encounter_status', 'checkout_requirements',
         ]
         read_only_fields = fields
+
+    def get_checkout_requirements(self, obj):
+        from .services import VisitService
+        return VisitService.get_checkout_requirements(obj.encounter)
 
 
 class TriageQueueSerializer(serializers.ModelSerializer):
@@ -124,6 +132,7 @@ class EncounterListSerializer(serializers.ModelSerializer):
     department_id = serializers.UUIDField(source='department.id', read_only=True, allow_null=True)
     primary_team_id = serializers.UUIDField(source='primary_team.id', read_only=True, allow_null=True)
     admitted_by_team_id = serializers.UUIDField(source='admitted_by_team.id', read_only=True, allow_null=True)
+    outpatient_visit_status = serializers.CharField(source='outpatient_visit.visit_status', read_only=True, allow_null=True)
 
     class Meta:
         model = Encounter
@@ -134,6 +143,7 @@ class EncounterListSerializer(serializers.ModelSerializer):
             'department_id', 'department_name',
             'primary_team_id', 'primary_team_name', 'admitted_by_team_id',
             'encounter_type', 'status', 'start_time', 'end_time',
+            'outpatient_visit_status',
             'reason', 'service_type', 'location',
             'created_at', 'updated_at'
         ]
@@ -213,6 +223,8 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         encounter_type = data.get('encounter_type', 'outpatient')
+        encounter_status = data.get('status', 'planned')
+        start_time = data.get('start_time')
         clinic_id = data.get('clinic_id')
         department_id = data.get('department_id')
         if encounter_type == 'outpatient' and not clinic_id:
@@ -222,6 +234,15 @@ class EncounterCreateSerializer(serializers.ModelSerializer):
             clinic = Clinic.objects.filter(id=clinic_id).first()
             if clinic and clinic.department_id and str(clinic.department_id) != str(department_id):
                 raise serializers.ValidationError({'department_id': 'Department must match the clinic.'})
+        if (
+            encounter_type == 'outpatient'
+            and encounter_status in ['in-progress', 'finished']
+            and start_time
+            and start_time > timezone.now()
+        ):
+            raise serializers.ValidationError({
+                'status': 'Future outpatient encounters cannot be created as in-progress or finished.'
+            })
         return data
 
     def create(self, validated_data):
@@ -282,6 +303,27 @@ class EncounterUpdateSerializer(serializers.ModelSerializer):
             'status', 'end_time',
             'discharge_disposition', 'destination'
         ]
+
+    def validate(self, data):
+        status_value = data.get('status', self.instance.status)
+        end_time = data.get('end_time')
+
+        if (
+            self.instance.encounter_type == 'outpatient'
+            and status_value in ['in-progress', 'finished']
+            and self.instance.start_time
+            and self.instance.start_time > timezone.now()
+        ):
+            raise serializers.ValidationError({
+                'status': 'Future outpatient encounters cannot be marked in-progress or finished.'
+            })
+
+        if end_time and self.instance.start_time and end_time < self.instance.start_time:
+            raise serializers.ValidationError({
+                'end_time': 'End time cannot be earlier than start time.'
+            })
+
+        return data
 
     def update(self, instance, validated_data):
         """Mark encounter for re-sync when updated."""

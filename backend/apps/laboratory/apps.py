@@ -1,4 +1,5 @@
 from django.apps import AppConfig
+from importlib import import_module
 
 
 class LaboratoryConfig(AppConfig):
@@ -8,4 +9,4 @@ class LaboratoryConfig(AppConfig):
 
     def ready(self):
         # Import signals to register them
-        from . import signals  # noqa: F401
+        import_module(f'{self.name}.signals')

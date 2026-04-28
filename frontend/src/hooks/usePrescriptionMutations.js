@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { timelineKeys } from './useTimelineQueries';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
+import { invalidatePatientTimelineQueries } from './useTimelineQueries';
 
 /**
  * Prescription mutation hooks for managing prescription lifecycle
@@ -18,6 +19,81 @@ export const prescriptionKeys = {
   active: (patientId) => keyWith('prescriptions', 'active', patientId),
 };
 
+function normalizeIdentifier(value) {
+  if (!value) return null;
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (typeof value === 'object') {
+    return value.id ?? value.uuid ?? null;
+  }
+  return null;
+}
+
+function getCachedPrescription(queryClient, prescriptionId) {
+  if (!prescriptionId) return null;
+  return queryClient.getQueryData(prescriptionKeys.detail(prescriptionId));
+}
+
+function resolvePrescriptionPatientId(queryClient, { prescriptionId, patientId, sources = [] } = {}) {
+  const candidates = [];
+
+  if (patientId) {
+    candidates.push(patientId);
+  }
+
+  for (const source of sources) {
+    if (!source) continue;
+    candidates.push(source);
+
+    if (typeof source === 'object') {
+      candidates.push(source.patient, source.patient_id, source.patientId, source.patient?.id);
+    }
+  }
+
+  if (prescriptionId) {
+    const cachedPrescription = getCachedPrescription(queryClient, prescriptionId);
+    if (cachedPrescription) {
+      candidates.push(
+        cachedPrescription.patient,
+        cachedPrescription.patient_id,
+        cachedPrescription.patientId,
+        cachedPrescription.patient?.id,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentifier(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+export function invalidatePrescriptionMutationQueries(
+  queryClient,
+  { prescriptionId, patientId } = {},
+) {
+  const tasks = [];
+
+  if (prescriptionId) {
+    tasks.push(invalidateQueryKeys(queryClient, [prescriptionKeys.detail(prescriptionId)]));
+  }
+
+  if (patientId) {
+    tasks.push(invalidateQueryKeys(queryClient, [
+      prescriptionKeys.list(patientId),
+      prescriptionKeys.active(patientId),
+    ]));
+    tasks.push(invalidatePatientTimelineQueries(queryClient, patientId));
+  } else {
+    tasks.push(queryClient.invalidateQueries({ queryKey: prescriptionKeys.all }));
+  }
+
+  return Promise.all(tasks);
+}
+
 /**
  * Update a prescription (partial update)
  */
@@ -29,9 +105,17 @@ export function useUpdatePrescription() {
       return apiClient.patch(`/clinical-notes/prescriptions/${prescriptionId}/`, data);
     },
     onSuccess: (data, variables) => {
-      // Invalidate timeline and prescription queries
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+      const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
+      const patientId = resolvePrescriptionPatientId(queryClient, {
+        prescriptionId,
+        sources: [data, variables],
+      });
+
+      if (prescriptionId) {
+        queryClient.setQueryData(prescriptionKeys.detail(prescriptionId), data);
+      }
+
+      void invalidatePrescriptionMutationQueries(queryClient, { prescriptionId, patientId });
       toast.success('Prescription updated');
     },
     onError: (error) => {
@@ -53,8 +137,17 @@ export function useDiscontinuePrescription() {
       });
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+      const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
+      const patientId = resolvePrescriptionPatientId(queryClient, {
+        prescriptionId,
+        sources: [data, variables],
+      });
+
+      if (prescriptionId) {
+        queryClient.setQueryData(prescriptionKeys.detail(prescriptionId), data);
+      }
+
+      void invalidatePrescriptionMutationQueries(queryClient, { prescriptionId, patientId });
       toast.success('Prescription discontinued');
     },
     onError: (error) => {
@@ -76,8 +169,17 @@ export function useHoldPrescription() {
       });
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+      const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
+      const patientId = resolvePrescriptionPatientId(queryClient, {
+        prescriptionId,
+        sources: [data, variables],
+      });
+
+      if (prescriptionId) {
+        queryClient.setQueryData(prescriptionKeys.detail(prescriptionId), data);
+      }
+
+      void invalidatePrescriptionMutationQueries(queryClient, { prescriptionId, patientId });
       toast.success('Prescription put on hold');
     },
     onError: (error) => {
@@ -97,8 +199,17 @@ export function useResumePrescription() {
       return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/resume/`, {});
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+      const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
+      const patientId = resolvePrescriptionPatientId(queryClient, {
+        prescriptionId,
+        sources: [data, variables],
+      });
+
+      if (prescriptionId) {
+        queryClient.setQueryData(prescriptionKeys.detail(prescriptionId), data);
+      }
+
+      void invalidatePrescriptionMutationQueries(queryClient, { prescriptionId, patientId });
       toast.success('Prescription resumed');
     },
     onError: (error) => {
@@ -121,8 +232,17 @@ export function useRenewPrescription() {
       });
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+      const prescriptionId = normalizeIdentifier(data?.id ?? variables?.prescriptionId);
+      const patientId = resolvePrescriptionPatientId(queryClient, {
+        prescriptionId,
+        sources: [data, variables],
+      });
+
+      if (prescriptionId) {
+        queryClient.setQueryData(prescriptionKeys.detail(prescriptionId), data);
+      }
+
+      void invalidatePrescriptionMutationQueries(queryClient, { prescriptionId, patientId });
       toast.success('Prescription renewed');
     },
     onError: (error) => {

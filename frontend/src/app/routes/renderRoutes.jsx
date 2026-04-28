@@ -1,4 +1,5 @@
 import { Route } from 'react-router-dom'
+import { FeatureBasedRoute } from '@/components/auth/FeatureBasedRoute'
 import { RoleBasedRoute } from '@/components/auth/RoleBasedRoute'
 import { Layout } from '@/components/layout/layout'
 import { PageMeta } from '@/shared/hooks/usePageMeta'
@@ -30,9 +31,11 @@ export function renderRoutes(routes) {
         key={route.path}
         path={route.path}
         element={
-          <RoleBasedRoute allowedRoles={route.roles ?? []}>
-            {withLayout}
-          </RoleBasedRoute>
+          <FeatureBasedRoute features={route.features}>
+            <RoleBasedRoute allowedRoles={route.roles ?? []}>
+              {withLayout}
+            </RoleBasedRoute>
+          </FeatureBasedRoute>
         }
       />
     )

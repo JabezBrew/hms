@@ -3,18 +3,33 @@
  */
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function normalizeListResponse(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.results)) return response.results;
+  return [];
+}
+
 export const referralsApi = {
   /**
    * Get all referrals with optional filtering
    * @param {Object} params - Query parameters
    * @returns {Promise<Array>} List of referrals
    */
-  getReferrals: async (params = {}) => {
+  getReferrals: async (params = {}, options = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/referrals/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      const response = await apiClient.getWithPagination('/referrals/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referrals'));
     }
   },
@@ -146,13 +161,88 @@ export const referralsApi = {
     }
   },
 
-  // Notification endpoints
-  getNotifications: async (params = {}) => {
+  getReferralSlaState: async (id) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/referrals/notifications/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getAll(endpoint);
+      return await apiClient.get(`/referrals/${id}/sla-state/`);
     } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch referral SLA state'));
+    }
+  },
+
+  evaluateReferralSla: async (id) => {
+    try {
+      return await apiClient.post(`/referrals/${id}/evaluate-sla/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to evaluate referral SLA'));
+    }
+  },
+
+  getReferralSlaDashboard: async () => {
+    try {
+      return await apiClient.get('/referrals/sla-dashboard/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch referral SLA dashboard'));
+    }
+  },
+
+  getClinicWaitlist: async (params = {}) => {
+    try {
+      return await apiClient.get('/referrals/clinic-waitlist/', { params });
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch clinic waitlist'));
+    }
+  },
+
+  createClinicWaitlistEntry: async (data) => {
+    try {
+      return await apiClient.post('/referrals/clinic-waitlist/', data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to create waitlist entry'));
+    }
+  },
+
+  offerNextClinicWaitlistEntry: async (data) => {
+    try {
+      return await apiClient.post('/referrals/clinic-waitlist/offer-next/', data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to offer next waitlist entry'));
+    }
+  },
+
+  promoteClinicWaitlistEntry: async (id, data) => {
+    try {
+      return await apiClient.post(`/referrals/clinic-waitlist/${id}/promote/`, data);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to promote waitlist entry'));
+    }
+  },
+
+  cancelClinicWaitlistEntry: async (id) => {
+    try {
+      return await apiClient.post(`/referrals/clinic-waitlist/${id}/cancel/`, {});
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to cancel waitlist entry'));
+    }
+  },
+
+  getClinicWaitlistSummary: async () => {
+    try {
+      return await apiClient.get('/referrals/clinic-waitlist/summary/');
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to fetch waitlist summary'));
+    }
+  },
+
+  // Notification endpoints
+  getNotifications: async (params = {}, options = {}) => {
+    try {
+      const response = await apiClient.getWithPagination('/referrals/notifications/', {
+        ...options,
+        params,
+      });
+      return normalizeListResponse(response);
+    } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referral notifications'));
     }
   },

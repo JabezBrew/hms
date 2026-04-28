@@ -59,6 +59,12 @@ class ChartTemplate(models.Model):
         ('timeline', 'Timeline View'),
     ]
 
+    SCOPE_TYPE_CHOICES = [
+        ('encounter', 'Encounter'),
+        ('admission', 'Admission'),
+        ('patient', 'Patient'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
         'core.Facility',
@@ -83,6 +89,18 @@ class ChartTemplate(models.Model):
         max_length=50,
         choices=CATEGORY_CHOICES,
         default='custom'
+    )
+    scope_type = models.CharField(
+        max_length=20,
+        choices=SCOPE_TYPE_CHOICES,
+        default='patient',
+        help_text='Primary clinical scope for assignments and review context'
+    )
+    system_key = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        help_text='Stable key for seeded system templates'
     )
 
     # Display configuration
@@ -135,12 +153,31 @@ class ChartTemplate(models.Model):
             models.Index(fields=['facility', 'visibility']),
             models.Index(fields=['visibility', 'is_active']),
             models.Index(fields=['category', 'is_active']),
+            models.Index(fields=['scope_type', 'is_active']),
             models.Index(fields=['created_by', 'visibility']),
             models.Index(fields=['name']),
+            models.Index(fields=['facility', 'system_key']),
         ]
 
     def __str__(self):
         return f"{self.name} ({self.get_category_display()})"
+
+    @classmethod
+    def resolve_default_scope_type(cls, *, category=None, system_key=None):
+        if system_key in {'vital_signs', 'pain_assessment'}:
+            return 'encounter'
+        if system_key in {'fluid_balance', 'gcs', 'wound_body_map'}:
+            return 'admission'
+
+        category_defaults = {
+            'cardiovascular': 'encounter',
+            'respiratory': 'encounter',
+            'pain': 'encounter',
+            'fluid_balance': 'admission',
+            'neurological': 'admission',
+            'wound': 'admission',
+        }
+        return category_defaults.get(category, 'patient')
 
     def clone(self, user, new_name=None):
         """Create a copy of this template for customization."""
@@ -151,6 +188,7 @@ class ChartTemplate(models.Model):
             visibility='private',
             department=self.department,
             category=self.category,
+            scope_type=self.scope_type,
             default_interval=self.default_interval,
             display_mode=self.display_mode,
             columns_per_page=self.columns_per_page,
@@ -194,6 +232,7 @@ class ChartField(models.Model):
         ('paired', 'Paired Fields'),
         ('time', 'Time'),
         ('boolean', 'Yes/No'),
+        ('body_map', 'Body Map'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -266,6 +305,7 @@ class ChartField(models.Model):
             'paired': {},
             'time': None,
             'boolean': None,
+            'body_map': {},
         }
         return self.config.get('default', defaults.get(self.field_type))
 
@@ -376,6 +416,39 @@ class ChartAssignment(models.Model):
 
     def __str__(self):
         return f"{self.template.name} for {self.patient}"
+
+    @property
+    def scope_type(self):
+        return self.template.scope_type
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        template_scope = self.template.scope_type if self.template_id and self.template else None
+
+        if template_scope == 'encounter':
+            if not self.encounter_id:
+                raise ValidationError({'encounter': 'Encounter-scoped charts require an encounter.'})
+            self.admission = None
+        elif template_scope == 'admission':
+            if not self.admission_id:
+                raise ValidationError({'admission': 'Admission-scoped charts require an admission.'})
+            self.encounter = None
+        elif template_scope == 'patient':
+            self.encounter = None
+            self.admission = None
+
+    def save(self, **kwargs):
+        if self.template_id:
+            scope = self.template.scope_type
+            if scope == 'encounter':
+                self.admission = None
+            elif scope == 'admission':
+                self.encounter = None
+            elif scope == 'patient':
+                self.encounter = None
+                self.admission = None
+        super().save(**kwargs)
 
     @property
     def effective_interval(self):

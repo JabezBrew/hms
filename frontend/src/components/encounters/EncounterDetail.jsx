@@ -62,7 +62,7 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   const {
     data: clinicalNotes = [],
     isLoading: isLoadingNotes
-  } = useNoteEntriesForEncounter(id);
+  } = useNoteEntriesForEncounter(id, { page_size: 200 });
 
   // Update encounter when props change
   useEffect(() => {

@@ -13,16 +13,98 @@ get_active_encounter_for_patient functions, including all edge case fixes:
 import pytest
 from django.utils import timezone
 from datetime import timedelta
+from unittest.mock import patch
 
-from apps.encounters.models import Encounter
+from apps.appointments.models import Appointment
+from apps.appointments.tests.factories import AppointmentTypeFactory
+from apps.encounters.models import Encounter, OutpatientVisit
 from apps.encounters.services import (
     get_or_create_active_encounter,
     get_active_encounter_for_patient,
     ensure_encounter_for_entry,
+    VisitService,
 )
 from apps.encounters.tests.factories import EncounterFactory
+from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory, UserFactory
 from apps.wards.tests.factories import AdmissionFactory, BedFactory
+
+
+def create_clinic(facility):
+    facility_type = UnitTypeConfig.objects.create(
+        code=f"facility-{facility.id}",
+        name='Facility',
+        can_be_root=True,
+        depth_level=0,
+    )
+    department_type = UnitTypeConfig.objects.create(
+        code=f"department-{facility.id}",
+        name='Department',
+        depth_level=1,
+    )
+    department_type.allowed_parent_types.add(facility_type)
+    root_unit = ClinicalUnit.objects.create(
+        unit_type=facility_type,
+        code=facility.code,
+        name=facility.name,
+        is_active=True,
+    )
+    department = ClinicalUnit.objects.create(
+        unit_type=department_type,
+        parent=root_unit,
+        code='OPD',
+        name='Outpatient Department',
+        is_active=True,
+    )
+    return Clinic.objects.create(
+        facility=facility,
+        department=department,
+        code='OPD-GEN',
+        name='General OPD',
+        is_active=True,
+    )
+
+
+def create_outpatient_encounter_with_visit(
+    patient,
+    practitioner=None,
+    encounter_status='planned',
+    visit_status=OutpatientVisit.VisitStatus.WAITING,
+    start_time=None,
+):
+    practitioner = practitioner or PractitionerProfileFactory()
+    clinic = create_clinic(patient.facility)
+    appointment_type = AppointmentTypeFactory()
+    start_time = start_time or timezone.now().replace(second=0, microsecond=0)
+    end_time = start_time + timedelta(minutes=30)
+    appointment = Appointment.objects.create(
+        facility=patient.facility,
+        patient=patient,
+        practitioner=practitioner,
+        clinic=clinic,
+        appointment_type=appointment_type,
+        status='arrived',
+        start_time=start_time,
+        end_time=end_time,
+    )
+    encounter = EncounterFactory(
+        patient=patient,
+        facility=patient.facility,
+        practitioner=practitioner,
+        clinic=clinic,
+        department=clinic.department,
+        appointment=appointment,
+        encounter_type='outpatient',
+        status=encounter_status,
+        start_time=start_time,
+    )
+    visit = OutpatientVisit.objects.create(
+        appointment=appointment,
+        encounter=encounter,
+        clinic=clinic,
+        visit_status=visit_status,
+    )
+    return encounter, visit
 
 
 @pytest.mark.django_db
@@ -162,6 +244,7 @@ class TestPlannedEncounterTransition:
         planned = EncounterFactory(
             patient=patient,
             practitioner=practitioner,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now()
         )
@@ -185,6 +268,7 @@ class TestPlannedEncounterTransition:
         planned = EncounterFactory(
             patient=patient,
             practitioner=practitioner1,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now()
         )
@@ -208,12 +292,14 @@ class TestPlannedEncounterTransition:
         EncounterFactory(
             patient=patient,
             practitioner=practitioner1,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now()
         )
         my_planned = EncounterFactory(
             patient=patient,
             practitioner=practitioner2,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now()
         )
@@ -234,6 +320,7 @@ class TestPlannedEncounterTransition:
 
         planned = EncounterFactory(
             patient=patient,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now(),
             reason=''  # No reason set
@@ -254,6 +341,7 @@ class TestPlannedEncounterTransition:
 
         planned = EncounterFactory(
             patient=patient,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now(),
             reason='Scheduled follow-up'
@@ -267,6 +355,39 @@ class TestPlannedEncounterTransition:
         assert created is False
         encounter.refresh_from_db()
         assert encounter.reason == 'Scheduled follow-up'
+
+    def test_reuses_checked_in_planned_outpatient_without_promotion(self):
+        patient = PatientProfileFactory()
+        practitioner = PractitionerProfileFactory()
+        planned, visit = create_outpatient_encounter_with_visit(
+            patient=patient,
+            practitioner=practitioner,
+            encounter_status='planned',
+            visit_status=OutpatientVisit.VisitStatus.WAITING,
+        )
+
+        encounter, created = get_or_create_active_encounter(
+            patient=patient,
+            practitioner=practitioner,
+        )
+
+        assert created is False
+        assert encounter.id == planned.id
+        encounter.refresh_from_db()
+        assert encounter.status == 'planned'
+
+    def test_does_not_return_planned_outpatient_without_visit(self):
+        patient = PatientProfileFactory()
+
+        EncounterFactory(
+            patient=patient,
+            encounter_type='outpatient',
+            status='planned',
+            start_time=timezone.now(),
+        )
+
+        with pytest.raises(ValueError):
+            get_or_create_active_encounter(patient=patient)
 
 
 @pytest.mark.django_db
@@ -468,7 +589,12 @@ class TestEnsureEncounterForEntry:
     def test_returns_valid_encounter_when_provided(self):
         """Test returns encounter when valid encounter_id provided."""
         patient = PatientProfileFactory()
-        existing = EncounterFactory(patient=patient, status='in-progress')
+        existing, _ = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='in-progress',
+            visit_status=OutpatientVisit.VisitStatus.IN_PROGRESS,
+            start_time=timezone.now() - timedelta(minutes=5),
+        )
 
         encounter, created = ensure_encounter_for_entry(
             patient=patient,
@@ -540,9 +666,13 @@ class TestEnsureEncounterForEntry:
         assert "Cannot add entries to cancelled encounter" in str(exc_info.value)
 
     def test_allows_planned_encounter(self):
-        """Test allows planned encounters (not terminal state)."""
+        """Test allows planned outpatient encounters after check-in."""
         patient = PatientProfileFactory()
-        planned = EncounterFactory(patient=patient, status='planned')
+        planned, _ = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='planned',
+            visit_status=OutpatientVisit.VisitStatus.WAITING,
+        )
 
         encounter, created = ensure_encounter_for_entry(
             patient=patient,
@@ -551,6 +681,50 @@ class TestEnsureEncounterForEntry:
 
         assert created is False
         assert encounter.id == planned.id
+
+    def test_rejects_planned_outpatient_without_check_in(self):
+        patient = PatientProfileFactory()
+        planned = EncounterFactory(
+            patient=patient,
+            encounter_type='outpatient',
+            status='planned',
+            start_time=timezone.now(),
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            ensure_encounter_for_entry(patient=patient, encounter_id=planned.id)
+
+        assert "before check-in" in str(exc_info.value)
+
+    def test_rejects_future_in_progress_outpatient(self):
+        patient = PatientProfileFactory()
+        fake_now = timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
+        encounter, _ = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='in-progress',
+            visit_status=OutpatientVisit.VisitStatus.IN_PROGRESS,
+            start_time=fake_now + timedelta(hours=2),
+        )
+
+        with patch('apps.encounters.services.timezone.now', return_value=fake_now):
+            with pytest.raises(ValueError) as exc_info:
+                ensure_encounter_for_entry(patient=patient, encounter_id=encounter.id)
+
+        assert "before its start time" in str(exc_info.value)
+
+    def test_rejects_stale_outpatient_encounter(self):
+        patient = PatientProfileFactory()
+        encounter, _ = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='in-progress',
+            visit_status=OutpatientVisit.VisitStatus.IN_PROGRESS,
+            start_time=timezone.now() - timedelta(days=1),
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            ensure_encounter_for_entry(patient=patient, encounter_id=encounter.id)
+
+        assert "different day" in str(exc_info.value)
 
     def test_forwards_encounter_type(self):
         """Test raises when no encounter exists."""
@@ -572,6 +746,60 @@ class TestEnsureEncounterForEntry:
                 patient=patient,
                 created_by=user
             )
+
+
+@pytest.mark.django_db
+class TestVisitServiceLifecycle:
+    def test_start_consultation_promotes_outpatient_encounter(self):
+        patient = PatientProfileFactory()
+        encounter, visit = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='planned',
+            visit_status=OutpatientVisit.VisitStatus.WAITING,
+            start_time=timezone.now().replace(second=0, microsecond=0),
+        )
+
+        VisitService.start_consultation(visit)
+
+        visit.refresh_from_db()
+        encounter.refresh_from_db()
+        assert visit.visit_status == OutpatientVisit.VisitStatus.IN_PROGRESS
+        assert encounter.status == 'in-progress'
+        assert encounter.start_time <= timezone.now()
+
+    def test_end_consultation_finishes_encounter(self):
+        patient = PatientProfileFactory()
+        encounter, visit = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='in-progress',
+            visit_status=OutpatientVisit.VisitStatus.IN_PROGRESS,
+            start_time=timezone.now() - timedelta(minutes=10),
+        )
+        visit.consultation_started_at = timezone.now() - timedelta(minutes=10)
+        visit.save(update_fields=['consultation_started_at', 'updated_at'])
+
+        VisitService.end_consultation(visit)
+
+        visit.refresh_from_db()
+        encounter.refresh_from_db()
+        assert visit.visit_status == OutpatientVisit.VisitStatus.READY_CHECKOUT
+        assert encounter.status == 'finished'
+        assert encounter.end_time is not None
+
+    def test_mark_no_show_cancels_encounter(self):
+        patient = PatientProfileFactory()
+        encounter, visit = create_outpatient_encounter_with_visit(
+            patient=patient,
+            encounter_status='planned',
+            visit_status=OutpatientVisit.VisitStatus.WAITING,
+        )
+
+        VisitService.mark_no_show(visit)
+
+        visit.refresh_from_db()
+        encounter.refresh_from_db()
+        assert visit.visit_status == OutpatientVisit.VisitStatus.NO_SHOW
+        assert encounter.status == 'cancelled'
 
 
 @pytest.mark.django_db
@@ -619,19 +847,31 @@ class TestGetActiveEncounterForPatient:
         assert result.id == encounter.id
 
     def test_returns_planned_encounter_today(self):
-        """Test returns planned encounter from today."""
+        """Test returns checked-in planned encounter from today."""
         patient = PatientProfileFactory()
-        encounter = EncounterFactory(
+        encounter, _ = create_outpatient_encounter_with_visit(
             patient=patient,
-            encounter_type='outpatient',
-            status='planned',
-            start_time=timezone.now()
+            encounter_status='planned',
+            visit_status=OutpatientVisit.VisitStatus.WAITING,
         )
 
         result = get_active_encounter_for_patient(patient)
 
         assert result is not None
         assert result.id == encounter.id
+
+    def test_does_not_return_planned_outpatient_without_check_in(self):
+        patient = PatientProfileFactory()
+        EncounterFactory(
+            patient=patient,
+            encounter_type='outpatient',
+            status='planned',
+            start_time=timezone.now(),
+        )
+
+        result = get_active_encounter_for_patient(patient)
+
+        assert result is None
 
     def test_does_not_return_yesterday_encounter(self):
         """Test doesn't return encounters from yesterday."""
@@ -695,6 +935,7 @@ class TestRaceConditionPrevention:
         patient = PatientProfileFactory()
         planned = EncounterFactory(
             patient=patient,
+            encounter_type='emergency',
             status='planned',
             start_time=timezone.now()
         )

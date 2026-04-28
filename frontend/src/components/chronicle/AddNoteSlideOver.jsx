@@ -4,9 +4,15 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Save from 'lucide-react/dist/esm/icons/save.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import { useCallback, useEffect } from "react";
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
+import ShieldAlert from 'lucide-react/dist/esm/icons/shield-alert.js';
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -17,6 +23,17 @@ import {
 import NoteTypeSelector from "./NoteTypeSelector";
 import DynamicWorkflowStep from "./DynamicWorkflowStep";
 import { useNoteWorkflow } from "@/hooks/useNoteWorkflow";
+import {
+  applyDraftToWorkflowData,
+  buildStepDiff,
+  buildWorkflowNoteData,
+  evaluateLintGate,
+  mapDraftSectionsToWorkflow,
+  sortLintIssues,
+  useAINoteDraft,
+  useAINoteLint,
+} from "@/features/clinical-notes/hooks";
+import { toast } from "sonner";
 
 // Category color mapping
 const CATEGORY_COLORS = {
@@ -48,6 +65,7 @@ const AddNoteSlideOver = ({
   open,
   onClose,
   patient,
+  encounter = null,
   onNoteCreated,
   initialTemplate = null,  // Pre-selected template (for copy forward or edit)
   initialData = null,      // Pre-filled data (for copy forward or edit)
@@ -61,8 +79,8 @@ const AddNoteSlideOver = ({
 
   // Use the template-driven workflow hook
   const {
-    workflowId,
     template,
+    templateRevisionId,
     steps,
     totalSteps,
     currentStep,
@@ -85,10 +103,46 @@ const AddNoteSlideOver = ({
   const isLastStep = currentStep === totalSteps;
   const currentStepConfig = steps[currentStep - 1] || null;
   const categoryColor = CATEGORY_COLORS[template?.category] || 'amber';
+  const [draftPrompt, setDraftPrompt] = useState('');
+  const [draftTextByStepId, setDraftTextByStepId] = useState({});
+  const [draftCitationsByStepId, setDraftCitationsByStepId] = useState({});
+  const [lintResult, setLintResult] = useState(null);
+  const [lintDataHash, setLintDataHash] = useState(null);
+  const [majorAcknowledged, setMajorAcknowledged] = useState(false);
+
+  const noteDraftMutation = useAINoteDraft();
+  const noteLintMutation = useAINoteLint();
+  const isAiBusy = noteDraftMutation.isPending || noteLintMutation.isPending;
+
+  const encounterId = encounter?.id || null;
+
+  const finalNoteData = useMemo(() => buildWorkflowNoteData(steps, formData), [steps, formData]);
+  const finalDataHash = useMemo(() => JSON.stringify(finalNoteData), [finalNoteData]);
+  const lintIssues = useMemo(() => sortLintIssues(lintResult?.issues || []), [lintResult]);
+  const hasLintForCurrentData = !!lintResult && lintDataHash === finalDataHash;
+  const lintGate = useMemo(
+    () =>
+      evaluateLintGate({
+        lintResult,
+        lintDataHash,
+        currentDataHash: finalDataHash,
+        majorAcknowledged,
+      }),
+    [lintResult, lintDataHash, finalDataHash, majorAcknowledged]
+  );
+  const currentStepDraftText = currentStepConfig ? draftTextByStepId[currentStepConfig.id] : '';
+  const currentStepCitations = currentStepConfig ? draftCitationsByStepId[currentStepConfig.id] || [] : [];
+  const currentStepDiff = useMemo(
+    () => buildStepDiff(currentStepDraftText, currentStepConfig ? formData[currentStepConfig.id] : ''),
+    [currentStepDraftText, currentStepConfig, formData]
+  );
 
   // Handle template selection
   const handleSelectTemplate = async (selectedTemplate) => {
-    await startWorkflow(selectedTemplate);
+    await startWorkflow(selectedTemplate, null, {
+      applyTemplateText: true,
+      applyMode: 'empty_only',
+    });
   };
 
   // Handle step data update
@@ -114,8 +168,159 @@ const AddNoteSlideOver = ({
     await saveDraft();
   };
 
+  const applyMergedFormData = useCallback((mergedData) => {
+    if (!mergedData || typeof mergedData !== 'object') {
+      return;
+    }
+
+    Object.entries(mergedData).forEach(([stepId, value]) => {
+      const currentValue = formData?.[stepId];
+      if (JSON.stringify(currentValue) === JSON.stringify(value)) {
+        return;
+      }
+      updateStepData(stepId, value);
+    });
+  }, [formData, updateStepData]);
+
+  const runQualityCheck = useCallback(async ({ silent = false } = {}) => {
+    if (!patientId || !template?.id || !templateRevisionId) {
+      if (!silent) {
+        toast.error('Select a template revision before running quality check.');
+      }
+      return null;
+    }
+
+    try {
+      const lintEnvelope = await noteLintMutation.mutateAsync({
+        patientId,
+        templateId: template.id,
+        templateRevisionId,
+        encounterId,
+        noteData: finalNoteData,
+      });
+
+      const result = lintEnvelope?.result || null;
+      if (!result) {
+        throw new Error('Quality check did not return a valid result.');
+      }
+
+      setLintResult(result);
+      setLintDataHash(finalDataHash);
+      setMajorAcknowledged(false);
+
+      if (!silent) {
+        const issueCounts = result.issue_counts || {};
+        const criticalCount = Number(issueCounts.critical || 0);
+        const majorCount = Number(issueCounts.major || 0);
+        if (criticalCount > 0) {
+          toast.error('Quality check found critical issues.', {
+            description: 'Resolve critical issues before completing the note.',
+          });
+        } else if (majorCount > 0) {
+          toast.warning('Quality check found major issues.', {
+            description: 'Acknowledge major issues before completing.',
+          });
+        } else {
+          toast.success('Quality check complete.', {
+            description: 'No blocking issues found.',
+          });
+        }
+      }
+
+      return result;
+    } catch (err) {
+      if (!silent) {
+        toast.error(err?.message || 'Unable to run quality check.');
+      }
+      return null;
+    }
+  }, [
+    encounterId,
+    finalDataHash,
+    finalNoteData,
+    noteLintMutation,
+    patientId,
+    template,
+    templateRevisionId,
+  ]);
+
+  const handleGenerateDraft = useCallback(async () => {
+    if (!patientId || !template?.id || !templateRevisionId) {
+      toast.error('Select a template revision before generating draft.');
+      return;
+    }
+
+    try {
+      const draftEnvelope = await noteDraftMutation.mutateAsync({
+        patientId,
+        templateId: template.id,
+        templateRevisionId,
+        encounterId,
+        prompt: draftPrompt,
+      });
+
+      const sections = Array.isArray(draftEnvelope?.result?.sections) ? draftEnvelope.result.sections : [];
+      if (sections.length === 0) {
+        toast.error('No AI draft sections were generated.');
+        return;
+      }
+
+      const { draftTextByStepId: mappedDraftText, citationsByStepId } = mapDraftSectionsToWorkflow(
+        steps,
+        sections,
+        Array.isArray(draftEnvelope?.citations) ? draftEnvelope.citations : []
+      );
+
+      const mergedData = applyDraftToWorkflowData({
+        steps,
+        currentFormData: formData,
+        draftTextByStepId: mappedDraftText,
+        mode: 'empty_only',
+      });
+
+      applyMergedFormData(mergedData);
+      setDraftTextByStepId(mappedDraftText);
+      setDraftCitationsByStepId(citationsByStepId);
+      setLintResult(null);
+      setLintDataHash(null);
+      setMajorAcknowledged(false);
+
+      toast.success('AI draft applied to empty sections.', {
+        description: 'Review and edit content before completion.',
+      });
+    } catch (err) {
+      toast.error(err?.message || 'Unable to generate AI draft.');
+    }
+  }, [
+    applyMergedFormData,
+    draftPrompt,
+    encounterId,
+    formData,
+    noteDraftMutation,
+    patientId,
+    steps,
+    template,
+    templateRevisionId,
+  ]);
+
   const handleComplete = async () => {
     try {
+      let activeLint = lintResult;
+      if (!activeLint || lintDataHash !== finalDataHash) {
+        activeLint = await runQualityCheck({ silent: true });
+      }
+
+      const gate = evaluateLintGate({
+        lintResult: activeLint,
+        lintDataHash: finalDataHash,
+        currentDataHash: finalDataHash,
+        majorAcknowledged,
+      });
+      if (!gate.canComplete) {
+        toast.error(gate.reason || 'Resolve quality issues before completion.');
+        return;
+      }
+
       const result = await completeWorkflow();
       if (result?.success || result?.note) {
         resetWorkflow();
@@ -129,6 +334,12 @@ const AddNoteSlideOver = ({
 
   const handleClose = () => {
     resetWorkflow();
+    setDraftPrompt('');
+    setDraftTextByStepId({});
+    setDraftCitationsByStepId({});
+    setLintResult(null);
+    setLintDataHash(null);
+    setMajorAcknowledged(false);
     onClose();
   };
 
@@ -138,6 +349,23 @@ const AddNoteSlideOver = ({
       resetWorkflow();
     }
   }, [open, resetWorkflow]);
+
+  useEffect(() => {
+    if (!template) {
+      setDraftPrompt('');
+      setDraftTextByStepId({});
+      setDraftCitationsByStepId({});
+      setLintResult(null);
+      setLintDataHash(null);
+      setMajorAcknowledged(false);
+    }
+  }, [template]);
+
+  useEffect(() => {
+    if (lintDataHash && lintDataHash !== finalDataHash) {
+      setMajorAcknowledged(false);
+    }
+  }, [finalDataHash, lintDataHash]);
 
   // Auto-start workflow when opened with initial template (copy forward)
   useEffect(() => {
@@ -277,13 +505,199 @@ const AddNoteSlideOver = ({
         {!template ? (
           <NoteTypeSelector onSelect={handleSelectTemplate} enabled={open} />
         ) : currentStepConfig ? (
-          <DynamicWorkflowStep
-            stepConfig={currentStepConfig}
-            formData={formData[currentStepConfig.id] || {}}
-            onDataChange={(data) => handleStepDataChange(currentStepConfig.id, data)}
-            patient={patient}
-            template={template}
-          />
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-600" />
+                  <p className="font-heading text-sm text-foreground">AI Note Assistant</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "font-mono text-[10px]",
+                      hasLintForCurrentData
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : lintResult
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-border text-muted-foreground"
+                    )}
+                  >
+                    {hasLintForCurrentData ? 'Quality Checked' : lintResult ? 'Quality Check Stale' : 'Not Checked'}
+                  </Badge>
+                  {hasLintForCurrentData && lintResult?.can_finalize === false && (
+                    <Badge variant="outline" className="font-mono text-[10px] border-rose-200 bg-rose-50 text-rose-700">
+                      Critical Block
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 lg:flex-row">
+                <Input
+                  value={draftPrompt}
+                  onChange={(event) => setDraftPrompt(event.target.value)}
+                  placeholder="Optional draft focus (e.g., 'post-op handoff')"
+                  className="h-8 font-mono text-xs"
+                  disabled={isAiBusy}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateDraft}
+                  disabled={isAiBusy}
+                  className="font-mono text-xs"
+                >
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                  Generate Draft
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => runQualityCheck()}
+                  disabled={isAiBusy}
+                  className="font-mono text-xs"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                  Run Quality Check
+                </Button>
+              </div>
+            </div>
+
+            <DynamicWorkflowStep
+              stepConfig={currentStepConfig}
+              formData={formData[currentStepConfig.id] || {}}
+              onDataChange={(data) => handleStepDataChange(currentStepConfig.id, data)}
+              patient={patient}
+              template={template}
+            />
+
+            {currentStepDraftText && (
+              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-600" />
+                    <p className="font-heading text-sm text-foreground">Section Diff</p>
+                  </div>
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    AI Draft vs Current Edit
+                  </Badge>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+                    <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground mb-2">AI Draft</p>
+                    <p className="text-xs whitespace-pre-wrap text-foreground">
+                      {currentStepDiff.baseline || 'No AI draft baseline for this step.'}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+                    <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Your Edit</p>
+                    <p className="text-xs whitespace-pre-wrap text-foreground">
+                      {currentStepDiff.current || 'No content entered yet.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/70 bg-background p-3">
+                  <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Diff Preview</p>
+                  <p className="text-xs leading-relaxed whitespace-pre-wrap">
+                    {currentStepDiff.segments.map((segment, idx) => (
+                      <span
+                        key={`${segment.value}-${idx}`}
+                        className={cn(
+                          segment.added && "bg-emerald-100 text-emerald-900",
+                          segment.removed && "bg-rose-100 text-rose-900 line-through"
+                        )}
+                      >
+                        {segment.value}
+                      </span>
+                    ))}
+                  </p>
+                </div>
+
+                {currentStepCitations.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">Evidence</p>
+                    <div className="flex flex-wrap gap-1">
+                      {currentStepCitations.map((citation, idx) => (
+                        <Badge key={`${citation.type || citation.source}:${citation.id || idx}`} variant="outline" className="font-mono text-[10px]">
+                          {`${citation.type || citation.source || 'source'}:${citation.id || citation.source_id || idx}`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {lintResult && (
+              <div className={cn(
+                "rounded-xl border p-4 space-y-3",
+                hasLintForCurrentData ? "border-border bg-card" : "border-amber-200 bg-amber-50/70"
+              )}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {lintResult.can_finalize === false ? (
+                      <ShieldAlert className="h-4 w-4 text-rose-600" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                    )}
+                    <p className="font-heading text-sm text-foreground">Quality Check Results</p>
+                  </div>
+                  {!hasLintForCurrentData && (
+                    <Badge variant="outline" className="font-mono text-[10px] border-amber-200 bg-amber-50 text-amber-700">
+                      Stale
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline" className="font-mono text-[10px] border-rose-200 bg-rose-50 text-rose-700">
+                    Critical {lintResult.issue_counts?.critical || 0}
+                  </Badge>
+                  <Badge variant="outline" className="font-mono text-[10px] border-amber-200 bg-amber-50 text-amber-700">
+                    Major {lintResult.issue_counts?.major || 0}
+                  </Badge>
+                  <Badge variant="outline" className="font-mono text-[10px] border-sky-200 bg-sky-50 text-sky-700">
+                    Minor {lintResult.issue_counts?.minor || 0}
+                  </Badge>
+                </div>
+
+                {lintResult.review_message && (
+                  <p className="text-xs text-muted-foreground">{lintResult.review_message}</p>
+                )}
+
+                {lintIssues.length > 0 && (
+                  <div className="space-y-2">
+                    {lintIssues.slice(0, 6).map((issue, idx) => (
+                      <div key={`${issue.section_key || issue.section}-${idx}`} className="rounded-md border border-border/70 bg-background p-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {issue.severity} • {issue.section || issue.section_key}
+                          </span>
+                          {issue.blocking && (
+                            <Badge variant="outline" className="font-mono text-[10px] border-rose-200 bg-rose-50 text-rose-700">
+                              Blocking
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-foreground">{issue.message}</p>
+                        {issue.suggested_fix && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Suggested fix: {issue.suggested_fix}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="text-center py-12">
             <p className="text-muted-foreground mb-4">
@@ -309,16 +723,28 @@ const AddNoteSlideOver = ({
           <WorkflowKeyboardHints totalSteps={totalSteps} className="mb-3" />
 
           <div className="flex items-center justify-between">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSaveDraft}
-              disabled={isSaving || isLoading}
-              className="font-mono text-xs"
-            >
-              <Save className="h-3.5 w-3.5 mr-1.5" />
-              Save Draft
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveDraft}
+                disabled={isSaving || isLoading || isAiBusy}
+                className="font-mono text-xs"
+              >
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+                Save Draft
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => runQualityCheck()}
+                disabled={isSaving || isLoading || isAiBusy}
+                className="font-mono text-xs"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                Run Quality Check
+              </Button>
+            </div>
 
             <div className="flex items-center gap-2">
               {currentStep > 1 && (
@@ -326,7 +752,7 @@ const AddNoteSlideOver = ({
                   variant="outline"
                   size="sm"
                   onClick={handleBack}
-                  disabled={isLoading}
+                  disabled={isLoading || isAiBusy}
                   className="font-mono text-xs"
                 >
                   <ChevronLeft className="h-3.5 w-3.5 mr-1" />
@@ -334,11 +760,23 @@ const AddNoteSlideOver = ({
                 </Button>
               )}
 
+              {isLastStep && hasLintForCurrentData && lintResult?.requires_major_acknowledgement && (
+                <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
+                  <Checkbox
+                    checked={majorAcknowledged}
+                    onCheckedChange={(value) => setMajorAcknowledged(Boolean(value))}
+                  />
+                  <span className="font-mono text-[10px] leading-tight text-amber-800">
+                    Acknowledge major quality issues and continue.
+                  </span>
+                </label>
+              )}
+
               {isLastStep ? (
                 <Button
                   size="sm"
                   onClick={handleComplete}
-                  disabled={isSaving || isLoading}
+                  disabled={isSaving || isLoading || isAiBusy || (!lintGate.canComplete && !lintGate.requiresLintRun)}
                   className="font-mono text-xs"
                 >
                   <Check className="h-3.5 w-3.5 mr-1.5" />
@@ -348,7 +786,7 @@ const AddNoteSlideOver = ({
                 <Button
                   size="sm"
                   onClick={handleNext}
-                  disabled={isLoading}
+                  disabled={isLoading || isAiBusy}
                   className="font-mono text-xs"
                 >
                   Next

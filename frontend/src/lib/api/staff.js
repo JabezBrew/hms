@@ -86,6 +86,19 @@ export const staffApi = {
   },
 
   /**
+   * Resend account setup/reset link for an existing staff account
+   * @param {string} staffId - Staff ID
+   * @returns {Promise<Object>} API response with mode and detail
+   */
+  resendSetupLink: async (staffId) => {
+    try {
+      return await apiClient.post(`/users/staff/${staffId}/resend-setup-link/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to resend setup link'));
+    }
+  },
+
+  /**
    * Get practitioners (doctors, nurses)
    * @returns {Promise<Array>} List of practitioners
    */

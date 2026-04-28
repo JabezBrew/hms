@@ -1,4 +1,5 @@
 from django.apps import AppConfig
+from importlib import import_module
 
 
 class NursingConfig(AppConfig):
@@ -8,6 +9,4 @@ class NursingConfig(AppConfig):
 
     def ready(self):
         """Register signal handlers for WebSocket broadcasts."""
-        # Import signals to register handlers
-        # This enables real-time alert and vitals broadcasting
-        from . import signals  # noqa: F401
+        import_module(f'{self.name}.signals')

@@ -25,10 +25,10 @@ export default function LabWorklistWidget({ className }) {
   const navigate = useNavigate();
 
   // Fetch orders by status
-  const { data: submittedOrders } = useLabOrders({ status: 'submitted' });
-  const { data: collectedOrders } = useLabOrders({ status: 'collected' });
-  const { data: receivedOrders } = useLabOrders({ status: 'received' });
-  const { data: processingOrders } = useLabOrders({ status: 'processing' });
+  const { data: submittedOrders } = useLabOrders({ status: 'submitted', page_size: 1 });
+  const { data: collectedOrders } = useLabOrders({ status: 'collected', page_size: 1 });
+  const { data: receivedOrders } = useLabOrders({ status: 'received', page_size: 1 });
+  const { data: processingOrders } = useLabOrders({ status: 'processing', page_size: 1 });
 
   const statusStats = [
     {

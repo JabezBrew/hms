@@ -7,14 +7,30 @@ Defines permission classes for template management, assignment, and entry operat
 from rest_framework import permissions
 
 
+def _is_admin_actor(user) -> bool:
+    if not user:
+        return False
+    return bool(
+        getattr(user, 'is_superuser', False)
+        or getattr(user, 'is_staff', False)
+        or getattr(user, 'user_type', None) == 'admin'
+    )
+
+
+def _can_manage_templates(user) -> bool:
+    if _is_admin_actor(user):
+        return True
+    return getattr(user, 'user_type', None) == 'head_nurse'
+
+
 class ChartTemplatePermission(permissions.BasePermission):
     """
     Permission class for chart templates.
 
-    - CREATE: Any authenticated clinical staff
+    - CREATE: Admins and designated clinical leads
     - LIST/RETRIEVE: All authenticated users (filtered by visibility)
-    - UPDATE/DELETE: Creator or admin only (system templates cannot be deleted)
-    - CLONE: Any authenticated clinical staff
+    - UPDATE/DELETE: Template managers only (system templates cannot be deleted)
+    - CLONE: Template managers only
     """
 
     def has_permission(self, request, view):
@@ -25,9 +41,7 @@ class ChartTemplatePermission(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
 
-        # Write operations require clinical staff role
-        # For now, allow any authenticated user (can be refined based on user_type)
-        return True
+        return _can_manage_templates(request.user)
 
     def has_object_permission(self, request, view, obj):
         if not request.user or not request.user.is_authenticated:
@@ -37,9 +51,9 @@ class ChartTemplatePermission(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return self._can_view_template(request.user, obj)
 
-        # Clone action is allowed for anyone who can view
+        # Clone action is restricted to template managers.
         if view.action == 'clone':
-            return self._can_view_template(request.user, obj)
+            return self._can_manage_template_catalog(request.user)
 
         # Field management actions require modify permission
         if view.action in ['add_field', 'update_field', 'delete_field', 'reorder_fields']:
@@ -78,13 +92,10 @@ class ChartTemplatePermission(permissions.BasePermission):
 
     def _can_modify_template(self, user, template):
         """Check if user can modify template."""
-        if user.is_superuser:
-            return True
+        return self._can_manage_template_catalog(user)
 
-        if user.is_staff:
-            return True
-
-        return template.created_by == user
+    def _can_manage_template_catalog(self, user):
+        return _can_manage_templates(user)
 
     def _get_user_department(self, user):
         """Get user's department."""
@@ -149,7 +160,7 @@ class ChartEntryPermission(permissions.BasePermission):
             return True
 
         # Admins can always modify
-        if request.user.is_superuser or request.user.is_staff:
+        if _is_admin_actor(request.user):
             return True
 
         # Check if user created the entry

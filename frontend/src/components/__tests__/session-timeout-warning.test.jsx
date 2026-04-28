@@ -426,6 +426,25 @@ describe('SessionTimeoutWarning', () => {
         expect(mockLogout).toHaveBeenCalledWith(false)
       })
     })
+
+    it('calls logout only once when session remains invalid', async () => {
+      mockIsSessionValid.mockReturnValue(false)
+
+      useAuth.mockReturnValue({
+        isAuthenticated: true,
+        logout: mockLogout,
+        isSessionValid: mockIsSessionValid,
+      })
+
+      render(<SessionTimeoutWarning />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(2 * 60 * 1000)
+      })
+
+      expect(mockLogout).toHaveBeenCalledTimes(1)
+      expect(mockLogout).toHaveBeenCalledWith(false)
+    })
   })
 
   // =============================================================================

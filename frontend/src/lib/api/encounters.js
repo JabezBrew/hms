@@ -168,9 +168,12 @@ export const encountersApi = {
    * @param {string} patientId - Patient ID
    * @returns {Promise<Array>} List of encounters for the patient
    */
-  getEncountersForPatient: async (patientId) => {
+  getEncountersForPatient: async (patientId, options = {}) => {
     try {
-      return await apiClient.getAll(`/encounters/for_patient/?patient_id=${patientId}`);
+      return await apiClient.get('/encounters/for_patient/', {
+        ...options,
+        params: { patient_id: patientId },
+      });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch patient encounters'));
     }

@@ -2,10 +2,10 @@
   "ci": {
     "collect": {
       "startServerCommand": "npm run preview:ci",
-      "startServerReadyPattern": "http://127.0.0.1:4173/",
-      "startServerReadyTimeout": 30000,
+      "startServerReadyPattern": "http://localhost:4173",
+      "startServerReadyTimeout": 60000,
       "url": [
-        "http://127.0.0.1:4173/login"
+        "http://localhost:4173/login"
       ],
       "numberOfRuns": 1,
       "settings": {

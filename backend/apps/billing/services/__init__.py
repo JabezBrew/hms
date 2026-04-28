@@ -20,6 +20,7 @@ from .invoice_generation import (
     InvoiceGenerationResult,
     ServiceLine,
 )
+from .draft_invoice_sync import DraftInvoiceSyncService
 
 __all__ = [
     'PricingService',
@@ -32,4 +33,5 @@ __all__ = [
     'InvoiceGenerationService',
     'InvoiceGenerationResult',
     'ServiceLine',
+    'DraftInvoiceSyncService',
 ]

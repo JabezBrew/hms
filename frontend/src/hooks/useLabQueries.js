@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { laboratoryApi } from '@/features/laboratory/api';
+import { aiAssistantApi } from '@/shared/api/aiAssistant';
+import { hasMeaningfulQueryParams, immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -15,13 +17,20 @@ export const labKeys = {
   panel: (id) => keyWith('laboratory', 'panels', id),
   orders: () => keyWith('laboratory', 'orders'),
   ordersList: (filters) => keyWith('laboratory', 'orders', 'list', { filters }),
+  ordersPaginatedList: (filters) => keyWith('laboratory', 'orders', 'paginated-list', { filters }),
   order: (id) => keyWith('laboratory', 'orders', id),
   specimens: () => keyWith('laboratory', 'specimens'),
   specimensList: (filters) => keyWith('laboratory', 'specimens', 'list', { filters }),
   specimen: (id) => keyWith('laboratory', 'specimens', id),
   results: () => keyWith('laboratory', 'results'),
   resultsList: (filters) => keyWith('laboratory', 'results', 'list', { filters }),
+  resultsPaginatedList: (filters) => keyWith('laboratory', 'results', 'paginated-list', { filters }),
   result: (id) => keyWith('laboratory', 'results', id),
+};
+
+export const labAiKeys = {
+  interpretation: ({ resultId = null, orderId = null, audience = 'clinician' } = {}) =>
+    keyWith('ai', 'laboratory', 'interpretation', { resultId, orderId, audience }),
 };
 
 // ========== Lab Tests ==========
@@ -33,10 +42,12 @@ export const labKeys = {
  */
 export function useLabTests(filters = {}) {
   const { enabled = true, ...queryFilters } = filters;
+  const shouldUseImmutableCache = !hasMeaningfulQueryParams(queryFilters);
   return useQuery({
     queryKey: labKeys.testsList(queryFilters),
-    queryFn: () => laboratoryApi.getLabTests(queryFilters),
+    queryFn: ({ signal }) => laboratoryApi.getLabTests(queryFilters, { signal }),
     enabled,
+    ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
 
@@ -115,10 +126,12 @@ export function useDeleteLabTest() {
  */
 export function useLabPanels(filters = {}) {
   const { enabled = true, ...queryFilters } = filters;
+  const shouldUseImmutableCache = !hasMeaningfulQueryParams(queryFilters);
   return useQuery({
     queryKey: labKeys.panelsList(queryFilters),
-    queryFn: () => laboratoryApi.getLabPanels(queryFilters),
+    queryFn: ({ signal }) => laboratoryApi.getLabPanels(queryFilters, { signal }),
     enabled,
+    ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
 
@@ -193,7 +206,14 @@ export function useDeleteLabPanel() {
 export function useLabOrders(filters = {}) {
   return useQuery({
     queryKey: labKeys.ordersList(filters),
-    queryFn: () => laboratoryApi.getLabOrders(filters),
+    queryFn: ({ signal }) => laboratoryApi.getLabOrders(filters, { signal }),
+  });
+}
+
+export function usePaginatedLabOrders(filters = {}) {
+  return useQuery({
+    queryKey: labKeys.ordersPaginatedList(filters),
+    queryFn: ({ signal }) => laboratoryApi.getLabOrdersPaginated(filters, { signal }),
   });
 }
 
@@ -306,7 +326,7 @@ export function useCancelLabOrder() {
 export function useLabSpecimens(filters = {}) {
   return useQuery({
     queryKey: labKeys.specimensList(filters),
-    queryFn: () => laboratoryApi.getLabSpecimens(filters),
+    queryFn: ({ signal }) => laboratoryApi.getLabSpecimens(filters, { signal }),
   });
 }
 
@@ -356,7 +376,14 @@ export function useReceiveLabSpecimen() {
 export function useLabResults(filters = {}) {
   return useQuery({
     queryKey: labKeys.resultsList(filters),
-    queryFn: () => laboratoryApi.getLabResults(filters),
+    queryFn: ({ signal }) => laboratoryApi.getLabResults(filters, { signal }),
+  });
+}
+
+export function usePaginatedLabResults(filters = {}) {
+  return useQuery({
+    queryKey: labKeys.resultsPaginatedList(filters),
+    queryFn: ({ signal }) => laboratoryApi.getLabResultsPaginated(filters, { signal }),
   });
 }
 
@@ -447,5 +474,32 @@ export function useBulkVerifyLabResults() {
       // Invalidate orders list
       queryClient.invalidateQueries({ queryKey: labKeys.orders() });
     },
+  });
+}
+
+/**
+ * Fetch AI interpretation for a single result or an order.
+ * Exactly one of resultId or orderId is required.
+ */
+export function useLabInterpretation({
+  resultId = null,
+  orderId = null,
+  audience = 'clinician',
+  enabled = true,
+} = {}) {
+  const hasResult = Boolean(resultId);
+  const hasOrder = Boolean(orderId);
+  const shouldFetch = Boolean(enabled) && hasResult !== hasOrder;
+
+  return useQuery({
+    queryKey: labAiKeys.interpretation({ resultId, orderId, audience }),
+    queryFn: () => {
+      if (hasResult) {
+        return aiAssistantApi.interpretLabResult({ resultId, audience });
+      }
+      return aiAssistantApi.interpretLabOrder({ orderId, audience });
+    },
+    enabled: shouldFetch,
+    staleTime: 60 * 1000,
   });
 }

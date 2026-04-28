@@ -8,6 +8,8 @@ Tests the EncounterViewSet endpoints including:
 - Statistics endpoint
 """
 import pytest
+from unittest.mock import patch
+from django.db import transaction
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -16,6 +18,7 @@ from datetime import timedelta
 
 from apps.encounters.models import Encounter
 from apps.encounters.tests.factories import EncounterFactory
+from apps.encounters.views import EncounterViewSet
 from apps.users.tests.factories import (
     UserFactory,
     PatientProfileFactory,
@@ -207,7 +210,9 @@ class TestEncounterListView:
         user = UserFactory(first_name='John', last_name='Doe')
         patient = PatientProfileFactory(user=user)
         EncounterFactory(patient=patient)
-        EncounterFactory()  # Different patient
+        other_user = UserFactory(first_name='Jane', last_name='Smith')
+        other_patient = PatientProfileFactory(user=other_user)
+        EncounterFactory(patient=other_patient)
 
         response = api_client.get('/api/encounters/?search=John')
 
@@ -295,6 +300,27 @@ class TestEncounterCreateView:
         assert response.status_code == status.HTTP_201_CREATED, f"Response: {response.data}"
         encounter = Encounter.objects.get(patient=patient)
         assert encounter.created_by is not None
+
+    def test_rejects_future_outpatient_in_progress_encounter(self, api_client):
+        patient = PatientProfileFactory()
+        practitioner = PractitionerProfileFactory()
+        department, clinic = create_department_and_clinic(patient.facility)
+
+        data = {
+            'patient_id': str(patient.id),
+            'practitioner_id': str(practitioner.id),
+            'department_id': str(department.id),
+            'clinic_id': str(clinic.id),
+            'encounter_type': 'outpatient',
+            'status': 'in-progress',
+            'start_time': (timezone.now() + timedelta(hours=2)).isoformat(),
+            'reason': 'Future check-up',
+        }
+
+        response = api_client.post('/api/encounters/', data)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'status' in response.data
 
     def test_create_encounter_invalid_patient(self, api_client):
         """Test creating encounter with invalid patient returns error."""
@@ -440,7 +466,7 @@ class TestEncounterDischargeAction:
     """Tests for POST /api/encounters/{id}/discharge/"""
 
     def test_discharge_inpatient(self, api_client):
-        """Test discharging an inpatient."""
+        """Test submitting medical discharge for downstream clearance."""
         patient = PatientProfileFactory()
         bed = BedFactory()
         admission = AdmissionFactory(patient=patient, bed=bed, status='admitted')
@@ -462,9 +488,10 @@ class TestEncounterDischargeAction:
 
         assert response.status_code == status.HTTP_200_OK
         encounter.refresh_from_db()
-        assert encounter.status == 'finished'
+        assert encounter.status == 'in-progress'
         admission.refresh_from_db()
-        assert admission.status == 'discharged'
+        assert admission.status == 'pending_discharge'
+        assert 'discharge_case_id' in response.data
 
     def test_discharge_outpatient_returns_error(self, api_client):
         """Test discharging outpatient returns error."""
@@ -523,6 +550,20 @@ class TestEncounterStatsAction:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['total'] == 2
+
+
+@pytest.mark.django_db
+def test_queue_fhir_sync_defers_until_commit(django_capture_on_commit_callbacks):
+    calls = []
+    view = EncounterViewSet()
+
+    with patch('apps.encounters.tasks.sync_encounter_to_fhir.delay', side_effect=lambda encounter_id: calls.append(encounter_id)):
+        with django_capture_on_commit_callbacks(execute=True):
+            with transaction.atomic():
+                view._queue_fhir_sync('encounter-123')
+                assert calls == []
+
+        assert calls == ['encounter-123']
 
 
 @pytest.mark.django_db

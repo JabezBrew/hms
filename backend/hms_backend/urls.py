@@ -6,10 +6,9 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
-from django.db import connection
 from rest_framework_simplejwt.views import TokenVerifyView
 from .auth_views import CookieTokenRefreshView, LogoutView, LoginView
+from apps.core import views as core_views
 from apps.users.mfa_views import (
     MFAStatusView,
     MFATOTPStartView,
@@ -30,33 +29,13 @@ from apps.users.password_reset_views import (
 )
 
 
-def health_check(request):
-    """
-    Health check endpoint for Docker/Kubernetes probes.
-
-    Returns:
-        - 200 OK if the service is healthy
-        - 503 Service Unavailable if database is not reachable
-    """
-    try:
-        # Check database connectivity
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        return JsonResponse({
-            'status': 'healthy',
-            'database': 'connected',
-        })
-    except Exception as e:
-        return JsonResponse({
-            'status': 'unhealthy',
-            'database': 'disconnected',
-            'error': str(e),
-        }, status=503)
-
-
 urlpatterns = [
-    # Health check endpoint (unauthenticated for k8s probes)
-    path('api/health/', health_check, name='health_check'),
+    # Health and metrics endpoints (unauthenticated for probes/scraping)
+    path('api/health/', core_views.health_ready, name='health_check'),
+    path('api/health/alive/', core_views.health_alive, name='health_alive'),
+    path('api/health/ready/', core_views.health_ready, name='health_ready'),
+    path('api/health/started/', core_views.health_started, name='health_started'),
+    path('api/metrics/', core_views.metrics_view, name='metrics'),
 
     path('admin/', admin.site.urls),
 
@@ -85,6 +64,7 @@ urlpatterns = [
     # Include app URLs
     path('api/users/', include('apps.users.urls')),
     path('api/patients/', include('apps.patients.urls')),
+    path('api/admissions/', include('apps.admissions.urls')),
     path('api/appointments/', include('apps.appointments.urls')),
     path('api/wards/', include('apps.wards.urls')),
     path('api/encounters/', include('apps.encounters.urls')),
@@ -93,6 +73,7 @@ urlpatterns = [
     path('api/clinical-notes/', include('apps.clinical_notes.urls')),
     path('api/nursing/', include('apps.nursing.urls')),
     path('api/pharmacy/', include('apps.pharmacy.urls')),
+    path('api/discharges/', include('apps.discharge.urls')),
     path('api/drug-safety/', include('apps.drug_safety.urls')),
     path('api/laboratory/', include('apps.laboratory.urls')),
     path('api/referrals/', include('apps.referrals.urls')),
@@ -101,6 +82,7 @@ urlpatterns = [
     path('api/interop/', include('apps.interop.urls')),
     path('api/consent/', include('apps.consent.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
+    path('api/ai/', include('apps.ai.urls')),
     path('api/', include('apps.workflows.urls')),
     path('api/', include('apps.dashboards.urls')),
     path('api/admin/', include('apps.audit.urls')),

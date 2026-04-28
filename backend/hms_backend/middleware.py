@@ -2,12 +2,15 @@ import logging
 import time
 import json
 from uuid import UUID
+from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework import status as http_status
+from hms_backend.deployment import api_path_enabled, feature_enabled
 
 logger = logging.getLogger('django.request')
 
@@ -17,33 +20,43 @@ def get_client_ip(request):
     Get the client's real IP address from the request.
     Handles X-Forwarded-For header for reverse proxy setups.
     """
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        # X-Forwarded-For can contain multiple IPs; the first is the client's
-        ip = x_forwarded_for.split(',')[0].strip()
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
+    if getattr(settings, 'TRUST_PROXY_HEADERS', False):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            hops = [part.strip() for part in x_forwarded_for.split(',') if part.strip()]
+            trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
+            if len(hops) > trusted_hops:
+                return hops[-(trusted_hops + 1)]
+            if hops:
+                return hops[0]
+    return request.META.get('REMOTE_ADDR')
+
+
+def _scrub_path_segment(segment):
+    try:
+        UUID(segment)
+        return '<id>'
+    except (ValueError, AttributeError, TypeError):
+        pass
+    if segment.isdigit() and len(segment) >= 4:
+        return '<id>'
+    return segment
 
 
 def _scrub_path(path):
     if not path:
         return path
+    if path.startswith('/api/'):
+        parts = [_scrub_path_segment(segment) for segment in path.split('/') if segment]
+        if len(parts) <= 3:
+            return '/' + '/'.join(parts)
+        return '/' + '/'.join(parts[:3] + ['<path>'])
     parts = []
     for segment in path.split('/'):
         if not segment:
             parts.append(segment)
             continue
-        try:
-            UUID(segment)
-            parts.append('<id>')
-            continue
-        except (ValueError, AttributeError, TypeError):
-            pass
-        if segment.isdigit() and len(segment) >= 4:
-            parts.append('<id>')
-            continue
-        parts.append(segment)
+        parts.append(_scrub_path_segment(segment))
     return '/'.join(parts)
 
 
@@ -88,7 +101,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 if raw_token is not None:
                     validated_token = jwt_auth.get_validated_token(raw_token)
                     user = jwt_auth.get_user(validated_token)
-        except (InvalidToken, AttributeError, KeyError, TypeError):
+        except (InvalidToken, AuthenticationFailed, AttributeError, KeyError, TypeError):
             validated_token = None
             user = None
 
@@ -104,17 +117,18 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 allowed_codes = {primary_code}
             else:
                 allowed_codes = get_user_facility_codes(user)
-        allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+        allow_cross_facility = feature_enabled('cross_facility_access')
+        default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
 
         if not facility_code and allowed_codes:
             if len(allowed_codes) == 1:
                 facility_code = next(iter(allowed_codes))
                 facility_code_source = 'user'
-            elif getattr(settings, 'MULTI_FACILITY_MODE', False):
-                if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
+            elif feature_enabled('multi_facility'):
+                if feature_enabled('facility_context_required'):
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
-                        status=400
+                        status=403
                     )
 
         if not facility_code and not allowed_codes:
@@ -123,11 +137,17 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 facility_code = default_code
                 facility_code_source = 'default'
 
-        if facility_code and allowed_codes:
-            is_admin = bool(user and user.user_type == 'admin')
-            if facility_code not in allowed_codes and not (allow_cross_facility and is_admin):
+        if facility_code and user:
+            is_admin = bool(user.user_type == 'admin')
+            if allowed_codes:
+                is_facility_allowed = facility_code in allowed_codes
+            else:
+                # Users without explicit assignments are restricted to the deployment default facility.
+                is_facility_allowed = bool(default_facility_code and facility_code == default_facility_code)
+
+            if not is_facility_allowed and not (allow_cross_facility and is_admin):
                 return JsonResponse(
-                    {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
+                    {'detail': 'Facility context is not available.', 'code': 'facility_unavailable'},
                     status=403
                 )
 
@@ -139,17 +159,35 @@ class FacilityContextMiddleware(MiddlewareMixin):
             request.facility = Facility.get_by_code(request.facility_code)
             if request.facility is None and facility_code_source in {'header', 'token', 'user'}:
                 return JsonResponse(
-                    {'detail': 'Facility not found.', 'code': 'facility_invalid'},
-                    status=404
+                    {'detail': 'Facility context is not available.', 'code': 'facility_unavailable'},
+                    status=403
                 )
 
-        if getattr(settings, 'FACILITY_CONTEXT_REQUIRED', True):
-            skip_paths = ['/api/auth/', '/api/facilities/', '/admin/', '/static/', '/media/']
+        feature_is_enabled, feature_key = api_path_enabled(request.path, request=request)
+        if not feature_is_enabled:
+            return JsonResponse(
+                {
+                    'detail': 'This feature is not enabled for the current deployment.',
+                    'code': 'feature_disabled',
+                    'feature': feature_key,
+                },
+                status=404,
+            )
+
+        if feature_enabled('facility_context_required'):
+            skip_paths = [
+                '/api/auth/',
+                '/api/facilities/',
+                '/api/settings/deployment-capabilities/',
+                '/admin/',
+                '/static/',
+                '/media/',
+            ]
             if not any(request.path.startswith(path) for path in skip_paths):
                 if not request.facility_code:
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
-                        status=400
+                        status=403
                     )
 
         return None
@@ -173,16 +211,29 @@ class OffSiteDetectionMiddleware(MiddlewareMixin):
         client_ip = get_client_ip(request)
         request.client_ip = client_ip
 
-        # Check if IP is on-site
-        is_on_site = SiteNetwork.is_ip_on_site(client_ip)
-        request.is_offsite = not is_on_site
+        try:
+            # Check if IP is on-site
+            is_on_site = SiteNetwork.is_ip_on_site(client_ip)
+            request.is_offsite = not is_on_site
 
-        # Get settings
-        settings = OffSiteAccessSettings.get_settings()
-        request.offsite_mode = settings.offsite_mode
+            # Get settings
+            settings = OffSiteAccessSettings.get_settings()
+            request.offsite_mode = settings.offsite_mode
+            readonly_message = settings.readonly_message
+            deny_message = settings.deny_message
+            allow_admin_override = settings.allow_admin_override
+        except Exception:
+            # Never hard-fail requests when off-site settings lookups fail.
+            logger.exception("Off-site access lookup failed; defaulting to restricted readonly mode.")
+            is_on_site = False
+            request.is_offsite = True
+            request.offsite_mode = 'readonly'
+            readonly_message = "System is in restricted mode. Write operations are temporarily disabled."
+            deny_message = "Access is temporarily unavailable."
+            allow_admin_override = False
 
         # If on-site or mode is 'allow', proceed normally
-        if is_on_site or settings.offsite_mode == 'allow':
+        if is_on_site or request.offsite_mode == 'allow':
             return None
 
         # Skip checks for certain endpoints
@@ -191,26 +242,26 @@ class OffSiteDetectionMiddleware(MiddlewareMixin):
             return None
 
         # Check if admin override is allowed
-        if settings.allow_admin_override:
+        if allow_admin_override:
             # Need to check if user is admin - but user might not be authenticated yet
             # This will be handled in the permission class instead
             pass
 
         # If mode is 'deny', block all off-site access
-        if settings.offsite_mode == 'deny':
+        if request.offsite_mode == 'deny':
             return JsonResponse(
                 {
-                    'detail': settings.deny_message,
+                    'detail': deny_message,
                     'code': 'offsite_access_denied'
                 },
                 status=403
             )
 
         # For 'readonly' mode, block write operations
-        if settings.offsite_mode == 'readonly' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        if request.offsite_mode == 'readonly' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
             return JsonResponse(
                 {
-                    'detail': settings.readonly_message,
+                    'detail': readonly_message,
                     'code': 'offsite_readonly',
                     'is_offsite': True
                 },
@@ -336,3 +387,59 @@ class JWTUserTypeValidationMiddleware(MiddlewareMixin):
             pass
 
         return None
+
+
+class PasswordChangeRequiredMiddleware(MiddlewareMixin):
+    """
+    Restrict authenticated users with password-change requirements
+    to the minimal endpoints needed to complete the change.
+    """
+
+    def process_request(self, request):
+        # Always allow preflight
+        if request.method == 'OPTIONS':
+            return None
+
+        skip_paths = [
+            '/api/auth/',
+            '/api/health/',
+            '/api/health/alive/',
+            '/api/health/ready/',
+            '/api/health/started/',
+            '/api/metrics/',
+            '/api/users/users/change_password',
+            '/api/users/users/me/',
+            '/api/users/sessions/',
+            '/admin/',
+            '/static/',
+            '/media/',
+        ]
+        if any(request.path.startswith(path) for path in skip_paths):
+            return None
+
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            jwt_auth = JWTAuthentication()
+            try:
+                header = jwt_auth.get_header(request)
+                if header is not None:
+                    raw_token = jwt_auth.get_raw_token(header)
+                    if raw_token is not None:
+                        validated_token = jwt_auth.get_validated_token(raw_token)
+                        user = jwt_auth.get_user(validated_token)
+            except (InvalidToken, AuthenticationFailed, AttributeError, KeyError, TypeError):
+                user = None
+
+        if not user or not getattr(user, 'is_authenticated', False):
+            return None
+
+        if not getattr(user, 'must_change_password', False):
+            return None
+
+        return JsonResponse(
+            {
+                'detail': 'Password change required before accessing this resource.',
+                'code': 'password_change_required',
+            },
+            status=403,
+        )

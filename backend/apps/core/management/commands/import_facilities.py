@@ -2,9 +2,11 @@ import csv
 from datetime import datetime
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils import timezone
 
 from apps.core.models import Facility
+from apps.core.provisioning import ensure_organization_config, ensure_facility_root_unit
 
 
 def _parse_bool(value, default=False):
@@ -34,6 +36,7 @@ class Command(BaseCommand):
             help="Validate and report without writing to the database"
         )
 
+    @transaction.atomic
     def handle(self, *args, **options):
         path = options['path']
         update = bool(options['update'])
@@ -61,6 +64,7 @@ class Command(BaseCommand):
         created = 0
         updated = 0
         pending_parents = []
+        provision_targets = []
 
         for row in rows:
             code = (row.get('code') or '').strip().upper()
@@ -117,16 +121,19 @@ class Command(BaseCommand):
                     self.stdout.write(
                         self.style.WARNING(f"Skipping existing facility {code}.")
                     )
+                    provision_targets.append(existing_facility)
                     continue
                 if not dry_run:
                     for field, value in payload.items():
                         setattr(existing_facility, field, value)
                     existing_facility.save()
+                    provision_targets.append(existing_facility)
                 updated += 1
             else:
                 if not dry_run:
                     existing_facility = Facility.objects.create(**payload)
                     existing[code] = existing_facility
+                    provision_targets.append(existing_facility)
                 created += 1
 
         for child_code, parent_code in pending_parents:
@@ -140,6 +147,11 @@ class Command(BaseCommand):
                 if not dry_run:
                     child.parent_facility = parent
                     child.save(update_fields=['parent_facility'])
+
+        if not dry_run and provision_targets:
+            ensure_organization_config()
+            for facility in provision_targets:
+                ensure_facility_root_unit(facility)
 
         if dry_run:
             self.stdout.write(self.style.SUCCESS(

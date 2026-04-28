@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 
 // Query keys for timeline data
 const timelineKeyFactory = createKeyFactory('timeline');
@@ -14,13 +15,7 @@ export const timelineKeys = {
   stats: (patientId) => keyWith('timeline', 'stats', patientId),
 };
 
-/**
- * Fetch patient timeline with pagination
- * @param {string} patientId - Patient ID
- * @param {Object} options - Query options (type, search, page_size, start_date, end_date, encounter_id)
- * @returns {Promise} - Paginated timeline data
- */
-async function fetchTimeline(patientId, options = {}) {
+function buildTimelineEndpoint(patientId, options = {}) {
   const params = new URLSearchParams();
 
   if (options.type && options.type !== 'all') {
@@ -46,10 +41,165 @@ async function fetchTimeline(patientId, options = {}) {
   }
 
   const queryString = params.toString();
-  const endpoint = `/clinical-notes/timeline/${patientId}/${queryString ? `?${queryString}` : ''}`;
+  return `/clinical-notes/chronicle/${patientId}/timeline/${queryString ? `?${queryString}` : ''}`;
+}
+
+function normalizeTimelineEntry(entry) {
+  const baseEntry = {
+    ...entry,
+    author: entry.author ?? entry.author_name ?? '',
+    content: entry.content ?? entry.content_summary ?? '',
+  };
+
+  if (entry.type === 'note') {
+    return {
+      ...baseEntry,
+      type: entry.note_type || 'progress_note',
+      entry_type: 'note',
+      template_id: entry.template_id ?? entry.template?.id ?? null,
+      template_title: entry.template_title ?? entry.template?.title ?? null,
+      data: entry.data ?? {},
+    };
+  }
+
+  if (entry.type === 'prescription') {
+    const medicationData = {
+      id: entry.id,
+      medication_name: entry.medication_name,
+      name: entry.medication_name,
+      dosage: entry.dosage,
+      dose: entry.dosage,
+      route: entry.route,
+      route_display: entry.route_display,
+      frequency: entry.frequency,
+      frequency_display: entry.frequency_display,
+      duration_days: entry.duration_days,
+      start_date: entry.start_date,
+      end_date: entry.end_date,
+      instructions: entry.instructions,
+      reason: entry.reason,
+      status: entry.status,
+      status_display: entry.status_display,
+      discontinue_reason: entry.discontinue_reason,
+    };
+
+    return {
+      ...baseEntry,
+      type: 'prescription',
+      entry_type: 'prescription',
+      content: [
+        entry.route_display,
+        entry.frequency_display,
+        entry.duration_days ? `for ${entry.duration_days} days` : null,
+      ].filter(Boolean).join(' - '),
+      data: medicationData,
+    };
+  }
+
+  if (entry.type === 'vitals') {
+    return {
+      ...baseEntry,
+      type: 'vitals',
+      entry_type: 'vitals',
+      data: {
+        temperature: entry.temperature,
+        heart_rate: entry.heart_rate,
+        blood_pressure: entry.blood_pressure,
+        blood_pressure_systolic: entry.blood_pressure_systolic,
+        blood_pressure_diastolic: entry.blood_pressure_diastolic,
+        respiratory_rate: entry.respiratory_rate,
+        oxygen_saturation: entry.oxygen_saturation,
+        pain_level: entry.pain_level,
+        notes: entry.notes,
+      },
+    };
+  }
+
+  if (entry.type === 'lab') {
+    return {
+      ...baseEntry,
+      type: 'lab_result',
+      entry_type: 'lab_result',
+      data: {
+        order_id: entry.id,
+        order_number: entry.order_number,
+        status: entry.status,
+        priority: entry.priority,
+        priority_display: entry.priority_display,
+        clinical_notes: entry.clinical_notes,
+        ordered_at: entry.ordered_at,
+        completed_at: entry.completed_at,
+        tests_ordered: entry.tests_ordered ?? [],
+        results_summary: entry.results_summary ?? null,
+        results: entry.results ?? [],
+        tests: entry.tests ?? [],
+      },
+    };
+  }
+
+  if (entry.type === 'referral') {
+    return {
+      ...baseEntry,
+      type: 'referral',
+      entry_type: 'referral',
+      data: {
+        referral_number: entry.referral_number,
+        status: entry.status,
+        status_display: entry.status_display,
+        urgency: entry.urgency,
+        urgency_display: entry.urgency_display,
+        is_urgent: entry.is_urgent,
+        referring_department: entry.referring_department,
+        referred_to_specialty: entry.referred_to_specialty,
+        referred_to_department: entry.referred_to_department,
+        referred_to_provider: entry.referred_to_provider_name,
+        reason: entry.reason,
+        clinical_summary: entry.clinical_summary,
+        questions_for_specialist: entry.questions_for_specialist,
+        specialist_notes: entry.specialist_notes,
+        recommendations: entry.recommendations,
+      },
+    };
+  }
+
+  if (entry.type === 'chart') {
+    return {
+      ...baseEntry,
+      type: 'chart',
+      entry_type: 'chart',
+      data: {
+        assignment_id: entry.assignment_id,
+        template_name: entry.template_name || entry.title,
+        template_system_key: entry.template_system_key,
+        scope_type: entry.scope_type,
+        notes: entry.notes,
+      },
+    };
+  }
+
+  return baseEntry;
+}
+
+function normalizeTimelinePage(data) {
+  const page = data ?? {};
+  return {
+    ...page,
+    results: Array.isArray(page.results) ? page.results.map(normalizeTimelineEntry) : [],
+  };
+}
+
+/**
+ * Fetch patient timeline with pagination
+ * @param {string} patientId - Patient ID
+ * @param {Object} options - Query options (type, search, page_size, start_date, end_date, encounter_id)
+ * @returns {Promise} - Paginated timeline data
+ */
+export async function fetchTimelinePage(patientId, options = {}) {
+  const endpoint = buildTimelineEndpoint(patientId, options);
 
   // Use getWithPagination to get the full response including pagination info
-  return apiClient.getWithPagination(endpoint);
+  const data = await apiClient.getWithPagination(endpoint);
+  return normalizeTimelinePage(data);
 }
 
 /**
@@ -58,7 +208,7 @@ async function fetchTimeline(patientId, options = {}) {
  * @returns {Promise} - Timeline statistics
  */
 async function fetchTimelineStats(patientId) {
-  return apiClient.get(`/clinical-notes/timeline/${patientId}/stats/`);
+  return apiClient.get(`/clinical-notes/chronicle/${patientId}/stats/`);
 }
 
 /**
@@ -88,7 +238,7 @@ export function usePatientTimeline(patientId, options = {}) {
     // Use primitive values in query key to prevent unnecessary refetches
     // React Query does deep comparison but object identity changes can cause issues
     queryKey: timelineKeys.listParams(patientId, type, search, pageSize, startDate, endDate, encounterId),
-    queryFn: ({ pageParam = 1 }) => fetchTimeline(patientId, {
+    queryFn: ({ pageParam = 1 }) => fetchTimelinePage(patientId, {
       type,
       search,
       page: pageParam,
@@ -144,7 +294,7 @@ export function usePrefetchTimelinePage(patientId, options, currentPage) {
   const prefetchNextPage = () => {
     queryClient.prefetchQuery({
       queryKey: timelineKeys.filtered(patientId, { ...options, page: currentPage + 1 }),
-      queryFn: () => fetchTimeline(patientId, { ...options, page: currentPage + 1 }),
+      queryFn: () => fetchTimelinePage(patientId, { ...options, page: currentPage + 1 }),
     });
   };
 
@@ -158,15 +308,18 @@ export function usePrefetchTimelinePage(patientId, options, currentPage) {
 export function useInvalidateTimeline() {
   const queryClient = useQueryClient();
 
-  return (patientId) => {
-    if (patientId) {
-      // Invalidate timeline list queries for this patient
-      queryClient.invalidateQueries({ queryKey: timelineKeys.list(patientId) });
-      queryClient.invalidateQueries({ queryKey: timelineKeys.stats(patientId) });
-    } else {
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-    }
-  };
+  return (patientId) => invalidatePatientTimelineQueries(queryClient, patientId);
+}
+
+export function invalidatePatientTimelineQueries(queryClient, patientId) {
+  if (!patientId) {
+    return queryClient.invalidateQueries({ queryKey: timelineKeys.all });
+  }
+
+  return invalidateQueryKeys(queryClient, [
+    timelineKeys.list(patientId),
+    timelineKeys.stats(patientId),
+  ]);
 }
 
 /**
@@ -206,7 +359,7 @@ export function usePatientTimelineSimple(patientId, options = {}) {
 
   return useQuery({
     queryKey: timelineKeys.filtered(patientId, { type, search, pageSize, page, simple: true }),
-    queryFn: () => fetchTimeline(patientId, {
+    queryFn: () => fetchTimelinePage(patientId, {
       type,
       search,
       page,

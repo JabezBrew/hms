@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { BODY_MAP_REGIONS, BODY_MAP_SIDES, BODY_MAP_SURFACES, getBodyMapRegionLabel } from "./bodyMapUtils";
 
 /**
  * Main field renderer component
@@ -150,6 +151,16 @@ const ChartFieldRenderer = ({
       case 'boolean':
         return (
           <BooleanField
+            field={field}
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+          />
+        );
+
+      case 'body_map':
+        return (
+          <BodyMapField
             field={field}
             value={value}
             onChange={onChange}
@@ -500,6 +511,108 @@ const BooleanField = ({ field, value, onChange, disabled }) => {
       <span className="font-mono text-sm text-muted-foreground">
         {value === true ? 'Yes' : value === false ? 'No' : 'Not set'}
       </span>
+    </div>
+  );
+};
+
+const BodyMapField = ({ field, value, onChange, disabled }) => {
+  const nextValue = value && typeof value === 'object' ? value : {};
+  const mode = field.config?.mode || 'pain';
+
+  const updateValue = (patch) => {
+    onChange({
+      ...nextValue,
+      ...patch,
+    });
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Surface
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {BODY_MAP_SURFACES.map((surface) => (
+              <button
+                key={surface}
+                type="button"
+                disabled={disabled}
+                onClick={() => updateValue({ surface })}
+                className={cn(
+                  "rounded-lg border px-3 py-2 font-mono text-xs capitalize transition-colors",
+                  nextValue.surface === surface ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {surface}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Side
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {BODY_MAP_SIDES.map((side) => (
+              <button
+                key={side}
+                type="button"
+                disabled={disabled}
+                onClick={() => updateValue({ side })}
+                className={cn(
+                  "rounded-lg border px-3 py-2 font-mono text-xs capitalize transition-colors",
+                  nextValue.side === side ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {side}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          {mode === 'wound' ? 'Wound Region' : 'Pain Region'}
+        </Label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {BODY_MAP_REGIONS.map((region) => (
+            <button
+              key={region.value}
+              type="button"
+              disabled={disabled}
+              onClick={() => updateValue({ region: region.value })}
+              className={cn(
+                "rounded-lg border px-3 py-2 text-left font-mono text-xs transition-colors",
+                nextValue.region === region.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {region.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Marker Label
+        </Label>
+        <Input
+          value={nextValue.markerLabel ?? ''}
+          onChange={(event) => updateValue({ markerLabel: event.target.value })}
+          disabled={disabled}
+          className="font-mono"
+          placeholder={mode === 'wound' ? 'e.g. Sacral pressure injury' : 'e.g. Radiating ache'}
+        />
+      </div>
+
+      {nextValue.region && (
+        <p className="font-mono text-xs text-muted-foreground">
+          Selected: {getBodyMapRegionLabel(nextValue.region)}
+        </p>
+      )}
     </div>
   );
 };

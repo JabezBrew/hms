@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.utils import timezone
@@ -151,18 +153,144 @@ def _ensure_webauthn_available():
         raise RuntimeError("webauthn is required for WebAuthn support.")
 
 
-def _allowed_origins():
-    return getattr(settings, 'WEBAUTHN_ALLOWED_ORIGINS', [])
+def _normalize_origin(origin):
+    if not origin or not isinstance(origin, str):
+        return None
+    try:
+        parsed = urlparse(origin.strip())
+    except Exception:
+        return None
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
+        return None
+
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname.lower()
+    port = parsed.port
+    default_port = (scheme == 'http' and port == 80) or (scheme == 'https' and port == 443)
+    netloc = host if port is None or default_port else f'{host}:{port}'
+    return f'{scheme}://{netloc}'
 
 
-def _verify_with_origins(verify_func, expected_challenge, expected_rp_id, **kwargs):
+def _origin_host(origin):
+    normalized = _normalize_origin(origin)
+    if not normalized:
+        return ''
+    parsed = urlparse(normalized)
+    return parsed.hostname or ''
+
+
+def _dedupe(items):
+    seen = set()
+    ordered = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def _configured_origins():
+    candidates = []
+    candidates.extend(getattr(settings, 'WEBAUTHN_ALLOWED_ORIGINS', []) or [])
+    candidates.extend(getattr(settings, 'CORS_ALLOWED_ORIGINS', []) or [])
+
+    frontend_url = getattr(settings, 'FRONTEND_URL', '')
+    if frontend_url:
+        candidates.append(frontend_url)
+
+    normalized = []
+    for origin in candidates:
+        value = _normalize_origin(origin)
+        if value:
+            normalized.append(value)
+    return _dedupe(normalized)
+
+
+def _configured_origin_patterns():
+    candidates = []
+    candidates.extend(getattr(settings, 'WEBAUTHN_ALLOWED_ORIGIN_REGEXES', []) or [])
+    candidates.extend(getattr(settings, 'CORS_ALLOWED_ORIGIN_REGEXES', []) or [])
+
+    compiled = []
+    for pattern in _dedupe(candidates):
+        value = str(pattern or '').strip()
+        if not value:
+            continue
+        try:
+            compiled.append(re.compile(value))
+        except re.error:
+            continue
+    return compiled
+
+
+def _origin_matches_patterns(origin, compiled_patterns):
+    if not origin:
+        return False
+    return any(pattern.fullmatch(origin) for pattern in compiled_patterns)
+
+
+def _is_rp_id_compatible(rp_id, origin):
+    host = _origin_host(origin).lower()
+    value = str(rp_id or '').strip().lower().strip('.')
+    if not host or not value:
+        return False
+    return host == value or host.endswith(f'.{value}')
+
+
+def _rp_id_for_origin(origin):
+    configured = str(getattr(settings, 'WEBAUTHN_RP_ID', '') or '').strip().lower()
+    if configured and _is_rp_id_compatible(configured, origin):
+        return configured
+
+    host = _origin_host(origin)
+    if host:
+        return host
+
+    if configured:
+        return configured
+    return 'localhost'
+
+
+def _webauthn_context(request):
+    request_origin = _normalize_origin(request.headers.get('Origin'))
+    configured_origins = _configured_origins()
+    configured_origin_patterns = _configured_origin_patterns()
+
+    if request_origin and (configured_origins or configured_origin_patterns):
+        origin_allowed = request_origin in configured_origins
+        if not origin_allowed:
+            origin_allowed = _origin_matches_patterns(request_origin, configured_origin_patterns)
+        if not origin_allowed:
+            raise RuntimeError("WebAuthn origin is not allowed.")
+
+    if request_origin and not configured_origins:
+        configured_origins = [request_origin]
+
+    if not configured_origins and not configured_origin_patterns:
+        raise RuntimeError("No allowed WebAuthn origins configured.")
+
+    if not request_origin and not configured_origins:
+        raise RuntimeError("WebAuthn origin header is required.")
+
+    primary_origin = request_origin or configured_origins[0]
+    ordered_origins = _dedupe([primary_origin, *configured_origins])
+    return {
+        'primary_origin': primary_origin,
+        'origins': ordered_origins,
+        'rp_id': _rp_id_for_origin(primary_origin),
+    }
+
+
+def _verify_with_origins(verify_func, request, expected_challenge, **kwargs):
+    context = _webauthn_context(request)
     last_error = None
-    for origin in _allowed_origins():
+    for origin in context['origins']:
         try:
             return verify_func(
                 expected_challenge=expected_challenge,
                 expected_origin=origin,
-                expected_rp_id=expected_rp_id,
+                expected_rp_id=_rp_id_for_origin(origin),
                 **kwargs
             )
         except Exception as exc:
@@ -237,6 +365,11 @@ class MFATOTPStartView(APIView):
             return Response({'detail': 'MFA session required.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         profile = get_or_create_mfa_profile(user)
+        if profile.totp_confirmed_at and not session:
+            return Response(
+                {'detail': 'TOTP is already enrolled. Use an MFA reset flow to replace it.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         secret = generate_totp_secret()
         profile.totp_secret_encrypted = encrypt_secret(secret)
         profile.totp_confirmed_at = None
@@ -297,6 +430,13 @@ class MFARecoveryGenerateView(APIView):
 
     def post(self, request):
         user = request.user
+        current_password = request.data.get('current_password')
+        if user.has_usable_password() and not user.check_password(str(current_password or '')):
+            _log_mfa_failure(request, user=user, details="Current password required for recovery code generation.")
+            return Response(
+                {'detail': 'Current password is required.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         profile = get_or_create_mfa_profile(user)
 
         raw_codes = generate_recovery_codes()
@@ -371,7 +511,11 @@ class MFAWebAuthnRegistrationOptionsView(APIView):
             _log_mfa_failure(request, details="WebAuthn unavailable.")
             return Response({'detail': str(exc)}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
-
+        try:
+            webauthn_context = _webauthn_context(request)
+        except RuntimeError as exc:
+            _log_mfa_failure(request, details=str(exc))
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         user, session = _get_user_and_session(request)
         session_token = None
@@ -387,7 +531,7 @@ class MFAWebAuthnRegistrationOptionsView(APIView):
                 purpose='enrollment',
             )
 
-        rp_id = settings.WEBAUTHN_RP_ID
+        rp_id = webauthn_context['rp_id']
         rp_name = settings.WEBAUTHN_RP_NAME
         timeout_ms = settings.WEBAUTHN_TIMEOUT_MS
 
@@ -455,8 +599,8 @@ class MFAWebAuthnRegistrationVerifyView(APIView):
         try:
             verification = _verify_with_origins(
                 verify_registration_response,
+                request=request,
                 expected_challenge=_base64url_to_bytes(session.webauthn_challenge),
-                expected_rp_id=settings.WEBAUTHN_RP_ID,
                 credential=credential,
                 require_user_verification=True,
             )
@@ -506,6 +650,11 @@ class MFAWebAuthnAuthenticationOptionsView(APIView):
             _ensure_webauthn_available()
         except RuntimeError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_501_NOT_IMPLEMENTED)
+        try:
+            webauthn_context = _webauthn_context(request)
+        except RuntimeError as exc:
+            _log_mfa_failure(request, details=str(exc))
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         session = _get_mfa_session(request)
         if not session:
             _log_mfa_failure(request, details="MFA session required.")
@@ -526,7 +675,7 @@ class MFAWebAuthnAuthenticationOptionsView(APIView):
             for cred in credentials
         ]
         options = generate_authentication_options(
-            rp_id=settings.WEBAUTHN_RP_ID,
+            rp_id=webauthn_context['rp_id'],
             timeout=settings.WEBAUTHN_TIMEOUT_MS,
             allow_credentials=allow,
             user_verification=UserVerificationRequirement.REQUIRED,
@@ -588,8 +737,8 @@ class MFAWebAuthnAuthenticationVerifyView(APIView):
         try:
             verification = _verify_with_origins(
                 verify_authentication_response,
+                request=request,
                 expected_challenge=_base64url_to_bytes(session.webauthn_challenge),
-                expected_rp_id=settings.WEBAUTHN_RP_ID,
                 credential=credential,
                 credential_public_key=_base64url_to_bytes(stored.public_key),
                 credential_current_sign_count=stored.sign_count,

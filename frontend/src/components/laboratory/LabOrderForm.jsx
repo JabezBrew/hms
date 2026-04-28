@@ -37,6 +37,7 @@ import {
   useCreateLabOrder,
   useSubmitLabOrder,
 } from "@/features/laboratory/hooks";
+import { emitOnboardingEvent } from "@/features/onboarding";
 import { toast } from "sonner";
 
 /**
@@ -86,8 +87,14 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
   // Load all tests and panels when form opens (small catalog, ~200 items)
   // Uses lazy loading - only fetches when slide-over is open
-  const { data: testsData, isLoading: testsLoading } = useLabTests({ enabled: open });
-  const { data: panelsData, isLoading: panelsLoading } = useLabPanels({ enabled: open });
+  const { data: testsData, isLoading: testsLoading } = useLabTests({
+    enabled: open,
+    page_size: 500,
+  });
+  const { data: panelsData, isLoading: panelsLoading } = useLabPanels({
+    enabled: open,
+    page_size: 500,
+  });
   const createOrder = useCreateLabOrder();
   const submitOrder = useSubmitLabOrder();
 
@@ -248,6 +255,12 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
       // Submit order immediately
       await submitOrder.mutateAsync(createdOrder.id);
+
+      emitOnboardingEvent('labs.order_created', {
+        success: true,
+        order_id: createdOrder.id,
+        patient_id: patientId || null,
+      });
 
       toast.success("Lab order created and submitted", {
         description: `Order #${createdOrder.order_number} has been submitted`,

@@ -2,6 +2,21 @@ import { useCallback, useRef } from 'react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 
+function getScrollMargin(element) {
+  if (!element) return 0;
+
+  const rect = element.getBoundingClientRect?.();
+  if (!rect) {
+    return element.offsetTop ?? 0;
+  }
+
+  if (typeof window === 'undefined') {
+    return rect.top;
+  }
+
+  return rect.top + window.scrollY;
+}
+
 export function VirtualizedList({
   items = [],
   renderItem,
@@ -48,11 +63,12 @@ export function VirtualizedList({
 
     return () => observer.unobserve(element);
   }, [height]);
+  const scrollMargin = useWindow ? getScrollMargin(parentRef.current) : 0;
   const windowVirtualizer = useWindowVirtualizer({
     count: shouldVirtualize ? items.length : 0,
     estimateSize: () => estimateSize + gap,
     overscan,
-    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    scrollMargin,
   });
   const elementVirtualizer = useVirtualizer({
     count: shouldVirtualize ? items.length : 0,
@@ -65,6 +81,7 @@ export function VirtualizedList({
   const virtualizer = useWindow ? windowVirtualizer : elementVirtualizer;
 
   const virtualItems = virtualizer.getVirtualItems();
+  const virtualScrollMargin = useWindow ? (virtualizer.options?.scrollMargin ?? scrollMargin) : 0;
 
   if (!hasItems) {
     return null;
@@ -106,7 +123,7 @@ export function VirtualizedList({
                 top: 0,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
+                transform: `translateY(${virtualRow.start - virtualScrollMargin}px)`,
                 paddingBottom: gap,
               }}
             >

@@ -1,26 +1,21 @@
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Filter from 'lucide-react/dist/esm/icons/filter.js';
-import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
-import { useState, useMemo, useEffect, useCallback } from "react";
+import ArrowDown from 'lucide-react/dist/esm/icons/arrow-down.js';
+import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
+import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   usePatientSearch,
-  useRecentPatients,
-  useContextPatients,
 } from "@/features/patients/hooks/usePatientQueries";
-import {
-  useAddToMyPatients,
-} from "@/features/patients/hooks/useMyPatientsQueries";
-import { myPatientsKeys } from "@/features/patients/hooks/useMyPatientsQueries";
-import { patientsApi } from "@/features/patients/api";
 import { useAuth } from "@/lib/auth";
 import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,17 +26,25 @@ import { Switch } from "@/components/ui/switch";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Combobox } from "@/components/ui/combobox";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PatientChronicleCard } from "@/components/chronicle";
-import RecentPatientsSection from "@/components/patients/RecentPatientsSection";
-import ContextPatientsSection from "@/components/patients/ContextPatientsSection";
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -84,6 +87,35 @@ const ENCOUNTER_TYPE_OPTIONS = [
   { value: 'emergency', label: 'Emergency' },
 ];
 
+const DEFAULT_SEARCH_ORDERING = '-created_at';
+const SEARCH_TABLE_PAGE_SIZE = 25;
+const DEFAULT_REGISTRY_SCOPE = 'active';
+const HOVER_PREFETCH_INTENT_MS = 150;
+
+const REGISTRY_SCOPE_TABS = [
+  { value: 'active', label: 'Active' },
+  { value: 'discharged', label: 'Discharged' },
+  { value: 'deceased', label: 'Deceased' },
+  { value: 'all', label: 'All Registered' },
+];
+
+const REGISTRY_SCOPE_LABELS = {
+  active: 'Active patients',
+  discharged: 'Discharged patients',
+  deceased: 'Deceased patients',
+  all: 'All registered patients',
+};
+
+const TABLE_COLUMNS = [
+  { key: 'created_at', label: 'Registered' },
+  { key: 'medical_record_number', label: 'MRN' },
+  { key: 'name', label: 'Name' },
+  { key: 'date_of_birth', label: 'DOB / Age' },
+  { key: 'gender', label: 'Sex' },
+  { key: 'patient_location', label: 'Patient Location' },
+  { key: 'registry_status', label: 'Status' },
+];
+
 const createEmptyFilters = () => ({
   admissionStart: null,
   admissionEnd: null,
@@ -112,11 +144,12 @@ const countActiveFilters = (filters) => {
   return count;
 };
 
-const buildSearchParams = (query, filters) => {
+const buildSearchParams = (query, filters, registryScope) => {
   const params = {};
   if (query && query.trim().length >= 2) {
     params.query = query.trim();
   }
+  params.registry_scope = registryScope;
 
   if (filters.admissionStart) {
     params.admission_start = format(filters.admissionStart, 'yyyy-MM-dd');
@@ -155,22 +188,90 @@ const buildSearchParams = (query, filters) => {
   return params;
 };
 
+const getPatientId = (patient) => {
+  return patient?.id || patient?.patient_profile || patient?.local_data?.id || null;
+};
+
+const getPatientAge = (dateOfBirth) => {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return null;
+
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const monthDiff = now.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
+};
+
+const formatGender = (gender) => {
+  if (!gender) return '—';
+  const code = String(gender).toLowerCase();
+  if (code === 'm' || code === 'male') return 'Male';
+  if (code === 'f' || code === 'female') return 'Female';
+  if (code === 'o' || code === 'other') return 'Other';
+  return String(gender);
+};
+
+const formatDateLabel = (value, template = 'MMM d, yyyy') => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return format(date, template);
+};
+
+const formatAdmissionStatus = (status) => {
+  if (!status) return '—';
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+const getPatientLocationDisplay = (patient) => {
+  const activeClinicNames = Array.isArray(patient?.active_clinic_names)
+    ? patient.active_clinic_names.filter(Boolean)
+    : [];
+
+  if (activeClinicNames.length > 1) {
+    return {
+      label: `${activeClinicNames[0]} +${activeClinicNames.length - 1}`,
+      tooltip: activeClinicNames.join(', '),
+    };
+  }
+
+  if (activeClinicNames.length === 1) {
+    return {
+      label: activeClinicNames[0],
+      tooltip: null,
+    };
+  }
+
+  return {
+    label: patient?.patient_location || patient?.current_ward || '—',
+    tooltip: null,
+  };
+};
+
 /**
- * PatientChronicleListPage - Search-first patient registry
+ * PatientChronicleListPage - Table-first patient registry
  *
  * Features:
- * - Search-first approach (no "load all patients")
- * - Recent patients section (horizontal scroll)
- * - Context-specific patients (role-based)
+ * - Always-on sortable table with newest registrations first
+ * - Search and filters for narrowing results
  * - Route-based tab navigation to My Patients
- * - Background prefetch of My Patients data
+ * - Background route/data prefetching for fast navigation
  */
 const PatientChronicleListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState("grid");
+  const [searchOrdering, setSearchOrdering] = useState(DEFAULT_SEARCH_ORDERING);
+  const [searchPage, setSearchPage] = useState(1);
+  const [registryScope, setRegistryScope] = useState(DEFAULT_REGISTRY_SCOPE);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
   const [appliedFilters, setAppliedFilters] = useState(createEmptyFilters);
@@ -184,37 +285,38 @@ const PatientChronicleListPage = () => {
 
   const prefetchPatientById = useCallback((patientId) => {
     if (!patientId) return;
-    prefetchPatientChronicleData(queryClient, patientId);
+    prefetchPatientChronicleData(queryClient, patientId, { mode: 'hover' });
   }, [queryClient]);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
+  const effectiveRegistryScope = effectiveSearchQuery ? 'all' : registryScope;
   const activeFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters]);
   const hasActiveFilters = activeFilterCount > 0;
-  const isSearchEnabled = debouncedSearchQuery.length >= 2 || hasActiveFilters;
+  const hasSearchSignal = debouncedSearchQuery.length >= 2 || hasActiveFilters;
+  const baseSearchParams = useMemo(
+    () => buildSearchParams(debouncedSearchQuery, appliedFilters, effectiveRegistryScope),
+    [debouncedSearchQuery, appliedFilters, effectiveRegistryScope]
+  );
   const searchParams = useMemo(
-    () => buildSearchParams(debouncedSearchQuery, appliedFilters),
-    [debouncedSearchQuery, appliedFilters]
+    () => ({
+      ...baseSearchParams,
+      ordering: searchOrdering,
+      page: searchPage,
+      page_size: SEARCH_TABLE_PAGE_SIZE,
+    }),
+    [baseSearchParams, searchOrdering, searchPage]
   );
 
   const {
     data: searchResults,
     isLoading: isSearchLoading,
     refetch: refetchSearch,
-  } = usePatientSearch(searchParams, { enabled: isSearchEnabled });
+  } = usePatientSearch(searchParams, { enabled: true });
 
-  // Recent patients (limited to 10)
-  const {
-    data: recentPatientsData,
-    isLoading: isRecentLoading,
-    refetch: refetchRecent,
-  } = useRecentPatients(10);
-
-  // Context patients (role-specific)
-  const {
-    data: contextPatientsData,
-    isLoading: isContextLoading,
-    refetch: refetchContext,
-  } = useContextPatients();
+  useEffect(() => {
+    setSearchPage(1);
+  }, [debouncedSearchQuery, appliedFilters, registryScope]);
 
   const { data: departmentsData, isLoading: isDepartmentsLoading } = useClinicalUnits({
     unit_type_code: 'department',
@@ -229,20 +331,6 @@ const PatientChronicleListPage = () => {
     isLoading: isPractitionersLoading,
     setSearchTerm: setPractitionerSearch,
   } = useSearchPractitioners(false, { minLength: 2 });
-
-  // My Patients mutations
-  const addToMyPatients = useAddToMyPatients();
-
-  // Prefetch My Patients data in background when page loads
-  useEffect(() => {
-    if (isClinicalProvider) {
-      queryClient.prefetchQuery({
-        queryKey: myPatientsKeys.list(),
-        queryFn: () => patientsApi.getMyPatients?.() || Promise.resolve([]),
-        staleTime: 60 * 1000,
-      });
-    }
-  }, [isClinicalProvider, queryClient]);
 
   // Warm key route chunks after initial render.
   useEffect(() => {
@@ -264,21 +352,32 @@ const PatientChronicleListPage = () => {
     return () => window.clearTimeout(timeoutId);
   }, []);
 
-  const isSearching = isSearchEnabled;
   const hasSearchQuery = searchQuery.length > 0;
 
-  const searchPatients = useMemo(() => {
-    if (!isSearching) return [];
-    return normalizeApiResults(searchResults);
-  }, [searchResults, isSearching]);
+  const searchPatients = useMemo(() => normalizeApiResults(searchResults), [searchResults]);
 
-  const searchTotal = searchResults?.total ?? searchPatients.length;
+  const searchCurrentPage = searchResults?.page ?? searchPage;
+  const searchPageSize = searchResults?.page_size ?? SEARCH_TABLE_PAGE_SIZE;
+  const searchCountExact = searchResults?.count_exact !== false;
+  const searchHasNext = Boolean(searchResults?.next);
+  const searchHasPrevious = Boolean(searchResults?.previous) || searchCurrentPage > 1;
+  const searchTotal = searchCountExact
+    ? (searchResults?.total ?? searchResults?.count ?? searchPatients.length)
+    : ((searchCurrentPage - 1) * searchPageSize) + searchPatients.length + (searchHasNext ? 1 : 0);
+  const searchTotalPages = searchCountExact
+    ? (searchPageSize > 0
+      ? Math.max(1, Math.ceil(searchTotal / searchPageSize))
+      : 1)
+    : (searchHasNext ? searchCurrentPage + 1 : searchCurrentPage);
 
-  const effectiveSearchQuery = debouncedSearchQuery.length >= 2 ? debouncedSearchQuery : '';
-  const searchSummary = isSearching
+  const searchSummary = hasSearchSignal
     ? (effectiveSearchQuery
-      ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
-      : `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`)
+      ? (searchCountExact
+        ? `${searchTotal} result${searchTotal === 1 ? '' : 's'} for "${effectiveSearchQuery}"`
+        : `Showing ${searchPatients.length} result${searchPatients.length === 1 ? '' : 's'} for "${effectiveSearchQuery}"`)
+      : (searchCountExact
+        ? `${searchTotal} filtered result${searchTotal === 1 ? '' : 's'}`
+        : `Showing ${searchPatients.length} filtered result${searchPatients.length === 1 ? '' : 's'}`))
     : '';
 
   const departments = useMemo(() => normalizeApiResults(departmentsData), [departmentsData]);
@@ -318,70 +417,39 @@ const PatientChronicleListPage = () => {
     [practitionerResults]
   );
 
-  const recentPatients = useMemo(() => {
-    return normalizeApiResults(recentPatientsData);
-  }, [recentPatientsData]);
-  const contextPatients = useMemo(() => contextPatientsData?.patients || [], [contextPatientsData]);
-
-  useEffect(() => {
-    if (isSearching) return;
-
-    const candidateIds = [
-      ...recentPatients.slice(0, 2).map((entry) => {
-        const patient = entry?.patient_profile_details || entry;
-        return patient?.id || patient?.patient_profile || patient?.local_data?.id;
-      }),
-      ...contextPatients.slice(0, 2).map((patient) => patient?.id),
-    ].filter(Boolean);
-
-    if (candidateIds.length === 0) return;
-
-    const prefetch = () => {
-      candidateIds.forEach((patientId) => prefetchPatientById(patientId));
-    };
-
-    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-      const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
-      return () => window.cancelIdleCallback?.(idleId);
-    }
-
-    const timeoutId = window.setTimeout(prefetch, 300);
-    return () => window.clearTimeout(timeoutId);
-  }, [contextPatients, isSearching, prefetchPatientById, recentPatients]);
-
   // Event handlers
   const handleSearchChange = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
+    setSearchPage(1);
   };
 
   const handleClearSearch = () => {
     setSearchQuery("");
+    setSearchPage(1);
   };
 
   const handleRefresh = () => {
-    if (isSearching) {
-      refetchSearch();
-      return;
-    }
-    refetchRecent();
-    refetchContext();
+    refetchSearch();
   };
 
   const handleApplyFilters = () => {
     setAppliedFilters(draftFilters);
+    setSearchPage(1);
     setFiltersOpen(false);
   };
 
   const handleClearFilters = () => {
     setDraftFilters(createEmptyFilters());
     setAppliedFilters(createEmptyFilters());
+    setSearchPage(1);
   };
 
   const handleClearAll = () => {
     setSearchQuery("");
     setDraftFilters(createEmptyFilters());
     setAppliedFilters(createEmptyFilters());
+    setSearchPage(1);
   };
 
   const handleRemoveFilter = (key) => {
@@ -399,65 +467,49 @@ const PatientChronicleListPage = () => {
     };
     setAppliedFilters(cleared);
     setDraftFilters(cleared);
+    setSearchPage(1);
   };
 
   const handleAddPatient = () => {
     navigate('/patients/create');
   };
 
-  const handleStartRound = (patient) => {
-    const patientId = patient?.id || patient?.patient_profile;
+  const handleOpenPatient = (patient) => {
+    const patientId = getPatientId(patient);
     if (patientId) {
-      navigate(`/patients/${patientId}?wardRound=true`);
+      prefetchPatientChronicleData(queryClient, patientId, { mode: 'navigation' });
+      navigate(`/patients/${patientId}`);
     }
   };
 
-  const handleStartConsultation = (patient) => {
-    const patientId = patient?.id || patient?.patient_profile;
-    if (patientId) {
-      navigate(`/patients/${patientId}?consultation=true`);
-    }
+  const handleSearchOrderingChange = (field) => {
+    setSearchOrdering((current) => {
+      const currentField = current.startsWith('-') ? current.slice(1) : current;
+      if (currentField !== field) {
+        return field;
+      }
+      return current.startsWith('-') ? field : `-${field}`;
+    });
+    setSearchPage(1);
   };
 
-  const handleAddToMyPatients = (patientId) => {
-    addToMyPatients.mutate({ patientId });
+  const handleSearchPageChange = (nextPage) => {
+    if (!Number.isFinite(nextPage)) return;
+    const maxPage = searchCountExact
+      ? searchTotalPages
+      : (searchHasNext ? searchCurrentPage + 1 : searchCurrentPage);
+    const boundedPage = Math.min(Math.max(nextPage, 1), Math.max(maxPage, 1));
+    setSearchPage(boundedPage);
   };
 
-  // Loading state
-  const isLoading = isSearching ? isSearchLoading : (isRecentLoading || isContextLoading);
+  const handleRegistryScopeChange = (nextScope) => {
+    if (!nextScope || nextScope === registryScope) return;
+    setRegistryScope(nextScope);
+    setSearchPage(1);
+  };
 
   const listControls = (
     <div className="flex items-center justify-end gap-2">
-      {/* View Mode Toggle */}
-      <div role="group" aria-label="View mode" className="flex bg-muted rounded-lg p-0.5">
-        <button
-          onClick={() => setViewMode('grid')}
-          aria-label="Grid view"
-          aria-pressed={viewMode === 'grid'}
-          className={cn(
-            "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            viewMode === 'grid'
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <LayoutGrid className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <button
-          onClick={() => setViewMode('list')}
-          aria-label="List view"
-          aria-pressed={viewMode === 'list'}
-          className={cn(
-            "p-1.5 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            viewMode === 'list'
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <List className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-
       {/* Refresh */}
       <Button
         variant="ghost"
@@ -478,16 +530,16 @@ const PatientChronicleListPage = () => {
     </Button>
   ) : null;
 
-  const listHeaderLabel = isSearching
-    ? (effectiveSearchQuery ? 'Search results' : 'Filtered results')
-    : 'Recent';
+  const listHeaderLabel = effectiveSearchQuery
+    ? 'Search results'
+    : (REGISTRY_SCOPE_LABELS[registryScope] || REGISTRY_SCOPE_LABELS[DEFAULT_REGISTRY_SCOPE]);
 
   return (
     <PageShell>
       {pageMeta}
       <PageHeader
         title="Patient Registry"
-        description="Search for patients or browse your recent and assigned patients"
+        description="Search and browse all patients in a sortable registry table"
         size="md"
         actions={headerActions}
         contentClassName="sm:items-start"
@@ -527,6 +579,26 @@ const PatientChronicleListPage = () => {
           </div>
         )}
 
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          {REGISTRY_SCOPE_TABS.map((scopeTab) => (
+            <Button
+              key={scopeTab.value}
+              type="button"
+              variant={registryScope === scopeTab.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => handleRegistryScopeChange(scopeTab.value)}
+              className={cn(
+                "font-mono text-xs",
+                registryScope === scopeTab.value
+                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {scopeTab.label}
+            </Button>
+          ))}
+        </div>
+
         {/* Search Bar */}
         <div className="flex flex-col gap-3 mt-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -535,7 +607,7 @@ const PatientChronicleListPage = () => {
               <Label htmlFor="patient-search" className="sr-only">Search by name, MRN, or NHIS ID</Label>
               <Input
                 id="patient-search"
-                placeholder="Search by name, MRN, or NHIS ID (min 2 characters)..."
+                placeholder="Search by name, MRN, or NHIS ID..."
                 value={searchQuery}
                 onChange={handleSearchChange}
                 className="pl-10 pr-10 font-mono text-sm bg-background"
@@ -845,7 +917,7 @@ const PatientChronicleListPage = () => {
             </div>
           )}
 
-          {isSearching && (
+          {hasSearchSignal && (
             <div className="text-xs text-muted-foreground">
               <span>{searchSummary}</span>
             </div>
@@ -857,59 +929,30 @@ const PatientChronicleListPage = () => {
       <main className="p-4 sm:p-6 space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-muted-foreground">
-            {isSearching ? (
-              <Search className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Clock className="h-4 w-4" aria-hidden="true" />
-            )}
+            <Search className="h-4 w-4" aria-hidden="true" />
             <h2 className="font-heading text-sm font-medium text-foreground">
               {listHeaderLabel}
             </h2>
-            {isSearching ? (
-              <span className="text-xs">({searchTotal})</span>
-            ) : (
-              !isRecentLoading && <span className="text-xs">({recentPatients.length})</span>
-            )}
+            <span className="text-xs">({searchTotal})</span>
           </div>
           {listControls}
         </div>
-
-        {isSearching ? (
-          // Show search results
-          <SearchResultsSection
-            patients={searchPatients}
-            isLoading={isSearchLoading}
-            searchQuery={effectiveSearchQuery}
-            hasActiveFilters={hasActiveFilters}
-            viewMode={viewMode}
-            onStartRound={handleStartRound}
-            onStartConsultation={handleStartConsultation}
-            onAddToMyPatients={handleAddToMyPatients}
-            showMyPatientsActions={isClinicalProvider}
-            onPrefetchPatient={prefetchPatientById}
-          />
-        ) : (
-          // Show recent + context patients
-          <>
-            <RecentPatientsSection
-              patients={recentPatients}
-              isLoading={isRecentLoading}
-              showHeader={false}
-              onPrefetchPatient={prefetchPatientById}
-            />
-
-            <ContextPatientsSection
-              data={contextPatientsData}
-              isLoading={isContextLoading}
-              onStartRound={handleStartRound}
-              onStartConsultation={handleStartConsultation}
-              onAddToMyPatients={handleAddToMyPatients}
-              showMyPatientsActions={isClinicalProvider}
-              onPrefetchPatient={prefetchPatientById}
-            />
-
-          </>
-        )}
+        <SearchResultsSection
+          patients={searchPatients}
+          isLoading={isSearchLoading}
+          searchQuery={effectiveSearchQuery}
+          hasActiveFilters={hasActiveFilters}
+          ordering={searchOrdering}
+          onOrderingChange={handleSearchOrderingChange}
+          currentPage={searchCurrentPage}
+          totalPages={searchTotalPages}
+          totalResults={searchTotal}
+          hasNextPage={searchHasNext}
+          hasPreviousPage={searchHasPrevious}
+          onPageChange={handleSearchPageChange}
+          onOpenPatient={handleOpenPatient}
+          onPrefetchPatient={prefetchPatientById}
+        />
       </main>
     </PageShell>
   );
@@ -937,49 +980,17 @@ const SearchResultsSection = ({
   isLoading,
   searchQuery,
   hasActiveFilters,
-  viewMode,
-  onStartRound,
-  onStartConsultation,
-  onAddToMyPatients,
-  showMyPatientsActions,
+  ordering,
+  onOrderingChange,
+  currentPage,
+  totalPages,
+  totalResults,
+  hasNextPage,
+  hasPreviousPage,
+  onPageChange,
+  onOpenPatient,
   onPrefetchPatient,
 }) => {
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="bg-card/50 border border-border rounded-2xl p-6 animate-pulse">
-            <div className="h-6 bg-muted rounded w-2/3 mb-3" />
-            <div className="h-4 bg-muted rounded w-1/2 mb-4" />
-            <div className="h-20 bg-muted rounded" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (patients.length === 0) {
-    const emptyDescription = searchQuery
-      ? `No patients match "${searchQuery}". Try a different search term.`
-      : hasActiveFilters
-        ? 'No patients match these filters. Try adjusting your criteria.'
-        : 'No patients found.';
-
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Search className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="font-display text-xl text-foreground mb-2">
-          No patients found
-        </h3>
-        <p className="text-muted-foreground text-sm max-w-md">
-          {emptyDescription}
-        </p>
-      </div>
-    );
-  }
-
   // Deduplicate patients by ID
   const uniquePatients = patients.reduce((acc, patientData, index) => {
     const patient = patientData?.local_data || patientData;
@@ -994,48 +1005,253 @@ const SearchResultsSection = ({
     return acc;
   }, { seen: new Set(), list: [] }).list;
 
-  if (viewMode === 'grid') {
-    return (
-      <VirtualizedGrid
-        items={uniquePatients}
-        minItemWidth={320}
-        rowHeight={320}
-        gap={24}
-        getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
-        renderItem={({ patient, originalIndex }, index) => (
-          <PatientChronicleCard
-            patient={patient}
-            index={index}
-            onStartRound={onStartRound}
-            onStartConsultation={onStartConsultation}
-            onAddToMyPatients={onAddToMyPatients}
-            showMyPatientsActions={showMyPatientsActions}
-            onPrefetchPatient={onPrefetchPatient}
-          />
-        )}
-      />
-    );
-  }
+  return (
+    <SearchResultsTable
+      patients={uniquePatients}
+      ordering={ordering}
+      onOrderingChange={onOrderingChange}
+      currentPage={currentPage}
+      totalPages={totalPages}
+      totalResults={totalResults}
+      hasNextPage={hasNextPage}
+      hasPreviousPage={hasPreviousPage}
+      onPageChange={onPageChange}
+      onOpenPatient={onOpenPatient}
+      onPrefetchPatient={onPrefetchPatient}
+      isLoading={isLoading}
+      searchQuery={searchQuery}
+      hasActiveFilters={hasActiveFilters}
+    />
+  );
+};
+
+const SortableTableHead = ({ column, ordering, onOrderingChange }) => {
+  const isDescending = ordering === `-${column.key}`;
+  const isAscending = ordering === column.key;
+  const isActive = isDescending || isAscending;
 
   return (
-    <VirtualizedList
-      items={uniquePatients}
-      estimateSize={180}
-      gap={16}
-      getItemKey={(item, index) => `search-${item.patient?.id || item.originalIndex}-${index}`}
-      renderItem={({ patient }, index) => (
-        <PatientChronicleCard
-          patient={patient}
-          index={index}
-          onStartRound={onStartRound}
-          onStartConsultation={onStartConsultation}
-          onAddToMyPatients={onAddToMyPatients}
-          showMyPatientsActions={showMyPatientsActions}
-          onPrefetchPatient={onPrefetchPatient}
-          className="max-w-none"
-        />
-      )}
-    />
+    <TableHead className="h-11">
+      <button
+        type="button"
+        onClick={() => onOrderingChange(column.key)}
+        className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+        aria-label={`Sort by ${column.label}`}
+      >
+        <span>{column.label}</span>
+        {isActive ? (
+          isDescending ? (
+            <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden="true" />
+        )}
+      </button>
+    </TableHead>
+  );
+};
+
+const SearchResultsTable = ({
+  patients,
+  ordering,
+  onOrderingChange,
+  currentPage,
+  totalPages,
+  totalResults,
+  hasNextPage,
+  hasPreviousPage,
+  onPageChange,
+  onOpenPatient,
+  onPrefetchPatient,
+  isLoading,
+  searchQuery,
+  hasActiveFilters,
+}) => {
+  const hoverPrefetchTimersRef = useRef(new Map());
+
+  const scheduleHoverPrefetch = useCallback((patientId) => {
+    if (!patientId) return;
+    if (hoverPrefetchTimersRef.current.has(patientId)) return;
+
+    const timerId = window.setTimeout(() => {
+      hoverPrefetchTimersRef.current.delete(patientId);
+      onPrefetchPatient(patientId);
+    }, HOVER_PREFETCH_INTENT_MS);
+
+    hoverPrefetchTimersRef.current.set(patientId, timerId);
+  }, [onPrefetchPatient]);
+
+  const cancelHoverPrefetch = useCallback((patientId) => {
+    if (!patientId) return;
+
+    const timerId = hoverPrefetchTimersRef.current.get(patientId);
+    if (timerId) {
+      window.clearTimeout(timerId);
+      hoverPrefetchTimersRef.current.delete(patientId);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timers = hoverPrefetchTimersRef.current;
+    return () => {
+      for (const timerId of timers.values()) {
+        window.clearTimeout(timerId);
+      }
+      timers.clear();
+    };
+  }, []);
+
+  const emptyDescription = searchQuery
+    ? `No patients match "${searchQuery}". Try a different search term.`
+    : hasActiveFilters
+      ? 'No patients match these filters. Try adjusting your criteria.'
+      : 'No patients found.';
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-card overflow-x-auto">
+      <Table className="min-w-[920px]">
+        <TableHeader className="bg-muted/30">
+          <TableRow>
+            {TABLE_COLUMNS.map((column) => (
+              <SortableTableHead
+                key={column.key}
+                column={column}
+                ordering={ordering}
+                onOrderingChange={onOrderingChange}
+              />
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, index) => (
+              <TableRow key={`loading-row-${index}`}>
+                {TABLE_COLUMNS.map((column) => (
+                  <TableCell key={`loading-cell-${column.key}-${index}`}>
+                    <div className="h-3.5 w-full max-w-[120px] rounded bg-muted/70 animate-pulse" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : patients.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={TABLE_COLUMNS.length} className="py-12 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Search className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm text-muted-foreground">{emptyDescription}</p>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : patients.map(({ patient, originalIndex }, index) => {
+              const patientId = getPatientId(patient);
+              const rowKey = patientId ? `table-${patientId}` : `table-${originalIndex}-${index}`;
+              const age = getPatientAge(patient?.date_of_birth);
+              const dobLabel = formatDateLabel(patient?.date_of_birth);
+              const dobWithAge = age === null ? dobLabel : `${dobLabel} · ${age}y`;
+              const locationDisplay = getPatientLocationDisplay(patient);
+            return (
+              <TableRow
+                key={rowKey}
+                className="cursor-pointer"
+                data-onboarding={index === 0 ? 'patient-list-row' : undefined}
+                onMouseEnter={() => scheduleHoverPrefetch(patientId)}
+                onMouseLeave={() => cancelHoverPrefetch(patientId)}
+                onFocus={() => scheduleHoverPrefetch(patientId)}
+                onBlur={() => cancelHoverPrefetch(patientId)}
+                onClick={() => onOpenPatient(patient)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpenPatient(patient);
+                  }
+                }}
+                tabIndex={0}
+                aria-label={`Open ${patient?.name || 'patient'} chart`}
+              >
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {formatDateLabel(patient?.created_at)}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {patient?.medical_record_number || '—'}
+                </TableCell>
+                <TableCell className="font-medium text-sm">
+                  {patient?.name || 'Unknown Patient'}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {dobWithAge}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {formatGender(patient?.gender)}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {!locationDisplay.tooltip ? (
+                    locationDisplay.label
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="cursor-help underline decoration-dotted underline-offset-2"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                          }}
+                        >
+                          {locationDisplay.label}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[320px] font-mono text-[10px]">
+                        {locationDisplay.tooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {formatAdmissionStatus(patient?.registry_status || patient?.admission_status)}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            );
+            })
+          }
+        </TableBody>
+      </Table>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
+        <p className="text-xs font-mono text-muted-foreground">
+          {totalResults} result{totalResults === 1 ? '' : 's'} · Page {currentPage} of {totalPages}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={!hasPreviousPage}
+            className="font-mono text-xs"
+          >
+            <ChevronLeft className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Previous
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={!hasNextPage}
+            className="font-mono text-xs"
+          >
+            Next
+            <ChevronRight className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 };
 

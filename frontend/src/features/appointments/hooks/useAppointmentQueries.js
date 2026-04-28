@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { appointmentsApi } from '@/features/appointments/api';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -10,9 +11,6 @@ export const appointmentKeys = {
   types: () => [...appointmentKeys.all, 'types'],
   type: (id) => [...appointmentKeys.types(), id],
   availableSlots: (params) => [...appointmentKeys.all, 'availableSlots', params],
-  scheduleTemplates: () => [...appointmentKeys.all, 'scheduleTemplates'],
-  scheduleTemplate: (id) => [...appointmentKeys.scheduleTemplates(), id],
-  timeSlots: (templateId) => [...appointmentKeys.all, 'timeSlots', templateId],
   scheduleSlots: (scheduleId, params) => [...appointmentKeys.all, 'scheduleSlots', scheduleId, params],
   recurringSchedules: () => [...appointmentKeys.all, 'recurringSchedules'],
   recurringSchedule: (id) => [...appointmentKeys.recurringSchedules(), id],
@@ -207,11 +205,12 @@ export function useUpdateAppointmentStatus() {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useAvailableSlots(params = {}) {
+export function useAvailableSlots(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.availableSlots(params),
     queryFn: () => appointmentsApi.getAvailableSlots(params),
-    enabled: Object.keys(params).length > 0, // Only run if we have parameters
+    enabled: enabled && Object.keys(params).length > 0, // Only run if we have parameters
     staleTime: 0, // Always fetch fresh data for just-in-time slots
   });
 }
@@ -221,10 +220,12 @@ export function useAvailableSlots(params = {}) {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useBlockedTimes(params = {}) {
+export function useBlockedTimes(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.blockedTimes(params),
     queryFn: () => appointmentsApi.getBlockedTimes(params),
+    enabled,
   });
 }
 
@@ -296,7 +297,7 @@ export function useAppointmentTypes() {
   return useQuery({
     queryKey: appointmentKeys.types(),
     queryFn: () => appointmentsApi.getAppointmentTypes(),
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours - types rarely change
+    ...immutableMetadataQueryOptions(),
   });
 }
 
@@ -310,45 +311,7 @@ export function useAppointmentType(id) {
     queryKey: appointmentKeys.type(id),
     queryFn: () => appointmentsApi.getAppointmentType(id),
     enabled: !!id,
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours - types rarely change
-  });
-}
-
-/**
- * Get schedule templates
- * @param {Object} params - Query parameters
- * @returns {Object} Query result
- */
-export function useScheduleTemplates(params = {}) {
-  return useQuery({
-    queryKey: [...appointmentKeys.scheduleTemplates(), params],
-    queryFn: () => appointmentsApi.getScheduleTemplates(params),
-  });
-}
-
-/**
- * Get a single schedule template by ID
- * @param {string} id - Schedule template ID
- * @returns {Object} Query result
- */
-export function useScheduleTemplate(id) {
-  return useQuery({
-    queryKey: appointmentKeys.scheduleTemplate(id),
-    queryFn: () => appointmentsApi.getScheduleTemplate(id),
-    enabled: !!id,
-  });
-}
-
-/**
- * Get time slots for a schedule template
- * @param {string} templateId - Schedule template ID
- * @returns {Object} Query result
- */
-export function useTimeSlots(templateId) {
-  return useQuery({
-    queryKey: appointmentKeys.timeSlots(templateId),
-    queryFn: () => appointmentsApi.getTimeSlots(templateId),
-    enabled: !!templateId,
+    ...immutableMetadataQueryOptions(),
   });
 }
 
@@ -371,10 +334,12 @@ export function useScheduleSlots(scheduleId, params = {}) {
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useRecurringSchedules(params = {}) {
+export function useRecurringSchedules(params = {}, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: [...appointmentKeys.recurringSchedules(), params],
     queryFn: () => appointmentsApi.getRecurringSchedules(params),
+    enabled,
   });
 }
 
@@ -487,79 +452,6 @@ export function useDeleteAppointmentType() {
       queryClient.invalidateQueries({
         queryKey: appointmentKeys.types()
       });
-    },
-  });
-}
-
-/**
- * Create a new time slot
- * @returns {Object} Mutation result
- */
-export function useCreateTimeSlot() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data) => appointmentsApi.createTimeSlot(data),
-    onSuccess: (data) => {
-      // Invalidate the time slots query for the template
-      if (data && data.template) {
-        queryClient.invalidateQueries({
-          queryKey: appointmentKeys.timeSlots(data.template)
-        });
-      }
-    },
-  });
-}
-
-/**
- * Update an existing time slot
- * @returns {Object} Mutation result
- */
-export function useUpdateTimeSlot() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }) => appointmentsApi.updateTimeSlot(id, data),
-
-    // Optimistic update - immediately update UI before server responds
-    onMutate: async ({ id, data }) => {
-      // We need the template ID to update the cache
-      const templateId = data.template;
-      if (!templateId) return;
-
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: appointmentKeys.timeSlots(templateId) });
-
-      // Snapshot the previous value
-      const previousTimeSlots = queryClient.getQueryData(appointmentKeys.timeSlots(templateId));
-
-      // Optimistically update to the new value
-      queryClient.setQueryData(appointmentKeys.timeSlots(templateId), (old) => {
-        if (!Array.isArray(old)) return old;
-        return old.map(slot => slot.id === id ? { ...slot, ...data } : slot);
-      });
-
-      // Return context with the previous value for potential rollback
-      return { previousTimeSlots, templateId };
-    },
-
-    // If mutation fails, rollback to the previous value
-    onError: (err, variables, context) => {
-      if (context?.previousTimeSlots && context?.templateId) {
-        queryClient.setQueryData(
-          appointmentKeys.timeSlots(context.templateId),
-          context.previousTimeSlots
-        );
-      }
-    },
-
-    // Always refetch after error or success to ensure consistency
-    onSettled: (data) => {
-      if (data && data.template) {
-        queryClient.invalidateQueries({
-          queryKey: appointmentKeys.timeSlots(data.template)
-        });
-      }
     },
   });
 }

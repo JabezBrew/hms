@@ -100,7 +100,7 @@ def authenticated_client(api_client, user, default_facility):
 # =============================================================================
 
 @pytest.fixture
-def user_factory(db):
+def user_factory(db, default_facility):
     """Factory fixture for creating users with specific roles."""
     def create_user(
         email=None,
@@ -115,6 +115,8 @@ def user_factory(db):
     ):
         if email is None:
             email = f'{user_type}_{uuid.uuid4().hex[:8]}@test.com'
+
+        kwargs.setdefault('primary_facility', default_facility)
 
         user = User.objects.create_user(
             username=email,

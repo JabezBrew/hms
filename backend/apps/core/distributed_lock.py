@@ -36,6 +36,26 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+_RELEASE_IF_OWNER_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+_EXTEND_IF_OWNER_SCRIPT = """
+if redis.call('get', KEYS[1]) ~= ARGV[1] then
+    return 0
+end
+local ttl = redis.call('pttl', KEYS[1])
+if ttl < 0 then
+    ttl = 0
+end
+local extension_ms = tonumber(ARGV[2])
+redis.call('pexpire', KEYS[1], ttl + extension_ms)
+return 1
+"""
+
 
 class LockNotAcquiredError(Exception):
     """Raised when a lock cannot be acquired."""
@@ -63,6 +83,20 @@ def _get_lock_key(name: str) -> str:
 def _get_lock_value() -> str:
     """Generate a unique value for this lock holder."""
     return f"{threading.current_thread().ident}:{uuid.uuid4().hex[:8]}"
+
+
+def _get_redis_lock_client():
+    """
+    Return the low-level Redis client when the configured cache backend supports it.
+    """
+    cache_client = getattr(cache, '_cache', None)
+    get_client = getattr(cache_client, 'get_client', None)
+    if not callable(get_client):
+        return None
+    try:
+        return get_client(None, write=True)
+    except Exception:
+        return None
 
 
 def acquire_lock(
@@ -129,6 +163,22 @@ def release_lock(name: str, token: Optional[str] = None) -> bool:
 
     # If token provided, verify ownership before releasing
     if token:
+        redis_client = _get_redis_lock_client()
+        if redis_client is not None:
+            released = bool(
+                redis_client.eval(
+                    _RELEASE_IF_OWNER_SCRIPT,
+                    1,
+                    cache.make_key(lock_key),
+                    token,
+                )
+            )
+            if not released:
+                logger.warning(f"Lock '{name}' not owned by this process (token mismatch)")
+                return False
+            logger.debug(f"Released lock: {name}")
+            return True
+
         current_value = cache.get(lock_key)
         if current_value != token:
             logger.warning(f"Lock '{name}' not owned by this process (token mismatch)")
@@ -153,16 +203,30 @@ def extend_lock(name: str, token: str, additional_time: int = 30) -> bool:
     """
     lock_key = _get_lock_key(name)
 
+    redis_client = _get_redis_lock_client()
+    if redis_client is not None:
+        extended = bool(
+            redis_client.eval(
+                _EXTEND_IF_OWNER_SCRIPT,
+                1,
+                cache.make_key(lock_key),
+                token,
+                int(additional_time * 1000),
+            )
+        )
+        if not extended:
+            logger.warning(f"Cannot extend lock '{name}': not owned (token mismatch)")
+            return False
+        logger.debug(f"Extended lock '{name}' by {additional_time}s")
+        return True
+
     current_value = cache.get(lock_key)
     if current_value != token:
         logger.warning(f"Cannot extend lock '{name}': not owned (token mismatch)")
         return False
 
-    # Get current TTL and extend
     ttl = cache.ttl(lock_key) if hasattr(cache, 'ttl') else 0
     new_timeout = max(ttl, 0) + additional_time
-
-    # Re-set with new timeout (atomic operation)
     cache.set(lock_key, token, timeout=new_timeout)
     logger.debug(f"Extended lock '{name}' by {additional_time}s")
     return True

@@ -6,8 +6,10 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+startCommand = "python /app/startup_and_run.py"
+preDeployCommand = "python /app/run_migrations.py"
 numReplicas = 1
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
-healthcheckPath = "/api/health/"
-healthcheckTimeout = 30
+healthcheckPath = "/api/health/ready/"
+healthcheckTimeout = 120

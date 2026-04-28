@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { patientsApi } from '@/features/patients/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -217,7 +218,7 @@ export function usePatientSearch(params = {}, options = {}) {
   const { enabled = true, staleTime = 60 * 1000 } = options;
   return useQuery({
     queryKey: [...patientKeys.lists(), 'search', params],
-    queryFn: () => patientsApi.searchPatients(params),
+    queryFn: () => patientsApi.searchPatientsWithMeta(params),
     enabled,
     staleTime,
   });
@@ -296,6 +297,6 @@ export function usePatientValidationRules() {
   return useQuery({
     queryKey: patientKeys.validation(),
     queryFn: () => patientsApi.getValidationRules(),
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours - validation rules rarely change
+    ...immutableMetadataQueryOptions(),
   });
 }

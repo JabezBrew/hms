@@ -5,6 +5,7 @@ Tests for ChartTemplate, ChartAssignment, and ChartEntry API endpoints.
 """
 
 import pytest
+from datetime import timedelta
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -17,7 +18,16 @@ from apps.charts.tests.factories import (
     ChartTemplateFactory, ChartFieldFactory, ChartAssignmentFactory, ChartEntryFactory,
     NumericFieldFactory,
 )
-from apps.users.tests.factories import UserFactory, StaffFactory, PractitionerProfileFactory, PatientProfileFactory
+from apps.core.tests.factories import DefaultFacilityFactory
+from apps.users.tests.factories import (
+    AdminUserFactory,
+    PractitionerProfileFactory,
+    PatientProfileFactory,
+    StaffFactory,
+    UserFactory,
+)
+from apps.encounters.tests.factories import EncounterFactory
+from apps.wards.tests.factories import AdmissionFactory
 
 
 @pytest.fixture
@@ -29,13 +39,24 @@ def api_client():
 def authenticated_user(api_client, settings):
     settings.TEAM_ACCESS_STRICT = False
 
-    # Create staff with user, then create practitioner profile
-    staff = StaffFactory()
-    user = staff.user
+    facility = DefaultFacilityFactory()
+    user = AdminUserFactory(primary_facility=facility)
+    staff = StaffFactory(user=user, primary_facility=facility)
     PractitionerProfileFactory(staff=staff)
     api_client.force_authenticate(user=user)
-    api_client.credentials(HTTP_X_FACILITY_CODE=staff.primary_facility.code)
+    api_client.credentials(HTTP_X_FACILITY_CODE=facility.code)
     return user
+
+
+@pytest.fixture
+def clinician_client(settings):
+    settings.TEAM_ACCESS_STRICT = False
+    client = APIClient()
+    staff = StaffFactory()
+    PractitionerProfileFactory(staff=staff)
+    client.force_authenticate(user=staff.user)
+    client.credentials(HTTP_X_FACILITY_CODE=staff.primary_facility.code)
+    return client, staff.user
 
 
 @pytest.mark.django_db
@@ -72,6 +93,40 @@ class TestChartTemplateViewSet:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data['name'] == 'New Chart Template'
         assert ChartTemplate.objects.filter(name='New Chart Template').exists()
+
+    def test_create_template_defaults_scope_by_category(self, api_client, authenticated_user):
+        url = reverse('chart-template-list')
+        response = api_client.post(
+            url,
+            {
+                'name': 'Pain Monitoring',
+                'description': 'Pain reassessment template',
+                'category': 'pain',
+                'visibility': 'facility',
+                'default_interval': '4hourly',
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['scope_type'] == 'encounter'
+
+    def test_non_admin_cannot_create_template(self, clinician_client):
+        client, _user = clinician_client
+        url = reverse('chart-template-list')
+        response = client.post(
+            url,
+            {
+                'name': 'Unauthorized Template',
+                'description': 'Should be rejected',
+                'category': 'custom',
+                'visibility': 'private',
+                'default_interval': 'hourly',
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_retrieve_template(self, api_client, authenticated_user):
         """Test retrieving a single template with fields."""
@@ -239,6 +294,143 @@ class TestChartAssignmentViewSet:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert ChartAssignment.objects.filter(patient=patient, template=template).exists()
+
+    def test_create_encounter_scoped_assignment_requires_matching_encounter(self, api_client, authenticated_user):
+        patient = PatientProfileFactory(facility=authenticated_user.primary_facility)
+        encounter = EncounterFactory(patient=patient, facility=patient.facility)
+        template = ChartTemplateFactory(visibility='facility', scope_type='encounter')
+
+        response = api_client.post(
+            reverse('chart-assignment-list'),
+            {
+                'template_id': str(template.id),
+                'patient': str(patient.id),
+                'encounter': str(encounter.id),
+                'reason': 'Visit monitoring',
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['scope_type'] == 'encounter'
+        assert str(response.data['encounter']) == str(encounter.id)
+
+    def test_create_admission_scoped_assignment_requires_admission(self, api_client, authenticated_user):
+        patient = PatientProfileFactory(facility=authenticated_user.primary_facility)
+        template = ChartTemplateFactory(visibility='facility', scope_type='admission')
+
+        response = api_client.post(
+            reverse('chart-assignment-list'),
+            {
+                'template_id': str(template.id),
+                'patient': str(patient.id),
+                'reason': 'Strict I/O charting',
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'admission' in response.data
+
+    def test_list_assignments_respects_selected_visit_scope(self, api_client, authenticated_user):
+        patient = PatientProfileFactory(facility=authenticated_user.primary_facility)
+        encounter_one = EncounterFactory(patient=patient, facility=patient.facility)
+        encounter_two = EncounterFactory(patient=patient, facility=patient.facility)
+        admission_one = AdmissionFactory(patient=patient, facility=patient.facility)
+        admission_two = AdmissionFactory(patient=patient, facility=patient.facility)
+
+        encounter_template = ChartTemplateFactory(scope_type='encounter', visibility='facility')
+        admission_template = ChartTemplateFactory(scope_type='admission', visibility='facility')
+        patient_template = ChartTemplateFactory(scope_type='patient', visibility='facility')
+
+        expected_encounter = ChartAssignmentFactory(
+            patient=patient,
+            template=encounter_template,
+            encounter=encounter_one,
+            admission=None,
+        )
+        expected_admission = ChartAssignmentFactory(
+            patient=patient,
+            template=admission_template,
+            admission=admission_one,
+            encounter=None,
+        )
+        ChartAssignmentFactory(
+            patient=patient,
+            template=encounter_template,
+            encounter=encounter_two,
+            admission=None,
+        )
+        ChartAssignmentFactory(
+            patient=patient,
+            template=admission_template,
+            admission=admission_two,
+            encounter=None,
+        )
+        expected_patient = ChartAssignmentFactory(
+            patient=patient,
+            template=patient_template,
+            encounter=None,
+            admission=None,
+        )
+
+        response = api_client.get(
+            reverse('chart-assignment-list'),
+            {
+                'patient': str(patient.id),
+                'encounter_id': str(encounter_one.id),
+                'admission': str(admission_one.id),
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data['results']}
+        assert str(expected_encounter.id) in ids
+        assert str(expected_admission.id) in ids
+        assert str(expected_patient.id) in ids
+        assert len(ids) == 3
+
+    def test_list_assignments_all_history_keeps_patient_scope_records(self, api_client, authenticated_user):
+        patient = PatientProfileFactory(facility=authenticated_user.primary_facility)
+        encounter = EncounterFactory(patient=patient, facility=patient.facility)
+        admission = AdmissionFactory(patient=patient, facility=patient.facility)
+
+        encounter_assignment = ChartAssignmentFactory(
+            patient=patient,
+            template=ChartTemplateFactory(scope_type='encounter', visibility='facility'),
+            encounter=encounter,
+            admission=None,
+        )
+        admission_assignment = ChartAssignmentFactory(
+            patient=patient,
+            template=ChartTemplateFactory(scope_type='admission', visibility='facility'),
+            admission=admission,
+            encounter=None,
+        )
+        patient_assignment = ChartAssignmentFactory(
+            patient=patient,
+            template=ChartTemplateFactory(scope_type='patient', visibility='facility'),
+            admission=None,
+            encounter=None,
+        )
+
+        response = api_client.get(
+            reverse('chart-assignment-list'),
+            {
+                'patient': str(patient.id),
+                'encounter_id': str(encounter.id),
+                'admission': str(admission.id),
+                'all_history': 'true',
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data['results']}
+        assert ids == {
+            str(encounter_assignment.id),
+            str(admission_assignment.id),
+            str(patient_assignment.id),
+        }
 
     def test_get_assignments_by_patient(self, api_client, authenticated_user):
         """Test getting assignments for a specific patient."""
@@ -469,6 +661,50 @@ class TestChartEntryViewSet:
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 2
+
+    def test_get_trend_data_for_paired_component(self, api_client, authenticated_user):
+        template = ChartTemplateFactory()
+        ChartFieldFactory(
+            template=template,
+            name='Blood Pressure',
+            field_key='blood_pressure',
+            field_type='paired',
+            config={
+                'fields': [
+                    {'key': 'systolic', 'label': 'Systolic'},
+                    {'key': 'diastolic', 'label': 'Diastolic'},
+                ],
+                'separator': '/',
+                'critical_low': {'systolic': 90, 'diastolic': 60},
+                'critical_high': {'systolic': 180, 'diastolic': 110},
+            },
+        )
+        assignment = ChartAssignmentFactory(template=template)
+        base_time = timezone.now()
+
+        ChartEntryFactory(
+            assignment=assignment,
+            observation_datetime=base_time - timedelta(hours=1),
+            data={'blood_pressure': {'systolic': 118, 'diastolic': 76}},
+        )
+        ChartEntryFactory(
+            assignment=assignment,
+            observation_datetime=base_time,
+            data={'blood_pressure': {'systolic': 126, 'diastolic': 82}},
+        )
+
+        response = api_client.get(
+            reverse('chart-entry-trends'),
+            {
+                'assignment_id': str(assignment.id),
+                'field_key': 'blood_pressure',
+                'component': 'systolic',
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [point['value'] for point in response.data] == [118.0, 126.0]
+        assert all(point['component'] == 'systolic' for point in response.data)
 
     def test_get_entries_by_patient(self, api_client, authenticated_user):
         """Test getting entries for a patient across all assignments."""

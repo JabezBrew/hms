@@ -22,14 +22,6 @@ export const updateAppointmentStatus = (id, status) => appointmentsApi.updateApp
 export const checkInAppointment = (id) => appointmentsApi.checkInAppointment(id);
 export const cancelAppointment = (id, reason) => appointmentsApi.cancelAppointment(id, reason);
 
-// Schedule Template API functions
-export const fetchScheduleTemplates = (params) => appointmentsApi.getScheduleTemplates(params);
-export const fetchScheduleTemplate = (id) => appointmentsApi.getScheduleTemplate(id);
-export const createScheduleTemplate = (data) => appointmentsApi.createScheduleTemplate(data);
-export const updateScheduleTemplate = (id, data) => appointmentsApi.updateScheduleTemplate(id, data);
-export const deleteScheduleTemplate = (id) => appointmentsApi.deleteScheduleTemplate(id);
-export const generateSchedule = (id, data) => appointmentsApi.generateSchedule(id, data);
-
 // Recurring Schedule API functions
 export const fetchRecurringSchedules = (params) => appointmentsApi.getRecurringSchedules(params);
 export const fetchRecurringSchedule = (id) => appointmentsApi.getRecurringSchedule(id);
@@ -45,12 +37,6 @@ export const createBlockedTime = (data) => appointmentsApi.createBlockedTime(dat
 export const bulkCreateBlockedTime = (data) => appointmentsApi.bulkCreateBlockedTime(data);
 export const updateBlockedTime = (id, data) => appointmentsApi.updateBlockedTime(id, data);
 export const deleteBlockedTime = (id) => appointmentsApi.deleteBlockedTime(id);
-
-// Time Slot API functions
-export const fetchTimeSlots = (templateId) => appointmentsApi.getTimeSlots(templateId);
-export const createTimeSlot = (data) => appointmentsApi.createTimeSlot(data);
-export const updateTimeSlot = (id, data) => appointmentsApi.updateTimeSlot(id, data);
-export const deleteTimeSlot = (id) => appointmentsApi.deleteTimeSlot(id);
 
 // Patient API functions
 export const fetchPatients = (params) => patientsApi.getPatients(params);

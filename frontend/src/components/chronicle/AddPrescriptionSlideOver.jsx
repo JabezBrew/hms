@@ -30,8 +30,9 @@ import { useSafetyCheck, usePatientAllergies, useDrugForms } from "@/hooks/useDr
 import { DrugSafetyDialog } from "@/components/drug-safety/DrugSafetyDialog";
 import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutocomplete";
 import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
-import { prescriptionKeys } from "@/hooks/usePrescriptionMutations";
+import { invalidatePrescriptionMutationQueries } from "@/hooks/usePrescriptionMutations";
 import { nursingKeys } from "@/hooks/useNursingQueries";
+import { emitOnboardingEvent } from "@/features/onboarding";
 
 /**
  * AddPrescriptionSlideOver - Split-screen panel for prescribing medications
@@ -132,8 +133,11 @@ const AddPrescriptionSlideOver = ({
       const response = await apiClient.post('/clinical-notes/prescriptions/', data);
       return response;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: prescriptionKeys.all });
+    onSuccess: (data) => {
+      void invalidatePrescriptionMutationQueries(queryClient, {
+        prescriptionId: data?.id,
+        patientId,
+      });
       queryClient.invalidateQueries({ queryKey: patientKeys.detail(patientId) });
     }
   });
@@ -319,6 +323,12 @@ const AddPrescriptionSlideOver = ({
 
     try {
       const result = await createPrescriptionMutation.mutateAsync(data);
+      emitOnboardingEvent('chronicle.prescription_created', {
+        success: true,
+        prescription_id: result?.id || null,
+        patient_id: patientId || null,
+      });
+
       if (result.mar_generated) {
         toast.success('Prescription created and MAR entries generated for nursing');
       } else {

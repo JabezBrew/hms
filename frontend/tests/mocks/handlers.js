@@ -722,12 +722,98 @@ export const workflowHandlers = [
 ]
 
 // =============================================================================
+// Omni Search Handlers
+// =============================================================================
+
+export const omniSearchHandlers = [
+  http.get(`${API_BASE}/search/omni/`, ({ request }) => {
+    const url = new URL(request.url)
+    const q = (url.searchParams.get('q') || '').trim()
+    const types = (url.searchParams.get('types') || '').trim()
+    const limit = parseInt(url.searchParams.get('limit') || '8', 10)
+
+    const groups = {
+      recent_patients: [
+        {
+          id: 'recent-patient-1',
+          medical_record_number: 'MRN000001',
+          name: 'John Doe',
+          date_of_birth: '1980-01-01',
+          gender: 'M',
+          created_at: new Date().toISOString(),
+          current_ward: null,
+          admission_status: null,
+          admission_date: null,
+          last_accessed_at: new Date().toISOString(),
+        },
+      ],
+      patients: [],
+      wards: [],
+      encounters: [],
+      appointments: [],
+      admissions: [],
+      staff: [],
+    }
+
+    if (q.length < 2) {
+      return HttpResponse.json({
+        query: q,
+        types: [],
+        limit: Number.isFinite(limit) ? limit : 8,
+        groups,
+      })
+    }
+
+    const requestedTypes = types ? types.split(',').map((t) => t.trim()).filter(Boolean) : []
+    const effectiveTypes = requestedTypes.length > 0 ? requestedTypes : ['patients', 'wards', 'encounters', 'appointments', 'admissions', 'staff']
+
+    if (effectiveTypes.includes('patients')) {
+      groups.patients = [
+        {
+          id: 'patient-1',
+          medical_record_number: 'MRN000123',
+          name: q.toLowerCase().includes('jo') ? 'John Doe' : 'Jane Smith',
+          date_of_birth: '1990-01-01',
+          gender: 'F',
+          created_at: new Date().toISOString(),
+          current_ward: null,
+          admission_status: null,
+          admission_date: null,
+        },
+      ]
+    }
+
+    if (effectiveTypes.includes('staff')) {
+      groups.staff = [
+        {
+          id: 'staff-1',
+          user_id: 'user-1',
+          name: 'Alice Alpha',
+          email: 'alice@example.com',
+          user_type: 'doctor',
+          employee_id: 'EMP00001',
+          practitioner_id: 'pract-1',
+        },
+      ]
+    }
+
+    return HttpResponse.json({
+      query: q,
+      types: effectiveTypes,
+      limit: Number.isFinite(limit) ? limit : 8,
+      groups,
+    })
+  }),
+]
+
+// =============================================================================
 // Combined Handlers Export
 // =============================================================================
 
 export const handlers = [
   ...authHandlers,
   ...patientHandlers,
+  ...omniSearchHandlers,
   ...nursingHandlers,
   ...wardHandlers,
   ...appointmentHandlers,

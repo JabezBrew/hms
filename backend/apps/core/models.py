@@ -5,6 +5,7 @@ import uuid
 import ipaddress
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
 
@@ -173,12 +174,22 @@ class Facility(models.Model):
         # Ensure code is uppercase
         self.code = self.code.upper()
         super().save(*args, **kwargs)
-        # Clear facility cache for all facility contexts
-        cache.delete('active_facilities')
-        for code in Facility.objects.values_list('code', flat=True):
-            cache.delete(facility_cache_key_for_code(code, 'active_facilities'))
-        cache.delete(facility_cache_key_for_code(self.code, f'facility_{self.code}'))
+        # Clear facility cache for all facility contexts.
+        #
+        # Note: facility_cache_key() prefixes keys using the current facility context,
+        # which can differ from self.code (e.g., DEFAULT_FACILITY_CODE in tests).
+        cache.delete('active_facilities')  # legacy/unscoped key
+        cache.delete(facility_cache_key('active_facilities'))
         cache.delete(facility_cache_key(f'facility_{self.code}'))
+
+        codes = set(Facility.objects.values_list('code', flat=True))
+        default_code = getattr(settings, 'DEFAULT_FACILITY_CODE', None)
+        if default_code:
+            codes.add(str(default_code).strip().upper())
+
+        for code in codes:
+            cache.delete(facility_cache_key_for_code(code, 'active_facilities'))
+            cache.delete(facility_cache_key_for_code(code, f'facility_{self.code}'))
 
     @classmethod
     def get_active_facilities(cls):
@@ -701,3 +712,107 @@ class BreakGlassEvent(models.Model):
 
     def __str__(self):
         return f"Break-glass {self.scope} for {self.patient_id} by {self.user_id}"
+
+
+class FeatureEntitlementOverride(models.Model):
+    """
+    DB-backed product entitlement override.
+
+    Overrides never delete or mutate module data. They only affect feature
+    availability checks, route visibility, API access, and background work.
+    """
+    SCOPE_GLOBAL = 'global'
+    SCOPE_FACILITY = 'facility'
+    SCOPE_CHOICES = (
+        (SCOPE_GLOBAL, 'Global'),
+        (SCOPE_FACILITY, 'Facility'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES)
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='feature_entitlement_overrides',
+    )
+    feature_key = models.CharField(max_length=80)
+    is_enabled = models.BooleanField()
+    reason = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_feature_entitlement_overrides',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_feature_entitlement_overrides',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['scope', 'facility__code', 'feature_key']
+        indexes = [
+            models.Index(fields=['scope', 'feature_key']),
+            models.Index(fields=['facility', 'feature_key']),
+            models.Index(fields=['updated_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(scope='global', facility__isnull=True)
+                    | models.Q(scope='facility', facility__isnull=False)
+                ),
+                name='feature_override_scope_facility_valid',
+            ),
+            models.UniqueConstraint(
+                fields=['scope', 'feature_key'],
+                condition=models.Q(scope='global', facility__isnull=True),
+                name='feature_override_global_unique',
+            ),
+            models.UniqueConstraint(
+                fields=['facility', 'feature_key'],
+                condition=models.Q(scope='facility'),
+                name='feature_override_facility_unique',
+            ),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        from hms_backend.feature_manifest import FEATURE_MANIFEST
+
+        if self.feature_key not in FEATURE_MANIFEST:
+            raise ValidationError({'feature_key': 'Unknown feature key.'})
+        if self.scope == self.SCOPE_GLOBAL and self.facility_id:
+            raise ValidationError({'facility': 'Global overrides cannot have a facility.'})
+        if self.scope == self.SCOPE_FACILITY and not self.facility_id:
+            raise ValidationError({'facility': 'Facility overrides require a facility.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+        from apps.core.features import invalidate_feature_entitlement_cache
+
+        invalidate_feature_entitlement_cache(self.facility)
+
+    def delete(self, *args, **kwargs):
+        facility = self.facility
+        result = super().delete(*args, **kwargs)
+        from apps.core.features import invalidate_feature_entitlement_cache
+
+        invalidate_feature_entitlement_cache(facility)
+        return result
+
+    def __str__(self):
+        scope = self.scope
+        if self.facility_id:
+            scope = f"facility:{self.facility.code}"
+        state = 'enabled' if self.is_enabled else 'disabled'
+        return f"{self.feature_key} {state} ({scope})"

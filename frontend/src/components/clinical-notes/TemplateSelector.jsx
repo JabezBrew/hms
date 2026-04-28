@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
  */
 const TemplateSelector = ({ onSelectTemplate }) => {
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
-  const { data: templates, isLoading, isError } = useActiveNoteTemplates();
+  const { data: templates, isLoading, isError } = useActiveNoteTemplates({ page_size: 200 });
 
   // Handle template selection
   const handleSelectTemplate = (templateId) => {

@@ -7,6 +7,7 @@ import { WorkflowProvider } from './contexts/WorkflowContext'
 import { HelmetProvider } from 'react-helmet-async'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import RuntimeErrorGuard from './app/RuntimeErrorGuard'
 import { queryClient } from './lib/react-query'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
@@ -14,13 +15,23 @@ import { PageLoader } from './shared/components/page/PageState'
 
 const AuthenticatedApp = lazy(() => import('./app/AuthenticatedApp'))
 const PublicAuthApp = lazy(() => import('./app/PublicAuthApp'))
+const PasswordChangeRequiredApp = lazy(() => import('./app/PasswordChangeRequiredApp'))
 
 // Main app content with routes
 function AppContent() {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, passwordChangeRequired } = useAuth()
+  const appState = loading
+    ? 'booting'
+    : !isAuthenticated
+      ? 'public'
+      : passwordChangeRequired
+        ? 'password-change-required'
+        : 'authenticated'
+
+  let content
 
   if (loading) {
-    return (
+    content = (
       <div className="flex min-h-screen flex-col">
         {/* Skeleton for header */}
         <header className="border-b">
@@ -58,20 +69,30 @@ function AppContent() {
         </div>
       </div>
     )
-  }
-
-  if (!isAuthenticated) {
-    return (
+  } else if (!isAuthenticated) {
+    content = (
       <Suspense fallback={<PageLoader />}>
         <PublicAuthApp />
+      </Suspense>
+    )
+  } else if (passwordChangeRequired) {
+    content = (
+      <Suspense fallback={<PageLoader />}>
+        <PasswordChangeRequiredApp />
+      </Suspense>
+    )
+  } else {
+    content = (
+      <Suspense fallback={<PageLoader />}>
+        <AuthenticatedApp />
       </Suspense>
     )
   }
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <AuthenticatedApp />
-    </Suspense>
+    <RuntimeErrorGuard appState={appState}>
+      {content}
+    </RuntimeErrorGuard>
   )
 }
 

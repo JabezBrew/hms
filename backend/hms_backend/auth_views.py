@@ -2,18 +2,23 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError, TokenBackendError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.state import token_backend
 from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, SimpleRateThrottle
+from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
-from .jwt_serializers import resolve_user_facility_code
+from hms_backend.deployment import feature_enabled
+from hms_backend.middleware import get_client_ip
+from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
 from .tenancy import facility_context, set_current_facility_code
 from .auth_utils import build_auth_response, get_access_context
-from apps.core.security import get_user_facility_codes, normalize_facility_code
+from apps.core.security import normalize_facility_code
 from apps.core.models import Facility
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction
@@ -22,6 +27,22 @@ from apps.users.mfa_service import (
     get_mfa_enrollment_status,
     is_mfa_required,
 )
+
+
+def _decode_refresh_claims(refresh_token):
+    if not refresh_token:
+        return {}
+    try:
+        payload = token_backend.decode(refresh_token, verify=True)
+    except TokenBackendError:
+        return {}
+    if payload.get(api_settings.TOKEN_TYPE_CLAIM) != 'refresh':
+        return {}
+    return {
+        'user_id': payload.get(api_settings.USER_ID_CLAIM),
+        'facility_code': normalize_facility_code(payload.get('facility_code')),
+        'email': payload.get('email'),
+    }
 
 
 class LoginRateThrottle(SimpleRateThrottle):
@@ -71,20 +92,13 @@ class CookieTokenRefreshView(APIView):
             token_facility = None
 
         facility_code = requested_facility or token_facility
-        if not facility_code and settings.FACILITY_CONTEXT_REQUIRED and not settings.DEFAULT_FACILITY_CODE:
-            if getattr(settings, 'MULTI_FACILITY_MODE', False) and token_user_id:
+        if not facility_code and feature_enabled('facility_context_required') and not settings.DEFAULT_FACILITY_CODE:
+            if token_user_id:
                 from django.contrib.auth import get_user_model
 
                 User = get_user_model()
                 user = User.objects.filter(id=token_user_id).first()
-                allowed_codes = get_user_facility_codes(user) if user else set()
-                if len(allowed_codes) > 1:
-                    return Response(
-                        {'detail': 'Facility code is required.', 'code': 'facility_required'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                if len(allowed_codes) == 1:
-                    facility_code = next(iter(allowed_codes))
+                facility_code = resolve_user_facility_code(user)
             if not facility_code:
                 return Response(
                     {'detail': 'Facility code is required.', 'code': 'facility_required'},
@@ -102,6 +116,20 @@ class CookieTokenRefreshView(APIView):
         try:
             serializer.is_valid(raise_exception=True)
             response_data = serializer.validated_data
+
+            if token_user_id and getattr(request, 'facility_code', None):
+                from django.contrib.auth import get_user_model
+
+                User = get_user_model()
+                user = User.objects.filter(id=token_user_id).first()
+                if user:
+                    rotated_tokens = get_tokens_for_user(
+                        user,
+                        facility_code=request.facility_code,
+                    )
+                    response_data['access'] = rotated_tokens['access']
+                    if 'refresh' in response_data:
+                        response_data['refresh'] = rotated_tokens['refresh']
 
             response = Response({
                 'access': response_data['access']
@@ -174,7 +202,7 @@ class LogoutView(APIView):
                     user = jwt_auth.get_user(validated_token)
                     if not user and token_user_id:
                         user = User.objects.filter(id=token_user_id).first()
-        except (InvalidToken, TokenError, AttributeError, KeyError, TypeError):
+        except (InvalidToken, TokenError, AuthenticationFailed, AttributeError, KeyError, TypeError):
             pass
 
         if refresh_token:
@@ -187,6 +215,14 @@ class LogoutView(APIView):
                     user = User.objects.filter(id=token_user_id).first()
             except (InvalidToken, TokenError):
                 refresh = None
+                # If the refresh token was already blacklisted by another logout call,
+                # we can still verify/decode claims for audit attribution.
+                decoded_claims = _decode_refresh_claims(refresh_token)
+                decoded_user_id = decoded_claims.get('user_id')
+                token_facility_code = token_facility_code or decoded_claims.get('facility_code')
+                email = email or decoded_claims.get('email')
+                if decoded_user_id and not user:
+                    user = User.objects.filter(id=decoded_user_id).first()
 
         if not getattr(request, 'facility_code', None) and token_facility_code:
             set_current_facility_code(token_facility_code)
@@ -257,12 +293,7 @@ class LoginView(APIView):
 
     def _get_client_ip(self, request):
         """Get the client's real IP address from the request."""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0].strip()
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+        return get_client_ip(request)
 
     def _extract_login_email(self, request):
         try:
@@ -323,50 +354,35 @@ class LoginView(APIView):
                 {"password": ["This field is required."]},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if settings.FACILITY_CONTEXT_REQUIRED and not requested_facility and not settings.DEFAULT_FACILITY_CODE:
-            self._log_login_failure(
-                request,
-                email=email,
-                details="Facility code required.",
-            )
-            return Response(
-                {'detail': 'Facility code is required.', 'code': 'facility_required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         user = authenticate(request, username=email, password=password)
 
         if user is not None:
-            allowed_codes = get_user_facility_codes(user)
-            allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
-            if requested_facility and allowed_codes:
-                is_admin = user.user_type == 'admin'
-                if requested_facility not in allowed_codes and not (allow_cross_facility and is_admin):
-                    self._log_login_failure(
-                        request,
-                        email=email,
-                        user=user,
-                        details=f"Facility access denied for {requested_facility}.",
-                        facility_code=requested_facility,
-                    )
-                    return Response(
-                        {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            if (not requested_facility and allowed_codes and len(allowed_codes) > 1
-                    and getattr(settings, 'MULTI_FACILITY_MODE', False)):
+            facility_code = resolve_user_facility_code(user, requested_facility)
+
+            if requested_facility and not facility_code:
                 self._log_login_failure(
                     request,
                     email=email,
                     user=user,
-                    details="Facility code required for multi-facility user.",
+                    details=f"Facility access denied for {requested_facility}.",
+                    facility_code=requested_facility,
+                )
+                return Response(
+                    {'detail': 'Facility access denied.', 'code': 'facility_forbidden'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            if feature_enabled('facility_context_required') and not facility_code:
+                self._log_login_failure(
+                    request,
+                    email=email,
+                    user=user,
+                    details="Facility code required because no primary facility could be resolved.",
                 )
                 return Response(
                     {'detail': 'Facility code is required.', 'code': 'facility_required'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
-            facility_code = resolve_user_facility_code(user, requested_facility)
             if facility_code:
                 set_current_facility_code(facility_code)
                 # Also set on request so audit logging can access it
@@ -379,6 +395,7 @@ class LoginView(APIView):
                 enrollment_required = not (
                     enrollment_status['totp_enrolled'] or enrollment_status['webauthn_enrolled']
                 )
+                password_change_required = bool(getattr(user, 'must_change_password', False))
                 session, session_token = create_mfa_session(
                     user=user,
                     facility_code=facility_code,
@@ -390,6 +407,7 @@ class LoginView(APIView):
                 return Response({
                     'mfa_required': True,
                     'mfa_session': session_token,
+                    'password_change_required': password_change_required,
                     'mfa': {
                         'totp': enrollment_status['totp_enrolled'],
                         'webauthn': enrollment_status['webauthn_enrolled'],
@@ -402,6 +420,7 @@ class LoginView(APIView):
                         'first_name': user.first_name,
                         'last_name': user.last_name,
                         'facility_code': facility_code or None,
+                        'must_change_password': password_change_required,
                     },
                     'access_context': access_context,
                 })

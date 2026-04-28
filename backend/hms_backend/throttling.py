@@ -13,6 +13,7 @@ Security:
 """
 import os
 import hmac
+from django.conf import settings
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 
@@ -24,7 +25,7 @@ def _has_valid_load_test_key(request):
     secret_key = os.environ.get('LOAD_TEST_SECRET_KEY')
 
     # If no secret key configured, bypass is disabled
-    if not secret_key:
+    if not secret_key or not getattr(settings, 'LOAD_TEST_THROTTLE_BYPASS_ENABLED', False):
         return False
 
     request_key = request.META.get('HTTP_X_LOAD_TEST_KEY', '')

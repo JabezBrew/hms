@@ -19,6 +19,11 @@ import {
 
 import { useNoteEntrySections } from "@/features/clinical-notes/hooks";
 
+const normalizeSectionKey = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
 /**
  * CopyNoteModal - Dialog for copying clinical notes with section selection
  *
@@ -97,9 +102,28 @@ const CopyNoteModal = ({
 
     // Build the selected data from the source note
     const selectedData = {};
+    const noteData = (noteEntry?.data && typeof noteEntry.data === "object") ? noteEntry.data : {};
+    const sectionByName = new Map((sections || []).map((section) => [section.name, section]));
+    const normalizedSourceKeys = new Map();
+
+    Object.keys(noteData).forEach((key) => {
+      const normalized = normalizeSectionKey(key);
+      if (normalized && !normalizedSourceKeys.has(normalized)) {
+        normalizedSourceKeys.set(normalized, key);
+      }
+    });
+
     selectedSections.forEach((sectionName) => {
-      if (noteEntry.data && noteEntry.data[sectionName] !== undefined) {
-        selectedData[sectionName] = noteEntry.data[sectionName];
+      const sectionMeta = sectionByName.get(sectionName);
+      const sourceKey =
+        sectionMeta?.source_key ??
+        (noteData[sectionName] !== undefined
+          ? sectionName
+          : normalizedSourceKeys.get(normalizeSectionKey(sectionName)));
+
+      if (sourceKey !== undefined && sourceKey !== null && noteData[sourceKey] !== undefined) {
+        // Preserve template section names for editor prefill, regardless of source key format.
+        selectedData[sectionName] = noteData[sourceKey];
       }
     });
 

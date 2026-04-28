@@ -511,6 +511,62 @@ class TestAssignmentSerializerValidation:
         })
         assert serializer.is_valid(), serializer.errors
 
+    def test_staff_assignment_rejects_duplicate_active_unit_assignment(
+        self,
+        department,
+        practitioner,
+        assignment_types
+    ):
+        StaffUnitAssignment.objects.create(
+            unit=department,
+            practitioner=practitioner,
+            assignment_type=assignment_types['single'],
+            is_active=True,
+        )
+
+        serializer = StaffUnitAssignmentSerializer(data={
+            'unit': str(department.id),
+            'practitioner': str(practitioner.id),
+            'assignment_type': str(assignment_types['single'].id),
+            'is_primary': False,
+            'is_active': True,
+        })
+
+        assert not serializer.is_valid()
+        assert 'practitioner' in serializer.errors
+
+    def test_member_assignment_rejects_duplicate_active_unit_assignment(
+        self,
+        facility,
+        unit_types,
+        ops_staff,
+        assignment_types
+    ):
+        ops_unit = ClinicalUnit.objects.create(
+            code='OPS-DUP',
+            name='Ops Duplicate',
+            unit_type=unit_types['department'],
+            parent=facility,
+            staffing_mode='ops_only',
+        )
+        UnitMemberAssignment.objects.create(
+            unit=ops_unit,
+            staff=ops_staff,
+            assignment_type=assignment_types['single'],
+            is_active=True,
+        )
+
+        serializer = UnitMemberAssignmentSerializer(data={
+            'unit': str(ops_unit.id),
+            'staff': str(ops_staff.id),
+            'assignment_type': str(assignment_types['single'].id),
+            'is_primary': False,
+            'is_active': True,
+        })
+
+        assert not serializer.is_valid()
+        assert 'staff' in serializer.errors
+
     def test_validate_not_both_covering_entities(self, department, team, practitioner):
         """Test that validation rejects both practitioner and unit."""
         now = timezone.now()

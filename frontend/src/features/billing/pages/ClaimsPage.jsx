@@ -13,9 +13,10 @@ import Send from 'lucide-react/dist/esm/icons/send.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -71,6 +72,86 @@ export default function ClaimsPage() {
   const claims = claimsData?.results || [];
   const totalCount = claimsData?.count || 0;
   const totalPages = Math.ceil(totalCount / 20);
+
+  const claimColumns = [
+    {
+      key: 'claim_number',
+      header: 'Claim #',
+      width: '180px',
+      render: (claim) => (
+        <span className="font-mono text-sm font-medium text-primary">
+          {claim.claim_number}
+        </span>
+      ),
+    },
+    {
+      key: 'patient',
+      header: 'Patient',
+      width: '220px',
+      render: (claim) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{claim.patient_name}</p>
+          <p className="truncate text-xs text-muted-foreground">{claim.invoice_number || 'No invoice linked'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'provider',
+      header: 'Insurer',
+      width: '180px',
+      render: (claim) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {claim.insurance_provider || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'submitted',
+      header: 'Submitted',
+      width: '160px',
+      render: (claim) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {formatDate(claim.submitted_at || claim.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '160px',
+      render: (claim) => {
+        const statusMap = {
+          draft: 'border-border bg-muted text-muted-foreground',
+          submitted: 'border-sky-200 bg-sky-50 text-sky-700',
+          pending: 'border-amber-200 bg-amber-50 text-amber-700',
+          approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+          partially_approved: 'border-sky-200 bg-sky-50 text-sky-700',
+          rejected: 'border-rose-200 bg-rose-50 text-rose-700',
+          paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        };
+        return (
+          <Badge variant="outline" className={cn('text-xs capitalize', statusMap[claim.status] || statusMap.draft)}>
+            {(claim.status || 'draft').replaceAll('_', ' ')}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'amounts',
+      header: 'Amounts',
+      width: '180px',
+      render: (claim) => (
+        <div className="text-right">
+          <p className="font-mono text-sm font-semibold text-foreground">
+            {formatCurrency(claim.claimed_amount)}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            Approved: {formatCurrency(claim.approved_amount || 0)}
+          </p>
+        </div>
+      ),
+    },
+  ];
 
   // Update search input
   const handleSearchChange = (e) => {
@@ -176,20 +257,18 @@ export default function ClaimsPage() {
       {/* Claims List */}
       <main className="p-4 sm:p-6">
         {claims.length > 0 ? (
-          <VirtualizedList
-            items={claims}
-            estimateSize={150}
-            gap={12}
-            className="space-y-3"
-            getItemKey={(claim) => claim.id}
-            renderItem={(claim, index) => (
-              <ClaimCard
-                claim={claim}
-                index={index}
-                onClick={() => navigate(`/billing/claims/${claim.id}`)}
-              />
-            )}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={claims}
+              rowKey={(claim) => claim.id}
+              rowHeight={68}
+              columns={claimColumns}
+              onRowClick={(claim) => navigate(`/billing/claims/${claim.id}`)}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1080px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         ) : (
           <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

@@ -543,25 +543,69 @@ class ChartEntryService:
         }
 
     @classmethod
-    def get_trend_data(cls, assignment, field_key: str, limit: int = 50) -> list:
+    def get_trend_data(
+        cls,
+        assignment,
+        field_key: str,
+        limit: int = 50,
+        component: str | None = None,
+        start_date=None,
+        end_date=None,
+    ) -> list:
         """
         Get trend data for a specific field.
 
         Returns list of {datetime, value} dicts ordered chronologically.
         """
-        entries = assignment.entries.filter(is_deleted=False).order_by('observation_datetime')[:limit]
+        field = assignment.template.fields.filter(field_key=field_key).first()
+        entries = assignment.entries.filter(is_deleted=False)
+        if start_date:
+            entries = entries.filter(observation_datetime__gte=start_date)
+        if end_date:
+            entries = entries.filter(observation_datetime__lte=end_date)
+        entries = entries.order_by('observation_datetime')[:limit]
 
         trend_data = []
         for entry in entries:
-            value = entry.data.get(field_key)
+            value = cls._extract_trend_value(entry.data.get(field_key), component=component)
             if value is not None:
                 trend_data.append({
                     'datetime': entry.observation_datetime.isoformat(),
                     'value': value,
                     'is_critical': field_key in entry.critical_fields,
+                    'field_key': field_key,
+                    'component': component or '',
+                    'label': cls._resolve_trend_label(field, component=component),
                 })
 
         return trend_data
+
+    @staticmethod
+    def _extract_trend_value(value, *, component=None):
+        if isinstance(value, dict):
+            if not component:
+                return None
+            value = value.get(component)
+
+        if value is None:
+            return None
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _resolve_trend_label(field, *, component=None):
+        if not field:
+            return component or ''
+        if not component:
+            return field.name
+
+        for field_def in (field.config or {}).get('fields', []):
+            if field_def.get('key') == component:
+                return field_def.get('label', component)
+        return component
 
 
 class ConditionalFieldChecker:

@@ -10,15 +10,27 @@ Tests for:
 """
 import pytest
 from decimal import Decimal
+from datetime import timedelta
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.nursing.models import VitalSigns, NursingAlert
-from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
+from apps.users.tests.factories import (
+    PatientProfileFactory,
+    PractitionerProfileFactory,
+    NurseUserFactory,
+)
 from .factories import (
     VitalSignsFactory, CriticalVitalSignsFactory,
     EncounterFactory
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_team_access_strict(settings):
+    settings.TEAM_ACCESS_STRICT = False
 
 
 @pytest.mark.tier1
@@ -359,3 +371,78 @@ class TestVitalSignsIndexes:
         indexed_fields = [tuple(idx.fields) for idx in indexes]
 
         assert ('is_critical', '-recorded_at') in indexed_fields
+
+
+def configure_facility_header(client, user):
+    facility = getattr(user, 'primary_facility', None)
+    if facility:
+        client.credentials(HTTP_X_FACILITY_CODE=facility.code)
+
+
+@pytest.mark.tier1
+class TestVitalSignsTrendAPI:
+    @pytest.fixture
+    def nurse_client(self, db):
+        nurse_user = NurseUserFactory()
+        client = APIClient()
+        client.force_authenticate(user=nurse_user)
+        configure_facility_header(client, nurse_user)
+        return client, nurse_user
+
+    def test_patient_trends_can_be_scoped_to_an_encounter(self, nurse_client):
+        client, nurse_user = nurse_client
+        patient = PatientProfileFactory(facility=nurse_user.primary_facility)
+        encounter_one = EncounterFactory(patient=patient)
+        encounter_two = EncounterFactory(patient=patient)
+
+        first = VitalSignsFactory(
+            patient=patient,
+            encounter=encounter_one,
+            heart_rate=72,
+            recorded_at=timezone.now() - timedelta(hours=3),
+        )
+        VitalSignsFactory(
+            patient=patient,
+            encounter=encounter_two,
+            heart_rate=88,
+            recorded_at=timezone.now() - timedelta(hours=1),
+        )
+
+        response = client.get(
+            f'/api/nursing/vital-signs/patient_trends/?patient={patient.id}&encounter_id={encounter_one.id}'
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['id'] == str(first.id)
+        assert response.data[0]['heart_rate'] == 72
+        assert 'notes' not in response.data[0]
+
+    def test_patient_trends_accepts_explicit_date_range(self, nurse_client):
+        client, nurse_user = nurse_client
+        patient = PatientProfileFactory(facility=nurse_user.primary_facility)
+        encounter = EncounterFactory(patient=patient)
+        today = timezone.now()
+        three_days_ago = today - timedelta(days=3)
+
+        VitalSignsFactory(
+            patient=patient,
+            encounter=encounter,
+            temperature=Decimal('36.8'),
+            recorded_at=three_days_ago,
+        )
+        recent = VitalSignsFactory(
+            patient=patient,
+            encounter=encounter,
+            temperature=Decimal('37.4'),
+            recorded_at=today - timedelta(hours=6),
+        )
+
+        response = client.get(
+            f'/api/nursing/vital-signs/patient_trends/?patient={patient.id}'
+            f'&start_date={today.date().isoformat()}&end_date={today.date().isoformat()}'
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]['id'] == str(recent.id)

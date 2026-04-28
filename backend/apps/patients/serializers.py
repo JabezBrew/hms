@@ -1,9 +1,5 @@
 from rest_framework import serializers
 import logging
-import itertools
-import random
-import datetime
-import threading
 from zoneinfo import ZoneInfo
 from .models import (
     PatientFHIRMapping, PatientSearch, RecentPatient,
@@ -11,37 +7,16 @@ from .models import (
 )
 from ..users.models import PatientProfile, User
 from ..users.serializers import PatientProfileSerializer, UserSerializer, generate_secure_password
+from ..users.identifiers import generate_unique_mrn
 from .tasks import create_patient_in_fhir
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
+from hms_backend.deployment import feature_enabled
 from hms_backend.tenancy import get_current_facility_code
-from apps.core.security import get_user_facility, resolve_object_facility
+from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility, resolve_object_facility
 from apps.core.models import Facility
 from django.utils import timezone
 from django.db import transaction
 logger = logging.getLogger(__name__)
-_mrn_lock = threading.Lock()
-_mrn_counter = itertools.count(random.SystemRandom().randrange(0, 100000))
-
-
-def generate_unique_mrn():
-    """
-    Generate a unique medical record number following a specific pattern.
-    Format: HMS-YYYY-NNNNN where YYYY is the current year and NNNNN is a random 5-digit number
-    """
-    year = datetime.datetime.now().year
-
-    # Try up to 1000 times to generate a unique MRN
-    for _ in range(1000):
-        with _mrn_lock:
-            counter_value = next(_mrn_counter) % 100000
-        mrn = f"HMS-{year}-{counter_value:05d}"
-
-        # Check if this MRN already exists
-        if not PatientProfile.objects.filter(medical_record_number=mrn).exists():
-            return mrn
-
-    # If we couldn't generate a unique MRN after multiple attempts, raise an exception
-    raise Exception("Unable to generate a unique medical record number after multiple attempts.")
 
 
 class PatientFHIRMappingListSerializer(serializers.ModelSerializer):
@@ -114,10 +89,10 @@ class PatientRecentListSerializer(serializers.ModelSerializer):
             return active_list[0] if active_list else None
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             return next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
-        return obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
     def get_name(self, obj):
         if obj.user:
@@ -230,6 +205,12 @@ class PatientRegistrationSerializer(serializers.Serializer):
     # Admission/encounter fields (required to attach registration to care context)
     admission_details = serializers.DictField(write_only=True)
 
+    def _requires_active_outpatient_clinic(self):
+        return feature_enabled('outpatient_active_clinic_required')
+
+    def _uses_roster_for_initial_assignment(self):
+        return feature_enabled('department_rosters')
+
     def _get_department_timezone(self, department, facility):
         tz_name = None
         if department:
@@ -245,12 +226,19 @@ class PatientRegistrationSerializer(serializers.Serializer):
 
     def _resolve_outpatient_clinic(self, facility, department, clinic_id=None):
         from apps.organization.models import Clinic, ClinicSchedule
+        from apps.appointments.services import ClinicBookingService
 
+        require_active_schedule = self._requires_active_outpatient_clinic()
         now = timezone.now()
         tz = self._get_department_timezone(department, facility)
         local_now = timezone.localtime(now, tz)
         day_of_week = local_now.weekday()
         current_time = local_now.time()
+        active_pool_clinic_ids = ClinicBookingService.get_active_pool_clinic_ids(
+            facility=facility,
+            department=department,
+            at_datetime=local_now,
+        )
 
         schedules = ClinicSchedule.objects.filter(
             facility=facility,
@@ -258,10 +246,11 @@ class PatientRegistrationSerializer(serializers.Serializer):
             day_of_week=day_of_week,
             is_active=True,
             clinic__is_active=True,
+            clinic__booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
             start_time__lte=current_time,
             end_time__gt=current_time,
         )
-        clinic_ids = list(schedules.values_list('clinic_id', flat=True).distinct())
+        clinic_ids = set(schedules.values_list('clinic_id', flat=True).distinct())
 
         if clinic_id:
             clinic = Clinic.objects.filter(id=clinic_id, is_active=True).first()
@@ -271,17 +260,30 @@ class PatientRegistrationSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"admission_details": "Clinic does not belong to the active facility."})
             if clinic.department_id != department.id:
                 raise serializers.ValidationError({"admission_details": "Clinic does not belong to the selected department."})
-            if clinic.id not in clinic_ids:
+            if clinic.booking_mode == Clinic.BookingMode.CLINIC_POOL:
+                if require_active_schedule and str(clinic.id) not in active_pool_clinic_ids:
+                    raise serializers.ValidationError({
+                        "admission_details": "Clinic is not on a published roster session at this time."
+                    })
+            elif require_active_schedule and clinic.id not in clinic_ids:
                 raise serializers.ValidationError({"admission_details": "Clinic is not scheduled at this time."})
             return clinic
 
-        if len(clinic_ids) == 1:
-            return Clinic.objects.get(id=clinic_ids[0])
+        candidate_ids = set(clinic_ids)
+        candidate_ids.update(active_pool_clinic_ids)
 
-        if len(clinic_ids) == 0:
+        if len(candidate_ids) == 1:
+            return Clinic.objects.get(id=next(iter(candidate_ids)))
+
+        if len(candidate_ids) == 0:
+            if not require_active_schedule:
+                return None
             raise serializers.ValidationError({
                 "admission_details": "No active clinic schedule found for this department."
             })
+
+        if not require_active_schedule:
+            return None
 
         raise serializers.ValidationError({
             "admission_details": "Multiple clinics are scheduled now; clinic_id is required."
@@ -462,6 +464,14 @@ class PatientRegistrationSerializer(serializers.Serializer):
         # Extract admission details
         admission_details = validated_data.pop('admission_details', None)
 
+        request = self.context.get('request')
+        facility_code = getattr(request, 'facility_code', None) or get_current_facility_code()
+        facility = get_user_facility(request) if request else None
+        if not facility and facility_code:
+            facility = Facility.get_by_code(facility_code)
+        if not facility:
+            raise serializers.ValidationError("Facility context is required.")
+
         # Generate a secure password for the patient (not provided during registration)
         generated_password = generate_secure_password()
 
@@ -478,15 +488,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
         )
 
         # Generate a unique medical record number
-        medical_record_number = generate_unique_mrn()
-
-        request = self.context.get('request')
-        facility_code = getattr(request, 'facility_code', None) or get_current_facility_code()
-        facility = get_user_facility(request) if request else None
-        if not facility and facility_code:
-            facility = Facility.get_by_code(facility_code)
-        if not facility:
-            raise serializers.ValidationError("Facility context is required.")
+        medical_record_number = generate_unique_mrn(facility)
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")
@@ -549,6 +551,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     if not clinic and admission_details.get('clinic_id'):
                         from apps.organization.models import Clinic
                         clinic = Clinic.objects.get(id=admission_details.get('clinic_id'))
+                    service_location_name = clinic.name if clinic else (department.name if department else 'Outpatient')
                     encounter = Encounter.objects.create(
                         patient=patient_profile,
                         facility=patient_profile.facility,
@@ -558,8 +561,8 @@ class PatientRegistrationSerializer(serializers.Serializer):
                         status='in-progress',
                         start_time=timezone.now(),
                         reason=admission_notes,
-                        service_type=clinic.name,
-                        location=clinic.name,
+                        service_type=service_location_name,
+                        location=service_location_name,
                         created_by=self.context['request'].user,
                         updated_by=self.context['request'].user
                     )
@@ -567,12 +570,12 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_roster=True,
+                        use_roster=self._uses_roster_for_initial_assignment(),
                         context='outpatient',
                         at_datetime=encounter.start_time,
                     )
                     try:
-                        from apps.wards.tasks import sync_encounter_to_fhir
+                        from apps.encounters.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
                             lambda: sync_encounter_to_fhir.delay(str(encounter.id))
                         )
@@ -597,12 +600,12 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_roster=True,
+                        use_roster=self._uses_roster_for_initial_assignment(),
                         context='emergency',
                         at_datetime=encounter.start_time,
                     )
                     try:
-                        from apps.wards.tasks import sync_encounter_to_fhir
+                        from apps.encounters.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
                             lambda: sync_encounter_to_fhir.delay(str(encounter.id))
                         )
@@ -674,7 +677,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     TeamAssignmentService.assign_initial_team(
                         encounter=encounter,
                         team=getattr(self, '_resolved_primary_team', None),
-                        use_roster=True,
+                        use_roster=self._uses_roster_for_initial_assignment(),
                         context='inpatient',
                         at_datetime=encounter.start_time,
                     )
@@ -688,7 +691,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
                     admission.save(update_fields=['fhir_encounter_id'])
 
                     try:
-                        from apps.wards.tasks import sync_encounter_to_fhir
+                        from apps.encounters.tasks import sync_encounter_to_fhir
                         transaction.on_commit(
                             lambda: sync_encounter_to_fhir.delay(str(encounter.id))
                         )

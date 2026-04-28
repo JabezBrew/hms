@@ -1,28 +1,51 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 import logging
 
-from .models import Referral, ReferralStatus, ReferralNotification, ReferralNotificationEvent
+from .models import (
+    Referral,
+    ReferralStatus,
+    ReferralNotification,
+    ReferralNotificationEvent,
+    ReferralSLAPolicy,
+    ReferralSLAEvent,
+    ClinicWaitlistEntry,
+    ClinicWaitlistEntryStatus,
+)
 from .serializers import (
     ReferralSerializer, ReferralCreateSerializer,
     ReferralSubmitSerializer, ReferralAcceptSerializer,
     ReferralDeclineSerializer, ReferralScheduleSerializer,
     ReferralCompleteSerializer, ReferralResponseSerializer,
-    ReferralSearchSerializer, ReferralListSerializer, ReferralNotificationSerializer
+    ReferralSearchSerializer, ReferralListSerializer, ReferralNotificationSerializer,
+    ReferralSLAPolicySerializer, ReferralSLAPolicyListSerializer,
+    ReferralSLAEventListSerializer,
+    ClinicWaitlistEntrySerializer, ClinicWaitlistEntryListSerializer,
 )
 from ..users.permissions import IsAdminOrDoctor
 from ..workflows.engines import ConsultationEngine
 from .notifications import create_referral_notifications
 from .tasks import send_referral_status_update
+from .services import ReferralSLAService, ClinicWaitlistService
 from ..encounters.models import Encounter
+from ..appointments.models import AppointmentType
+from apps.organization.models import Clinic
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
-from apps.users.models import PatientProfile
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
+from apps.users.models import PatientProfile, PractitionerProfile
+from apps.users.rbac import IsAdmin, IsDoctor, IsNurse, IsReceptionist
 from rest_framework.exceptions import PermissionDenied
 
 logger = logging.getLogger(__name__)
@@ -52,10 +75,36 @@ class ReferralViewSet(viewsets.ModelViewSet):
             return ReferralListSerializer
         return ReferralSerializer
 
+    def _get_practitioner(self):
+        return PractitionerProfile.objects.filter(staff__user=self.request.user).first()
+
+    def _get_inbox_unassigned_filters(self, practitioner):
+        if not practitioner:
+            return Q(pk__in=[])
+
+        match_filters = Q(pk__in=[])
+        has_route_match = False
+        department = getattr(practitioner.staff, 'department', '')
+        if department:
+            match_filters |= Q(referred_to_department__iexact=department)
+            has_route_match = True
+        specialization = getattr(practitioner, 'specialization', '')
+        if specialization:
+            match_filters |= Q(referred_to_specialty__iexact=specialization)
+            has_route_match = True
+
+        if not has_route_match:
+            return Q(pk__in=[])
+
+        return Q(
+            referred_to_provider__isnull=True,
+            status=ReferralStatus.PENDING,
+        ) & match_filters
+
     def _get_inbox_queryset(self, practitioner):
         return self.get_queryset().filter(
             Q(referred_to_provider=practitioner) |
-            Q(referred_to_provider__isnull=True, status=ReferralStatus.PENDING)
+            self._get_inbox_unassigned_filters(practitioner)
         ).exclude(
             status__in=[
                 ReferralStatus.DRAFT,
@@ -79,6 +128,24 @@ class ReferralViewSet(viewsets.ModelViewSet):
             'referred_to_provider__staff__user',
             'encounter'
         ).filter(facility=facility)
+        user = self.request.user
+
+        if getattr(user, 'user_type', None) != 'admin':
+            practitioner = self._get_practitioner()
+            access_filters = Q(pk__in=[])
+
+            if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                access_filters = Q()
+            else:
+                accessible_patients = get_accessible_patients_for_clinician(user)
+                access_filters |= Q(patient__in=accessible_patients)
+
+            if practitioner:
+                access_filters |= Q(referring_provider=practitioner)
+                access_filters |= Q(referred_to_provider=practitioner)
+                access_filters |= self._get_inbox_unassigned_filters(practitioner)
+
+            queryset = queryset.filter(access_filters).distinct()
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
@@ -190,6 +257,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.status = ReferralStatus.PENDING
         referral.submitted_at = timezone.now()
         referral.save()
+        ReferralSLAService.evaluate_referral(referral)
 
         transaction.on_commit(
             lambda: create_referral_notifications(
@@ -245,6 +313,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
             referral.specialist_notes = f"[Acceptance Notes]\n{acceptance_notes}\n\n{referral.specialist_notes}"
 
         referral.save()
+        ReferralSLAService.evaluate_referral(referral)
 
         transaction.on_commit(
             lambda: create_referral_notifications(
@@ -323,6 +392,7 @@ class ReferralViewSet(viewsets.ModelViewSet):
         referral.status = ReferralStatus.SCHEDULED
         referral.scheduled_appointment_id = schedule_serializer.validated_data['scheduled_appointment_id']
         referral.save()
+        ReferralSLAService.evaluate_referral(referral)
 
         transaction.on_commit(
             lambda: create_referral_notifications(
@@ -339,6 +409,51 @@ class ReferralViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(referral)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='sla-state', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    def sla_state(self, request, pk=None):
+        referral = self.get_object()
+        state = ReferralSLAService.compute_state(referral)
+        return Response({
+            'referral_id': str(referral.id),
+            'status': referral.status,
+            'sla_state': state,
+        })
+
+    @action(detail=True, methods=['post'], url_path='evaluate-sla', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    def evaluate_sla(self, request, pk=None):
+        referral = self.get_object()
+        events = ReferralSLAService.evaluate_referral(referral)
+        return Response({
+            'referral_id': str(referral.id),
+            'events_created': len(events),
+            'event_types': [event.event_type for event in events],
+        })
+
+    @action(detail=False, methods=['get'], url_path='sla-dashboard', permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
+    def sla_dashboard(self, request):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        open_referrals = Referral.objects.filter(
+            facility=facility,
+            status__in=ReferralSLAService.OPEN_STATUSES,
+        )
+        totals = {'green': 0, 'amber': 0, 'red': 0, 'breached': 0}
+        for referral in open_referrals.select_related('facility'):
+            state = ReferralSLAService.compute_state(referral)
+            risk = state['risk_band']
+            if risk in totals:
+                totals[risk] += 1
+            if state['breached']:
+                totals['breached'] += 1
+
+        return Response({
+            'facility': facility.code,
+            'open_referrals': open_referrals.count(),
+            'risk_summary': totals,
+        })
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrDoctor])
     @transaction.atomic
@@ -663,3 +778,199 @@ class ReferralNotificationViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = self.get_queryset().filter(is_read=False)
         updated = queryset.update(is_read=True)
         return Response({'updated': updated})
+
+
+class ReferralSLAPolicyViewSet(viewsets.ModelViewSet):
+    """Manage referral SLA policy definitions for a facility."""
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor)]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['urgency', 'is_active', 'referred_to_department']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), FacilityScopedPermission(), IsAdmin()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ReferralSLAPolicy.objects.none()
+        queryset = ReferralSLAPolicy.objects.filter(facility=facility)
+        if self.request.query_params.get('include_inactive') != 'true':
+            queryset = queryset.filter(is_active=True)
+        return queryset.order_by('referred_to_department', 'urgency')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ReferralSLAPolicyListSerializer
+        return ReferralSLAPolicySerializer
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        serializer.save(
+            facility=facility,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+
+class ReferralSLAEventViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only stream of referral SLA threshold and breach events."""
+    serializer_class = ReferralSLAEventListSerializer
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor | IsNurse | IsReceptionist)]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['event_type', 'referral']
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ReferralSLAEvent.objects.none()
+        queryset = ReferralSLAEvent.objects.select_related('referral').filter(facility=facility)
+        referral_id = self.request.query_params.get('referral')
+        if referral_id:
+            queryset = queryset.filter(referral_id=referral_id)
+        return queryset
+
+
+class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
+    """Clinic waitlist queue with ranking/offer/promotion actions."""
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor | IsNurse | IsReceptionist)]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['clinic', 'status', 'urgency', 'deadline_risk', 'vulnerability_flag']
+
+    def get_queryset(self):
+        facility = get_user_facility(self.request)
+        if not facility:
+            return ClinicWaitlistEntry.objects.none()
+        queryset = ClinicWaitlistEntry.objects.select_related(
+            'clinic',
+            'patient__user',
+            'referral',
+            'preferred_practitioner',
+            'promoted_appointment',
+        ).filter(facility=facility)
+        if self.request.query_params.get('active_only') == 'true':
+            queryset = queryset.filter(status__in=[ClinicWaitlistEntryStatus.WAITING, ClinicWaitlistEntryStatus.OFFERED])
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ClinicWaitlistEntryListSerializer
+        return ClinicWaitlistEntrySerializer
+
+    def perform_create(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        payload = serializer.validated_data
+        entry = ClinicWaitlistService.create_or_update_entry(
+            facility=facility,
+            clinic=payload['clinic'],
+            patient=payload['patient'],
+            requested_start_time=payload['requested_start_time'],
+            requested_end_time=payload['requested_end_time'],
+            urgency=payload.get('urgency'),
+            referral=payload.get('referral'),
+            preferred_practitioner=payload.get('preferred_practitioner'),
+            vulnerability_flag=payload.get('vulnerability_flag', False),
+            source=payload.get('source', ClinicWaitlistEntry.Source.MANUAL),
+            notes=payload.get('notes', ''),
+            actor=self.request.user,
+        )
+        serializer.instance = entry
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    @action(detail=False, methods=['post'], url_path='offer-next')
+    def offer_next(self, request):
+        clinic_id = request.data.get('clinic_id')
+        if not clinic_id:
+            return Response({'error': 'clinic_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        clinic = get_object_or_404(Clinic, id=clinic_id, facility=facility)
+        start_time = request.data.get('start_time')
+        end_time = request.data.get('end_time')
+        expires_minutes = int(request.data.get('expires_minutes', 30))
+        parsed_start = parse_datetime(start_time) if start_time else None
+        parsed_end = parse_datetime(end_time) if end_time else None
+
+        entry = ClinicWaitlistService.offer_next(
+            clinic=clinic,
+            start_time=parsed_start,
+            end_time=parsed_end,
+            expires_minutes=expires_minutes,
+            actor=request.user,
+        )
+        if not entry:
+            return Response({'offered': None}, status=status.HTTP_200_OK)
+        serializer = self.get_serializer(entry)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='expire-offers')
+    def expire_offers(self, request):
+        expired = ClinicWaitlistService.expire_offers()
+        return Response({'expired': expired})
+
+    @action(detail=True, methods=['post'])
+    def promote(self, request, pk=None):
+        entry = self.get_object()
+        appointment_type_id = request.data.get('appointment_type_id')
+        practitioner_id = request.data.get('practitioner_id')
+        if not appointment_type_id:
+            return Response({'error': 'appointment_type_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        appointment_type = AppointmentType.objects.filter(id=appointment_type_id).first()
+        if not appointment_type:
+            return Response({'error': 'appointment_type not found'}, status=status.HTTP_404_NOT_FOUND)
+        practitioner = None
+        if practitioner_id:
+            practitioner = PractitionerProfile.objects.filter(id=practitioner_id).first()
+            if not practitioner:
+                return Response({'error': 'practitioner not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            appointment = ClinicWaitlistService.promote_entry(
+                entry=entry,
+                appointment_type=appointment_type,
+                actor=request.user,
+                practitioner=practitioner,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(entry)
+        return Response({
+            'waitlist_entry': serializer.data,
+            'appointment_id': str(appointment.id),
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        entry = self.get_object()
+        if entry.status in [ClinicWaitlistEntryStatus.PROMOTED, ClinicWaitlistEntryStatus.CANCELLED]:
+            return Response({'error': f'Cannot cancel entry in {entry.status} status'}, status=status.HTTP_400_BAD_REQUEST)
+
+        entry.status = ClinicWaitlistEntryStatus.CANCELLED
+        entry.updated_by = request.user
+        entry.save(update_fields=['status', 'updated_by', 'updated_at'])
+        serializer = self.get_serializer(entry)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        rows = list(ClinicWaitlistService.summarize_waiting(facility=facility))
+        return Response({'rows': rows})

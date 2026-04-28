@@ -68,7 +68,11 @@ export function WardDashboard() {
   const {
     data: admissions = [],
     isLoading: isAdmissionsLoading
-  } = useAdmissions({ ward: wardId });
+  } = useAdmissions({
+    ward: wardId,
+    status: 'admitted',
+    page_size: 200,
+  });
 
   const {
     data: sections = [],
@@ -133,7 +137,10 @@ export function WardDashboard() {
   // Handle bed click
   const handleBedClick = (bedId) => {
     const activeAdmission = admissions.find(
-      admission => admission.bed?.id === bedId && admission.status === 'admitted'
+      (admission) => {
+        const admissionBedId = admission?.bed?.id || admission?.bed;
+        return admissionBedId === bedId && admission.status === 'admitted';
+      }
     );
 
     if (activeAdmission) {

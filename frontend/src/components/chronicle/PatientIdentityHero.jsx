@@ -8,12 +8,13 @@ import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/ellipsis.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
-import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Download from 'lucide-react/dist/esm/icons/download.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -40,6 +41,7 @@ const PatientIdentityHero = ({
   onAddNote,
   onRecordVitals,
   onPrescribe,
+  onAskChronicle,
   onOrderLabs,
   onRequestConsult,
   onShareRecord,
@@ -47,9 +49,10 @@ const PatientIdentityHero = ({
   onActionIntent,
   onScheduleFollowUp,
   onViewTreatmentSheet,
+  onViewMedicationHistory,
   onRecordFluids,
-  onAssignChart,
   onStartWardRound,
+  onStartDischarge,
   onManageInsurance,
   insurance = [],
   activeAdmission,
@@ -254,7 +257,7 @@ const PatientIdentityHero = ({
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent" />
 
-      <div className="relative flex items-start justify-between">
+      <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
         {/* Left: Patient Identity */}
         <div className="space-y-4">
           {/* Status + Name */}
@@ -301,6 +304,16 @@ const PatientIdentityHero = ({
                 <MapPin className="h-3.5 w-3.5" />
                 {location}
               </span>
+            )}
+
+            {activeAdmission && onStartDischarge && (
+              <button
+                onClick={onStartDischarge}
+                className="flex items-center gap-1.5 font-mono text-sm px-2 py-0.5 rounded-md transition-colors hover:bg-muted cursor-pointer border text-rose-600 border-rose-300 bg-rose-50 dark:text-rose-400 dark:border-rose-700 dark:bg-rose-950"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Discharge
+              </button>
             )}
 
             {/* Active Visit Status */}
@@ -361,11 +374,12 @@ const PatientIdentityHero = ({
         </div>
 
         {/* Right: Quick Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 xl:max-w-[32rem] xl:justify-end">
           <Button
             variant="outline"
             size="sm"
             className="font-mono text-xs"
+            data-onboarding="chronicle-add-note"
             onClick={onAddNote}
             onPointerEnter={() => prefetchAction('note')}
             onFocus={() => prefetchAction('note')}
@@ -390,6 +404,7 @@ const PatientIdentityHero = ({
             variant="outline"
             size="sm"
             className="font-mono text-xs"
+            data-onboarding="chronicle-prescribe"
             onClick={onPrescribe}
             onPointerEnter={() => prefetchAction('prescription')}
             onFocus={() => prefetchAction('prescription')}
@@ -398,17 +413,36 @@ const PatientIdentityHero = ({
             Prescribe
           </Button>
 
-          {activeAdmission && onViewTreatmentSheet && (
+          {onAskChronicle && (
             <Button
               variant="outline"
               size="sm"
-              className="font-mono text-xs"
-              onClick={onViewTreatmentSheet}
+              className={cn(
+                "font-mono text-xs",
+                "border-amber-200 bg-amber-50/80 text-amber-900 hover:bg-amber-100",
+                "dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50"
+              )}
+              onClick={onAskChronicle}
+              onPointerEnter={() => prefetchAction('copilot')}
+              onFocus={() => prefetchAction('copilot')}
             >
-              <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
-              Treatment Sheet
+              <Sparkles className="h-3.5 w-3.5 mr-1.5 text-amber-600 dark:text-amber-300" />
+              Ask Chronicle
             </Button>
           )}
+
+          <div className="flex items-center gap-2">
+            {activeAdmission && onViewTreatmentSheet && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono text-xs"
+                onClick={onViewTreatmentSheet}
+              >
+                <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+                Treatment Sheet
+              </Button>
+            )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -416,15 +450,16 @@ const PatientIdentityHero = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
+                data-onboarding="chronicle-more-actions"
                 onPointerEnter={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
-                  prefetchAction('charts');
+                  prefetchAction('medicationHistory');
                 }}
                 onFocus={() => {
                   prefetchAction('labs');
                   prefetchAction('referral');
-                  prefetchAction('charts');
+                  prefetchAction('medicationHistory');
                 }}
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -445,40 +480,38 @@ const PatientIdentityHero = ({
               >
                 Request Consult
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
-              {onAssignChart && (
+              {onViewMedicationHistory && (
                 <DropdownMenuItem
-                  onClick={onAssignChart}
-                  onPointerEnter={() => prefetchAction('charts')}
-                  onFocus={() => prefetchAction('charts')}
+                  onClick={onViewMedicationHistory}
+                  onPointerEnter={() => prefetchAction('medicationHistory')}
+                  onFocus={() => prefetchAction('medicationHistory')}
                 >
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Assign Chart
+                  <Pill className="h-4 w-4 mr-2" />
+                  Medication History
                 </DropdownMenuItem>
               )}
-              {activeAdmission && (
+              <DropdownMenuItem onClick={onScheduleFollowUp}>Schedule Follow-up</DropdownMenuItem>
+              {onRecordFluids && (
+                <DropdownMenuItem
+                  onClick={onRecordFluids}
+                  onPointerEnter={() => prefetchAction('fluids')}
+                  onFocus={() => prefetchAction('fluids')}
+                >
+                  <Droplets className="h-4 w-4 mr-2" />
+                  Fluid Balance
+                </DropdownMenuItem>
+              )}
+              {activeAdmission && onStartWardRound && (
                 <>
                   <DropdownMenuSeparator />
-                  {onStartWardRound && (
-                    <DropdownMenuItem
-                      onClick={onStartWardRound}
-                      onPointerEnter={() => prefetchAction('wardRound')}
-                      onFocus={() => prefetchAction('wardRound')}
-                    >
-                      <Stethoscope className="h-4 w-4 mr-2" />
-                      Ward Round
-                    </DropdownMenuItem>
-                  )}
-                  {onRecordFluids && (
-                    <DropdownMenuItem
-                      onClick={onRecordFluids}
-                      onPointerEnter={() => prefetchAction('fluids')}
-                      onFocus={() => prefetchAction('fluids')}
-                    >
-                      <Droplets className="h-4 w-4 mr-2" />
-                      Record Fluids
-                    </DropdownMenuItem>
-                  )}
+                  <DropdownMenuItem
+                    onClick={onStartWardRound}
+                    onPointerEnter={() => prefetchAction('wardRound')}
+                    onFocus={() => prefetchAction('wardRound')}
+                  >
+                    <Stethoscope className="h-4 w-4 mr-2" />
+                    Ward Round
+                  </DropdownMenuItem>
                 </>
               )}
               <DropdownMenuSeparator />
@@ -505,6 +538,7 @@ const PatientIdentityHero = ({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
       </div>
     </header>

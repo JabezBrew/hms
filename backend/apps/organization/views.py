@@ -27,6 +27,7 @@ from rest_framework.response import Response
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import FacilityScopedPermission, get_user_facility
 from apps.users.rbac import IsAdmin
+from apps.users.permissions import IsAdminOrReadOnly
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
 
@@ -254,7 +255,7 @@ class UnitTypeConfigViewSet(viewsets.ModelViewSet):
     (e.g., facility, department, team) and their capabilities.
     """
     queryset = UnitTypeConfig.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -282,7 +283,7 @@ class LeadershipRoleConfigViewSet(viewsets.ModelViewSet):
     and their associated permissions.
     """
     queryset = LeadershipRoleConfig.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -315,7 +316,7 @@ class StaffAssignmentTypeConfigViewSet(viewsets.ModelViewSet):
     """
     queryset = StaffAssignmentTypeConfig.objects.all()
     serializer_class = StaffAssignmentTypeConfigSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
@@ -1205,7 +1206,7 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             return DepartmentDutyType.objects.none()
-        queryset = super().get_queryset().select_related('department', 'department__unit_type')
+        queryset = super().get_queryset().select_related('department', 'department__unit_type', 'clinic')
         queryset = queryset.filter(department__root_unit__code=facility.code)
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
@@ -1391,6 +1392,102 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_param)
         return queryset.order_by('date', 'duty_type__display_order')
 
+    def _resolve_entry_practitioner_ids(self, team, practitioner, entry_date):
+        practitioner_ids = set()
+        if practitioner:
+            practitioner_ids.add(practitioner.id)
+        if team:
+            team_practitioner_ids = StaffUnitAssignment.objects.filter(
+                unit=team,
+                is_active=True,
+            ).filter(
+                Q(effective_from__isnull=True) | Q(effective_from__lte=entry_date)
+            ).filter(
+                Q(effective_until__isnull=True) | Q(effective_until__gte=entry_date)
+            ).values_list('practitioner_id', flat=True)
+            practitioner_ids.update(team_practitioner_ids)
+        return practitioner_ids
+
+    def _build_recurring_conflict_map(
+        self,
+        practitioner_ids,
+        entry_date,
+        duty_type,
+        start_time=None,
+        end_time=None,
+    ):
+        if not practitioner_ids or not duty_type or duty_type.category != 'clinic':
+            return {}
+
+        from apps.appointments.models import RecurringSchedule
+
+        recurring_qs = RecurringSchedule.objects.filter(
+            practitioner_id__in=practitioner_ids,
+            is_active=True,
+            active_from__lte=entry_date,
+            days_of_week__contains=[entry_date.weekday()],
+        ).filter(
+            Q(active_to__isnull=True) | Q(active_to__gte=entry_date)
+        ).select_related('practitioner__staff__user')
+
+        effective_start = start_time or duty_type.start_time
+        effective_end = end_time or duty_type.end_time
+        if duty_type.is_24_hour:
+            conflicts = recurring_qs
+        elif not effective_start or not effective_end:
+            return {}
+        else:
+            conflicts = recurring_qs.filter(
+                start_time__lt=effective_end,
+                end_time__gt=effective_start,
+            )
+
+        conflict_map = {}
+        for conflict in conflicts:
+            conflict_map.setdefault(conflict.practitioner_id, conflict)
+        return conflict_map
+
+    def _validate_entry_against_recurring_schedules(
+        self,
+        team,
+        practitioner,
+        entry_date,
+        duty_type,
+        start_time=None,
+        end_time=None,
+    ):
+        practitioner_ids = self._resolve_entry_practitioner_ids(team, practitioner, entry_date)
+        conflict_map = self._build_recurring_conflict_map(
+            practitioner_ids=practitioner_ids,
+            entry_date=entry_date,
+            duty_type=duty_type,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if not conflict_map:
+            return
+
+        if practitioner:
+            conflict = conflict_map.get(practitioner.id)
+            if not conflict:
+                return
+            practitioner_name = conflict.practitioner.staff.user.get_full_name()
+            raise ValidationError(
+                f"Roster entry conflicts with recurring schedule '{conflict.name}' for "
+                f"{practitioner_name} ({conflict.start_time.strftime('%H:%M')}-"
+                f"{conflict.end_time.strftime('%H:%M')})."
+            )
+
+        if team:
+            assigned_ids = set(practitioner_ids)
+            conflicting_ids = set(conflict_map.keys())
+            if assigned_ids and assigned_ids.issubset(conflicting_ids):
+                sample_conflict = next(iter(conflict_map.values()))
+                raise ValidationError(
+                    "Roster team entry conflicts with recurring schedules for all assigned "
+                    f"practitioners (for example: {sample_conflict.name})."
+                )
+
     def perform_create(self, serializer):
         department = self._require_department()
         facility = get_user_facility(self.request)
@@ -1416,6 +1513,16 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             if adjacent.exists():
                 raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
+        if duty_type and entry_date:
+            self._validate_entry_against_recurring_schedules(
+                team=team,
+                practitioner=serializer.validated_data.get('practitioner'),
+                entry_date=entry_date,
+                duty_type=duty_type,
+                start_time=serializer.validated_data.get('start_time'),
+                end_time=serializer.validated_data.get('end_time'),
+            )
+
         instance = serializer.save(
             department=department,
             source=serializer.validated_data.get('source') or 'manual',
@@ -1433,6 +1540,41 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        instance = serializer.instance
+        facility = get_user_facility(self.request)
+        duty_type = serializer.validated_data.get('duty_type', instance.duty_type)
+        team = serializer.validated_data.get('team', instance.team)
+        practitioner = serializer.validated_data.get('practitioner', instance.practitioner)
+        entry_date = serializer.validated_data.get('date', instance.date)
+
+        if duty_type and duty_type.department_id != instance.department_id:
+            raise ValidationError('Duty type must belong to the selected department.')
+        if team:
+            if team.root_unit and team.root_unit.code != facility.code:
+                raise PermissionDenied("Team does not belong to the active facility.")
+            if not team.is_descendant_of(instance.department):
+                raise ValidationError('Team must belong to the selected department.')
+
+        if duty_type and duty_type.is_24_hour and team and entry_date:
+            adjacent = RosterEntry.objects.filter(
+                department=instance.department,
+                duty_type=duty_type,
+                team=team,
+                date__in=[entry_date - timedelta(days=1), entry_date + timedelta(days=1)]
+            ).exclude(id=instance.id)
+            if adjacent.exists():
+                raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
+
+        if duty_type and entry_date:
+            self._validate_entry_against_recurring_schedules(
+                team=team,
+                practitioner=practitioner,
+                entry_date=entry_date,
+                duty_type=duty_type,
+                start_time=serializer.validated_data.get('start_time', instance.start_time),
+                end_time=serializer.validated_data.get('end_time', instance.end_time),
+            )
+
         instance = serializer.save(updated_by=self.request.user)
         AuditService.log(
             request=self.request,
@@ -1498,7 +1640,8 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
 
         entries_data = serializer.validated_data['entries']
         duty_type_ids = {entry['duty_type'] for entry in entries_data}
-        team_ids = {entry['team'] for entry in entries_data}
+        team_ids = {entry.get('team') for entry in entries_data if entry.get('team')}
+        practitioner_ids = {entry.get('practitioner') for entry in entries_data if entry.get('practitioner')}
 
         duty_types = {
             str(duty_type.id): duty_type
@@ -1514,11 +1657,20 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 root_unit__code=facility.code
             )
         }
+        practitioners = {}
+        if practitioner_ids:
+            from apps.users.models import PractitionerProfile
+            practitioner_qs = PractitionerProfile.objects.filter(
+                id__in=practitioner_ids
+            ).select_related('staff', 'staff__primary_facility', 'staff__user')
+            practitioners = {str(prac.id): prac for prac in practitioner_qs}
 
         if len(duty_types) != len(duty_type_ids):
             raise ValidationError('One or more duty types are invalid for this department.')
         if len(teams) != len(team_ids):
             raise ValidationError('One or more teams are invalid for this facility.')
+        if practitioner_ids and len(practitioners) != len(practitioner_ids):
+            raise ValidationError('One or more practitioners are invalid.')
 
         dates = [entry['date'] for entry in entries_data]
         existing = RosterEntry.objects.filter(
@@ -1544,14 +1696,26 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         to_create = []
         for entry in entries_data:
             duty_type = duty_types[str(entry['duty_type'])]
-            team = teams[str(entry['team'])]
-            if not team.is_descendant_of(department):
-                raise ValidationError('Team must belong to the selected department.')
+            team = None
+            practitioner = None
+            if entry.get('team'):
+                team = teams[str(entry['team'])]
+                if not team.is_descendant_of(department):
+                    raise ValidationError('Team must belong to the selected department.')
+            if entry.get('practitioner'):
+                practitioner = practitioners[str(entry['practitioner'])]
+                # Facility safety check: prevent cross-facility roster assignments.
+                if (
+                    not practitioner.staff
+                    or not practitioner.staff.primary_facility_id
+                    or practitioner.staff.primary_facility_id != facility.id
+                ):
+                    raise ValidationError('Practitioner does not belong to the active facility.')
             if (entry['date'], duty_type.id) in existing_keys:
                 raise ValidationError('Roster entry already exists for provided date and duty type.')
 
             back_to_back_error = None
-            if duty_type.is_24_hour:
+            if duty_type.is_24_hour and team:
                 back_to_back_error = (
                     (team.id, duty_type.id, entry['date'] - timedelta(days=1)) in entries_by_team_date or
                     (team.id, duty_type.id, entry['date'] + timedelta(days=1)) in entries_by_team_date
@@ -1559,11 +1723,21 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 if back_to_back_error:
                     raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
+            self._validate_entry_against_recurring_schedules(
+                team=team,
+                practitioner=practitioner,
+                entry_date=entry['date'],
+                duty_type=duty_type,
+                start_time=entry.get('start_time'),
+                end_time=entry.get('end_time'),
+            )
+
             to_create.append(RosterEntry(
                 department=department,
                 duty_type=duty_type,
                 date=entry['date'],
                 team=team,
+                practitioner=practitioner,
                 start_time=entry.get('start_time'),
                 end_time=entry.get('end_time'),
                 source=entry.get('source') or 'manual',
@@ -2056,3 +2230,22 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
         result = RosterValidationService.validate_roster(entries, rules)
 
         return Response(result)
+
+
+from apps.core.features import attach_required_feature
+
+attach_required_feature(
+    [
+        UnitWardAllocationViewSet,
+    ],
+    'wards',
+)
+attach_required_feature(
+    [
+        DepartmentDutyTypeViewSet,
+        RotationRuleViewSet,
+        RosterEntryViewSet,
+        RosterValidationRuleViewSet,
+    ],
+    'department_rosters',
+)

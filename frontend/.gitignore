@@ -31,3 +31,10 @@ html
 /blob-report/
 /playwright/.cache/
 tests/e2e/.auth/
+
+# Keep frontend lib modules when deployment tooling packages `frontend/`
+# as its own repository root and re-evaluates ignore patterns there.
+!src/lib/
+!src/lib/**
+!src/shared/lib/
+!src/shared/lib/**

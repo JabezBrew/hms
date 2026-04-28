@@ -1,10 +1,12 @@
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROLE_GROUPS } from '@/shared/constants/roles'
 
 const SettingsHubPage = lazy(() => import('./pages/SettingsHubPage'))
 const ProfileSettingsPage = lazy(() => import('./pages/ProfileSettingsPage'))
 const SecuritySettingsPage = lazy(() => import('./pages/SecuritySettingsPage'))
 const PreferencesSettingsPage = lazy(() => import('./pages/PreferencesSettingsPage'))
+const FeatureEntitlementsPage = lazy(() => import('./pages/FeatureEntitlementsPage'))
 
 const SETTINGS_BREADCRUMB = { label: 'Settings', path: '/settings' }
 
@@ -40,5 +42,13 @@ export const settingsRoutes = [
     layout: ROUTE_LAYOUTS.APP,
     title: 'Preferences | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Preferences', path: '/settings/preferences' }],
+  },
+  {
+    path: '/settings/feature-entitlements',
+    component: FeatureEntitlementsPage,
+    roles: ROLE_GROUPS.ADMIN_ONLY,
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'Feature Entitlements | Hospital Management System',
+    breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Feature Entitlements', path: '/settings/feature-entitlements' }],
   },
 ]

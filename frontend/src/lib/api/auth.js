@@ -1,4 +1,5 @@
 import { apiClient, handleApiError } from '../api-client';
+import { getClientDeviceLabel } from '../device-label';
 
 /**
  * Authentication API service
@@ -16,7 +17,14 @@ export const authApi = {
       if (facilityCode) {
         payload.facility_code = facilityCode;
       }
-      const headers = facilityCode ? { 'X-Facility-Code': facilityCode } : undefined;
+      const headers = {};
+      if (facilityCode) {
+        headers['X-Facility-Code'] = facilityCode;
+      }
+      const deviceLabel = getClientDeviceLabel();
+      if (deviceLabel) {
+        headers['X-Device-Label'] = deviceLabel;
+      }
       return await apiClient.post('/auth/login/', payload, { headers });
     } catch (error) {
       throw new Error(handleApiError(error, 'Login failed'));
@@ -130,9 +138,10 @@ export const authApi = {
     }
   },
 
-  mfaStatus: async () => {
+  mfaStatus: async (mfaSession = null) => {
     try {
-      return await apiClient.get('/auth/mfa/status/');
+      const headers = mfaSession ? { 'X-MFA-Session': mfaSession } : undefined;
+      return await apiClient.get('/auth/mfa/status/', { headers });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to load MFA status'));
     }

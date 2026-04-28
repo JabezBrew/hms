@@ -11,9 +11,11 @@ Tests for:
 """
 import pytest
 from datetime import date, time
+from zoneinfo import ZoneInfo
 from unittest.mock import patch, MagicMock
 
 from django.utils import timezone
+from django.test import override_settings
 from rest_framework.test import APIRequestFactory
 from rest_framework.request import Request
 
@@ -315,6 +317,103 @@ class TestPatientRegistrationSerializer:
 
         assert serializer.is_valid(), serializer.errors
 
+    def test_outpatient_registration_requires_active_clinic_by_default(self, db, request_context):
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
+        ClinicSchedule.objects.filter(
+            facility=facility,
+            department=clinic.department,
+            clinic=clinic,
+        ).update(is_active=False)
+
+        data = {
+            'email': 'noschedule-strict@test.com',
+            'first_name': 'No',
+            'last_name': 'Schedule',
+            'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+            },
+        }
+
+        serializer = PatientRegistrationSerializer(data=data, context=request_context)
+        assert not serializer.is_valid()
+        assert 'admission_details' in serializer.errors
+        assert 'No active clinic schedule found' in str(serializer.errors['admission_details'][0])
+
+    @override_settings(REQUIRE_OUTPATIENT_ACTIVE_CLINIC=False)
+    def test_outpatient_registration_allows_department_only_when_policy_relaxed(self, db, request_context):
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
+        ClinicSchedule.objects.filter(
+            facility=facility,
+            department=clinic.department,
+            clinic=clinic,
+        ).update(is_active=False)
+
+        data = {
+            'email': 'noschedule-relaxed@test.com',
+            'first_name': 'Small',
+            'last_name': 'Clinic',
+            'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+            },
+        }
+
+        serializer = PatientRegistrationSerializer(data=data, context=request_context)
+        assert serializer.is_valid(), serializer.errors
+
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.patients.tasks.create_patient_in_fhir.delay')
+    @override_settings(REQUIRE_OUTPATIENT_ACTIVE_CLINIC=False)
+    def test_outpatient_registration_without_clinic_creates_department_scoped_encounter(
+        self,
+        mock_create_task,
+        mock_sync_encounter_task,
+        db,
+        request_context,
+        django_capture_on_commit_callbacks,
+    ):
+        mock_create_task.return_value = MagicMock(id='task-123')
+        mock_sync_encounter_task.return_value = MagicMock(id='task-456')
+
+        facility = request_context['request'].facility
+        clinic = create_clinic(facility)
+        ClinicSchedule.objects.filter(
+            facility=facility,
+            department=clinic.department,
+            clinic=clinic,
+        ).update(is_active=False)
+
+        data = {
+            'email': 'department-only@test.com',
+            'first_name': 'Department',
+            'last_name': 'Only',
+            'date_of_birth': '1990-01-15',
+            'admission_details': {
+                'type': 'outpatient',
+                'department_id': str(clinic.department_id),
+                'notes': 'walk-in',
+            },
+        }
+
+        serializer = PatientRegistrationSerializer(data=data, context=request_context)
+        assert serializer.is_valid(), serializer.errors
+
+        with django_capture_on_commit_callbacks(execute=True):
+            patient_profile = serializer.save()
+
+        from apps.encounters.models import Encounter
+        encounter = Encounter.objects.filter(patient=patient_profile).order_by('-created_at').first()
+        assert encounter is not None
+        assert encounter.clinic_id is None
+        assert encounter.department_id == clinic.department_id
+        assert encounter.service_type == clinic.department.name
+        assert encounter.location == clinic.department.name
+
     def test_duplicate_email_rejected(self, db, request_context):
         """Test that duplicate email is rejected."""
         UserFactory(email='existing@test.com')
@@ -435,7 +534,7 @@ class TestPatientRegistrationSerializer:
         assert not serializer.is_valid()
         assert 'phone_number' in serializer.errors
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     def test_create_patient_with_fhir(self, mock_create_task, mock_sync_encounter_task, db, request_context, django_capture_on_commit_callbacks):
         """Test creating a patient queues FHIR resource creation."""
@@ -470,7 +569,7 @@ class TestPatientRegistrationSerializer:
 
         assert patient_profile.user.email == 'fhirpatient@test.com'
         assert patient_profile.user.first_name == 'FHIR'
-        assert patient_profile.medical_record_number.startswith('HMS-')
+        assert patient_profile.medical_record_number.startswith(f"MRN-{facility.code}-")
         assert patient_profile.patient_identity_id is not None
 
         from apps.mpi.models import PatientFacilityLink
@@ -490,29 +589,29 @@ class TestMRNGeneration:
 
     def test_mrn_format(self, db):
         """Test MRN follows expected format."""
-        mrn = generate_unique_mrn()
+        facility = DefaultFacilityFactory(code='MAIN')
+        mrn = generate_unique_mrn(facility)
 
-        # Format: HMS-YYYY-NNNNN
-        parts = mrn.split('-')
-        assert len(parts) == 3
-        assert parts[0] == 'HMS'
-        assert len(parts[1]) == 4  # Year
-        assert len(parts[2]) == 5  # Random digits
-        assert parts[1].isdigit()
-        assert parts[2].isdigit()
+        assert mrn.startswith('MRN-MAIN-')
+        year, sequence = mrn.rsplit('-', 2)[1:]
+        assert len(year) == 4
+        assert len(sequence) == 7
+        assert year.isdigit()
+        assert sequence.isdigit()
 
     def test_mrn_uniqueness(self, db):
         """Test generated MRNs are unique."""
+        facility = DefaultFacilityFactory()
         mrns = set()
         for _ in range(100):
-            mrn = generate_unique_mrn()
+            mrn = generate_unique_mrn(facility)
             assert mrn not in mrns
             mrns.add(mrn)
 
     def test_mrn_includes_current_year(self, db):
         """Test MRN includes current year."""
-        from datetime import datetime
-        mrn = generate_unique_mrn()
-        current_year = str(datetime.now().year)
+        facility = DefaultFacilityFactory()
+        mrn = generate_unique_mrn(facility)
+        current_year = str(timezone.now().astimezone(ZoneInfo(facility.timezone)).year)
 
         assert current_year in mrn

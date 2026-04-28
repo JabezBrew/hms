@@ -15,24 +15,35 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import format from "date-fns/format";
 import parseISO from "date-fns/parseISO";
 import { useChartEntries, useChartAssignment } from "@/features/charts/hooks";
+import { formatBodyMapValue } from "./bodyMapUtils";
 
 const ChartDataGrid = ({
   assignmentId,
+  assignment: assignmentProp = null,
+  entriesData: entriesDataProp = null,
+  entriesLoading: entriesLoadingProp = false,
   dateRange,
   className,
 }) => {
-  // Fetch assignment and entries
-  const { data: assignment, isLoading: assignmentLoading } = useChartAssignment(assignmentId);
+  const shouldFetchAssignment = !assignmentProp && !!assignmentId;
+  const shouldFetchEntries = !entriesDataProp && !!assignmentId;
+  const { data: assignmentQueryData, isLoading: assignmentLoading } = useChartAssignment(
+    shouldFetchAssignment ? assignmentId : null,
+  );
   const { data: entriesData, isLoading: entriesLoading } = useChartEntries({
-    assignment: assignmentId,
+    assignment: shouldFetchEntries ? assignmentId : null,
     ...dateRange,
     include_data: true,
     ordering: '-observation_datetime',
+  }, {
+    enabled: shouldFetchEntries,
   });
 
+  const assignment = assignmentProp || assignmentQueryData;
+  const resolvedEntriesData = entriesDataProp || entriesData;
   const template = assignment?.template;
-  const entries = entriesData?.results || entriesData || [];
-  const totalEntries = entriesData?.count ?? entries.length;
+  const entries = resolvedEntriesData?.results || resolvedEntriesData || [];
+  const totalEntries = resolvedEntriesData?.count ?? entries.length;
 
   // Sort entries by observation time (most recent first for display)
   const sortedEntries = useMemo(() => {
@@ -84,6 +95,9 @@ const ChartDataGrid = ({
       case 'boolean':
         return value ? 'Yes' : 'No';
 
+      case 'body_map':
+        return formatBodyMapValue(value);
+
       case 'select':
       case 'scale':
         return String(value);
@@ -96,7 +110,7 @@ const ChartDataGrid = ({
     }
   };
 
-  const isLoading = assignmentLoading || entriesLoading;
+  const isLoading = (shouldFetchAssignment && assignmentLoading) || entriesLoadingProp || (shouldFetchEntries && entriesLoading);
 
   if (isLoading) {
     return (

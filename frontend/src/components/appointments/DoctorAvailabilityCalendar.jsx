@@ -39,7 +39,9 @@ import {
  * - Two-column layout (calendar | slots)
  */
 const DoctorAvailabilityCalendar = ({
+  clinicId,
   practitionerId,
+  useRoster,
   onSlotSelect,
 }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -50,32 +52,56 @@ const DoctorAvailabilityCalendar = ({
   const calendarStart = startOfWeek(startOfMonth(currentMonth));
   const calendarEnd = endOfWeek(endOfMonth(currentMonth));
 
-  const dateRangeParams = {
-    practitioner_id: practitionerId,
-    start_date: format(calendarStart, 'yyyy-MM-dd'),
-    end_date: format(calendarEnd, 'yyyy-MM-dd'),
-  };
+  const hasPractitioner = Boolean(practitionerId);
+  const hasClinic = Boolean(clinicId);
 
-  // Fetch data with server-side filtering by practitioner
-  // Note: practitionerId must be the UUID (local_data.id), not FHIR resource ID
-  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams);
+  const dateRangeParams = useMemo(() => {
+    const params = {
+      start_date: format(calendarStart, 'yyyy-MM-dd'),
+      end_date: format(calendarEnd, 'yyyy-MM-dd'),
+    };
+
+    if (hasPractitioner) {
+      params.practitioner_id = practitionerId;
+      if (typeof useRoster === 'boolean') {
+        params.use_roster = useRoster ? 'true' : 'false';
+      }
+    } else if (hasClinic) {
+      params.clinic_id = clinicId;
+    }
+
+    return params;
+  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId, useRoster]);
+
+  // Fetch slots with server-side filtering by practitioner or clinic
+  const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams, {
+    enabled: hasPractitioner || hasClinic,
+  });
 
   const { data: recurringSchedulesData, isLoading: recurringLoading } = useRecurringSchedules(
-    practitionerId ? { practitioner: practitionerId } : {}
+    practitionerId ? { practitioner: practitionerId } : {},
+    { enabled: hasPractitioner }
   );
 
   const { data: blockedTimesData, isLoading: blockedLoading } = useBlockedTimes(
-    practitionerId ? { practitioner: practitionerId } : {}
+    practitionerId ? { practitioner: practitionerId } : {},
+    { enabled: hasPractitioner }
   );
 
   // Normalize data to arrays
-  const recurringSchedules = Array.isArray(recurringSchedulesData)
-    ? recurringSchedulesData
-    : recurringSchedulesData?.results || [];
+  const recurringSchedules = useMemo(
+    () => (Array.isArray(recurringSchedulesData)
+      ? recurringSchedulesData
+      : recurringSchedulesData?.results || []),
+    [recurringSchedulesData]
+  );
 
-  const blockedTimes = Array.isArray(blockedTimesData)
-    ? blockedTimesData
-    : blockedTimesData?.results || [];
+  const blockedTimes = useMemo(
+    () => (Array.isArray(blockedTimesData)
+      ? blockedTimesData
+      : blockedTimesData?.results || []),
+    [blockedTimesData]
+  );
 
   const isLoading = slotsLoading || recurringLoading || blockedLoading;
 
@@ -175,7 +201,13 @@ const DoctorAvailabilityCalendar = ({
   };
 
   const handleSlotClick = (slot) => {
-    if (slot.status === 'booked' || slot.status === 'busy') return;
+    const cap = slot.capacity || null;
+    const remaining =
+      cap && cap.remaining !== undefined && cap.remaining !== null
+        ? Number(cap.remaining)
+        : (slot.status === 'booked' || slot.status === 'busy' ? 0 : 1);
+    if (!Number.isFinite(remaining) ? true : remaining <= 0) return;
+    if (slot.status === 'busy-unavailable') return;
     setSelectedSlotId(slot.id);
     if (onSlotSelect) {
       onSlotSelect(slot);
@@ -188,9 +220,26 @@ const DoctorAvailabilityCalendar = ({
 
   selectedDateSlots.sort((a, b) => new Date(a.start) - new Date(b.start));
 
-  // Count available/booked slots
-  const availableCount = selectedDateSlots.filter(s => s.status !== 'booked' && s.status !== 'busy').length;
-  const bookedCount = selectedDateSlots.filter(s => s.status === 'booked' || s.status === 'busy').length;
+  const capacitySummary = useMemo(() => {
+    let totalMax = 0;
+    let totalRemaining = 0;
+    selectedDateSlots.forEach((slot) => {
+      const cap = slot.capacity || null;
+      const max =
+        cap && cap.max !== undefined && cap.max !== null ? Number(cap.max) : 1;
+      const remaining =
+        cap && cap.remaining !== undefined && cap.remaining !== null
+          ? Number(cap.remaining)
+          : (slot.status === 'booked' || slot.status === 'busy' ? 0 : 1);
+      if (Number.isFinite(max)) totalMax += Math.max(0, max);
+      if (Number.isFinite(remaining)) totalRemaining += Math.max(0, remaining);
+    });
+    return {
+      totalMax,
+      totalRemaining,
+      totalBooked: Math.max(0, totalMax - totalRemaining),
+    };
+  }, [selectedDateSlots]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -269,7 +318,7 @@ const DoctorAvailabilityCalendar = ({
             </h3>
             <p className="text-sm text-muted-foreground">
               {selectedDateSlots.length > 0
-                ? `${availableCount} available, ${bookedCount} booked`
+                ? `${capacitySummary.totalRemaining} remaining, ${capacitySummary.totalBooked} booked`
                 : 'No scheduled slots'
               }
             </p>
@@ -278,11 +327,11 @@ const DoctorAvailabilityCalendar = ({
             <div className="flex gap-2">
               <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
                 <CalendarCheck className="h-3 w-3 mr-1" />
-                {availableCount}
+                {capacitySummary.totalRemaining}
               </Badge>
               <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30">
                 <CalendarX className="h-3 w-3 mr-1" />
-                {bookedCount}
+                {capacitySummary.totalBooked}
               </Badge>
             </div>
           )}
@@ -297,7 +346,14 @@ const DoctorAvailabilityCalendar = ({
           <ScrollArea className="h-[350px] rounded-xl border border-border/50 p-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {selectedDateSlots.map((slot) => {
-                const isBooked = slot.status === 'booked' || slot.status === 'busy';
+                const cap = slot.capacity || null;
+                const remaining =
+                  cap && cap.remaining !== undefined && cap.remaining !== null
+                    ? Number(cap.remaining)
+                    : (slot.status === 'booked' || slot.status === 'busy' ? 0 : 1);
+                const max =
+                  cap && cap.max !== undefined && cap.max !== null ? Number(cap.max) : 1;
+                const isBooked = slot.status === 'booked' || slot.status === 'busy' || remaining <= 0;
                 const isSelected = selectedSlotId === slot.id;
 
                 return (
@@ -323,11 +379,23 @@ const DoctorAvailabilityCalendar = ({
                         {format(new Date(slot.start), 'h:mm a')} - {format(new Date(slot.end), 'h:mm a')}
                       </span>
                     </div>
-                    {isBooked && (
+                    {Number.isFinite(max) && max > 1 ? (
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0",
+                          remaining > 0
+                            ? "bg-emerald-500/10 text-emerald-700"
+                            : "bg-rose-500/10 text-rose-600"
+                        )}
+                      >
+                        {remaining > 0 ? `${remaining}/${max} left` : 'Full'}
+                      </Badge>
+                    ) : isBooked ? (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-rose-500/10 text-rose-600">
                         Booked
                       </Badge>
-                    )}
+                    ) : null}
                   </button>
                 );
               })}

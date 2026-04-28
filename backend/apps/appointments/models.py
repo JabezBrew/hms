@@ -42,6 +42,17 @@ class AppointmentType(models.Model):
 
 class Appointment(models.Model):
     """Local appointment record (source of truth)."""
+    class AssignmentStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending Assignment'
+        PREASSIGNED = 'preassigned', 'Preassigned'
+        ASSIGNED = 'assigned', 'Assigned'
+
+    class AssignmentSource(models.TextChoices):
+        BOOKING = 'booking', 'Booking'
+        PREASSIGNMENT = 'preassignment', 'Preassignment'
+        CHECK_IN = 'check_in', 'Check-In'
+        MANUAL = 'manual', 'Manual'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
         'core.Facility',
@@ -95,6 +106,19 @@ class Appointment(models.Model):
     reason = models.TextField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     slot_reference = models.CharField(max_length=100, blank=True, null=True)
+    assignment_status = models.CharField(
+        max_length=20,
+        choices=AssignmentStatus.choices,
+        default=AssignmentStatus.PENDING
+    )
+    assignment_source = models.CharField(
+        max_length=20,
+        choices=AssignmentSource.choices,
+        null=True,
+        blank=True
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    queue_token = models.CharField(max_length=32, null=True, blank=True)
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -235,6 +259,18 @@ class RecurringSchedule(models.Model):
     active_to = models.DateField(blank=True, null=True)
     breaks = models.JSONField(default=list, blank=True, help_text="List of break times, e.g. [{'start': '12:00', 'end': '13:00'}]")
     is_active = models.BooleanField(default=True)
+    template_key = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Shared template key when this schedule was cloned to multiple practitioners"
+    )
+    template_name = models.CharField(
+        max_length=120,
+        null=True,
+        blank=True,
+        help_text="Optional display name for the shared recurring schedule template"
+    )
 
     # Migration tracking fields (for deprecation)
     migrated_to_roster = models.BooleanField(
@@ -266,6 +302,7 @@ class RecurringSchedule(models.Model):
         indexes = [
             models.Index(fields=['facility', 'is_active']),
             models.Index(fields=['practitioner', 'is_active', 'active_from']),
+            models.Index(fields=['facility', 'template_key']),
             models.Index(fields=['days_of_week']),
             models.Index(fields=['migrated_to_roster']),
         ]

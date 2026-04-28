@@ -1,8 +1,6 @@
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
@@ -15,14 +13,12 @@ import {
   useRemoveFromMyPatients,
   useToggleMyPatientPin,
 } from "@/features/patients/hooks/useMyPatientsQueries";
-import { useAuth } from "@/lib/auth";
 import { cn, normalizeApiResults } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PatientChronicleCard } from "@/components/chronicle";
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
@@ -45,9 +41,7 @@ import {
 const MyPatientsPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState("grid");
   const pageMeta = usePageMeta({
     title: 'My Patients | Hospital Management System',
     breadcrumbs: [
@@ -56,9 +50,9 @@ const MyPatientsPage = () => {
     ],
   });
 
-  const prefetchPatientById = useCallback((patientId) => {
+  const prefetchPatientById = useCallback((patientId, mode = 'hover') => {
     if (!patientId) return;
-    prefetchPatientChronicleData(queryClient, patientId);
+    prefetchPatientChronicleData(queryClient, patientId, { mode });
   }, [queryClient]);
 
   useEffect(() => {
@@ -115,7 +109,7 @@ const MyPatientsPage = () => {
     const topPatientId = patients[0]?.id || patients[0]?.patient_profile || patients[0]?.local_data?.id;
     if (!topPatientId) return;
 
-    const prefetch = () => prefetchPatientById(topPatientId);
+    const prefetch = () => prefetchPatientById(topPatientId, 'navigation');
 
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
       const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
@@ -168,6 +162,116 @@ const MyPatientsPage = () => {
   const handleAddPatient = () => {
     navigate('/patients');
   };
+
+  const myPatientColumns = useMemo(() => ([
+    {
+      key: "pinned",
+      header: "",
+      width: "56px",
+      render: (patient) => (
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+          onClick={(event) => {
+            event.stopPropagation();
+            handleTogglePin(patient._listEntryId);
+          }}
+        >
+          <Pin className={cn("h-4 w-4", patient._isPinned && "fill-current text-primary")} />
+        </button>
+      ),
+    },
+    {
+      key: "patient",
+      header: "Patient",
+      width: "240px",
+      render: (patient) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{getDisplayName(patient)}</p>
+          <p className="font-mono text-xs text-muted-foreground">
+            MRN: {patient.medical_record_number || "—"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "notes",
+      header: "Notes",
+      width: "260px",
+      render: (patient) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {patient._listNotes || "No notes"}
+        </span>
+      ),
+    },
+    {
+      key: "added",
+      header: "Added",
+      width: "180px",
+      render: (patient) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {patient._addedAt ? new Date(patient._addedAt).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "120px",
+      render: (patient) => (
+        <Badge variant="outline" className="text-xs">
+          {patient._isPinned ? "Pinned" : "Tracked"}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "240px",
+      render: (patient) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleStartRound(patient);
+            }}
+          >
+            Round
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleStartConsultation(patient);
+            }}
+          >
+            Consult
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs text-destructive"
+            onClick={(event) => {
+              event.stopPropagation();
+              const patientId = patient?.id || patient?.patient_profile;
+              handleRemoveFromMyPatients(patientId);
+            }}
+          >
+            Remove
+          </Button>
+        </div>
+      ),
+    },
+  ]), []);
 
   return (
     <PageShell>
@@ -242,32 +346,6 @@ const MyPatientsPage = () => {
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            {/* View Mode Toggle */}
-            <div className="flex bg-muted rounded-lg p-0.5">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors",
-                  viewMode === 'grid'
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={cn(
-                  "p-1.5 rounded-md transition-colors",
-                  viewMode === 'list'
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
-
             <Button
               variant="ghost"
               size="icon"
@@ -283,71 +361,27 @@ const MyPatientsPage = () => {
       {/* Patient List */}
       <main className="p-4 sm:p-6">
         {isLoading ? (
-          <LoadingSkeleton viewMode={viewMode} />
+          <LoadingSkeleton />
         ) : patients.length === 0 ? (
           <EmptyState hasSearch={!!searchQuery} onClear={handleClearSearch} />
-        ) : viewMode === 'grid' ? (
-          <VirtualizedGrid
-            items={patients}
-            minItemWidth={320}
-            rowHeight={320}
-            gap={24}
-            getItemKey={(patient, index) => patient._listEntryId || patient.id || index}
-            renderItem={(patient, index) => (
-              <div className="relative">
-                {patient._isPinned && (
-                  <div className="absolute -top-2 -right-2 z-10">
-                    <div className="bg-primary text-primary-foreground rounded-full p-1">
-                      <Pin className="h-3 w-3" />
-                    </div>
-                  </div>
-                )}
-
-                <PatientChronicleCard
-                  patient={patient}
-                  index={index}
-                  onStartRound={handleStartRound}
-                  onStartConsultation={handleStartConsultation}
-                  showMyPatientsActions={true}
-                  isInMyPatients={true}
-                  onRemoveFromMyPatients={handleRemoveFromMyPatients}
-                  onTogglePin={() => handleTogglePin(patient._listEntryId)}
-                  onPrefetchPatient={prefetchPatientById}
-                />
-              </div>
-            )}
-          />
         ) : (
-          <VirtualizedList
-            items={patients}
-            estimateSize={180}
-            gap={16}
-            getItemKey={(patient, index) => patient._listEntryId || patient.id || index}
-            renderItem={(patient, index) => (
-              <div className="relative">
-                {patient._isPinned && (
-                  <div className="absolute -top-2 -right-2 z-10">
-                    <div className="bg-primary text-primary-foreground rounded-full p-1">
-                      <Pin className="h-3 w-3" />
-                    </div>
-                  </div>
-                )}
-
-                <PatientChronicleCard
-                  patient={patient}
-                  index={index}
-                  onStartRound={handleStartRound}
-                  onStartConsultation={handleStartConsultation}
-                  showMyPatientsActions={true}
-                  isInMyPatients={true}
-                  onRemoveFromMyPatients={handleRemoveFromMyPatients}
-                  onTogglePin={() => handleTogglePin(patient._listEntryId)}
-                  onPrefetchPatient={prefetchPatientById}
-                  className="max-w-none"
-                />
-              </div>
-            )}
-          />
+          <div className="overflow-x-auto">
+            <VirtualizedTable
+              rows={patients}
+              rowKey={(patient, index) => patient._listEntryId || patient.id || index}
+              rowHeight={68}
+              columns={myPatientColumns}
+              onRowClick={(patient) => {
+                const patientId = patient?.id || patient?.patient_profile || patient?.local_data?.id;
+                if (patientId) {
+                  navigate(`/patients/${patientId}/chronicle`);
+                }
+              }}
+              rowClassName="hover:bg-muted/30"
+              className="min-w-[1140px]"
+              headerClassName="bg-muted/50 border-b border-border"
+            />
+          </div>
         )}
       </main>
     </PageShell>
@@ -357,26 +391,12 @@ const MyPatientsPage = () => {
 /**
  * LoadingSkeleton
  */
-const LoadingSkeleton = ({ viewMode }) => {
-  const count = viewMode === 'grid' ? 6 : 4;
-
+const LoadingSkeleton = () => {
   return (
-    <div className={cn(
-      viewMode === 'grid'
-        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
-        : "space-y-4"
-    )}>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-card/50 border border-border rounded-2xl p-6 space-y-4">
-          <div className="flex items-start justify-between">
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-4 w-64" />
-            </div>
-            <Skeleton className="h-6 w-20 rounded-full" />
-          </div>
-          <Skeleton className="h-16 w-full rounded-xl" />
-        </div>
+    <div className="space-y-3 rounded-xl border border-border/60 bg-card/40 p-4">
+      <Skeleton className="h-10 w-full rounded-lg" />
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-14 w-full rounded-lg" />
       ))}
     </div>
   );

@@ -17,7 +17,7 @@ from datetime import timedelta, datetime
 WARD_LIST_CACHE_KEY = 'ward_list_view'
 WARD_ANALYTICS_CACHE_KEY = 'ward_analytics_view'
 
-from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, WardStaffAssignment, StaffRole
+from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, WardSection, BedAmenity, WardStaffAssignment, StaffRole
 from .serializers import (
     WardSerializer, WardListSerializer, WardSearchSerializer,
     BedSerializer, BedListSerializer,
@@ -31,7 +31,9 @@ from .serializers import (
 )
 from ..users.permissions import IsAdminOrOwner
 from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
-from apps.organization.services import UnitHierarchyService
+from apps.admissions.serializers import AdmissionCaseDetailSerializer
+from apps.admissions.services import submit_legacy_admission_request
+from apps.discharge.services import submit_legacy_discharge
 from ..users.models import PatientProfile
 
 
@@ -728,15 +730,21 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             if patient.facility_id != facility.id:
                 raise PermissionDenied("Patient does not belong to the active facility.")
             check_clinical_access(self.request.user, patient)
+        ward_id = self.request.query_params.get('ward')
+        if ward_id:
+            queryset = queryset.filter(bed__ward_id=ward_id)
         return queryset
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
         with transaction.atomic():
             facility = get_user_facility(self.request)
             if not facility:
                 raise PermissionDenied("Facility context is required.")
-            # Get the bed from validated data
             bed = serializer.validated_data.get('bed')
+            requested_ward = serializer.validated_data.get('requested_ward')
             patient = serializer.validated_data.get('patient')
             if patient and patient.facility_id != facility.id:
                 raise PermissionDenied("Patient does not belong to the active facility.")
@@ -744,114 +752,46 @@ class AdmissionViewSet(viewsets.ModelViewSet):
                 check_clinical_access(self.request.user, patient)
             if bed and bed.ward and bed.ward.department and bed.ward.department.facility_id != facility.id:
                 raise PermissionDenied("Bed does not belong to the active facility.")
+            if requested_ward and requested_ward.department.facility_id != facility.id:
+                raise PermissionDenied("Requested ward does not belong to the active facility.")
 
-            # Create the admission with daily_rate set from the bed
-            admission = serializer.save(
-                created_by=self.request.user,
-                updated_by=self.request.user,
-                status='admitted',
-                daily_rate=bed.total_rate if bed else 0,
-                facility=facility
-            )
-
-            department_unit = None
-            if admission.bed and admission.bed.ward and admission.bed.ward.department:
-                department_unit = UnitHierarchyService.get_department_unit_for_core_department(
-                    admission.bed.ward.department,
-                    facility=facility
-                )
-
-            ed_encounter = getattr(serializer, '_ed_encounter', None)
-            if ed_encounter:
-                location = admission.bed.ward.name if admission.bed else "Waiting List"
-                encounter_updates = {
-                    'encounter_type': 'inpatient',
-                    'status': 'in-progress' if admission.bed else 'planned',
-                    'admission': admission,
-                    'location': location,
-                    'service_type': f"Admission to {location}",
-                    'admission_source': 'emergency',
-                    'updated_by': self.request.user,
-                }
-                if department_unit:
-                    encounter_updates['department'] = department_unit
-                for field, value in encounter_updates.items():
-                    setattr(ed_encounter, field, value)
-                ed_encounter.save(update_fields=list(encounter_updates.keys()) + ['updated_at'])
-
-                if admission.bed:
-                    from apps.organization.services import TeamAssignmentService
-                    TeamAssignmentService.reassign_team_on_bed_assignment(
-                        encounter=ed_encounter,
-                        bed=admission.bed
-                    )
-
-                admission.fhir_encounter_id = str(ed_encounter.id)
-                admission.save(update_fields=['fhir_encounter_id'])
-
-                try:
-                    from .tasks import sync_encounter_to_fhir
-                    sync_encounter_to_fhir.delay(str(ed_encounter.id))
-                except Exception:
-                    pass
-            else:
-                # Create local Encounter (syncs to FHIR in background)
-                try:
-                    encounter = Encounter.objects.create(
-                        patient=admission.patient,
-                        facility=facility,
-                        practitioner=admission.admitting_doctor,
-                        department=department_unit,
-                        encounter_type='inpatient',
-                        status='in-progress',
-                        start_time=admission.admission_date,
-                        service_type=f"Admission to {admission.bed.ward.name}",
-                        location=admission.bed.ward.name,
-                        admission=admission,
-                        created_by=self.request.user,
-                    )
-
-                    if admission.bed:
-                        from apps.organization.services import TeamAssignmentService
-                        TeamAssignmentService.reassign_team_on_bed_assignment(
-                            encounter=encounter,
-                            bed=admission.bed
-                        )
-
-                    # Update the admission with the encounter reference (for backwards compatibility)
-                    admission.fhir_encounter_id = str(encounter.id)
-                    admission.save(update_fields=['fhir_encounter_id'])
-
-                    # Queue FHIR sync in background
-                    try:
-                        from .tasks import sync_encounter_to_fhir
-                        sync_encounter_to_fhir.delay(str(encounter.id))
-                    except Exception:
-                        pass  # Celery not available, will sync later
-
-                except Exception as e:
-                    # Log the error but continue (we don't want to roll back the admission)
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to create Encounter for admission {admission.id}: {str(e)}", exc_info=True)
-
-            # Store the previous bed status before updating
-            previous_status = bed.status
-
-            # Update the bed status to occupied
-            bed.status = 'occupied'
-            bed.updated_by = self.request.user
-            bed.save()
-
-            # Create a bed allocation log
-            BedAllocationLog.objects.create(
-                bed=admission.bed,
+            case, activated = submit_legacy_admission_request(
+                patient=patient,
                 facility=facility,
-                previous_status=previous_status,
-                new_status='occupied',
-                admission=admission,
-                created_by=self.request.user
+                actor=request.user,
+                bed=bed,
+                requested_ward=requested_ward,
+                admission_date=serializer.validated_data.get('admission_date'),
+                expected_discharge_date=serializer.validated_data.get('expected_discharge_date'),
+                admission_type=serializer.validated_data.get('admission_type') or 'elective',
+                admission_notes=serializer.validated_data.get('admission_notes', ''),
+                admitting_doctor=serializer.validated_data.get('admitting_doctor'),
+                source_encounter=getattr(serializer, '_ed_encounter', None),
             )
+
+        if activated and case.admission_id:
+            admission = self.get_queryset().get(id=case.admission_id)
+            data = AdmissionSerializer(admission, context={'request': request}).data
+            data['admission_case_id'] = str(case.id)
+            data['activated'] = True
+            headers = self.get_success_headers(data)
+            return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
+        case_data = AdmissionCaseDetailSerializer(case, context={'request': request}).data
+        return Response(
+            {
+                'message': 'Admission request created and is awaiting clearance before activation.',
+                'activated': False,
+                'admission_case_id': str(case.id),
+                'admission_case': case_data,
+                'blockers': [
+                    blocker
+                    for blocker in case_data.get('blockers', [])
+                    if blocker.get('status') == 'pending'
+                ],
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -871,38 +811,16 @@ class AdmissionViewSet(viewsets.ModelViewSet):
 
         if serializer.is_valid():
             with transaction.atomic():
-                # Discharge the patient
                 discharge_notes = serializer.validated_data.get('discharge_notes', '')
-                admission.discharge_patient(discharge_notes)
-
-                # Update local Encounter if linked
-                if hasattr(admission, 'encounter') and admission.encounter:
-                    try:
-                        admission.encounter.finish(end_time=admission.actual_discharge_date)
-                        # Queue FHIR sync in background
-                        try:
-                            from .tasks import sync_encounter_to_fhir
-                            sync_encounter_to_fhir.delay(str(admission.encounter.id))
-                        except Exception:
-                            pass
-                    except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.error(f"Failed to update Encounter: {str(e)}")
-
-                # Create a bed allocation log
-                BedAllocationLog.objects.create(
-                    bed=admission.bed,
-                    facility=admission.facility,
-                    previous_status='occupied',
-                    new_status='available',
+                discharge_case = submit_legacy_discharge(
                     admission=admission,
-                    notes=f"Patient discharged: {discharge_notes}",
-                    created_by=request.user
+                    actor=request.user,
+                    discharge_notes=discharge_notes,
                 )
 
                 return Response({
-                    "message": "Patient discharged successfully.",
+                    "message": "Medical discharge submitted for clearance.",
+                    "discharge_case_id": str(discharge_case.id),
                     "admission": AdmissionSerializer(admission).data
                 })
 
@@ -1329,3 +1247,8 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
 
         serializer = WardStaffAssignmentDetailSerializer(assignments, many=True)
         return Response(serializer.data)
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'wards')

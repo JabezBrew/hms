@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Prefetch, Exists, OuterRef
+from django.db.models import Prefetch, Exists, OuterRef, Subquery, Q, Value, CharField
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
 from django.conf import settings
@@ -26,11 +27,24 @@ from .serializers import (
     PatientRegistrationSerializer
 )
 from apps.users.models import PatientProfile
-from apps.users.serializers import PatientProfileSerializer, PatientSearchListSerializer
+from apps.users.serializers import (
+    PatientDemographicsSerializer,
+    PatientDemographicsUpdateSerializer,
+    PatientProfileListSerializer,
+    PatientProfileSerializer,
+    PatientSearchListSerializer,
+)
 from apps.users.permissions import IsAdminOrOwner
-from apps.users.rbac import IsAdmin
-from apps.core.pagination import StandardResultsSetPagination
+from apps.users.rbac import IsAdmin, IsDoctor, IsNurse
+from apps.core.metrics import (
+    inc_counter,
+    measure_duration,
+    observe_histogram,
+    track_query_count,
+)
+from apps.core.pagination import StandardResultsSetPagination, PatientSearchPagination
 from apps.core.security import (
+    ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
     check_demographics_access,
     check_clinical_access,
@@ -42,15 +56,123 @@ from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSe
 from apps.core.cache_utils import facility_cache_key
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
+from .search_index import apply_search_index_filter
 from .tasks import (
     sync_patient_with_fhir,
     log_patient_search,
     search_patients_in_fhir,
     update_patient_in_fhir,
     delete_patient_in_fhir,
+    enqueue_patient_search_index_rebuild,
+    rebuild_patient_search_index_task,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _build_operational_active_encounter_q(start_of_day, end_of_day):
+    outpatient_active = (
+        Q(encounter_type='outpatient') &
+        Q(start_time__gte=start_of_day, start_time__lt=end_of_day) &
+        (
+            Q(status='in-progress') |
+            Q(
+                status='planned',
+                outpatient_visit__visit_status__in=[
+                    'checked_in',
+                    'waiting',
+                    'called',
+                    'in_progress',
+                    'on_hold',
+                    'ready_checkout',
+                ],
+            )
+        )
+    )
+    non_outpatient_active = (
+        ~Q(encounter_type='outpatient') &
+        Q(status__in=['planned', 'in-progress'])
+    )
+    return outpatient_active | non_outpatient_active
+
+
+def _build_patient_text_query(query):
+    normalized_query = " ".join(str(query or "").split())
+    if not normalized_query:
+        return Q()
+
+    query_terms = normalized_query.split(" ")
+    name_query = None
+    for term in query_terms:
+        term_query = Q(user__first_name__icontains=term) | Q(user__last_name__icontains=term)
+        name_query = term_query if name_query is None else name_query & term_query
+
+    return (
+        name_query
+        | Q(medical_record_number__icontains=normalized_query)
+        | Q(nhis_id__icontains=normalized_query)
+    )
+
+
+def _build_safe_patient_search_summary(
+    *,
+    query=None,
+    ward_id=None,
+    admission_start=None,
+    admission_end=None,
+    department_id=None,
+    admission_status=None,
+    admission_type=None,
+    encounter_type=None,
+    attending_id=None,
+    age_min_value=None,
+    age_max_value=None,
+    my_patients=False,
+    registry_scope='all',
+    ordering='-created_at',
+    requested_page=1,
+    requested_page_size=None,
+):
+    """Build a non-PHI search-history summary for analytics and audits."""
+    active_filters = []
+    if query:
+        active_filters.append('query')
+    if ward_id:
+        active_filters.append('ward')
+    if admission_start:
+        active_filters.append('admission_start')
+    if admission_end:
+        active_filters.append('admission_end')
+    if department_id:
+        active_filters.append('department')
+    if admission_status:
+        active_filters.append('admission_status')
+    if admission_type:
+        active_filters.append('admission_type')
+    if encounter_type:
+        active_filters.append('encounter_type')
+    if attending_id:
+        active_filters.append('attending')
+    if age_min_value is not None:
+        active_filters.append('age_min')
+    if age_max_value is not None:
+        active_filters.append('age_max')
+
+    summary_parts = [f"patient-search filters={'+'.join(active_filters) if active_filters else 'none'}"]
+    if my_patients:
+        summary_parts.append('my_patients=true')
+    if registry_scope and registry_scope != 'all':
+        summary_parts.append(f"registry_scope={registry_scope}")
+    summary_parts.append(f"ordering={ordering}")
+    summary_parts.append(f"page={requested_page}")
+    if requested_page_size:
+        summary_parts.append(f"page_size={requested_page_size}")
+    return " ".join(summary_parts)[:255]
+
+
+def _patient_registration_history_entry():
+    """Return the non-PHI patient-search history marker for registrations."""
+    return "patient-registration action=create"
 
 
 class PatientFHIRMappingViewSet(viewsets.ModelViewSet):
@@ -166,7 +288,7 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
             Prefetch(
                 'patient_profile__admissions',
                 queryset=Admission.objects.filter(
-                    status__in=['admitted', 'waiting']
+                    status__in=ACTIVE_ADMISSION_STATUSES
                 ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                 to_attr='active_admissions_list'
             )
@@ -229,7 +351,7 @@ class RecentPatientViewSet(viewsets.ModelViewSet):
                 Prefetch(
                     'patient_profile__admissions',
                     queryset=Admission.objects.filter(
-                        status__in=['admitted', 'waiting']
+                        status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                     to_attr='active_admissions_list'
                 )
@@ -289,7 +411,7 @@ class PatientNoteViewSet(viewsets.ModelViewSet):
             return PatientNote.objects.none()
 
         base_qs = PatientNote.objects.filter(facility=facility)
-        if self.request.user.is_staff:
+        if getattr(self.request.user, 'user_type', None) == 'admin' or getattr(self.request.user, 'is_staff', False):
             return base_qs
 
         # Regular users can only see their own notes and non-private notes
@@ -315,6 +437,28 @@ class PatientViewSet(viewsets.ViewSet):
     API endpoint for patient management.
     """
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    pagination_class = PatientSearchPagination
+
+    def get_permissions(self):
+        if self.action == 'break_glass':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor | IsNurse]
+        elif self.action == 'update_patient':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        elif self.action == 'delete_patient':
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
+        else:
+            permission_classes = self.permission_classes
+        return [permission() for permission in permission_classes]
+
+    def _get_facility_patient(self, request, pk):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        return get_object_or_404(
+            PatientProfile.objects.select_related('user', 'facility'),
+            id=pk,
+            facility=facility,
+        )
 
     @action(detail=False, methods=['post'])
     def register(self, request):
@@ -340,7 +484,7 @@ class PatientViewSet(viewsets.ViewSet):
                     PatientSearch.objects.create(
                         user=request.user,
                         facility=patient_profile.facility,
-                        search_query=f"Registration: {patient_profile.user.get_full_name()}"
+                        search_query=_patient_registration_history_entry(),
                     )
 
                     # Add to recent patients
@@ -371,7 +515,7 @@ class PatientViewSet(viewsets.ViewSet):
     def search(self, request):
         """
         Search for patients with advanced filters.
-        Requires minimum 2 characters for text search when no other filters are provided.
+        Supports empty-query browsing with deterministic ordering.
 
         Performance optimizations:
         - Uses lightweight serializer (PatientSearchListSerializer)
@@ -391,8 +535,33 @@ class PatientViewSet(viewsets.ViewSet):
         attending_id = request.query_params.get('attending_id', '').strip()
         age_min = request.query_params.get('age_min', '').strip()
         age_max = request.query_params.get('age_max', '').strip()
+        ordering = request.query_params.get('ordering', '-created_at').strip() or '-created_at'
+        requested_page = request.query_params.get('page', '').strip() or '1'
+        requested_page_size = request.query_params.get('page_size', '').strip()
+        include_total = request.query_params.get('include_total', '').lower() == 'true'
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
+        registry_scope = request.query_params.get('registry_scope', 'all').strip().lower() or 'all'
+
+        ordering_field_map = {
+            'created_at': ('created_at',),
+            'name': ('user__last_name', 'user__first_name'),
+            'medical_record_number': ('medical_record_number',),
+            'date_of_birth': ('user__date_of_birth', 'user__last_name', 'user__first_name'),
+            'gender': ('user__gender', 'user__last_name', 'user__first_name'),
+            'current_ward': ('sort_patient_location', 'user__last_name', 'user__first_name'),
+            'patient_location': ('sort_patient_location', 'user__last_name', 'user__first_name'),
+            'admission_status': ('sort_admission_status', 'user__last_name', 'user__first_name'),
+            'registry_status': ('sort_registry_status', 'user__last_name', 'user__first_name'),
+            'admission_date': ('sort_admission_date', 'user__last_name', 'user__first_name'),
+        }
+        ordering_desc = ordering.startswith('-')
+        ordering_key = ordering[1:] if ordering_desc else ordering
+        if not ordering_key or ordering_key.startswith('-') or ordering_key not in ordering_field_map:
+            return Response(
+                {"error": "Invalid ordering field."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Backward compatibility: treat legacy admission_date as a single-day range.
         if admission_date:
@@ -401,9 +570,16 @@ class PatientViewSet(viewsets.ViewSet):
             if not admission_end:
                 admission_end = admission_date
 
-        allowed_admission_statuses = {'admitted', 'waiting', 'discharged', 'transferred', 'deceased'}
+        allowed_admission_statuses = {'admitted', 'pending_discharge', 'waiting', 'discharged', 'transferred', 'deceased'}
         allowed_admission_types = {'emergency', 'elective', 'maternity', 'newborn'}
         allowed_encounter_types = {'inpatient', 'outpatient', 'emergency'}
+        allowed_registry_scopes = {'active', 'discharged', 'deceased', 'all'}
+
+        if registry_scope not in allowed_registry_scopes:
+            return Response(
+                {"error": "Invalid registry_scope value."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if admission_status and admission_status not in allowed_admission_statuses:
             return Response(
@@ -441,7 +617,7 @@ class PatientViewSet(viewsets.ViewSet):
         has_other_filters = bool(
             ward_id or admission_start or admission_end or department_id or admission_status or
             admission_type or encounter_type or attending_id or age_min_value is not None or
-            age_max_value is not None or my_patients
+            age_max_value is not None or my_patients or registry_scope != 'all'
         )
 
         if include_fhir and (not query or has_other_filters):
@@ -462,20 +638,12 @@ class PatientViewSet(viewsets.ViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Require minimum 2 characters for search query when no other filters
-        if not has_other_filters and len(query) < 2:
-            return Response(
-                {
-                    "error": "Search query must be at least 2 characters.",
-                    "query": query,
-                    "total": 0,
-                    "results": []
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        logger = logging.getLogger(__name__)
-        start_time = time.time()
+        start_time = time.perf_counter()
+        inc_counter(
+            'hms_patient_search_requests_total',
+            labels={'source': 'http'},
+            description='Patient search requests received by the API.',
+        )
 
         cache_params = {
             "query": query,
@@ -489,11 +657,34 @@ class PatientViewSet(viewsets.ViewSet):
             "attending_id": attending_id,
             "age_min": age_min_value,
             "age_max": age_max_value,
+            "ordering": ordering,
+            "page": requested_page,
+            "page_size": requested_page_size,
+            "include_total": include_total,
             "my_patients": my_patients,
+            "registry_scope": registry_scope,
             "user_id": str(request.user.id),
         }
         cache_key = facility_cache_key(
             f"patient_search_{hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()}"
+        )
+        search_summary = _build_safe_patient_search_summary(
+            query=query,
+            ward_id=ward_id,
+            admission_start=admission_start,
+            admission_end=admission_end,
+            department_id=department_id,
+            admission_status=admission_status,
+            admission_type=admission_type,
+            encounter_type=encounter_type,
+            attending_id=attending_id,
+            age_min_value=age_min_value,
+            age_max_value=age_max_value,
+            my_patients=my_patients,
+            registry_scope=registry_scope,
+            ordering=ordering,
+            requested_page=requested_page,
+            requested_page_size=requested_page_size,
         )
 
         # Try to get from cache first (skip cache if include_fhir is requested)
@@ -501,84 +692,54 @@ class PatientViewSet(viewsets.ViewSet):
             cached_result = cache.get(cache_key)
             if cached_result is not None:
                 logger.info("Search cache hit for user %s", request.user.id)
-                search_parts = [f"Query: {query}" if query else "Query: (none)"]
-                if ward_id:
-                    search_parts.append(f"Ward: {ward_id}")
-                if admission_start:
-                    search_parts.append(f"Admission Start: {admission_start}")
-                if admission_end:
-                    search_parts.append(f"Admission End: {admission_end}")
-                if department_id:
-                    search_parts.append(f"Department: {department_id}")
-                if admission_status:
-                    search_parts.append(f"Admission Status: {admission_status}")
-                if admission_type:
-                    search_parts.append(f"Admission Type: {admission_type}")
-                if encounter_type:
-                    search_parts.append(f"Encounter Type: {encounter_type}")
-                if attending_id:
-                    search_parts.append(f"Attending: {attending_id}")
-                if age_min_value is not None:
-                    search_parts.append(f"Age Min: {age_min_value}")
-                if age_max_value is not None:
-                    search_parts.append(f"Age Max: {age_max_value}")
-                if my_patients:
-                    search_parts.append("My Patients: true")
-                search_desc = ", ".join(search_parts)
+                inc_counter(
+                    'hms_patient_search_cache_events_total',
+                    labels={'result': 'hit'},
+                    description='Patient search cache events.',
+                )
+                observe_histogram(
+                    'hms_patient_search_latency_seconds',
+                    time.perf_counter() - start_time,
+                    labels={'source': 'cache'},
+                    description='Patient search latency in seconds.',
+                )
                 facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
                 log_patient_search.delay(
                     str(request.user.id),
-                    search_desc,
+                    search_summary,
                     facility_code=facility.code if facility else None
                 )
                 return Response(cached_result)
+        inc_counter(
+            'hms_patient_search_cache_events_total',
+            labels={'result': 'miss'},
+            description='Patient search cache events.',
+        )
 
         # Log search for auditing/history
-        search_parts = [f"Query: {query}" if query else "Query: (none)"]
-        if ward_id:
-            search_parts.append(f"Ward: {ward_id}")
-        if admission_start:
-            search_parts.append(f"Admission Start: {admission_start}")
-        if admission_end:
-            search_parts.append(f"Admission End: {admission_end}")
-        if department_id:
-            search_parts.append(f"Department: {department_id}")
-        if admission_status:
-            search_parts.append(f"Admission Status: {admission_status}")
-        if admission_type:
-            search_parts.append(f"Admission Type: {admission_type}")
-        if encounter_type:
-            search_parts.append(f"Encounter Type: {encounter_type}")
-        if attending_id:
-            search_parts.append(f"Attending: {attending_id}")
-        if age_min_value is not None:
-            search_parts.append(f"Age Min: {age_min_value}")
-        if age_max_value is not None:
-            search_parts.append(f"Age Max: {age_max_value}")
-        if my_patients:
-            search_parts.append("My Patients: true")
-        search_desc = ", ".join(search_parts)
         facility = get_user_facility(request) or getattr(request.user, 'primary_facility', None)
         log_patient_search.delay(
             str(request.user.id),
-            search_desc,
+            search_summary,
             facility_code=facility.code if facility else None
         )
 
         try:
-            from django.db.models import Q
             from apps.wards.models import Admission
             from apps.encounters.models import Encounter
             from apps.users.models import UserPatientList
             from apps.laboratory.models import LabOrder
             from apps.clinical_notes.models import Prescription
             from apps.billing.models import Invoice
-            from apps.core.security import ACTIVE_ADMISSION_STATUSES, ACTIVE_ENCOUNTER_STATUSES
+            from apps.core.security import ACTIVE_ADMISSION_STATUSES
             facility = get_user_facility(request)
             if not facility:
                 raise PermissionDenied("Facility context is required.")
+            today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            active_encounter_q = _build_operational_active_encounter_q(today_start, today_end)
 
-            # OPTIMIZED: Base query with Prefetch for active admissions only
+            # Base query with bounded prefetches for active admission/encounter context.
             local_patients_qs = PatientProfile.objects.select_related('user').prefetch_related(
                 Prefetch(
                     'admissions',
@@ -586,6 +747,13 @@ class PatientViewSet(viewsets.ViewSet):
                         status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('bed', 'bed__ward').order_by('-admission_date'),
                     to_attr='active_admissions_list'
+                ),
+                Prefetch(
+                    'encounters',
+                    queryset=Encounter.objects.filter(
+                        active_encounter_q
+                    ).select_related('clinic', 'outpatient_visit').order_by('-start_time', '-id'),
+                    to_attr='active_encounters_list'
                 )
             ).filter(facility=facility)
 
@@ -635,14 +803,26 @@ class PatientViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Filter by text query (Name, MRN, NHIS)
+            # Filter by text query (Name, MRN, NHIS) using the compact search projection
+            search_index_ready = bool(cache.get(facility_cache_key('patient_search_index_ready')))
             if query:
-                local_patients_qs = local_patients_qs.filter(
-                    Q(user__first_name__icontains=query) |
-                    Q(user__last_name__icontains=query) |
-                    Q(medical_record_number__icontains=query) |
-                    Q(nhis_id__icontains=query)
-                )
+                if search_index_ready:
+                    local_patients_qs, _normalized_query = apply_search_index_filter(
+                        local_patients_qs,
+                        facility=facility,
+                        query=query,
+                    )
+                else:
+                    rebuild_request_key = facility_cache_key('patient_search_index_rebuild_requested')
+                    if (
+                        not getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False)
+                        and cache.add(rebuild_request_key, '1', timeout=300)
+                    ):
+                        enqueue_patient_search_index_rebuild.delay(
+                            facility_id=str(facility.id),
+                            facility_code=facility.code,
+                        )
+                    local_patients_qs = local_patients_qs.filter(_build_patient_text_query(query))
 
             if my_patients:
                 my_patients_exists = UserPatientList.objects.filter(
@@ -650,6 +830,56 @@ class PatientViewSet(viewsets.ViewSet):
                     patient=OuterRef('pk')
                 )
                 local_patients_qs = local_patients_qs.filter(Exists(my_patients_exists))
+
+            if registry_scope != 'all':
+                active_admission_exists_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status__in=ACTIVE_ADMISSION_STATUSES,
+                )
+                active_encounter_exists_qs = Encounter.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                ).filter(active_encounter_q)
+                completed_outpatient_exists_qs = Encounter.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    encounter_type='outpatient',
+                    status__in=['finished', 'cancelled'],
+                )
+                deceased_admission_exists_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status='deceased',
+                )
+                discharged_or_transferred_exists_qs = Admission.objects.filter(
+                    patient=OuterRef('pk'),
+                    facility=facility,
+                    status__in=['discharged', 'transferred'],
+                )
+
+                local_patients_qs = local_patients_qs.annotate(
+                    has_active_admission=Exists(active_admission_exists_qs),
+                    has_active_encounter=Exists(active_encounter_exists_qs),
+                    has_deceased_admission=Exists(deceased_admission_exists_qs),
+                    has_discharged_or_transferred_admission=Exists(discharged_or_transferred_exists_qs),
+                    has_completed_outpatient=Exists(completed_outpatient_exists_qs),
+                )
+
+                if registry_scope == 'active':
+                    local_patients_qs = local_patients_qs.filter(
+                        Q(has_active_admission=True) | Q(has_active_encounter=True)
+                    )
+                elif registry_scope == 'deceased':
+                    local_patients_qs = local_patients_qs.filter(has_deceased_admission=True)
+                elif registry_scope == 'discharged':
+                    local_patients_qs = local_patients_qs.filter(
+                        has_active_admission=False,
+                        has_active_encounter=False,
+                        has_deceased_admission=False,
+                    ).filter(
+                        Q(has_discharged_or_transferred_admission=True) | Q(has_completed_outpatient=True)
+                    )
 
             admission_filters_active = bool(
                 ward_id or admission_start_date or admission_end_date or admission_status or admission_type
@@ -691,8 +921,7 @@ class PatientViewSet(viewsets.ViewSet):
                 encounter_qs = Encounter.objects.filter(
                     patient=OuterRef('pk'),
                     facility=facility,
-                    status__in=ACTIVE_ENCOUNTER_STATUSES,
-                )
+                ).filter(active_encounter_q)
                 if encounter_type:
                     encounter_qs = encounter_qs.filter(encounter_type=encounter_type)
                 if department_id:
@@ -718,8 +947,7 @@ class PatientViewSet(viewsets.ViewSet):
                     patient=OuterRef('pk'),
                     facility=facility,
                     practitioner_id=attending_id,
-                    status__in=ACTIVE_ENCOUNTER_STATUSES,
-                )
+                ).filter(active_encounter_q)
                 if encounter_type:
                     encounter_attending_qs = encounter_attending_qs.filter(encounter_type=encounter_type)
 
@@ -745,18 +973,112 @@ class PatientViewSet(viewsets.ViewSet):
                     earliest_dob = years_ago(age_max_value)
                     local_patients_qs = local_patients_qs.filter(user__date_of_birth__gte=earliest_dob)
 
-            # Limit to 20 results and serialize with lightweight serializer
-            patients_list = list(local_patients_qs[:20])
-            results = PatientSearchListSerializer(patients_list, many=True).data
+            # Annotate sortable and serializer fields once to avoid per-row queries.
+            active_admission_sort_qs = Admission.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                status__in=ACTIVE_ADMISSION_STATUSES,
+            ).order_by('-admission_date')
+            active_encounter_sort_qs = Encounter.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+            ).filter(active_encounter_q).order_by('-start_time', '-id')
+            terminal_admission_sort_qs = Admission.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                status__in=['discharged', 'transferred', 'deceased'],
+            ).order_by('-admission_date', '-id')
+            completed_outpatient_sort_qs = Encounter.objects.filter(
+                patient=OuterRef('pk'),
+                facility=facility,
+                encounter_type='outpatient',
+                status__in=['finished', 'cancelled'],
+            ).order_by('-end_time', '-start_time', '-id')
+            local_patients_qs = local_patients_qs.annotate(
+                sort_admission_date=Subquery(active_admission_sort_qs.values('admission_date')[:1]),
+                sort_admission_status=Subquery(active_admission_sort_qs.values('status')[:1]),
+                sort_current_ward=Subquery(active_admission_sort_qs.values('bed__ward__name')[:1]),
+                sort_patient_location=Coalesce(
+                    Subquery(active_admission_sort_qs.values('bed__ward__name')[:1]),
+                    Subquery(active_encounter_sort_qs.values('clinic__name')[:1]),
+                    Subquery(active_encounter_sort_qs.values('location')[:1]),
+                    Value('', output_field=CharField()),
+                ),
+                sort_registry_status=Coalesce(
+                    Subquery(active_admission_sort_qs.values('status')[:1]),
+                    Subquery(active_encounter_sort_qs.values('status')[:1]),
+                    Subquery(terminal_admission_sort_qs.values('status')[:1]),
+                    Subquery(completed_outpatient_sort_qs.values('status')[:1]),
+                    Value('', output_field=CharField()),
+                ),
+                latest_terminal_admission_status=Subquery(terminal_admission_sort_qs.values('status')[:1]),
+                latest_completed_outpatient_status=Subquery(completed_outpatient_sort_qs.values('status')[:1]),
+            )
+
+            order_fields = [
+                f"-{field}" if ordering_desc else field
+                for field in ordering_field_map[ordering_key]
+            ]
+            order_fields.append('-id' if ordering_desc else 'id')
+            local_patients_qs = local_patients_qs.order_by(*order_fields)
+
+            paginator = self.pagination_class()
+            with track_query_count() as query_counter:
+                with measure_duration(
+                    'hms_patient_search_latency_seconds',
+                    labels={'source': 'database'},
+                    description='Patient search latency in seconds.',
+                ):
+                    page = paginator.paginate_queryset(local_patients_qs, request, view=self)
+                    patients_list = page if page is not None else list(local_patients_qs)
+                    results = PatientSearchListSerializer(patients_list, many=True).data
+
+            total_results = getattr(paginator, 'total_count', len(results))
+            total_is_exact = getattr(paginator, 'total_is_exact', True)
+            page_number = getattr(paginator, 'page_number', 1)
+            page_size_value = getattr(paginator, 'page_size_value', (paginator.get_page_size(request) or len(results)))
+            next_link = paginator.get_next_link() if page is not None else None
+            previous_link = paginator.get_previous_link() if page is not None else None
+            observe_histogram(
+                'hms_patient_search_query_count',
+                query_counter.count,
+                labels={'search_index': 'warm' if search_index_ready else 'cold'},
+                description='SQL statements executed by patient search requests.',
+                buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+            )
+            observe_histogram(
+                'hms_patient_search_results_returned',
+                len(results),
+                description='Patient search result counts per page.',
+                buckets=(1, 5, 10, 25, 50, 100),
+            )
 
             # Log timing
-            local_proc_time = time.time()
-            logger.info(f"Search completed in {local_proc_time - start_time:.4f}s. Count: {len(results)}")
+            local_proc_time = time.perf_counter()
+            logger.info(
+                "Search completed in %.4fs. Returned=%s total=%s exact=%s ordering=%s page=%s page_size=%s queries=%s",
+                local_proc_time - start_time,
+                len(results),
+                total_results,
+                total_is_exact,
+                ordering,
+                page_number,
+                page_size_value,
+                query_counter.count,
+            )
 
             response_data = {
                 "query": query,
-                "total": len(results),
-                "results": results
+                "registry_scope": registry_scope,
+                "ordering": ordering,
+                "total": total_results,
+                "count": total_results,
+                "count_exact": total_is_exact,
+                "page": page_number,
+                "page_size": page_size_value,
+                "next": next_link,
+                "previous": previous_link,
+                "results": results,
             }
 
             # Cache results for 30 seconds (skip caching for FHIR results)
@@ -784,6 +1106,38 @@ class PatientViewSet(viewsets.ViewSet):
                 {"error": "Failed to search patients. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='search-index/reindex',
+        permission_classes=[permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin],
+    )
+    def reindex_search_index(self, request):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        patient_ids = request.data.get('patient_ids') or None
+        if patient_ids:
+            task = rebuild_patient_search_index_task.delay(
+                patient_profile_ids=patient_ids,
+                facility_code=facility.code,
+            )
+        else:
+            task = enqueue_patient_search_index_rebuild.delay(
+                facility_id=str(facility.id),
+                facility_code=facility.code,
+            )
+
+        return Response(
+            {
+                'message': 'Patient search index rebuild queued.',
+                'task_id': task.id,
+                'facility_code': facility.code,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     def _search_fhir(self, query, existing_results, user, facility):
         """
@@ -835,7 +1189,7 @@ class PatientViewSet(viewsets.ViewSet):
         Get a patient by ID.
         Returns full data for clinical access, demographics-only for non-clinical access.
         """
-        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = self._get_facility_patient(request, pk)
 
         # SECURITY: Check if user has permission to access this patient
         check_demographics_access(request.user, patient_profile)
@@ -899,7 +1253,7 @@ class PatientViewSet(viewsets.ViewSet):
         Get patient demographics only (no FHIR, no clinical data).
         Lightweight endpoint for administrative views.
         """
-        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = self._get_facility_patient(request, pk)
 
         # SECURITY: Check if user has permission to access this patient
         check_demographics_access(request.user, patient_profile)
@@ -911,14 +1265,14 @@ class PatientViewSet(viewsets.ViewSet):
             facility=patient_profile.facility
         )
 
-        return Response(PatientProfileSerializer(patient_profile).data)
+        return Response(PatientDemographicsSerializer(patient_profile).data)
 
     @action(detail=True, methods=['post'], url_path='break-glass')
     def break_glass(self, request, pk=None):
         """
         Create a time-bound break-glass access event for clinical data.
         """
-        patient_profile = get_object_or_404(PatientProfile, id=pk)
+        patient_profile = self._get_facility_patient(request, pk)
         serializer = BreakGlassRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -985,15 +1339,29 @@ class PatientViewSet(viewsets.ViewSet):
         Update a patient by ID.
         """
         try:
-            patient_profile = get_object_or_404(PatientProfile, id=pk)
+            patient_profile = self._get_facility_patient(request, pk)
 
-            # SECURITY: Check if user has permission to access this patient
-            check_demographics_access(request.user, patient_profile)
+            local_data = request.data.get('local_data', {})
+            if not isinstance(local_data, dict):
+                return Response(
+                    {"error": "local_data must be an object."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            fhir_data = request.data.get('fhir_data')
+            clinical_profile_fields = {'blood_group', 'allergies', 'fhir_patient_id'}
+            requires_clinical_access = bool(fhir_data) or bool(clinical_profile_fields.intersection(local_data))
+
+            if requires_clinical_access:
+                check_clinical_access(request.user, patient_profile)
+                serializer_class = PatientProfileSerializer
+            else:
+                check_demographics_access(request.user, patient_profile)
+                serializer_class = PatientDemographicsUpdateSerializer
 
             # Update local patient profile
-            profile_serializer = PatientProfileSerializer(
+            profile_serializer = serializer_class(
                 patient_profile, 
-                data=request.data.get('local_data', {}),
+                data=local_data,
                 partial=True,
                 context={'request': request}
             )
@@ -1002,7 +1370,7 @@ class PatientViewSet(viewsets.ViewSet):
                 profile_serializer.save(updated_by=request.user)
 
                 # Queue FHIR update if requested
-                if patient_profile.fhir_patient_id and request.data.get('fhir_data'):
+                if patient_profile.fhir_patient_id and fhir_data:
                     if request.user.user_type not in ['admin', 'doctor', 'nurse']:
                         raise PermissionDenied("FHIR updates require clinical access.")
                     check_clinical_access(request.user, patient_profile)
@@ -1012,7 +1380,7 @@ class PatientViewSet(viewsets.ViewSet):
                             {"error": "FHIR mapping not found for patient."},
                             status=status.HTTP_400_BAD_REQUEST
                         )
-                    update_payload = self._filter_fhir_patient_update_payload(request.data.get('fhir_data', {}))
+                    update_payload = self._filter_fhir_patient_update_payload(fhir_data)
                     if not update_payload:
                         return Response(
                             {"error": "No allowed FHIR fields provided."},
@@ -1025,14 +1393,18 @@ class PatientViewSet(viewsets.ViewSet):
                     )
                     return Response({
                         "message": "Patient local data updated; FHIR update queued",
-                        "local_data": profile_serializer.data,
+                        "local_data": PatientProfileSerializer(patient_profile).data,
                         "fhir_status": "queued"
                     }, status=status.HTTP_202_ACCEPTED)
 
                 # If no FHIR data to update or no FHIR ID
                 return Response({
                     "message": "Patient local data updated successfully",
-                    "local_data": profile_serializer.data
+                    "local_data": (
+                        PatientProfileSerializer(patient_profile).data
+                        if requires_clinical_access
+                        else PatientDemographicsSerializer(patient_profile).data
+                    )
                 })
             else:
                 return Response(profile_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1052,7 +1424,7 @@ class PatientViewSet(viewsets.ViewSet):
         Delete a patient by ID.
         """
         try:
-            patient_profile = get_object_or_404(PatientProfile, id=pk)
+            patient_profile = self._get_facility_patient(request, pk)
 
             # SECURITY: Check if user has permission to access this patient
             check_demographics_access(request.user, patient_profile)

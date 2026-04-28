@@ -13,6 +13,7 @@ export { default as NoteWorkflowSteps } from './NoteWorkflowSteps';
 export { default as AddVitalsSlideOver } from './AddVitalsSlideOver';
 export { default as AddPrescriptionSlideOver } from './AddPrescriptionSlideOver';
 export { default as AddFluidBalanceSlideOver } from './AddFluidBalanceSlideOver';
+export { default as MedicationHistorySlideOver } from './MedicationHistorySlideOver';
 export { default as EditNoteSlideOver } from './EditNoteSlideOver';
 export { default as PatientInsuranceSlideOver } from './PatientInsuranceSlideOver';
 export { default as BreakGlassDialog } from './BreakGlassDialog';

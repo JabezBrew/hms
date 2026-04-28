@@ -57,13 +57,14 @@ const AddFluidBalanceSlideOver = ({
   onClose,
   patient,
   admission,
-  onFluidRecorded
+  onFluidRecorded,
+  allowEntry = true,
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
 
   // Active tab state
-  const [activeTab, setActiveTab] = useState('entry'); // 'entry' | 'history'
+  const [activeTab, setActiveTab] = useState(allowEntry ? 'entry' : 'history'); // 'entry' | 'history'
 
   // History date navigation state
   const [historyDate, setHistoryDate] = useState(new Date());
@@ -117,10 +118,16 @@ const AddFluidBalanceSlideOver = ({
         colour: '',
         notes: ''
       });
-      setActiveTab('entry');
+      setActiveTab(allowEntry ? 'entry' : 'history');
       setHistoryDate(new Date());
     }
-  }, [open]);
+  }, [allowEntry, open]);
+
+  useEffect(() => {
+    if (!allowEntry && activeTab === 'entry') {
+      setActiveTab('history');
+    }
+  }, [activeTab, allowEntry]);
 
   // Get patient display name
   const patientName = patient?.local_data?.user_details
@@ -273,7 +280,7 @@ const AddFluidBalanceSlideOver = ({
       colour: '',
       notes: ''
     });
-    setActiveTab('entry');
+    setActiveTab(allowEntry ? 'entry' : 'history');
     setHistoryDate(new Date());
     onClose();
   };
@@ -432,24 +439,27 @@ const AddFluidBalanceSlideOver = ({
 
       {/* Tab Navigation */}
       <div className="flex border-b border-border bg-card">
-        <button
-          onClick={() => setActiveTab('entry')}
-          className={cn(
-            "flex-1 flex items-center justify-center gap-2 px-4 py-3 font-mono text-sm transition-colors",
-            "border-b-2",
-            activeTab === 'entry'
-              ? "border-sky-500 text-sky-600 bg-sky-50/50 dark:bg-sky-900/10"
-              : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
-          )}
-        >
-          <Plus className="h-4 w-4" />
-          Record Entry
-        </button>
+        {allowEntry && (
+          <button
+            onClick={() => setActiveTab('entry')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-4 py-3 font-mono text-sm transition-colors",
+              "border-b-2",
+              activeTab === 'entry'
+                ? "border-sky-500 text-sky-600 bg-sky-50/50 dark:bg-sky-900/10"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            )}
+          >
+            <Plus className="h-4 w-4" />
+            Record Entry
+          </button>
+        )}
         <button
           onClick={() => setActiveTab('history')}
           className={cn(
-            "flex-1 flex items-center justify-center gap-2 px-4 py-3 font-mono text-sm transition-colors",
+            "flex items-center justify-center gap-2 px-4 py-3 font-mono text-sm transition-colors",
             "border-b-2",
+            allowEntry ? "flex-1" : "w-full",
             activeTab === 'history'
               ? "border-amber-500 text-amber-600 bg-amber-50/50 dark:bg-amber-900/10"
               : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"

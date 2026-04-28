@@ -2,7 +2,12 @@
 Admin configuration for core models.
 """
 from django.contrib import admin
-from .models import SiteNetwork, OffSiteAccessSettings, FacilityFluidBalanceSettings
+from .models import (
+    FeatureEntitlementOverride,
+    FacilityFluidBalanceSettings,
+    OffSiteAccessSettings,
+    SiteNetwork,
+)
 
 
 @admin.register(SiteNetwork)
@@ -105,3 +110,11 @@ class FacilityFluidBalanceSettingsAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Don't allow deletion
         return False
+
+
+@admin.register(FeatureEntitlementOverride)
+class FeatureEntitlementOverrideAdmin(admin.ModelAdmin):
+    list_display = ['feature_key', 'scope', 'facility', 'is_enabled', 'updated_at']
+    list_filter = ['scope', 'is_enabled', 'feature_key']
+    search_fields = ['feature_key', 'facility__code', 'facility__name', 'reason']
+    readonly_fields = ['created_at', 'updated_at']

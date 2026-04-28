@@ -62,7 +62,10 @@ export function NursingDashboard() {
     isLoading: isAdmissionsLoading,
     isError: isAdmissionsError,
     error: admissionsError
-  } = useAdmissions({ ward: selectedWard, status: 'admitted' }, { enabled: !!selectedWard });
+  } = useAdmissions(
+    { ward: selectedWard, status: 'admitted', page_size: 200 },
+    { enabled: !!selectedWard }
+  );
 
   useEffect(() => {
     if (isAdmissionsError) {

@@ -8,10 +8,14 @@ import { toast } from 'sonner';
 function formatPaymentMethod(method) {
   const methods = {
     cash: 'Cash',
-    card: 'Credit/Debit Card',
+    card: 'Card',
+    credit_card: 'Credit Card',
+    debit_card: 'Debit Card',
     mobile_money: 'Mobile Money',
     bank_transfer: 'Bank Transfer',
     insurance: 'Insurance',
+    cheque: 'Cheque',
+    other: 'Other',
   };
   return methods[method] || method;
 }

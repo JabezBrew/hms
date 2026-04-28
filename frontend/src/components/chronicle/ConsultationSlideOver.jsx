@@ -5,7 +5,7 @@ import Save from 'lucide-react/dist/esm/icons/save.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -16,6 +16,7 @@ import {
   useWorkflowKeyboard,
 } from "@/components/ui/workflow-steps";
 import { useConsultationWorkflow } from "@/hooks/useConsultationWorkflow";
+import { useVisit, useVisitActions } from "@/hooks/useVisitQueries";
 import {
   PatientReviewStep,
   HistoryExamStep,
@@ -31,6 +32,19 @@ const STEP_COMPONENTS = {
   history_exam: HistoryExamStep,
   assessment_plan: AssessmentPlanStep,
 };
+
+const AUTO_START_VISIT_STATUSES = new Set([
+  "checked_in",
+  "waiting",
+  "called",
+  "on_hold",
+]);
+
+const TERMINAL_VISIT_STATUSES = new Set([
+  "checked_out",
+  "no_show",
+  "cancelled",
+]);
 
 /**
  * ConsultationSlideOver - Split-screen panel for consultation workflow
@@ -48,10 +62,16 @@ const ConsultationSlideOver = ({
   patient,
   referralId,
   appointmentId,
+  encounterId,
   onComplete,
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
+  const initializedRef = useRef(null);
+  const { data: visit, isLoading: isVisitLoading } = useVisit(encounterId, {
+    enabled: open && Boolean(encounterId),
+  });
+  const { startConsultation, endConsultation } = useVisitActions();
 
   // Use the consultation workflow hook
   const {
@@ -77,15 +97,61 @@ const ConsultationSlideOver = ({
     goToStep,
     completeWorkflow,
     resetWorkflow,
-    setError,
-  } = useConsultationWorkflow(patientId, { referralId, appointmentId });
+  } = useConsultationWorkflow(patientId, { referralId, appointmentId, encounterId });
 
   // Start workflow when slide-over opens
   useEffect(() => {
-    if (open && patientId && !workflowId && !isLoading) {
-      startWorkflow();
+    if (!open) {
+      initializedRef.current = null;
+      return;
     }
-  }, [open, patientId, workflowId, isLoading, startWorkflow]);
+
+    const initKey = `${patientId || "unknown"}:${encounterId || "none"}`;
+    if (!patientId || workflowId || isLoading || initializedRef.current === initKey) {
+      return;
+    }
+    if (encounterId && isVisitLoading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const initializeWorkflow = async () => {
+      initializedRef.current = initKey;
+
+      try {
+        if (encounterId && AUTO_START_VISIT_STATUSES.has(visit?.visit_status)) {
+          await startConsultation.mutateAsync(encounterId);
+        }
+
+        const workflow = await startWorkflow();
+        if (!workflow && !cancelled) {
+          initializedRef.current = null;
+        }
+      } catch (err) {
+        if (!cancelled) {
+          initializedRef.current = null;
+          toast.error(err?.message || "Failed to start consultation");
+        }
+      }
+    };
+
+    initializeWorkflow();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    patientId,
+    encounterId,
+    workflowId,
+    isLoading,
+    isVisitLoading,
+    visit?.visit_status,
+    startConsultation,
+    startWorkflow,
+  ]);
 
   // Reset when closed
   useEffect(() => {
@@ -124,7 +190,30 @@ const ConsultationSlideOver = ({
     try {
       const result = await completeWorkflow();
       if (result?.success || result?.note_id || result?.encounter_id) {
-        toast.success("Consultation completed successfully");
+        const currentVisitStatus = visit?.visit_status;
+        if (
+          encounterId
+          && !TERMINAL_VISIT_STATUSES.has(currentVisitStatus)
+          && currentVisitStatus !== "ready_checkout"
+        ) {
+          try {
+            await endConsultation.mutateAsync(encounterId);
+          } catch (visitError) {
+            const message = visitError?.message || "";
+            if (
+              !message.includes("ready_checkout")
+              && !message.includes("checked_out")
+              && !message.includes("no_show")
+            ) {
+              throw visitError;
+            }
+          }
+        }
+        toast.success(
+          encounterId
+            ? "Consultation completed. Patient is ready for checkout."
+            : "Consultation completed successfully"
+        );
         resetWorkflow();
         onComplete?.();
         onClose();
@@ -152,7 +241,7 @@ const ConsultationSlideOver = ({
     onNextStep: nextStep,
     onPrevStep: prevStep,
     onGoToStep: goToStep,
-    onComplete: completeWorkflow,
+    onComplete: handleComplete,
     onClose: handleClose,
   });
 

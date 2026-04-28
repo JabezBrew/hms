@@ -1,6 +1,8 @@
 """
 Tests for user session tracking.
 """
+from datetime import timedelta
+
 import pytest
 from django.utils import timezone
 from rest_framework import status
@@ -138,3 +140,27 @@ class TestUserSessions:
         session.refresh_from_db()
         assert session.id == old_session_id
         assert session.refresh_jti != old_jti
+
+    def test_list_sessions_excludes_idle_sessions(self, api_client, db, settings):
+        settings.USER_SESSION_IDLE_TIMEOUT_MINUTES = 30
+        user = UserFactory(email='idle@test.com', password='testpass123')
+
+        login_response = api_client.post(
+            '/api/auth/login/',
+            {'email': 'idle@test.com', 'password': 'testpass123'},
+            format='json',
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+
+        stale_session = UserSession.objects.get(user=user)
+        stale_session.last_seen_at = timezone.now() - timedelta(minutes=45)
+        stale_session.expires_at = timezone.now() + timedelta(days=1)
+        stale_session.save(update_fields=['last_seen_at', 'expires_at', 'updated_at'])
+
+        access_token = login_response.data['access']
+        api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+        response = api_client.get('/api/users/sessions/')
+
+        assert response.status_code == status.HTTP_200_OK
+        results = response.data.get('results', response.data)
+        assert results == []

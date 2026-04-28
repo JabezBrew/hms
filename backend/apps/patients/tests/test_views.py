@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from django.conf import settings
-from datetime import timedelta, time, datetime
+from datetime import date, timedelta, time, datetime
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
 
@@ -26,7 +26,7 @@ from apps.patients.models import (
 )
 from apps.users.models import PatientProfile
 from apps.core.models import BreakGlassEvent
-from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory
+from apps.core.tests.factories import DefaultFacilityFactory, DepartmentFactory, FacilityFactory
 from apps.audit.models import AuditLog, AuditAction, AuditCategory
 from apps.users.tests.factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -420,7 +420,7 @@ class TestPatientNoteViewSet:
 class TestPatientViewSet:
     """Tests for PatientViewSet (register, search, get, update, delete)."""
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     def test_register_patient(self, mock_create_task, mock_sync_encounter_task, db, django_capture_on_commit_callbacks):
         """Test patient registration."""
@@ -451,6 +451,9 @@ class TestPatientViewSet:
         assert PatientProfile.objects.filter(
             user__email='newpatient@test.com'
         ).exists()
+        search_record = PatientSearch.objects.get(user=admin, facility=facility)
+        assert search_record.search_query == 'patient-registration action=create'
+        assert 'New Patient' not in search_record.search_query
         mock_create_task.assert_called_once()
 
     def test_register_patient_duplicate_email(self, db):
@@ -475,7 +478,7 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @patch('apps.wards.tasks.sync_encounter_to_fhir.delay')
+    @patch('apps.encounters.tasks.sync_encounter_to_fhir.delay')
     @patch('apps.patients.tasks.create_patient_in_fhir.delay')
     def test_register_patient_as_receptionist(self, mock_create_task, mock_sync_encounter_task, db, django_capture_on_commit_callbacks):
         """Test that receptionists can register patients."""
@@ -556,6 +559,171 @@ class TestPatientViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert 'results' in response.data
         assert 'total' in response.data
+
+    def test_search_patients_by_full_name_tokens(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(
+                first_name='Smoke',
+                last_name='Patient',
+                primary_facility=facility,
+            ),
+            medical_record_number='MRN-SMOKE-001',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'query': 'Smoke Patient'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = [item['id'] for item in response.data.get('results', [])]
+        assert str(patient.id) in ids
+
+    def test_search_supports_ordering_by_name(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        patient_a = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Sort', last_name='Zulu', primary_facility=facility),
+            medical_record_number='MRN-SORT-003',
+        )
+        patient_b = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Sort', last_name='Alpha', primary_facility=facility),
+            medical_record_number='MRN-SORT-001',
+        )
+        patient_c = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Sort', last_name='Lima', primary_facility=facility),
+            medical_record_number='MRN-SORT-002',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'query': 'Sort',
+            'ordering': 'name',
+            'page_size': 10,
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = [item['id'] for item in response.data.get('results', [])]
+        assert ids == [str(patient_b.id), str(patient_c.id), str(patient_a.id)]
+
+    def test_search_without_query_returns_most_recently_registered_first(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        older = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Older', last_name='Patient', primary_facility=facility),
+        )
+        newer = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Newer', last_name='Patient', primary_facility=facility),
+        )
+
+        older.created_at = timezone.now() - timedelta(days=1)
+        older.save(update_fields=['created_at'])
+
+        newer.created_at = timezone.now()
+        newer.save(update_fields=['created_at'])
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'page_size': 10})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('ordering') == '-created_at'
+        ids = [item['id'] for item in response.data.get('results', [])]
+        assert ids.index(str(newer.id)) < ids.index(str(older.id))
+
+    def test_search_supports_pagination_metadata(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        for idx in range(3):
+            PatientProfileFactory(
+                facility=facility,
+                user=PatientUserFactory(
+                    first_name='Paged',
+                    last_name=f'Patient{idx}',
+                    primary_facility=facility,
+                ),
+                medical_record_number=f'MRN-PAGE-00{idx}',
+            )
+
+        client = get_authenticated_client(admin, facility=facility)
+        first_page = client.get('/api/patients/search/', {
+            'query': 'Paged',
+            'ordering': 'name',
+            'page_size': 2,
+            'page': 1,
+        })
+
+        assert first_page.status_code == status.HTTP_200_OK
+        assert first_page.data.get('total') is None
+        assert first_page.data.get('count_exact') is False
+        assert first_page.data.get('page') == 1
+        assert first_page.data.get('page_size') == 2
+        assert len(first_page.data.get('results', [])) == 2
+        assert first_page.data.get('next') is not None
+        assert 'admission_status' in first_page.data['results'][0]
+
+        second_page = client.get('/api/patients/search/', {
+            'query': 'Paged',
+            'ordering': 'name',
+            'page_size': 2,
+            'page': 2,
+        })
+
+        assert second_page.status_code == status.HTTP_200_OK
+        assert second_page.data.get('page') == 2
+        assert second_page.data.get('total') == 3
+        assert second_page.data.get('count_exact') is True
+        assert len(second_page.data.get('results', [])) == 1
+        assert second_page.data.get('previous') is not None
+
+    def test_search_include_total_returns_exact_count(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        for idx in range(3):
+            PatientProfileFactory(
+                facility=facility,
+                user=PatientUserFactory(
+                    first_name='Exact',
+                    last_name=f'Patient{idx}',
+                    primary_facility=facility,
+                ),
+                medical_record_number=f'MRN-EXACT-00{idx}',
+            )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'query': 'Exact',
+            'ordering': 'name',
+            'page_size': 2,
+            'page': 1,
+            'include_total': 'true',
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('total') == 3
+        assert response.data.get('count_exact') is True
+
+    def test_search_rejects_invalid_ordering(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        client = get_authenticated_client(admin, facility=facility)
+
+        response = client.get('/api/patients/search/', {
+            'query': 'John',
+            'ordering': 'unsupported_field',
+        })
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data.get('error') == 'Invalid ordering field.'
 
     def test_search_filters_admission_date_range(self, db):
         admin = AdminUserFactory()
@@ -730,6 +898,170 @@ class TestPatientViewSet:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_search_registry_scope_active(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_inpatient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='ActiveInpatient', primary_facility=facility),
+        )
+        active_outpatient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='ActiveOutpatient', primary_facility=facility),
+        )
+        discharged = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='Discharged', primary_facility=facility),
+        )
+        deceased = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='Deceased', primary_facility=facility),
+        )
+        completed_outpatient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Scope', last_name='Completed', primary_facility=facility),
+        )
+
+        AdmissionFactory(patient=active_inpatient, facility=facility, status='admitted')
+        EncounterFactory(
+            patient=active_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='in-progress',
+        )
+        AdmissionFactory(patient=discharged, facility=facility, status='discharged')
+        AdmissionFactory(patient=deceased, facility=facility, status='deceased')
+        EncounterFactory(
+            patient=completed_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='finished',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'registry_scope': 'active'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(active_inpatient.id) in ids
+        assert str(active_outpatient.id) in ids
+        assert str(discharged.id) not in ids
+        assert str(deceased.id) not in ids
+        assert str(completed_outpatient.id) not in ids
+
+    def test_search_registry_scope_discharged(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_inpatient = PatientProfileFactory(facility=facility)
+        active_outpatient = PatientProfileFactory(facility=facility)
+        discharged = PatientProfileFactory(facility=facility)
+        transferred = PatientProfileFactory(facility=facility)
+        deceased = PatientProfileFactory(facility=facility)
+        completed_outpatient = PatientProfileFactory(facility=facility)
+
+        AdmissionFactory(patient=active_inpatient, facility=facility, status='admitted')
+        EncounterFactory(
+            patient=active_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='planned',
+        )
+        AdmissionFactory(patient=discharged, facility=facility, status='discharged')
+        AdmissionFactory(patient=transferred, facility=facility, status='transferred')
+        AdmissionFactory(patient=deceased, facility=facility, status='deceased')
+        EncounterFactory(
+            patient=completed_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='cancelled',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'registry_scope': 'discharged'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(discharged.id) in ids
+        assert str(transferred.id) in ids
+        assert str(completed_outpatient.id) in ids
+        assert str(active_inpatient.id) not in ids
+        assert str(active_outpatient.id) not in ids
+        assert str(deceased.id) not in ids
+
+    def test_search_registry_scope_deceased(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_patient = PatientProfileFactory(facility=facility)
+        discharged_patient = PatientProfileFactory(facility=facility)
+        deceased_patient = PatientProfileFactory(facility=facility)
+        completed_outpatient = PatientProfileFactory(facility=facility)
+
+        AdmissionFactory(patient=active_patient, facility=facility, status='admitted')
+        AdmissionFactory(patient=discharged_patient, facility=facility, status='discharged')
+        AdmissionFactory(patient=deceased_patient, facility=facility, status='deceased')
+        EncounterFactory(
+            patient=completed_outpatient,
+            facility=facility,
+            encounter_type='outpatient',
+            status='finished',
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'registry_scope': 'deceased'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(deceased_patient.id) in ids
+        assert str(active_patient.id) not in ids
+        assert str(discharged_patient.id) not in ids
+        assert str(completed_outpatient.id) not in ids
+
+    def test_search_registry_scope_rejects_invalid_value(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        client = get_authenticated_client(admin, facility=facility)
+
+        response = client.get('/api/patients/search/', {'registry_scope': 'invalid'})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data.get('error') == 'Invalid registry_scope value.'
+
+    def test_search_registry_scope_all_with_query_includes_all_statuses(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        active_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='ScopeAll', last_name='Active', primary_facility=facility),
+        )
+        discharged_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='ScopeAll', last_name='Discharged', primary_facility=facility),
+        )
+        deceased_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='ScopeAll', last_name='Deceased', primary_facility=facility),
+        )
+
+        AdmissionFactory(patient=active_patient, facility=facility, status='admitted')
+        AdmissionFactory(patient=discharged_patient, facility=facility, status='discharged')
+        AdmissionFactory(patient=deceased_patient, facility=facility, status='deceased')
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'query': 'ScopeAll',
+            'registry_scope': 'all',
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(active_patient.id) in ids
+        assert str(discharged_patient.id) in ids
+        assert str(deceased_patient.id) in ids
+
     def test_search_include_fhir_with_filters_returns_400(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility
@@ -802,7 +1134,21 @@ class TestPatientViewSet:
             response = client.get('/api/patients/search/', {'query': 'Pat'})
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(ctx) <= 8
+        # One additional prefetch query is expected for active encounter context.
+        assert len(ctx) <= 9
+
+    @patch('apps.patients.tasks.enqueue_patient_search_index_rebuild.delay')
+    def test_admin_can_queue_patient_search_reindex(self, mock_reindex_task, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        mock_reindex_task.return_value = MagicMock(id='reindex-task-123')
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.post('/api/patients/search-index/reindex/', {}, format='json')
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.data['task_id'] == 'reindex-task-123'
+        mock_reindex_task.assert_called_once()
 
     def test_search_include_fhir_forbidden_for_receptionist(self, db):
         """Test that FHIR search is restricted to clinical staff."""
@@ -823,10 +1169,9 @@ class TestPatientViewSet:
         response = client.get('/api/patients/search/', {'query': 'TestQuery'})
 
         assert response.status_code == status.HTTP_200_OK
-        assert PatientSearch.objects.filter(
-            user=doctor,
-            search_query__icontains='TestQuery'
-        ).exists()
+        search_record = PatientSearch.objects.filter(user=doctor).latest('search_date')
+        assert search_record.search_query == 'patient-search filters=query ordering=-created_at page=1'
+        assert 'TestQuery' not in search_record.search_query
 
     @patch('apps.patients.tasks.sync_patient_with_fhir.delay')
     def test_get_patient(self, mock_sync_task, db):
@@ -870,6 +1215,110 @@ class TestPatientViewSet:
         response = client.get('/api/patients/00000000-0000-0000-0000-000000000000/get_patient/')
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_get_patient_denies_cross_facility_idor(self, db):
+        """Patient custom actions must scope object lookup to the active facility."""
+        facility_a = DefaultFacilityFactory()
+        facility_b = FacilityFactory()
+        doctor = DoctorUserFactory(primary_facility=facility_a)
+        patient = PatientProfileFactory(facility=facility_b)
+
+        client = get_authenticated_client(doctor, facility=facility_a)
+        response = client.get(f'/api/patients/{patient.id}/get_patient/')
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_receptionist_cannot_update_clinical_profile_fields(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {'local_data': {'allergies': 'Penicillin'}},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_get_demographics_returns_editable_demographics_shape(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(
+            facility=facility,
+            nhis_id='NHIS-123',
+            emergency_contact_name='Emergency Contact',
+            emergency_contact_phone='233200000000',
+            emergency_contact_relationship='Sibling',
+        )
+        patient.user.phone_number = '233244000000'
+        patient.user.date_of_birth = date(1990, 1, 1)
+        patient.user.save(update_fields=['phone_number', 'date_of_birth'])
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.get(f'/api/patients/{patient.id}/demographics/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['nhis_id'] == 'NHIS-123'
+        assert response.data['emergency_contact_name'] == 'Emergency Contact'
+        assert response.data['emergency_contact_phone'] == '233200000000'
+        assert response.data['emergency_contact_relationship'] == 'Sibling'
+        assert response.data['user_details']['phone_number'] == '233244000000'
+        assert response.data['user_details']['date_of_birth'] == '1990-01-01'
+        assert 'allergies' not in response.data
+        assert 'blood_group' not in response.data
+        assert 'fhir_patient_id' not in response.data
+
+    def test_receptionist_can_update_demographics_without_clinical_fields(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {
+                'local_data': {
+                    'user': {
+                        'first_name': 'Updated',
+                        'last_name': 'Patient',
+                        'phone_number': '233200000001',
+                        'date_of_birth': '1988-05-10',
+                    },
+                    'nhis_id': 'NHIS-UPDATED',
+                    'emergency_contact_name': 'New Contact',
+                    'emergency_contact_phone': '233200000002',
+                    'emergency_contact_relationship': 'Parent',
+                }
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        patient.refresh_from_db()
+        patient.user.refresh_from_db()
+        assert patient.nhis_id == 'NHIS-UPDATED'
+        assert patient.emergency_contact_name == 'New Contact'
+        assert patient.user.first_name == 'Updated'
+        assert patient.user.phone_number == '233200000001'
+
+    def test_billing_can_update_demographics_for_invoiced_patient(self, db):
+        facility = DefaultFacilityFactory()
+        billing = UserFactory(user_type='billing', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+        InvoiceFactory(patient=patient, facility=facility)
+
+        client = get_authenticated_client(billing, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {'local_data': {'emergency_contact_phone': '233200000003'}},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        patient.refresh_from_db()
+        assert patient.emergency_contact_phone == '233200000003'
 
 
 # =============================================================================
@@ -970,6 +1419,21 @@ class TestBreakGlassAccess:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_break_glass_denies_cross_facility_patient(self, db):
+        facility_a = DefaultFacilityFactory()
+        facility_b = FacilityFactory()
+        doctor = DoctorUserFactory(primary_facility=facility_a)
+        patient = PatientProfileFactory(facility=facility_b)
+
+        client = get_authenticated_client(doctor, facility=facility_a)
+        response = client.post(
+            f'/api/patients/{patient.id}/break-glass/',
+            {'reason': 'Need access'},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 # =============================================================================

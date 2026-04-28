@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -34,7 +33,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  RequisitionCard,
   RequisitionCardSkeleton,
 } from '@/components/inventory/RequisitionCard';
 import { getStatusConfig, getPriorityConfig, formatCurrency } from '@/components/inventory/RequisitionCard';
@@ -44,8 +42,6 @@ import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
@@ -79,11 +75,6 @@ export default function RequisitionsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // View mode from localStorage
-  const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('requisitions-view-mode') || 'list';
-  });
-
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const status = searchParams.get('status') || 'all';
@@ -97,11 +88,6 @@ export default function RequisitionsPage() {
   const action = searchParams.get('action');
   const isCreateOpen = action === 'create';
   const initialItems = searchParams.get('items')?.split(',').filter(Boolean) || [];
-
-  // Persist view mode to localStorage
-  useEffect(() => {
-    localStorage.setItem('requisitions-view-mode', viewMode);
-  }, [viewMode]);
 
   // Build query params
   const queryParams = {
@@ -488,62 +474,20 @@ export default function RequisitionsPage() {
         )}
       </div>
 
-      {/* View Toggle */}
-      <div className="flex items-center justify-end">
-        <div className="flex items-center border rounded-lg p-1 bg-muted/30">
-          <Button
-            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            className="h-8 w-8 p-0"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="h-8 w-8 p-0"
-          >
-            <List className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
       {/* Requisitions Display */}
       {requisitions.length > 0 ? (
-        viewMode === 'grid' ? (
-          <VirtualizedGrid
-            items={requisitions}
-            minItemWidth={280}
-            rowHeight={280}
-            gap={16}
-            getItemKey={(requisition) => requisition.id}
-            renderItem={(requisition, index) => (
-              <RequisitionCard
-                requisition={requisition}
-                index={index}
-                onClick={() => handleRequisitionClick(requisition.id)}
-                onApprove={() => handleApprove(requisition.id)}
-                onReject={() => handleReject(requisition.id)}
-                onConvert={() => handleConvertToPO(requisition.id)}
-              />
-            )}
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={requisitions}
+            rowKey={(requisition) => requisition.id}
+            rowHeight={64}
+            columns={requisitionColumns}
+            onRowClick={(requisition) => handleRequisitionClick(requisition.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[960px]"
+            headerClassName="bg-muted/50 border-b border-border"
           />
-        ) : (
-          <div className="overflow-x-auto">
-            <VirtualizedTable
-              rows={requisitions}
-              rowKey={(requisition) => requisition.id}
-              rowHeight={64}
-              columns={requisitionColumns}
-              onRowClick={(requisition) => handleRequisitionClick(requisition.id)}
-              rowClassName="hover:bg-muted/30"
-              className="min-w-[960px]"
-              headerClassName="bg-muted/50 border-b border-border"
-            />
-          </div>
-        )
+        </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

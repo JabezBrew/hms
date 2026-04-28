@@ -397,6 +397,7 @@ def create_staff(facility, departments):
             first_name=data["first_name"],
             last_name=data["last_name"],
             user_type=data["role"],
+            must_change_password=True,
             primary_facility=facility,
         )
         user.facilities.add(facility)

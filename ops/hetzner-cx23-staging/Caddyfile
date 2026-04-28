@@ -1,0 +1,21 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$STAGING_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	@backend path /api/* /admin/* /static/* /media/* /ws/*
+	reverse_proxy @backend api:8000
+
+	reverse_proxy frontend:80
+}
+

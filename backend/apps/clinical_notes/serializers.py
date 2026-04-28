@@ -1,5 +1,14 @@
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
-from .models import NoteTemplate, NoteEntry, NoteEntryVersion, Prescription
+from .models import (
+    NoteTemplate, NoteTemplateRevision, NoteEntry, NoteEntryVersion, Prescription
+)
+from .template_utils import (
+    get_structure_sections,
+    normalize_template_structure,
+    infer_template_mode,
+)
 from ..users.models import PractitionerProfile, PatientProfile
 
 
@@ -14,11 +23,20 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
     is_system_template = serializers.BooleanField(read_only=True)
     visibility_display = serializers.CharField(source='get_visibility_display', read_only=True)
     category_display = serializers.CharField(source='get_category_display', read_only=True)
+    template_mode = serializers.ChoiceField(
+        choices=NoteTemplateRevision.MODE_CHOICES,
+        required=False,
+        write_only=True,
+    )
+    latest_published_revision_id = serializers.SerializerMethodField()
+    latest_published_revision_version = serializers.SerializerMethodField()
+    latest_published_revision_mode = serializers.SerializerMethodField()
+    latest_published_revision_status = serializers.SerializerMethodField()
 
     class Meta:
         model = NoteTemplate
         fields = [
-            'id', 'facility', 'title', 'description', 'is_active', 'structure',
+            'id', 'facility', 'title', 'description', 'is_active', 'template_mode', 'structure',
             # Visibility/sharing fields
             'visibility', 'visibility_display', 'department',
             # Organization fields
@@ -27,13 +45,17 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
             'is_public',
             # Ownership/audit fields
             'created_by', 'created_by_name', 'is_system_template',
+            'latest_published_revision_id', 'latest_published_revision_version',
+            'latest_published_revision_mode', 'latest_published_revision_status',
             'can_edit', 'can_delete',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'facility', 'created_by', 'created_by_name', 'is_system_template',
             'can_edit', 'can_delete', 'created_at', 'updated_at',
-            'visibility_display', 'category_display'
+            'visibility_display', 'category_display',
+            'latest_published_revision_id', 'latest_published_revision_version',
+            'latest_published_revision_mode', 'latest_published_revision_status',
         ]
 
     def get_created_by_name(self, obj):
@@ -68,15 +90,115 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
         # Users can delete their own templates
         return obj.created_by == user
 
+    def _get_latest_published_revision_data(self, obj):
+        """
+        Resolve latest published revision metadata.
+        Uses queryset annotations when available and falls back to a single DB lookup.
+        """
+        cache = getattr(self, '_latest_revision_cache', None)
+        if cache is None:
+            cache = {}
+            self._latest_revision_cache = cache
+
+        if obj.pk in cache:
+            return cache[obj.pk]
+
+        annotated_id = getattr(obj, 'latest_published_revision_id', None)
+        annotated_version = getattr(obj, 'latest_published_revision_version', None)
+        annotated_mode = getattr(obj, 'latest_published_revision_mode', None)
+        annotated_status = getattr(obj, 'latest_published_revision_status', None)
+
+        if any(value is not None for value in (annotated_id, annotated_version, annotated_mode, annotated_status)):
+            data = {
+                'id': annotated_id,
+                'version': annotated_version,
+                'mode': annotated_mode,
+                'status': annotated_status,
+            }
+            cache[obj.pk] = data
+            return data
+
+        latest = obj.revisions.filter(status='published').only(
+            'id', 'version', 'mode', 'status'
+        ).order_by('-version').first()
+        data = {
+            'id': getattr(latest, 'id', None),
+            'version': getattr(latest, 'version', None),
+            'mode': getattr(latest, 'mode', None),
+            'status': getattr(latest, 'status', None),
+        }
+        cache[obj.pk] = data
+        return data
+
+    def get_latest_published_revision_id(self, obj):
+        return self._get_latest_published_revision_data(obj)['id']
+
+    def get_latest_published_revision_version(self, obj):
+        return self._get_latest_published_revision_data(obj)['version']
+
+    def get_latest_published_revision_mode(self, obj):
+        return self._get_latest_published_revision_data(obj)['mode']
+
+    def get_latest_published_revision_status(self, obj):
+        return self._get_latest_published_revision_data(obj)['status']
+
+    @transaction.atomic
     def create(self, validated_data):
+        request = self.context.get('request')
         # Check if this is a default/system template (should not have a creator)
         is_default = validated_data.pop('is_default', False)
+        template_mode = validated_data.pop('template_mode', None)
+        validated_data['structure'] = normalize_template_structure(validated_data.get('structure'))
 
         # Only set created_by if not a default template
-        if not is_default:
-            validated_data['created_by'] = self.context['request'].user
+        if not is_default and request and request.user:
+            validated_data['created_by'] = request.user
 
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+
+        revision_mode = template_mode or infer_template_mode(instance.structure)
+        NoteTemplateRevision.objects.create(
+            template=instance,
+            facility=instance.facility,
+            version=1,
+            status='published',
+            mode=revision_mode,
+            content=instance.structure,
+            created_by=getattr(request, 'user', None),
+            published_by=getattr(request, 'user', None),
+            published_at=timezone.now(),
+        )
+        return instance
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        template_mode = validated_data.pop('template_mode', None)
+        structure_changed = 'structure' in validated_data
+        if structure_changed:
+            validated_data['structure'] = normalize_template_structure(validated_data.get('structure'))
+
+        instance = super().update(instance, validated_data)
+
+        if structure_changed or template_mode:
+            latest_revision = instance.revisions.order_by('-version').first()
+            next_version = (latest_revision.version + 1) if latest_revision else 1
+            revision_mode = template_mode or infer_template_mode(instance.structure)
+
+            # Keep only one published revision for deterministic template selection.
+            instance.revisions.filter(status='published').update(status='archived')
+            NoteTemplateRevision.objects.create(
+                template=instance,
+                facility=instance.facility,
+                version=next_version,
+                status='published',
+                mode=revision_mode,
+                content=instance.structure,
+                created_by=getattr(request, 'user', None),
+                published_by=getattr(request, 'user', None),
+                published_at=timezone.now(),
+            )
+        return instance
 
     def validate(self, data):
         """Validate template data."""
@@ -88,6 +210,14 @@ class NoteTemplateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'department': 'Department is required when visibility is set to "department".'
             })
+
+        if 'structure' in data:
+            normalized = normalize_template_structure(data['structure'])
+            if not normalized.get('sections'):
+                raise serializers.ValidationError({
+                    'structure': 'Template structure must include at least one section.'
+                })
+            data['structure'] = normalized
 
         return data
 
@@ -101,6 +231,10 @@ class NoteTemplateListSerializer(serializers.ModelSerializer):
     visibility_display = serializers.CharField(source='get_visibility_display', read_only=True)
     category_display = serializers.CharField(source='get_category_display', read_only=True)
     section_count = serializers.SerializerMethodField()
+    latest_published_revision_id = serializers.UUIDField(read_only=True)
+    latest_published_revision_version = serializers.IntegerField(read_only=True)
+    latest_published_revision_mode = serializers.CharField(read_only=True)
+    latest_published_revision_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = NoteTemplate
@@ -110,6 +244,8 @@ class NoteTemplateListSerializer(serializers.ModelSerializer):
             'category', 'category_display', 'icon', 'estimated_steps',
             'structure',  # Include structure for workflow step derivation
             'created_by', 'created_by_name',
+            'latest_published_revision_id', 'latest_published_revision_version',
+            'latest_published_revision_mode', 'latest_published_revision_status',
             'section_count', 'created_at', 'updated_at'
         ]
 
@@ -120,12 +256,72 @@ class NoteTemplateListSerializer(serializers.ModelSerializer):
 
     def get_section_count(self, obj):
         """Return the number of sections in the template."""
-        if obj.structure and isinstance(obj.structure, dict):
-            sections = obj.structure.get('sections', [])
-            return len(sections)
-        elif obj.structure and isinstance(obj.structure, list):
-            return len(obj.structure)
-        return 0
+        return len(get_structure_sections(obj.structure))
+
+
+class NoteTemplateRevisionSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+    submitted_by_name = serializers.SerializerMethodField()
+    published_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NoteTemplateRevision
+        fields = [
+            'id', 'template', 'facility', 'version', 'status', 'mode', 'content',
+            'change_summary', 'created_by', 'created_by_name',
+            'submitted_by', 'submitted_by_name', 'submitted_at',
+            'published_by', 'published_by_name', 'published_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'template', 'facility', 'version', 'status',
+            'created_by', 'created_by_name', 'submitted_by', 'submitted_by_name',
+            'submitted_at', 'published_by', 'published_by_name', 'published_at',
+            'created_at', 'updated_at',
+        ]
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.email
+        return 'System'
+
+    def get_submitted_by_name(self, obj):
+        if obj.submitted_by:
+            return obj.submitted_by.get_full_name() or obj.submitted_by.email
+        return None
+
+    def get_published_by_name(self, obj):
+        if obj.published_by:
+            return obj.published_by.get_full_name() or obj.published_by.email
+        return None
+
+
+class NoteTemplateRevisionCreateSerializer(serializers.Serializer):
+    mode = serializers.ChoiceField(choices=NoteTemplateRevision.MODE_CHOICES, required=False)
+    content = serializers.JSONField(required=True)
+    change_summary = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class NoteTemplateRenderSerializer(serializers.Serializer):
+    patient_id = serializers.UUIDField(required=False)
+    revision_id = serializers.UUIDField(required=False)
+    apply_mode = serializers.ChoiceField(
+        choices=[('all', 'All'), ('empty_only', 'Empty Only'), ('selected', 'Selected')],
+        required=False,
+        default='empty_only'
+    )
+    base_data = serializers.JSONField(required=False, default=dict)
+    sections = serializers.ListField(
+        required=False,
+        child=serializers.CharField(),
+        default=list,
+        allow_empty=True,
+    )
+    extra_tokens = serializers.DictField(
+        child=serializers.CharField(),
+        required=False,
+        default=dict,
+    )
 
 
 class NoteEntrySerializer(serializers.ModelSerializer):
@@ -139,19 +335,25 @@ class NoteEntrySerializer(serializers.ModelSerializer):
     copied_from_date = serializers.DateTimeField(source='copied_from.created_at', read_only=True)
     version_count = serializers.SerializerMethodField()
     has_edits = serializers.SerializerMethodField()
+    template_revision = serializers.PrimaryKeyRelatedField(
+        queryset=NoteTemplateRevision.objects.select_related('template'),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = NoteEntry
         fields = [
             'id', 'template', 'template_title', 'patient', 'patient_name',
             'encounter', 'practitioner', 'practitioner_name', 'composition_fhir_id',
+            'template_revision', 'template_version',
             'data', 'copied_from', 'copied_from_id', 'copied_from_date',
             'version_count', 'has_edits',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'composition_fhir_id', 'copied_from_id', 'copied_from_date',
-            'version_count', 'has_edits',
+            'template_version', 'version_count', 'has_edits',
             'created_at', 'updated_at'
         ]
 
@@ -178,12 +380,19 @@ class NoteEntrySerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         # Validate that the template is active
-        if not data['template'].is_active:
+        template = data.get('template') or getattr(self.instance, 'template', None)
+        if template and not template.is_active:
             raise serializers.ValidationError("The selected template is not active.")
 
+        template_revision = data.get('template_revision')
+        if template_revision and template and template_revision.template_id != template.id:
+            raise serializers.ValidationError({
+                'template_revision': 'Template revision does not belong to the selected template.'
+            })
+
         # Validate that the data structure matches the template structure
-        template_structure = data['template'].structure
-        entry_data = data['data']
+        template_structure = template.structure if template else {}
+        entry_data = data.get('data') or {}
 
         # Handle both list and dict structure formats
         if isinstance(template_structure, dict):
@@ -214,6 +423,20 @@ class NoteEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Missing data for required sections: {', '.join(missing_sections)}")
 
         return data
+
+    def create(self, validated_data):
+        template = validated_data['template']
+        template_revision = validated_data.get('template_revision')
+
+        if template_revision is None:
+            template_revision = template.revisions.filter(status='published').order_by('-version').first()
+            if template_revision:
+                validated_data['template_revision'] = template_revision
+
+        if template_revision:
+            validated_data['template_version'] = template_revision.version
+
+        return super().create(validated_data)
 
 
 class NoteEntryCloneSerializer(serializers.Serializer):
@@ -387,6 +610,7 @@ class NoteEntryListSerializer(serializers.ModelSerializer):
         model = NoteEntry
         fields = [
             'id', 'template', 'template_title', 'template_category',
+            'template_version',
             'patient', 'patient_name', 'patient_mrn',
             'practitioner_name', 'encounter', 'is_signed',
             'created_at', 'updated_at'

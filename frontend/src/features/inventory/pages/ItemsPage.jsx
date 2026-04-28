@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -35,7 +34,6 @@ import {
 } from '@/components/ui/sheet';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  InventoryItemCard,
   InventoryItemCardSkeleton,
   InventoryItemForm,
   StockLevelBadge,
@@ -50,8 +48,6 @@ import { useDebounce } from '@/hooks/use-debounce';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
-import List from 'lucide-react/dist/esm/icons/list.js';
 import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
@@ -90,11 +86,6 @@ export default function ItemsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // View mode from localStorage
-  const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('inventory-view-mode') || 'grid';
-  });
-
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const tab = searchParams.get('status') || 'all';
@@ -114,11 +105,6 @@ export default function ItemsPage() {
 
   // Debounced search
   const debouncedSearch = useDebounce(search, 300);
-
-  // Persist view mode to localStorage
-  useEffect(() => {
-    localStorage.setItem('inventory-view-mode', viewMode);
-  }, [viewMode]);
 
   // Build query params
   const queryParams = {
@@ -661,64 +647,24 @@ export default function ItemsPage() {
             </SelectContent>
           </Select>
 
-          {/* View Toggle */}
-          <div className="flex items-center border rounded-lg p-1 bg-muted/30">
-            <Button
-              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('grid')}
-              className="h-8 w-8 p-0"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-              className="h-8 w-8 p-0"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
       </div>
 
       {/* Items Display */}
       {items.length > 0 ? (
-        viewMode === 'grid' ? (
-          <VirtualizedGrid
-            items={items}
-            minItemWidth={260}
-            rowHeight={320}
-            gap={16}
-            getItemKey={(item) => item.id}
-            renderItem={(item, index) => (
-              <InventoryItemCard
-                item={item}
-                index={index}
-                isSelected={selectedItems.has(item.id)}
-                onSelect={() => toggleItemSelection(item.id)}
-                onClick={() => handleItemClick(item.id)}
-                onEdit={() => handleEditItem(item.id)}
-                onOrder={() => navigate(`/inventory/requisitions?action=create&items=${item.id}`)}
-              />
-            )}
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={items}
+            rowKey={(item) => item.id}
+            rowHeight={64}
+            columns={itemColumns}
+            onRowClick={(item) => handleItemClick(item.id)}
+            rowClassName="hover:bg-muted/50"
+            getRowClassName={(item) => (selectedItems.has(item.id) ? 'bg-muted/30' : null)}
+            className="min-w-[960px]"
+            headerClassName="bg-muted/50 border-b border-border"
           />
-        ) : (
-          <div className="overflow-x-auto">
-            <VirtualizedTable
-              rows={items}
-              rowKey={(item) => item.id}
-              rowHeight={64}
-              columns={itemColumns}
-              onRowClick={(item) => handleItemClick(item.id)}
-              rowClassName="hover:bg-muted/50"
-              getRowClassName={(item) => (selectedItems.has(item.id) ? 'bg-muted/30' : null)}
-              className="min-w-[960px]"
-              headerClassName="bg-muted/50 border-b border-border"
-            />
-          </div>
-        )
+        </div>
       ) : (
         <div className="bg-card/50 border border-border rounded-2xl p-12 text-center">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">

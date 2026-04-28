@@ -81,7 +81,7 @@ const ReferralNotificationBell = () => {
   const [open, setOpen] = useState(false);
 
   // Fetch notifications and count
-  const { data: notifications = [], isLoading } = useReferralNotifications();
+  const { data: notifications = [], isLoading } = useReferralNotifications({ page_size: 20 });
   const { data: unreadCount = 0 } = useReferralNotificationCount();
   const markAsRead = useMarkNotificationRead();
 

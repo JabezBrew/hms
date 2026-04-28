@@ -9,7 +9,7 @@ from apps.users.tests.factories import PatientProfileFactory, PractitionerProfil
 from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
 from apps.appointments.tests.factories import AppointmentTypeFactory, RecurringScheduleFactory
 from apps.appointments.models import Appointment
-from apps.encounters.models import OutpatientVisit
+from apps.encounters.models import Encounter, OutpatientVisit
 
 
 BASE_URL = '/api/encounters'
@@ -59,7 +59,7 @@ class TestOutpatientVisitFlow:
         practitioner = PractitionerProfileFactory()
         appointment_type = AppointmentTypeFactory()
 
-        start_time = timezone.now() + datetime.timedelta(hours=1)
+        start_time = timezone.now() + datetime.timedelta(minutes=30)
         end_time = start_time + datetime.timedelta(minutes=30)
         appointment = Appointment.objects.create(
             facility=facility,
@@ -78,6 +78,9 @@ class TestOutpatientVisitFlow:
         encounter_id = response.data['encounter_id']
         visit = OutpatientVisit.objects.get(encounter_id=encounter_id)
         assert visit.appointment_id == appointment.id
+        encounter = Encounter.objects.get(id=encounter_id)
+        assert encounter.status == 'planned'
+        assert encounter.start_time == appointment.start_time
 
     def test_waiting_room_lists_visits(self, admin_client):
         facility = DefaultFacilityFactory()
@@ -86,7 +89,7 @@ class TestOutpatientVisitFlow:
         practitioner = PractitionerProfileFactory()
         appointment_type = AppointmentTypeFactory()
 
-        start_time = timezone.now() + datetime.timedelta(hours=2)
+        start_time = timezone.now() + datetime.timedelta(minutes=20)
         end_time = start_time + datetime.timedelta(minutes=30)
         appointment = Appointment.objects.create(
             facility=facility,
@@ -102,12 +105,75 @@ class TestOutpatientVisitFlow:
         response = admin_client.post(f'/api/appointments/appointments/{appointment.id}/start_visit/')
         encounter_id = response.data['encounter_id']
         visit = OutpatientVisit.objects.get(encounter_id=encounter_id)
-        visit.visit_status = OutpatientVisit.VisitStatus.WAITING
-        visit.save(update_fields=['visit_status', 'updated_at'])
+        assert visit.visit_status == OutpatientVisit.VisitStatus.WAITING
 
         response = admin_client.get(f'{BASE_URL}/visits/waiting_room/?clinic={clinic.id}')
         assert response.status_code == status.HTTP_200_OK
         assert any(item['encounter_id'] == encounter_id for item in response.data)
+
+    def test_start_consultation_promotes_encounter(self, admin_client):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        appointment_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + datetime.timedelta(minutes=15)
+        end_time = start_time + datetime.timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=appointment_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        response = admin_client.post(f'/api/appointments/appointments/{appointment.id}/start_visit/')
+        encounter_id = response.data['encounter_id']
+
+        response = admin_client.post(f'{BASE_URL}/visits/{encounter_id}/start_consultation/')
+        assert response.status_code == status.HTTP_200_OK
+
+        visit = OutpatientVisit.objects.get(encounter_id=encounter_id)
+        encounter = Encounter.objects.get(id=encounter_id)
+        assert visit.visit_status == OutpatientVisit.VisitStatus.IN_PROGRESS
+        assert encounter.status == 'in-progress'
+
+    def test_end_consultation_finishes_encounter_and_sets_ready_checkout(self, admin_client):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        appointment_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + datetime.timedelta(minutes=10)
+        end_time = start_time + datetime.timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=appointment_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        response = admin_client.post(f'/api/appointments/appointments/{appointment.id}/start_visit/')
+        encounter_id = response.data['encounter_id']
+        admin_client.post(f'{BASE_URL}/visits/{encounter_id}/start_consultation/')
+
+        response = admin_client.post(f'{BASE_URL}/visits/{encounter_id}/end_consultation/')
+        assert response.status_code == status.HTTP_200_OK
+
+        visit = OutpatientVisit.objects.get(encounter_id=encounter_id)
+        encounter = Encounter.objects.get(id=encounter_id)
+        assert visit.visit_status == OutpatientVisit.VisitStatus.READY_CHECKOUT
+        assert encounter.status == 'finished'
+        assert encounter.end_time is not None
 
 
 @pytest.mark.django_db

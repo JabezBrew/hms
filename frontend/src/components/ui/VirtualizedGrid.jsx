@@ -2,6 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 
+function getScrollMargin(element) {
+  if (!element) return 0;
+
+  const rect = element.getBoundingClientRect?.();
+  if (!rect) {
+    return element.offsetTop ?? 0;
+  }
+
+  if (typeof window === 'undefined') {
+    return rect.top;
+  }
+
+  return rect.top + window.scrollY;
+}
+
 export function VirtualizedGrid({
   items = [],
   renderItem,
@@ -72,11 +87,12 @@ export function VirtualizedGrid({
     [items.length, columns]
   );
 
+  const scrollMargin = useWindow ? getScrollMargin(containerRef.current) : 0;
   const windowVirtualizer = useWindowVirtualizer({
     count: shouldVirtualize ? rowCount : 0,
     estimateSize: () => rowHeight + gap,
     overscan,
-    scrollMargin: containerRef.current?.offsetTop ?? 0,
+    scrollMargin,
   });
   const elementVirtualizer = useVirtualizer({
     count: shouldVirtualize ? rowCount : 0,
@@ -88,6 +104,7 @@ export function VirtualizedGrid({
   });
   const virtualizer = useWindow ? windowVirtualizer : elementVirtualizer;
   const virtualRows = virtualizer.getVirtualItems();
+  const virtualScrollMargin = useWindow ? (virtualizer.options?.scrollMargin ?? scrollMargin) : 0;
 
   if (!hasItems) {
     return null;
@@ -137,7 +154,7 @@ export function VirtualizedGrid({
                 top: 0,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
+                transform: `translateY(${virtualRow.start - virtualScrollMargin}px)`,
               }}
             >
               <div

@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -269,6 +269,70 @@ export default function StandingOrdersPage() {
   const handleGenerate = (id) => navigate(`/inventory/standing-orders/${id}?action=generate`);
   const handleCreate = () => navigate('/inventory/standing-orders?action=create');
 
+  const orderColumns = [
+    {
+      key: 'name',
+      header: 'Template',
+      width: '260px',
+      render: (order) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{order.name || order.order_number}</p>
+          <p className="truncate text-xs text-muted-foreground">{order.requesting_location_name || 'No location'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'frequency',
+      header: 'Frequency',
+      width: '140px',
+      render: (order) => {
+        const frequencyConfig = getFrequencyConfig(order.frequency);
+        return <Badge variant="outline" className={cn('text-xs', frequencyConfig.bgColor, frequencyConfig.color)}>{frequencyConfig.label}</Badge>;
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '120px',
+      render: (order) => (
+        <Badge variant="outline" className={order.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700 text-xs' : 'text-xs'}>
+          {order.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'next_due',
+      header: 'Next Due',
+      width: '160px',
+      render: (order) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {order.next_due_date ? format(parseISO(order.next_due_date), 'MMM d, yyyy') : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      width: '100px',
+      render: (order) => <span className="font-mono text-sm text-muted-foreground">{order.items_count || 0}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '180px',
+      render: (order) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleEdit(order.id); }}>
+            Edit
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleGenerate(order.id); }}>
+            Generate
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   if (isLoading) {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
@@ -358,23 +422,18 @@ export default function StandingOrdersPage() {
       </div>
 
       {orders.length > 0 ? (
-        <VirtualizedGrid
-          items={orders}
-          minItemWidth={280}
-          rowHeight={260}
-          gap={16}
-          getItemKey={(order) => order.id}
-          renderItem={(order, index) => (
-            <StandingOrderCard
-              order={order}
-              index={index}
-              onClick={() => handleClick(order.id)}
-              onEdit={() => handleEdit(order.id)}
-              onGenerate={() => handleGenerate(order.id)}
-              onToggleActive={() => {/* Would call mutation */}}
-            />
-          )}
-        />
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={orders}
+            rowKey={(order) => order.id}
+            rowHeight={68}
+            columns={orderColumns}
+            onRowClick={(order) => handleClick(order.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[980px]"
+            headerClassName="bg-muted/50 border-b border-border"
+          />
+        </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <Repeat className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />

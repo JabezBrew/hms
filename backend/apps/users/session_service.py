@@ -22,6 +22,7 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, Bl
 from hms_backend.middleware import get_client_ip
 from .models import UserSession
 from .geolocation import get_cached_location_from_ip
+from .user_agent import summarize_user_agent
 
 User = get_user_model()
 
@@ -33,6 +34,20 @@ class RefreshClaims:
     expires_at: timezone.datetime
 
 
+def get_session_idle_timeout_minutes() -> int:
+    configured = getattr(settings, 'USER_SESSION_IDLE_TIMEOUT_MINUTES', 30)
+    try:
+        value = int(configured)
+    except (TypeError, ValueError):
+        value = 30
+    return max(value, 1)
+
+
+def get_session_idle_cutoff(now: Optional[timezone.datetime] = None) -> timezone.datetime:
+    reference = now or timezone.now()
+    return reference - timezone.timedelta(minutes=get_session_idle_timeout_minutes())
+
+
 def _hash_value(value: Optional[str]) -> str:
     if not value:
         return ''
@@ -42,35 +57,7 @@ def _hash_value(value: Optional[str]) -> str:
 
 
 def _summarize_user_agent(user_agent: str) -> str:
-    ua = (user_agent or '').lower()
-    if not ua:
-        return ''
-
-    browser = 'Browser'
-    if 'chrome' in ua and 'edge' not in ua and 'edg' not in ua:
-        browser = 'Chrome'
-    elif 'firefox' in ua:
-        browser = 'Firefox'
-    elif 'safari' in ua and 'chrome' not in ua:
-        browser = 'Safari'
-    elif 'edg' in ua or 'edge' in ua:
-        browser = 'Edge'
-    elif 'opera' in ua or 'opr' in ua:
-        browser = 'Opera'
-
-    os_name = ''
-    if 'windows' in ua:
-        os_name = 'Windows'
-    elif 'mac os x' in ua or 'macintosh' in ua:
-        os_name = 'macOS'
-    elif 'android' in ua:
-        os_name = 'Android'
-    elif 'iphone' in ua or 'ipad' in ua:
-        os_name = 'iOS'
-    elif 'linux' in ua:
-        os_name = 'Linux'
-
-    return f"{browser} on {os_name}" if os_name else browser
+    return summarize_user_agent(user_agent)
 
 
 def _get_device_label(request) -> str:
@@ -222,16 +209,6 @@ def rotate_session(
     device_label = _get_device_label(request)
     resolved_facility_code = _resolve_facility_code(request, facility_code)
 
-    # If we couldn't find session by old JTI, try to find by fingerprint
-    if not session and request and hasattr(request, 'user') and request.user.is_authenticated:
-        # Look for the most recent active session with matching fingerprint
-        session = UserSession.objects.filter(
-            user=request.user,
-            ip_hash=ip_hash,
-            user_agent_hash=user_agent_hash,
-            revoked_at__isnull=True
-        ).order_by('-last_seen_at').first()
-
     if session:
         new_ip = _get_ip_address(request)
         ip_changed = new_ip != session.ip_address
@@ -306,27 +283,12 @@ def revoke_session(session: UserSession, revoked_by=None) -> UserSession:
 def revoke_session_by_refresh_token(refresh_token: str, revoked_by=None, request=None) -> Optional[UserSession]:
     """
     Revoke a session by its refresh token.
-    Falls back to fingerprint matching if JTI lookup fails.
     """
     claims = _extract_refresh_claims(refresh_token)
     if not claims:
         return None
 
-    # Try to find session by JTI first
     session = UserSession.objects.filter(refresh_jti=claims.jti).first()
-
-    # Fallback: find by user + fingerprint if JTI lookup fails
-    if not session and request:
-        ip_hash = _get_ip_hash(request)
-        user_agent_hash = _get_user_agent_hash(request)
-        user_id = claims.user_id
-
-        session = UserSession.objects.filter(
-            user_id=user_id,
-            ip_hash=ip_hash,
-            user_agent_hash=user_agent_hash,
-            revoked_at__isnull=True
-        ).order_by('-last_seen_at').first()
 
     if session:
         revoke_session(session, revoked_by=revoked_by)
@@ -349,6 +311,8 @@ def get_current_session_from_request(request) -> Optional[UserSession]:
     if not request or not hasattr(request, 'user') or not request.user.is_authenticated:
         return None
 
+    now = timezone.now()
+    idle_cutoff = get_session_idle_cutoff(now)
     refresh_token = request.COOKIES.get(settings.JWT_AUTH_REFRESH_COOKIE)
     claims = _extract_refresh_claims(refresh_token)
 
@@ -356,7 +320,9 @@ def get_current_session_from_request(request) -> Optional[UserSession]:
         # Try to find session by JTI first (preferred)
         session = UserSession.objects.filter(
             refresh_jti=claims.jti,
-            revoked_at__isnull=True
+            revoked_at__isnull=True,
+            expires_at__gt=now,
+            last_seen_at__gt=idle_cutoff,
         ).first()
         if session:
             return session
@@ -370,7 +336,9 @@ def get_current_session_from_request(request) -> Optional[UserSession]:
         user=request.user,
         ip_hash=ip_hash,
         user_agent_hash=user_agent_hash,
-        revoked_at__isnull=True
+        revoked_at__isnull=True,
+        expires_at__gt=now,
+        last_seen_at__gt=idle_cutoff,
     ).order_by('-last_seen_at').first()
 
 

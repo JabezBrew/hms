@@ -5,6 +5,7 @@ import { authApi } from "./api/auth"
 import { notifications } from "./notifications"
 import { setAuthTokenProvider, setFacilityCodeProvider, performTokenRefresh } from "./api-client"
 import { queryClient } from './react-query'
+import { getDefaultFacilityCode } from './runtime-config'
 
 // Create an authentication context
 const AuthContext = createContext(undefined)
@@ -19,9 +20,10 @@ export function AuthProvider({ children }) {
   const [mfaUser, setMfaUser] = useState(null)
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false)
   const [mfaAvailableMethods, setMfaAvailableMethods] = useState(null)
-  const defaultFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || null
+  const defaultFacilityCode = getDefaultFacilityCode()
   // Store access token in memory (not in localStorage)
   const accessTokenRef = useRef(null)
+  const logoutPromiseRef = useRef(null)
 
   // Function to get the current access token
   const getAccessToken = useCallback(() => {
@@ -46,51 +48,64 @@ export function AuthProvider({ children }) {
     }
   }, [user, mfaUser])
 
+  const clearPasswordChangeRequirement = useCallback(() => {
+    setUser((currentUser) => {
+      if (!currentUser || !currentUser.passwordChangeRequired) {
+        return currentUser
+      }
+      const updatedUser = { ...currentUser, passwordChangeRequired: false }
+      setAuthValue("user", JSON.stringify(updatedUser))
+      return updatedUser
+    })
+  }, [])
+
+  const clearLocalAuthState = useCallback(() => {
+    removeAuthValue("user")
+    removeAuthValue("sessionStartTime")
+    removeAuthValue("refreshTokenIssuedAt")
+    setUser(null)
+    setAccessToken(null)
+    setFacilityCodeState(null)
+    setMfaSession(null)
+    setMfaUser(null)
+    setMfaEnrollmentRequired(false)
+    setMfaAvailableMethods(null)
+    queryClient.clear()
+  }, [setAccessToken])
+
+  const notifyBackendLogout = useCallback(async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // Session may already be invalid/expired; local cleanup still proceeds.
+    }
+  }, [])
+
   // Logout function - defined early to avoid circular dependency
   const logout = useCallback(async (localOnly = false) => {
-    try {
+    if (logoutPromiseRef.current) {
+      return logoutPromiseRef.current
+    }
+
+    const logoutPromise = (async () => {
       if (!localOnly) {
-        try {
-          await authApi.logout()
-        } catch (_error) {
-          // Suppress errors during logout - token may already be expired
-          // Still proceed with local cleanup
-        }
+        await notifyBackendLogout()
       }
 
-      // Clear all session data
-      removeAuthValue("user")
-      removeAuthValue("sessionStartTime")
-      removeAuthValue("refreshTokenIssuedAt")
-      setUser(null)
-      setAccessToken(null)
-      setFacilityCodeState(null)
-      setMfaSession(null)
-      setMfaUser(null)
-      setMfaEnrollmentRequired(false)
-      setMfaAvailableMethods(null)
-
-      // Clear the React Query cache when logging out
-      queryClient.clear()
+      clearLocalAuthState()
 
       if (!localOnly) {
         notifications.success("Logged out successfully")
       }
-    } catch (_error) {
-      // Always proceed with local cleanup even if logout fails
-      removeAuthValue("user")
-      removeAuthValue("sessionStartTime")
-      removeAuthValue("refreshTokenIssuedAt")
-      setUser(null)
-      setAccessToken(null)
-      setFacilityCodeState(null)
-      setMfaSession(null)
-      setMfaUser(null)
-      setMfaEnrollmentRequired(false)
-      setMfaAvailableMethods(null)
-      queryClient.clear()
+    })()
+
+    logoutPromiseRef.current = logoutPromise
+    try {
+      await logoutPromise
+    } finally {
+      logoutPromiseRef.current = null
     }
-  }, [setAccessToken])
+  }, [clearLocalAuthState, notifyBackendLogout])
 
   // Function to check if session is still valid
   const isSessionValid = useCallback(() => {
@@ -161,10 +176,9 @@ export function AuthProvider({ children }) {
 
           // Validate session before restoring user
           if (!isSessionValid()) {
-            // Session expired, clear everything
-            removeAuthValue("user")
-            removeAuthValue("sessionStartTime")
-            removeAuthValue("refreshTokenIssuedAt")
+            // Session expired while app was closed; best-effort server revoke.
+            void notifyBackendLogout()
+            clearLocalAuthState()
             setLoading(false)
             return
           }
@@ -181,18 +195,17 @@ export function AuthProvider({ children }) {
               // Silent fail - user will be redirected to login if needed
             }
           }
-        } catch (_e) {
+        } catch {
           // Failed to parse stored user
-          removeAuthValue("user")
-          removeAuthValue("sessionStartTime")
-          removeAuthValue("refreshTokenIssuedAt")
+          void notifyBackendLogout()
+          clearLocalAuthState()
         }
       }
       setLoading(false)
     }
 
     initializeAuth()
-  }, [isSessionValid, refreshAccessToken])
+  }, [clearLocalAuthState, defaultFacilityCode, isSessionValid, notifyBackendLogout, refreshAccessToken])
 
   // Connect auth context to api-client
   useEffect(() => {
@@ -212,6 +225,10 @@ export function AuthProvider({ children }) {
     setAuthValue("sessionStartTime", now)
     setAuthValue("refreshTokenIssuedAt", now)
 
+    const passwordChangeRequired = Boolean(
+      response.password_change_required ?? response?.user?.must_change_password
+    )
+
     const userData = {
       email: response.user.email,
       id: response.user.id,
@@ -222,6 +239,7 @@ export function AuthProvider({ children }) {
       practitionerId: response.user.practitioner_id || null,
       facilityCode: response.user.facility_code || defaultFacilityCode,
       accessContext: response.access_context || null,
+      passwordChangeRequired,
     }
     setAuthValue("user", JSON.stringify(userData))
     setUser(userData)
@@ -304,6 +322,8 @@ export function AuthProvider({ children }) {
       mfaUser,
       mfaEnrollmentRequired,
       mfaAvailableMethods,
+      passwordChangeRequired: Boolean(user?.passwordChangeRequired),
+      clearPasswordChangeRequirement,
       isAuthenticated: !!user,
     }),
     [
@@ -319,7 +339,11 @@ export function AuthProvider({ children }) {
       mfaUser,
       mfaEnrollmentRequired,
       mfaAvailableMethods,
+      clearPasswordChangeRequirement,
       completeMfa,
+      login,
+      logout,
+      resetPassword,
     ]
   )
 

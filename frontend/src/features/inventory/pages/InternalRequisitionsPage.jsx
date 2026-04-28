@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -305,6 +305,75 @@ export default function InternalRequisitionsPage() {
   const handleFulfill = (id) => navigate(`/inventory/internal-requisitions/${id}?action=fulfill`);
   const handleCreate = () => navigate('/inventory/internal-requisitions?action=create');
 
+  const requisitionColumns = [
+    {
+      key: 'number',
+      header: 'Requisition #',
+      width: '180px',
+      render: (req) => <span className="font-mono text-sm font-medium text-primary">{req.requisition_number || req.number}</span>,
+    },
+    {
+      key: 'location',
+      header: 'Requesting Location',
+      width: '220px',
+      render: (req) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{req.requesting_location_name || 'Unknown location'}</p>
+          <p className="truncate text-xs text-muted-foreground">{req.requested_by_name || 'Unknown requester'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      width: '120px',
+      render: (req) => {
+        const priorityConfig = getPriorityConfig(req.priority);
+        return <span className={cn('text-xs font-medium', priorityConfig.color)}>{priorityConfig.label}</span>;
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (req) => {
+        const statusConfig = getStatusConfig(req.status);
+        return <Badge variant="outline" className={cn('text-xs', statusConfig.bgColor, statusConfig.textColor, statusConfig.borderColor)}>{statusConfig.label}</Badge>;
+      },
+    },
+    {
+      key: 'date_required',
+      header: 'Date Required',
+      width: '160px',
+      render: (req) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {req.date_required ? format(parseISO(req.date_required), 'MMM d, yyyy') : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'items',
+      header: 'Items',
+      width: '100px',
+      render: (req) => <span className="font-mono text-sm text-muted-foreground">{req.items_count || 0}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '180px',
+      render: (req) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleApprove(req.id); }}>
+            Approve
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleFulfill(req.id); }}>
+            Fulfill
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   if (isLoading) {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
@@ -404,22 +473,18 @@ export default function InternalRequisitionsPage() {
       </div>
 
       {requisitions.length > 0 ? (
-        <VirtualizedGrid
-          items={requisitions}
-          minItemWidth={280}
-          rowHeight={260}
-          gap={16}
-          getItemKey={(req) => req.id}
-          renderItem={(req, index) => (
-            <InternalRequisitionCard
-              requisition={req}
-              index={index}
-              onClick={() => handleClick(req.id)}
-              onApprove={() => handleApprove(req.id)}
-              onFulfill={() => handleFulfill(req.id)}
-            />
-          )}
-        />
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={requisitions}
+            rowKey={(req) => req.id}
+            rowHeight={68}
+            columns={requisitionColumns}
+            onRowClick={(req) => handleClick(req.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[1100px]"
+            headerClassName="bg-muted/50 border-b border-border"
+          />
+        </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <ClipboardList className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />

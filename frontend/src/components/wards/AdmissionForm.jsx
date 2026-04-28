@@ -8,10 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
-import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
 import { BedAssignment } from './BedAssignment';
 import { admissionsApi } from '@/features/admissions/api';
+import { admissionCaseKeys } from '@/features/admissions/hooks/useAdmissionCaseQueries';
 import { wardKeys } from '@/features/wards/hooks/useWardQueries';
 import format from 'date-fns/format';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -28,7 +28,6 @@ import {
 export function AdmissionForm({ wardId = null, wardData = null }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [patients, setPatients] = useState([]);
@@ -129,12 +128,6 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!selectedBed) {
-      setValidationMessage('Please select a bed for the patient.');
-      setShowValidationDialog(true);
-      return;
-    }
-
     if (!formData.patient) {
       setValidationMessage('Please select a patient.');
       setShowValidationDialog(true);
@@ -148,7 +141,6 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
       // Format dates for API
       const formattedData = {
         patient: formData.patient,
-        bed: selectedBed.id,
         // Send full datetime with current time to preserve the actual admission time
         admission_date: formData.admission_date.toISOString(),
         expected_discharge_date: formData.expected_discharge_date
@@ -158,39 +150,38 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
         admission_notes: formData.admission_notes || '',
       };
 
+      if (selectedBed?.id) {
+        formattedData.bed = selectedBed.id;
+      } else if (wardId) {
+        formattedData.requested_ward = wardId;
+      }
+
       // Only include admitting_doctor if it's set
       if (formData.admitting_doctor) {
         formattedData.admitting_doctor = formData.admitting_doctor;
       }
 
-      console.log('Submitting admission data:', formattedData);
-
       // Create admission using the dedicated API function
       const response = await admissionsApi.createAdmission(formattedData);
-
-      console.log('Admission created successfully:', response);
 
       // Invalidate all ward-related queries to refresh data
       queryClient.invalidateQueries({ queryKey: wardKeys.all });
       queryClient.invalidateQueries({ queryKey: wardKeys.beds() });
       queryClient.invalidateQueries({ queryKey: wardKeys.admissions() });
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all });
 
-      // Navigate to the ward detail page or admission detail
-      if (wardId) {
-        navigate(`/wards/${wardId}`);
-      } else {
+      if (response?.activated === false && response?.admission_case_id) {
+        navigate(`/admissions/cases/${response.admission_case_id}`);
+      } else if (response?.id) {
         navigate(`/admissions/${response.id}`);
+      } else if (response?.admission_case_id) {
+        navigate(`/admissions/cases/${response.admission_case_id}`);
+      } else if (wardId) {
+        navigate(`/wards/${wardId}`);
       }
     } catch (err) {
-      console.error('Error creating admission:', err);
-      console.error('Error details:', {
-        message: err.message,
-        status: err.status,
-        data: err.data
-      });
-
       // Use the error message from the API client (which now includes field errors)
-      let errorMessage = err.message || 'Failed to create admission. Please try again.';
+      const errorMessage = err.message || 'Failed to create admission. Please try again.';
 
       setError(errorMessage);
       setSubmitting(false);
@@ -278,18 +269,6 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
       value: id
     };
   }).filter(Boolean) : []; // Filter out null values
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
 
   return (
     <form onSubmit={handleSubmit}>
@@ -457,9 +436,9 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
           </Button>
           <Button 
             type="submit"
-            disabled={submitting || !selectedBed || !formData.patient}
+            disabled={submitting || !formData.patient}
           >
-            {submitting ? 'Admitting Patient...' : 'Admit Patient'}
+            {submitting ? 'Submitting Admission...' : selectedBed ? 'Admit Patient' : 'Start Admission'}
           </Button>
         </div>
       </div>

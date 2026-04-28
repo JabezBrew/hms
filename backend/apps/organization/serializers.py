@@ -246,7 +246,10 @@ class ClinicListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'code', 'name', 'department', 'department_name',
             'operating_hours_start', 'operating_hours_end',
-            'operates_24_hours', 'accepts_walk_ins', 'is_active'
+            'operates_24_hours', 'accepts_walk_ins',
+            'booking_mode', 'assignment_timing',
+            'waitlist_enabled', 'overbook_percent', 'overbook_hard_cap',
+            'is_active'
         ]
 
 
@@ -259,6 +262,40 @@ class ClinicSerializer(serializers.ModelSerializer):
         model = Clinic
         fields = '__all__'
         read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+    def validate(self, data):
+        booking_mode = data.get('booking_mode', getattr(self.instance, 'booking_mode', Clinic.BookingMode.PRACTITIONER_DIRECT))
+        assignment_timing = data.get(
+            'assignment_timing',
+            getattr(self.instance, 'assignment_timing', Clinic.AssignmentTiming.BOOKING)
+        )
+        overbook_percent = data.get('overbook_percent', getattr(self.instance, 'overbook_percent', 0))
+        soft_preassignment = data.get(
+            'soft_preassignment_minutes',
+            getattr(self.instance, 'soft_preassignment_minutes', 60)
+        )
+
+        if booking_mode == Clinic.BookingMode.CLINIC_POOL and assignment_timing != Clinic.AssignmentTiming.CHECK_IN:
+            raise serializers.ValidationError({
+                'assignment_timing': 'Clinic pool mode requires check-in assignment timing.'
+            })
+
+        if booking_mode == Clinic.BookingMode.PRACTITIONER_DIRECT and assignment_timing != Clinic.AssignmentTiming.BOOKING:
+            raise serializers.ValidationError({
+                'assignment_timing': 'Practitioner-direct mode requires booking-time assignment.'
+            })
+
+        if overbook_percent is not None and overbook_percent > 100:
+            raise serializers.ValidationError({
+                'overbook_percent': 'Overbook percent cannot exceed 100.'
+            })
+
+        if soft_preassignment and soft_preassignment > 720:
+            raise serializers.ValidationError({
+                'soft_preassignment_minutes': 'Soft preassignment cannot exceed 12 hours.'
+            })
+
+        return data
 
 
 class ClinicScheduleListSerializer(serializers.ModelSerializer):
@@ -422,10 +459,26 @@ class StaffUnitAssignmentSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         unit = data.get('unit') or (self.instance.unit if self.instance else None)
+        practitioner = data.get('practitioner') or (self.instance.practitioner if self.instance else None)
+        is_active = data.get('is_active', self.instance.is_active if self.instance else True)
+
         if unit and unit.staffing_mode == 'ops_only':
             raise serializers.ValidationError({
                 'unit': 'Operations units cannot have clinical staff assignments.'
             })
+
+        if unit and practitioner and is_active:
+            existing = StaffUnitAssignment.objects.filter(
+                unit=unit,
+                practitioner=practitioner,
+                is_active=True,
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'practitioner': 'This practitioner already has an active assignment in the selected unit.'
+                })
         return data
 
     def create(self, validated_data):
@@ -484,6 +537,7 @@ class UnitMemberAssignmentSerializer(serializers.ModelSerializer):
     def validate(self, data):
         unit = data.get('unit') or (self.instance.unit if self.instance else None)
         staff = data.get('staff') or (self.instance.staff if self.instance else None)
+        is_active = data.get('is_active', self.instance.is_active if self.instance else True)
 
         if unit and unit.staffing_mode == 'clinical_only':
             raise serializers.ValidationError({
@@ -494,6 +548,19 @@ class UnitMemberAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'staff': 'Clinical practitioners must be assigned via clinical staff assignments.'
             })
+
+        if unit and staff and is_active:
+            existing = UnitMemberAssignment.objects.filter(
+                unit=unit,
+                staff=staff,
+                is_active=True,
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'staff': 'This staff member already has an active assignment in the selected unit.'
+                })
 
         return data
 
@@ -665,16 +732,32 @@ class DepartmentDutyTypeSerializer(serializers.ModelSerializer):
         end_time = data.get('end_time', getattr(self.instance, 'end_time', None))
         if is_24_hour and (start_time or end_time):
             raise serializers.ValidationError({'start_time': '24-hour duties cannot define times.'})
-        if not is_24_hour and ((start_time is None) ^ (end_time is None)):
+        if not is_24_hour and (start_time is None or end_time is None):
             raise serializers.ValidationError({'start_time': 'Both start_time and end_time are required.'})
         if start_time and end_time and start_time == end_time:
             raise serializers.ValidationError({'start_time': 'start_time and end_time cannot match.'})
 
+        department = data.get('department', getattr(self.instance, 'department', None))
+
         # Validate clinic-specific fields
         category = data.get('category', getattr(self.instance, 'category', 'ward'))
         slot_duration = data.get('slot_duration_minutes', getattr(self.instance, 'slot_duration_minutes', None))
+        clinic = data.get('clinic', getattr(self.instance, 'clinic', None))
 
         if category == 'clinic':
+            if clinic is None:
+                raise serializers.ValidationError({'clinic': 'Clinic is required for clinic-type duties.'})
+            if department and getattr(clinic, 'department_id', None) and clinic.department_id != department.id:
+                raise serializers.ValidationError({'clinic': 'Clinic must belong to the selected department.'})
+
+            # Facility safety check: prevent cross-facility linking.
+            # Organization departments are scoped by root_unit.code matching the active facility code.
+            root_unit = getattr(department, 'root_unit', None) if department else None
+            clinic_facility_code = getattr(getattr(clinic, 'facility', None), 'code', None)
+            root_unit_code = getattr(root_unit, 'code', None)
+            if root_unit_code and clinic_facility_code and root_unit_code != clinic_facility_code:
+                raise serializers.ValidationError({'clinic': 'Clinic does not belong to the same facility as the department.'})
+
             # slot_duration_minutes is required for clinic category
             if slot_duration is None:
                 raise serializers.ValidationError({
@@ -688,6 +771,9 @@ class DepartmentDutyTypeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'slot_duration_minutes': 'Slot duration cannot exceed 480 minutes (8 hours).'
                 })
+        else:
+            if clinic is not None:
+                raise serializers.ValidationError({'clinic': 'Clinic can only be set when category is clinic.'})
 
         # Validate breaks format
         breaks = data.get('breaks', getattr(self.instance, 'breaks', []))
@@ -836,11 +922,22 @@ class RosterGenerateSerializer(serializers.Serializer):
 class RosterBulkEntrySerializer(serializers.Serializer):
     date = serializers.DateField()
     duty_type = serializers.UUIDField()
-    team = serializers.UUIDField()
+    # Exactly one of team or practitioner must be provided.
+    team = serializers.UUIDField(required=False, allow_null=True)
+    practitioner = serializers.UUIDField(required=False, allow_null=True)
     start_time = serializers.TimeField(required=False, allow_null=True)
     end_time = serializers.TimeField(required=False, allow_null=True)
     source = serializers.ChoiceField(choices=['manual', 'imported', 'generated', 'override'], default='manual')
     status = serializers.ChoiceField(choices=['draft', 'published'], default='draft')
+
+    def validate(self, data):
+        team = data.get('team')
+        practitioner = data.get('practitioner')
+        if bool(team) == bool(practitioner):
+            raise serializers.ValidationError(
+                'Each bulk roster entry must include exactly one of team or practitioner.'
+            )
+        return data
 
 
 class RosterBulkSerializer(serializers.Serializer):

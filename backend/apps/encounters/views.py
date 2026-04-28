@@ -18,6 +18,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
 
+from apps.discharge.services import submit_legacy_discharge
 from .models import Encounter, OutpatientVisit, TriageQueue
 from .serializers import (
     EncounterSerializer,
@@ -110,6 +111,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'practitioner',
             'practitioner__staff',
             'practitioner__staff__user',
+            'outpatient_visit',
             'admission',
             'clinic',
             'department',
@@ -291,12 +293,18 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Queue a background task to sync the encounter to FHIR.
         """
+        def enqueue():
+            try:
+                from .tasks import sync_encounter_to_fhir
+                sync_encounter_to_fhir.delay(str(encounter_id))
+            except Exception:
+                # If Celery is not available, sync will happen later
+                pass
+
         try:
-            from .tasks import sync_encounter_to_fhir
-            sync_encounter_to_fhir.delay(str(encounter_id))
+            transaction.on_commit(enqueue)
         except Exception:
-            # If Celery is not available, sync will happen later
-            pass
+            enqueue()
 
     @action(detail=True, methods=['post'])
     def finish(self, request, pk=None):
@@ -320,6 +328,11 @@ class EncounterViewSet(viewsets.ModelViewSet):
         if encounter.status == 'finished':
             return Response(
                 {"error": "Encounter is already finished"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if encounter.status == 'cancelled':
+            return Response(
+                {"error": "Cannot finish a cancelled encounter"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -391,20 +404,24 @@ class EncounterViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                # Discharge the admission if linked
                 if encounter.admission:
                     discharge_notes = request.data.get('discharge_notes', '')
-                    encounter.admission.discharge_patient(discharge_notes)
+                    discharge_case = submit_legacy_discharge(
+                        admission=encounter.admission,
+                        actor=request.user,
+                        discharge_notes=discharge_notes,
+                    )
+                    serializer = EncounterSerializer(encounter)
+                    return Response({
+                        'encounter': serializer.data,
+                        'discharge_case_id': str(discharge_case.id),
+                        'admission_status': encounter.admission.status,
+                    })
 
-                # Finish the encounter
-                encounter.finish(
-                    discharge_disposition=request.data.get('discharge_disposition'),
-                    destination=request.data.get('destination')
+                return Response(
+                    {"error": "Inpatient encounter has no linked admission."},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
-
-                self._queue_fhir_sync(encounter.id)
-                serializer = EncounterSerializer(encounter)
-                return Response(serializer.data)
 
         except Exception as e:
             logger.error(f"Failed to discharge patient: {str(e)}")
@@ -587,11 +604,13 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
         data = [
             {
                 "encounter_id": str(visit.encounter_id),
+                "patient_id": str(visit.encounter.patient_id),
                 "queue_number": visit.queue_number,
                 "visit_status": visit.visit_status,
                 "patient_name": visit.encounter.patient_name,
                 "checked_in_at": visit.checked_in_at,
                 "called_at": visit.called_at,
+                "consultation_ended_at": visit.consultation_ended_at,
             }
             for visit in visits
         ]

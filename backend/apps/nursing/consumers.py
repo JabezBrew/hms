@@ -15,10 +15,10 @@ from datetime import datetime
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
-from django.conf import settings
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.security import get_user_facility_codes, check_clinical_access
+from apps.core.security import get_user_facility_codes, check_clinical_access, normalize_facility_code
+from hms_backend.deployment import feature_enabled
 from apps.users.models import PatientProfile, PractitionerProfile
 from apps.wards.models import WardStaffAssignment
 
@@ -33,7 +33,7 @@ def _can_access_patient(user, patient_id):
     if not patient:
         return False
     allowed_codes = get_user_facility_codes(user)
-    allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+    allow_cross_facility = feature_enabled('cross_facility_access')
     if allowed_codes and patient.facility:
         if patient.facility.code not in allowed_codes and not (allow_cross_facility and user.user_type == 'admin'):
             return False
@@ -69,7 +69,7 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
     - Ward-specific alerts (/ws/alerts/ward/<ward_id>/) - receives ward alerts only
 
     Authentication:
-    - Requires valid JWT token in query string
+    - Requires valid JWT token in WebSocket subprotocols
     - User must be a practitioner (nurse, doctor, etc.)
 
     Message types sent to client:
@@ -78,7 +78,7 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
     - alert.escalated: Alert severity increased
 
     Example client connection:
-        const ws = new WebSocket('ws://host/ws/alerts/?token=<jwt>');
+        const ws = new WebSocket('ws://host/ws/alerts/', ['hms.jwt', '<jwt>']);
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'alert.new') {
@@ -98,6 +98,11 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             return
 
         if self.user.user_type not in ['admin', 'doctor', 'nurse']:
+            await self.close(code=4003)
+            return
+
+        self.facility_code = normalize_facility_code(self.scope.get('facility_code'))
+        if not self.facility_code:
             await self.close(code=4003)
             return
 
@@ -122,14 +127,22 @@ class AlertConsumer(AsyncJsonWebsocketConsumer):
             if user_type:
                 self.groups.append(f'alerts_role_{user_type}')
 
-        # Also subscribe to critical alerts (always delivered regardless of ward)
-        self.groups.append('alerts_critical')
+        # Critical alerts are facility-scoped; cross-facility global delivery leaks PHI.
+        self.groups.append(f'alerts_critical_{self.facility_code}')
 
         # Join all groups
         for group in self.groups:
             await self.channel_layer.group_add(group, self.channel_name)
 
-        await self.accept()
+        subprotocol = None
+        for offered in self.scope.get('subprotocols', []) or []:
+            if str(offered).lower() == 'hms.jwt':
+                subprotocol = offered
+                break
+        if subprotocol:
+            await self.accept(subprotocol=subprotocol)
+        else:
+            await self.accept()
 
         # Send connection confirmation
         await self.send_json({
@@ -232,7 +245,7 @@ class VitalSignsConsumer(AsyncJsonWebsocketConsumer):
     - vitals.critical: Critical vital signs detected
 
     Example client connection:
-        const ws = new WebSocket('ws://host/ws/vitals/<patient_id>/?token=<jwt>');
+        const ws = new WebSocket('ws://host/ws/vitals/<patient_id>/', ['hms.jwt', '<jwt>']);
     """
 
     async def connect(self):
@@ -259,7 +272,15 @@ class VitalSignsConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = f'vitals_patient_{self.patient_id}'
         await self.channel_layer.group_add(self.group_name, self.channel_name)
 
-        await self.accept()
+        subprotocol = None
+        for offered in self.scope.get('subprotocols', []) or []:
+            if str(offered).lower() == 'hms.jwt':
+                subprotocol = offered
+                break
+        if subprotocol:
+            await self.accept(subprotocol=subprotocol)
+        else:
+            await self.accept()
 
         await self.send_json({
             'type': 'connection.established',
@@ -306,7 +327,7 @@ def get_channel_layer():
     return _get_channel_layer()
 
 
-async def broadcast_alert(alert_data, ward_id=None, is_critical=False):
+async def broadcast_alert(alert_data, ward_id=None, is_critical=False, facility_code=None):
     """
     Broadcast an alert to relevant WebSocket groups.
 
@@ -328,9 +349,15 @@ async def broadcast_alert(alert_data, ward_id=None, is_critical=False):
         )
 
     if is_critical:
-        # Send to critical alerts group (all subscribers)
+        resolved_facility_code = normalize_facility_code(
+            facility_code or (alert_data or {}).get('facility_code')
+        )
+        if not resolved_facility_code:
+            logger.warning("Dropped critical alert broadcast without facility context.")
+            return
+        # Send to facility-scoped critical alerts group.
         await channel_layer.group_send(
-            'alerts_critical',
+            f'alerts_critical_{resolved_facility_code}',
             {
                 'type': 'alert.new',
                 'alert': alert_data,

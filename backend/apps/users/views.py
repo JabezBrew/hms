@@ -4,9 +4,10 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.apps import apps
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from django.core.cache import cache
 import hashlib
 import logging
@@ -25,14 +26,24 @@ from .serializers import (
     UserSessionListSerializer
 )
 from .permissions import IsAdminOrSelf, IsAdminOrOwner
-from .session_service import get_current_session_from_request, revoke_session, revoke_sessions_for_user
+from .session_service import (
+    get_current_session_from_request,
+    get_session_idle_cutoff,
+    revoke_session,
+    revoke_sessions_for_user,
+)
 from .rbac import (
     IsAdmin, IsDoctor, IsNurse, IsReceptionist, IsLabTechnician,
     IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
     setup_groups_and_permissions
 )
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, check_demographics_access, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_demographics_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 from apps.core.cache_utils import facility_cache_key
 from .tasks import fetch_practitioner_fhir_snapshot, search_practitioners_in_fhir
 
@@ -126,7 +137,9 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'detail': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
-        user.save()
+        user.must_change_password = False
+        user.password_changed_at = timezone.now()
+        user.save(update_fields=['password', 'must_change_password', 'password_changed_at'])
         return Response({'detail': 'Password changed successfully.'})
 
 
@@ -156,7 +169,12 @@ class UserSessionViewSet(viewsets.GenericViewSet):
 
         # Filter out revoked/expired sessions unless explicitly requested
         if not include_revoked:
-            base_qs = base_qs.filter(revoked_at__isnull=True, expires_at__gt=timezone.now())
+            now = timezone.now()
+            base_qs = base_qs.filter(
+                revoked_at__isnull=True,
+                expires_at__gt=now,
+                last_seen_at__gt=get_session_idle_cutoff(now),
+            )
 
         return base_qs
 
@@ -262,6 +280,9 @@ class StaffViewSet(viewsets.ModelViewSet):
         user = self.request.user
         base_qs = Staff.objects.select_related('user').filter(primary_facility=facility)
 
+        if self.action == 'list' and self.request.query_params.get('include_inactive') != 'true':
+            base_qs = base_qs.filter(user__is_active=True)
+
         if user.user_type in ['admin', 'doctor', 'nurse', 'receptionist']:
             # These roles can see staff in their facility
             return base_qs
@@ -279,6 +300,73 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        """
+        Deprovision staff access while retaining records for audit/compliance.
+
+        "Delete staff" in HMS means:
+        - Disable user login (user.is_active=False)
+        - Revoke all active sessions
+        - Deactivate organization assignments and leadership links
+        - Keep staff/user records for traceability
+        """
+        user = getattr(instance, 'user', None)
+        today = timezone.now().date()
+        actor = self.request.user if getattr(self.request, 'user', None) else None
+
+        from apps.organization.models import (
+            StaffUnitAssignment,
+            UnitMemberAssignment,
+            UnitLeadership,
+        )
+
+        with transaction.atomic():
+            if user:
+                revoke_sessions_for_user(
+                    user,
+                    revoked_by=actor if getattr(actor, 'is_authenticated', False) else None
+                )
+                if user.is_active:
+                    user.is_active = False
+                    user.save(update_fields=['is_active'])
+
+            practitioner = getattr(instance, 'practitioner_profile', None)
+            if practitioner:
+                clinical_assignments = StaffUnitAssignment.objects.filter(
+                    practitioner=practitioner,
+                    is_active=True
+                ).select_related('unit')
+                for assignment in clinical_assignments:
+                    assignment.is_active = False
+                    if assignment.effective_until is None or assignment.effective_until > today:
+                        assignment.effective_until = today
+                    assignment.save(update_fields=['is_active', 'effective_until', 'updated_at'])
+
+            member_assignments = UnitMemberAssignment.objects.filter(
+                staff=instance,
+                is_active=True
+            ).select_related('unit')
+            for assignment in member_assignments:
+                assignment.is_active = False
+                if assignment.effective_until is None or assignment.effective_until > today:
+                    assignment.effective_until = today
+                assignment.save(update_fields=['is_active', 'effective_until', 'updated_at'])
+
+            if user:
+                leadership_assignments = UnitLeadership.objects.filter(
+                    user=user,
+                    is_active=True
+                ).select_related('unit')
+                for leadership in leadership_assignments:
+                    leadership.is_active = False
+                    if leadership.effective_until is None or leadership.effective_until > today:
+                        leadership.effective_until = today
+                    leadership.save(update_fields=['is_active', 'effective_until'])
+
+            if getattr(actor, 'is_authenticated', False):
+                instance.updated_by = actor
+                instance.save(update_fields=['updated_by', 'updated_at'])
 
     @action(detail=False, methods=['get'])
     def search(self, request):
@@ -394,41 +482,91 @@ class StaffViewSet(viewsets.ModelViewSet):
         Creates/updates the user + staff profile and sends a password reset link email.
         This avoids emailing plaintext passwords.
         """
-        from .models import PasswordResetToken
-        from .tasks import send_password_reset_email, send_account_setup_email
-        from django.conf import settings
-
         serializer = StaffInviteSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
             staff = serializer.save()
-
-            # Generate reset token and email link (admin-initiated)
-            plain_token, _ = PasswordResetToken.create_for_user(
-                user=staff.user,
-                reset_type='admin_force',
-                initiated_by=request.user,
-                expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
-            )
-
-            # First-time creation gets a clearer "set up your password" message.
-            if getattr(staff, '_user_created', False):
-                send_account_setup_email.delay(
-                    user_id=str(staff.user.id),
-                    token=plain_token,
-                    user_email=staff.user.email,
-                    user_name=staff.user.get_full_name() or staff.user.email,
-                )
-            else:
-                send_password_reset_email.delay(
-                    user_id=str(staff.user.id),
-                    token=plain_token,
-                    user_email=staff.user.email,
-                    user_name=staff.user.get_full_name() or staff.user.email,
-                )
+            self._dispatch_staff_setup_or_reset_email(staff=staff, initiated_by=request.user)
 
         return Response(StaffSerializer(staff, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='resend-setup-link')
+    def resend_setup_link(self, request, pk=None):
+        """
+        Resend a secure setup/reset link to an existing staff account.
+
+        Uses account setup copy for users without a usable password and
+        password reset copy for users with an existing password.
+        """
+        staff = self.get_object()
+        user = getattr(staff, 'user', None)
+        if not user:
+            return Response({"detail": "Staff user account not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not user.is_active:
+            return Response(
+                {"detail": "Staff account is deactivated. Reactivate the account before resending setup."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            mode = self._dispatch_staff_setup_or_reset_email(staff=staff, initiated_by=request.user)
+        except Exception:
+            logger.exception(
+                "Failed to resend setup link for staff",
+                extra={"staff_id": str(staff.id), "user_id": str(user.id)},
+            )
+            return Response(
+                {"detail": "Failed to resend setup link. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        detail = (
+            "Account setup link sent successfully."
+            if mode == "account_setup"
+            else "Password reset link sent successfully."
+        )
+        return Response({"detail": detail, "mode": mode}, status=status.HTTP_200_OK)
+
+    def _dispatch_staff_setup_or_reset_email(self, *, staff, initiated_by):
+        """
+        Queue the correct onboarding email variant for a staff user.
+
+        Returns:
+            str: 'account_setup' when user has no usable password,
+                 otherwise 'password_reset'.
+        """
+        from .models import PasswordResetToken
+        from .tasks import send_password_reset_email, send_account_setup_email
+
+        plain_token, _ = PasswordResetToken.create_for_user(
+            user=staff.user,
+            reset_type='admin_force',
+            initiated_by=initiated_by,
+            expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
+        )
+
+        user_name = staff.user.get_full_name() or staff.user.email
+        if not staff.user.has_usable_password():
+            send_account_setup_email.delay(
+                user_id=str(staff.user.id),
+                token=plain_token,
+                user_email=staff.user.email,
+                user_name=user_name,
+                employee_id=staff.employee_id,
+                department=staff.department,
+                position=staff.position,
+            )
+            return "account_setup"
+
+        send_password_reset_email.delay(
+            user_id=str(staff.user.id),
+            token=plain_token,
+            user_email=staff.user.email,
+            user_name=user_name,
+        )
+        return "password_reset"
 
 
 class PractitionerProfileViewSet(viewsets.ModelViewSet):
@@ -699,6 +837,11 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return PatientProfileListSerializer
+        if (
+            self.action == 'retrieve'
+            and self.request.user.user_type in ['receptionist', 'lab_technician', 'pharmacist', 'billing']
+        ):
+            return PatientProfileListSerializer
         return PatientProfileSerializer
 
     def get_permissions(self):
@@ -721,7 +864,7 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             if self.request.method in permissions.SAFE_METHODS:
-                # All roles can view patient details
+                # Object-level access is enforced in get_queryset/get_object.
                 permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
             else:
                 # Only admins, doctors, and nurses can edit patients
@@ -754,27 +897,48 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
             facility=facility
         ).order_by('-created_at')
 
-        # Patients can only see their own profile
         if user.user_type == 'patient':
-            try:
-                patient_profile = PatientProfile.objects.get(user=user)
-                return base_qs.filter(id=patient_profile.id)
-            except PatientProfile.DoesNotExist:
-                return PatientProfile.objects.none()
+            return base_qs.filter(user=user)
 
-        # Doctors can see their patients
-        elif user.user_type == 'doctor':
-            # In a real implementation, this would filter based on doctor-patient relationships
-            # For simplicity, we're allowing doctors to see all patients
+        if user.user_type == 'admin':
             return base_qs
 
-        # Admin, nurse, receptionist, lab tech, pharmacist, billing can see all patients
-        elif user.user_type in ['admin', 'nurse', 'receptionist', 'lab_technician', 'pharmacist', 'billing']:
+        if user.user_type in ['doctor', 'nurse']:
+            if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                return base_qs
+            accessible_patients = get_accessible_patients_for_clinician(user, scope='clinical')
+            return base_qs.filter(id__in=accessible_patients.values('id'))
+
+        if user.user_type == 'receptionist':
             return base_qs
 
-        # Other roles can't see patients
-        else:
-            return PatientProfile.objects.none()
+        if user.user_type == 'lab_technician':
+            from apps.laboratory.models import LabOrder
+
+            return base_qs.annotate(
+                has_lab_orders=Exists(LabOrder.objects.filter(patient_id=OuterRef('pk'), facility=facility))
+            ).filter(has_lab_orders=True)
+
+        if user.user_type == 'pharmacist':
+            from apps.clinical_notes.models import Prescription
+
+            return base_qs.annotate(
+                has_prescriptions=Exists(Prescription.objects.filter(patient_id=OuterRef('pk'), facility=facility))
+            ).filter(has_prescriptions=True)
+
+        if user.user_type == 'billing':
+            from apps.billing.models import Invoice
+
+            return base_qs.annotate(
+                has_invoices=Exists(Invoice.objects.filter(patient_id=OuterRef('pk'), facility=facility))
+            ).filter(has_invoices=True)
+
+        return PatientProfile.objects.none()
+
+    def get_object(self):
+        patient = super().get_object()
+        check_demographics_access(self.request.user, patient)
+        return patient
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)

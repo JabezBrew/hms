@@ -49,14 +49,14 @@ export default function CreateClinicalNotePage() {
     data: existingNotes,
     isLoading: isLoadingNotes,
     isError: isErrorNotes
-  } = useNoteEntriesForEncounter(encounterId);
+  } = useNoteEntriesForEncounter(encounterId, { page_size: 200 });
 
   // Fetch all active templates
   const {
     data: activeTemplates,
     isLoading: isLoadingTemplates,
     isError: isErrorTemplates
-  } = useActiveNoteTemplates();
+  } = useActiveNoteTemplates({ page_size: 200 });
 
   const encounterLabel = encounter?.patient_name
     ? `Encounter for ${encounter.patient_name}`

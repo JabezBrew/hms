@@ -2,11 +2,8 @@
  * Base API client for making requests to the backend
  */
 import { toast } from 'sonner';
-
-// Base URL for API requests
-// In production, use the backend URL. In development, use Vite's proxy.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD ? 'https://backend-production-d15a.up.railway.app/api' : '/api');
+import { getClientDeviceLabel } from './device-label';
+import { getApiBasePathname, getApiBaseUrl } from './runtime-config';
 
 const AUTH_ENDPOINTS = [
   '/auth/login/',
@@ -35,6 +32,51 @@ const MAX_CONSECUTIVE_REFRESHES = 3;
 let lastRefreshTime = 0;
 // Grace period (ms) - if refresh completed within this time, reuse token instead of refreshing again
 const REFRESH_GRACE_PERIOD = 5000;
+
+// Refresh access tokens slightly before they expire to avoid avoidable 401s during polling.
+const ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 60;
+
+function base64UrlDecodeToString(value) {
+  const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  const base64 = normalized + padding;
+
+  const atobFn = globalThis?.atob;
+  if (typeof atobFn === 'function') {
+    return atobFn(base64);
+  }
+  // Vitest/Node fallback (should not be used in browsers).
+  const buf = globalThis?.Buffer;
+  if (buf && typeof buf.from === 'function') {
+    return buf.from(base64, 'base64').toString('utf8');
+  }
+  throw new Error('No base64 decoder available');
+}
+
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') {
+    return null;
+  }
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+  try {
+    return JSON.parse(base64UrlDecodeToString(parts[1]));
+  } catch {
+    return null;
+  }
+}
+
+function isJwtExpiringSoon(token, skewSeconds = ACCESS_TOKEN_REFRESH_SKEW_SECONDS) {
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  if (typeof exp !== 'number') {
+    return false;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return exp <= now + skewSeconds;
+}
 
 // Function to set the token provider from the auth context
 export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHandler) {
@@ -86,8 +128,12 @@ export async function performTokenRefresh() {
       if (facilityCode) {
         refreshHeaders['X-Facility-Code'] = facilityCode;
       }
+      const deviceLabel = getClientDeviceLabel();
+      if (deviceLabel) {
+        refreshHeaders['X-Device-Label'] = deviceLabel;
+      }
 
-      const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/token/refresh/`, {
         method: 'POST',
         headers: refreshHeaders,
         credentials: 'include', // Include cookies for refresh token
@@ -107,7 +153,7 @@ export async function performTokenRefresh() {
       lastRefreshTime = Date.now();
 
       return data.access;
-    } catch (_error) {
+    } catch {
       // Reset attempts and notify auth context of failure
       consecutiveRefreshAttempts = 0;
       await onRefreshFailure();
@@ -151,16 +197,35 @@ function getCsrfToken() {
  * Makes a request to the API with proper error handling and token refresh
  */
 async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  const url = `${getApiBaseUrl()}${endpoint}`;
 
-  // Get auth token from memory
-  const token = getAccessToken();
+  // Skip token refresh for auth endpoints.
+  // Note: `/auth/token/refresh/` is intentionally excluded from AUTH_ENDPOINTS.
+  const isAuthEndpoint = AUTH_ENDPOINTS.some(authPath => endpoint.includes(authPath));
+
+  // Get auth token from memory. This is in-memory only, so it can be null after reload.
+  let token = getAccessToken();
+
+  const { parseAs, ...fetchOptions } = options;
+
+  // Proactively refresh near-expiry tokens to avoid a guaranteed 401, especially on polled endpoints.
+  // If refresh fails (network, etc), fall back to the current token and let normal 401 handling apply.
+  if (token && !isAuthEndpoint && endpoint !== '/auth/token/refresh/' && isJwtExpiringSoon(token)) {
+    const refreshed = await performTokenRefresh();
+    if (refreshed) {
+      token = refreshed;
+    }
+  }
 
   // Set default headers
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
+  const headers = { ...(fetchOptions.headers || {}) };
+
+  // Only set JSON content-type when we are not sending multipart/form-data.
+  // When using FormData, the browser will set the appropriate boundary.
+  const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
+  if (!headers['Content-Type'] && !isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   // Add auth token if available
   if (token) {
@@ -170,6 +235,19 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   const facilityCode = getFacilityCode();
   if (facilityCode && !headers['X-Facility-Code']) {
     headers['X-Facility-Code'] = facilityCode;
+  }
+
+  // If we are about to make a write request and don't have an access token yet,
+  // refresh it first so we authenticate via JWT (not session cookies + CSRF).
+  const method = (options.method || 'GET').toUpperCase();
+  const isWriteMethod = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+  if (!token && isWriteMethod && !isAuthEndpoint && endpoint !== '/auth/token/refresh/') {
+    token = await performTokenRefresh();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      throw new ApiError('Authentication required', 401);
+    }
   }
 
   // Add CSRF token for non-GET requests
@@ -182,7 +260,7 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
 
   try {
     const response = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       headers,
       credentials: 'include', // Include cookies for refresh token
     });
@@ -190,7 +268,13 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
     // Parse response data
     let data;
     const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
+    if (response.ok && parseAs === 'blob') {
+      data = await response.blob();
+    } else if (response.ok && parseAs === 'arrayBuffer') {
+      data = await response.arrayBuffer();
+    } else if (parseAs === 'text') {
+      data = await response.text();
+    } else if (contentType && contentType.includes('application/json')) {
       data = await response.json();
     } else {
       data = await response.text();
@@ -237,8 +321,6 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
       }
 
       // Skip token refresh for auth endpoints
-      const isAuthEndpoint = AUTH_ENDPOINTS.some(authPath => endpoint.includes(authPath));
-
       // If unauthorized and we haven't retried yet, try to refresh the token
       if (response.status === 401 && retryWithRefresh && !isAuthEndpoint) {
         // Don't attempt to refresh for the refresh endpoint itself
@@ -257,7 +339,7 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
             // Refresh failed, throw error
             throw new ApiError(message, response.status, data);
           }
-        } catch (_refreshError) {
+        } catch {
           // If refresh fails, throw the original error
           throw new ApiError(message, response.status, data);
         }
@@ -270,6 +352,10 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
     consecutiveRefreshAttempts = 0;
     return data;
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw error;
+    }
+
     // Re-throw ApiError instances
     if (error instanceof ApiError) {
       throw error;
@@ -306,16 +392,22 @@ function handlePaginatedResponse(response) {
 async function fetchAllPages(endpoint, options = {}) {
   let allResults = [];
   let nextUrl = endpoint;
+  const { signal } = options;
 
   while (nextUrl) {
+    if (signal?.aborted) {
+      throw signal.reason || new DOMException('The operation was aborted.', 'AbortError');
+    }
+
     // Extract the path from the full URL if it's an absolute URL
     let path = nextUrl;
     if (nextUrl.startsWith('http')) {
       const url = new URL(nextUrl);
       path = url.pathname + url.search;
-      // Remove the API_BASE_URL prefix if present since fetchWithAuth will add it back
-      if (API_BASE_URL && path.startsWith(API_BASE_URL)) {
-        path = path.substring(API_BASE_URL.length);
+      // Remove the configured API pathname prefix if present since fetchWithAuth will add it back.
+      const apiBasePathname = getApiBasePathname();
+      if (apiBasePathname && path.startsWith(apiBasePathname)) {
+        path = path.substring(apiBasePathname.length) || '/';
       }
     }
 
@@ -324,7 +416,7 @@ async function fetchAllPages(endpoint, options = {}) {
 
     // Add results from this page
     if (response && typeof response === 'object' && Array.isArray(response.results)) {
-      allResults = [...allResults, ...response.results];
+      allResults.push(...response.results);
 
       // Get the next page URL, if any
       nextUrl = response.next;
@@ -392,6 +484,13 @@ export const apiClient = {
       body: JSON.stringify(data),
     }),
 
+  postForm: (endpoint, formData, options = {}) =>
+    fetchWithAuth(endpoint, {
+      ...options,
+      method: 'POST',
+      body: formData,
+    }),
+
   put: (endpoint, data, options = {}) => 
     fetchWithAuth(endpoint, { 
       ...options, 
@@ -417,6 +516,12 @@ export const apiClient = {
     const { params, ...rest } = options;
     const url = appendQueryParams(endpoint, params);
     return fetchWithAuth(url, { ...rest, method: 'GET' });
+  },
+
+  getBlob: (endpoint, options = {}) => {
+    const { params, ...rest } = options;
+    const url = appendQueryParams(endpoint, params);
+    return fetchWithAuth(url, { ...rest, method: 'GET', parseAs: 'blob' });
   },
 };
 

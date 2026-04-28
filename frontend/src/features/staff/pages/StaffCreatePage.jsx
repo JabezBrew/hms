@@ -1,10 +1,12 @@
-import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import StaffForm from '@/components/staff/StaffForm';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 const StaffCreatePage = () => {
   const navigate = useNavigate();
@@ -32,28 +34,49 @@ const StaffCreatePage = () => {
     }
   };
 
+  const pageMeta = usePageMeta({
+    title: 'Add Staff Member | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Staff', path: '/staff' },
+      { label: 'Add Staff Member' },
+    ],
+  });
+
   return (
     <PageShell>
-      <PageHeader
-        title="Add Staff Member"
-        description="Create a new staff profile"
-        contentClassName="max-w-4xl mx-auto w-full"
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate('/staff')}
-          className="-ml-2 font-mono text-xs"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Staff List
-        </Button>
-      </PageHeader>
+      {pageMeta}
+      <div className="border-b border-border bg-card/50">
+        <div className="max-w-4xl mx-auto px-6 py-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/staff')}
+            className="mb-4 -ml-2 font-mono text-xs"
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Back to Staff Directory
+          </Button>
 
-      <div className="p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto">
-          <StaffForm onSuccess={handleSuccess} />
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-primary/10">
+              <UserPlus className="h-6 w-6 text-primary" />
+            </div>
+            <PageHeader
+              title="Add Staff Member"
+              description="Capture identity, role assignment, credentials, and contact details"
+              size="md"
+              wrap={false}
+              className="border-none bg-transparent p-0"
+              contentClassName="items-start"
+              titleClassName="text-3xl md:text-4xl"
+              descriptionClassName="mt-1 font-mono text-sm"
+            />
+          </div>
         </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        <StaffForm onSuccess={handleSuccess} />
       </div>
     </PageShell>
   );

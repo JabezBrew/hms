@@ -19,6 +19,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.audit.models import AuditAction
+from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.models import PasswordResetToken
 from .factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -97,6 +99,23 @@ class TestLogin:
         assert response.data['user']['first_name'] == 'John'
         assert response.data['user']['last_name'] == 'Doe'
 
+    def test_login_returns_password_change_requirement(self, api_client, db):
+        """Login response should include first-login password change requirement flag."""
+        UserFactory(
+            email='force-change@test.com',
+            password='testpass',
+            must_change_password=True,
+        )
+
+        response = api_client.post('/api/auth/login/', {
+            'email': 'force-change@test.com',
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['password_change_required'] is True
+        assert response.data['user']['must_change_password'] is True
+
     def test_login_invalid_password(self, api_client, db):
         """Test login fails with wrong password."""
         UserFactory(email='wrongpass@test.com', password='correctpassword')
@@ -159,6 +178,85 @@ class TestLogin:
 
         # Behavior depends on implementation - either 200 or 401 is acceptable
         assert response.status_code in [status.HTTP_200_OK, status.HTTP_401_UNAUTHORIZED]
+
+    @patch('apps.core.models.OffSiteAccessSettings.get_settings', side_effect=Exception("settings unavailable"))
+    @patch('apps.core.models.SiteNetwork.is_ip_on_site', side_effect=Exception("network lookup unavailable"))
+    def test_login_survives_offsite_lookup_failure(self, _mock_on_site, _mock_settings, api_client, db):
+        """Login must not return 500 when off-site settings/network lookups fail."""
+        UserFactory(email='offsite@test.com', password='testpass')
+
+        response = api_client.post('/api/auth/login/', {
+            'email': 'offsite@test.com',
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['access_context']['offsite_mode'] == 'readonly'
+        assert response.data['access_context']['is_offsite'] is True
+
+    def test_login_infers_primary_facility_for_multi_facility_user(self, api_client, db, settings):
+        settings.MULTI_FACILITY_MODE = True
+        facility_a = DefaultFacilityFactory(code='LOGINA')
+        facility_b = DefaultFacilityFactory(code='LOGINB')
+        user = DoctorUserFactory(
+            email='multifacility@test.com',
+            password='testpass',
+            primary_facility=facility_b,
+        )
+        user.facilities.add(facility_a, facility_b)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['facility_code'] == facility_b.code
+
+    def test_login_infers_primary_facility_for_multi_facility_admin(self, api_client, db, settings):
+        settings.MULTI_FACILITY_MODE = True
+        facility_a = DefaultFacilityFactory(code='ADMINA')
+        facility_b = DefaultFacilityFactory(code='ADMINB')
+        user = AdminUserFactory(
+            email='multiadmin@test.com',
+            password='testpass',
+            primary_facility=facility_a,
+        )
+        user.facilities.add(facility_a, facility_b)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['facility_code'] == facility_a.code
+
+    def test_login_requires_facility_when_multi_facility_user_has_no_primary(self, api_client, db, settings):
+        settings.MULTI_FACILITY_MODE = True
+        facility_a = DefaultFacilityFactory(code='NOPRIMA')
+        facility_b = DefaultFacilityFactory(code='NOPRIMB')
+        user = DoctorUserFactory(
+            email='noprimary@test.com',
+            password='testpass',
+            primary_facility=None,
+        )
+        user.facilities.add(facility_a, facility_b)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data['code'] == 'facility_required'
+
+    @patch('apps.core.models.OffSiteAccessSettings.get_settings', side_effect=Exception("settings unavailable"))
+    @patch('apps.core.models.SiteNetwork.is_ip_on_site', side_effect=Exception("network lookup unavailable"))
+    def test_non_auth_get_survives_offsite_lookup_failure(self, _mock_on_site, _mock_settings, api_client, db):
+        """Generic unauthenticated GET requests should not crash on off-site lookup failure."""
+        response = api_client.get('/favicon.ico')
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 # =============================================================================
@@ -246,6 +344,60 @@ class TestLogout:
             status.HTTP_401_UNAUTHORIZED
         ]
 
+    @patch('apps.audit.services.log_audit_async.delay')
+    def test_logout_without_identity_logs_anonymous_session(
+        self,
+        mock_audit_delay,
+        api_client,
+        db,
+    ):
+        """Unauthenticated logout should be tracked as anonymous session activity."""
+        response = api_client.post('/api/auth/logout/', format='json')
+
+        assert response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+        mock_audit_delay.assert_called_once()
+        kwargs = mock_audit_delay.call_args.kwargs
+        assert kwargs['action'] == AuditAction.LOGOUT
+        assert kwargs['user_id'] is None
+        assert kwargs['user_email'] == 'anonymous'
+        assert kwargs['user_type'] == 'anonymous'
+        assert kwargs['resource_type'] == 'Session'
+        assert kwargs['resource_name'] == 'anonymous session'
+        assert kwargs['description'] == 'Anonymous session logout request'
+
+    @patch('apps.audit.services.log_audit_async.delay')
+    def test_logout_after_blacklist_keeps_user_audit_attribution(
+        self,
+        mock_audit_delay,
+        db,
+    ):
+        """Repeated logout with a now-blacklisted refresh token should still resolve user identity."""
+        from django.conf import settings
+
+        user = UserFactory(email='logout-audit@test.com')
+        refresh = RefreshToken.for_user(user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+        client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = str(refresh)
+
+        first_response = client.post('/api/auth/logout/', format='json')
+        assert first_response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+
+        client.credentials()
+        client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = str(refresh)
+        mock_audit_delay.reset_mock()
+
+        second_response = client.post('/api/auth/logout/', format='json')
+        assert second_response.status_code in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]
+
+        mock_audit_delay.assert_called_once()
+        kwargs = mock_audit_delay.call_args.kwargs
+        assert kwargs['action'] == AuditAction.LOGOUT
+        assert kwargs['user_id'] == str(user.id)
+        assert kwargs['user_email'] == user.email
+        assert kwargs['resource_type'] == 'User'
+        assert kwargs['resource_name'] == user.email
+
 
 # =============================================================================
 # Password Change Tests
@@ -273,6 +425,36 @@ class TestPasswordChange:
         user.refresh_from_db()
         assert not user.check_password('oldpassword')
         assert user.check_password('NewSecurePass123!')
+
+    def test_change_password_clears_password_change_requirement(self, db):
+        """Changing password should clear first-login requirement."""
+        user = UserFactory(password='oldpassword', must_change_password=True)
+        refresh = RefreshToken.for_user(user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.post('/api/users/users/change_password/', {
+            'old_password': 'oldpassword',
+            'new_password': 'NewSecurePass123!'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+
+        user.refresh_from_db()
+        assert user.must_change_password is False
+        assert user.password_changed_at is not None
+
+    def test_password_change_required_blocks_protected_endpoints(self, db):
+        """Users flagged for first-login password change must be restricted."""
+        user = AdminUserFactory(password='oldpassword', must_change_password=True)
+        refresh = RefreshToken.for_user(user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.get('/api/users/users/')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json().get('code') == 'password_change_required'
 
     def test_change_password_wrong_old_password(self, db):
         """Test password change fails with wrong old password."""
@@ -381,6 +563,23 @@ class TestPasswordReset:
         # Verify new password works
         user.refresh_from_db()
         assert user.check_password('NewSecurePassword123!')
+
+    def test_reset_password_confirm_clears_password_change_requirement(self, api_client, db):
+        """Completing reset confirmation should clear first-login requirement."""
+        user = UserFactory(must_change_password=True)
+        plain_token, _ = PasswordResetToken.create_for_user(user, reset_type='admin_force')
+
+        response = api_client.post('/api/auth/password-reset/confirm/', {
+            'token': plain_token,
+            'password': 'NewSecurePassword123!',
+            'password_confirm': 'NewSecurePassword123!'
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+
+        user.refresh_from_db()
+        assert user.must_change_password is False
+        assert user.password_changed_at is not None
 
     def test_reset_password_token_invalidated_after_use(self, api_client, db):
         """Test that token is invalidated after use."""

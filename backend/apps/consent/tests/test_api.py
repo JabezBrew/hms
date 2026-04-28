@@ -1,9 +1,11 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
+from django.utils import timezone
 from rest_framework import status
 from rest_framework_simplejwt.tokens import AccessToken
 
+from apps.consent.models import ConsentGrant, ConsentScope, ConsentStatus
 from apps.mpi.services import resolve_patient_identity
 from apps.users.tests.factories import AdminUserFactory, PatientProfileFactory
 
@@ -88,3 +90,41 @@ def test_create_consent_grant_and_issue_token(api_client):
 
     assert token_response.status_code == status.HTTP_201_CREATED
     assert token_response.data['token']
+
+
+@pytest.mark.django_db
+def test_issue_token_rejects_expired_consent(api_client):
+    admin = AdminUserFactory()
+    token = AccessToken.for_user(admin)
+    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    identity, _ = resolve_patient_identity(
+        first_name='Expired',
+        last_name='Consent',
+        date_of_birth=date(1980, 1, 1),
+        email='expired-consent@test.com',
+        created_by_facility_code='TEST',
+        created_by_user_id=admin.id,
+    )
+    consent = ConsentGrant.objects.create(
+        patient_identity=identity,
+        source_facility_code='TEST',
+        target_facility_code='TARGET',
+        scope=ConsentScope.FULL_RECORD,
+        status=ConsentStatus.ACTIVE,
+        granted_at=timezone.now() - timedelta(days=2),
+        expires_at=timezone.now() - timedelta(minutes=1),
+        created_by_facility_code='TEST',
+        created_by_user_id=admin.id,
+    )
+
+    response = api_client.post(
+        f'/api/consent/grants/{consent.id}/issue_token/',
+        {'target_facility_code': 'TARGET', 'ttl_seconds': 3600},
+        format='json',
+        HTTP_X_FACILITY_CODE='TEST',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    consent.refresh_from_db()
+    assert consent.status == ConsentStatus.EXPIRED

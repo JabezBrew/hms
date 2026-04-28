@@ -21,6 +21,66 @@ This will automatically start:
 
 Press `Ctrl+C` to stop all services at once.
 
+### Railway Deployment Pattern
+
+For production Railway deployments, split migration and web startup:
+
+1. **Dedicated migrator path**: use `python /app/run_migrations.py` as the only schema-mutating command.
+2. **Web service**: run `python /app/startup_and_run.py`.
+3. **Worker/beat services**: use explicit Celery start commands, but keep the same pre-deploy migration command so isolated service deploys stay schema-safe.
+4. **Startup flow**: the web process performs dependency checks and fails fast if pending migrations remain, but it does not mutate schema.
+5. **Replica safety**: `run_migrations.py` holds a PostgreSQL advisory lock, so duplicate pre-deploy runs collapse safely to a single migration owner.
+
+Recommended Railway service config files:
+
+- Web API: `/backend/railway.toml`
+- Celery worker: `/backend/railway.worker.toml`
+- Celery beat: `/backend/railway.beat.toml`
+
+Railway config-as-code is service-scoped. In practice, that means each Railway service should point at its own config file path in the dashboard. The web, worker, and beat services can all safely use the same `preDeployCommand` because the migration runner is lock-protected and exits cleanly when the schema is already current.
+
+Recommended Railway environment variables:
+
+```bash
+MIGRATE_ON_STARTUP=False
+FAIL_ON_PENDING_MIGRATIONS=True
+DEFAULT_FACILITY_CODE=<valid existing facility code>
+RUN_MIGRATIONS_ONLY=False
+```
+
+The dedicated migrator will bootstrap a minimal `core_facility` row when needed before
+strict preflight checks run.
+
+Before running migrations, execute:
+
+```bash
+python manage.py preflight_migration_checks --strict
+```
+
+This prevents known facility-backfill migrations from failing mid-deploy due to missing fallback configuration (for example missing `DEFAULT_FACILITY_CODE` on multi-facility datasets).
+
+Health and metrics endpoints:
+
+- `/api/health/alive/`
+- `/api/health/started/`
+- `/api/health/ready/`
+- `/api/metrics/`
+
+### Kubernetes Deployment Pattern
+
+For Kubernetes releases, apply the migrator job before the long-running workloads:
+
+```bash
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
+kubectl apply -f k8s/migrator-job.yaml
+kubectl wait --for=condition=complete job/hms-migrator -n hms --timeout=10m
+kubectl apply -f k8s/api-deployment.yaml
+kubectl apply -f k8s/celery-deployment.yaml
+```
+
+The web deployment then relies on `/api/health/ready/` and `FAIL_ON_PENDING_MIGRATIONS=true` to reject traffic if a release skipped the migrator step.
+
 ### Prerequisites
 
 - Python 3.8+

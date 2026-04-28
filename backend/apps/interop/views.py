@@ -3,12 +3,18 @@ import json
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
+from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.consent.services import validate_access_token
-from apps.core.security import check_clinical_access, get_accessible_patients_for_clinician, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 from apps.users.models import PatientProfile
 from apps.users.rbac import IsAdmin, IsDoctor
 from .crypto import decrypt_payload
@@ -18,7 +24,7 @@ from .services import create_export_job
 
 
 class RecordExportViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated, (IsAdmin | IsDoctor)]
+    permission_classes = [IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor)]
 
     def create(self, request):
         serializer = RecordExportRequestSerializer(data=request.data)
@@ -76,12 +82,16 @@ class RecordExportViewSet(viewsets.ViewSet):
         return Response(RecordExportJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
     def retrieve(self, request, pk=None):
-        job = get_object_or_404(RecordExportJob, pk=pk)
-        consent_token = request.headers.get('X-Consent-Token') or request.query_params.get('consent_token')
+        consent_token = request.headers.get('X-Consent-Token')
         if not consent_token:
             return Response({'detail': 'Consent token required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         source_facility_code = request.facility_code
+        job = get_object_or_404(
+            RecordExportJob,
+            pk=pk,
+            requested_by_facility_code=source_facility_code or '',
+        )
         requesting_facility_code = request.headers.get('X-Requesting-Facility-Code') or job.target_facility_code
         if requesting_facility_code != job.target_facility_code:
             return Response(
@@ -107,16 +117,18 @@ class RecordExportViewSet(viewsets.ViewSet):
                 status=status.HTTP_410_GONE
             )
 
-        if job.status != RecordExportStatus.READY:
-            return Response(RecordExportJobSerializer(job).data, status=status.HTTP_200_OK)
+        with transaction.atomic():
+            locked_job = RecordExportJob.objects.select_for_update().get(pk=job.pk)
+            if locked_job.status != RecordExportStatus.READY:
+                return Response(RecordExportJobSerializer(locked_job).data, status=status.HTTP_200_OK)
 
-        payload_bytes = decrypt_payload(job.payload_encrypted)
-        payload = json.loads(payload_bytes.decode('utf-8'))
+            payload_bytes = decrypt_payload(locked_job.payload_encrypted)
+            payload = json.loads(payload_bytes.decode('utf-8'))
 
-        job.status = RecordExportStatus.DELIVERED
-        job.save(update_fields=['status', 'updated_at'])
+            locked_job.status = RecordExportStatus.DELIVERED
+            locked_job.save(update_fields=['status', 'updated_at'])
 
         return Response(
-            {'bundle': payload, 'checksum': job.payload_checksum},
+            {'bundle': payload, 'checksum': locked_job.payload_checksum},
             status=status.HTTP_200_OK
         )

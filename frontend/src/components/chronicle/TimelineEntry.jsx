@@ -19,7 +19,7 @@ import Copy from 'lucide-react/dist/esm/icons/copy.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,10 +29,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  hasEntryDetailContent,
+  isInlineExpandableNoteEntry,
+  normalizeExpansionId,
+} from "./chronicleNoteUtils";
 
 const NoteDetailModal = lazy(() => import("./NoteDetailModal"));
 const PrescriptionActionsDialog = lazy(() => import("./PrescriptionActionsDialog"));
 const CopyNoteModal = lazy(() => import("./CopyNoteModal"));
+const ChronicleNoteBody = lazy(() => import("./ChronicleNoteBody"));
 
 /**
  * TimelineEntry - A chronological entry in the patient's clinical chronicle
@@ -58,9 +64,16 @@ const TimelineEntry = ({
   onCopyNote,  // Callback when user confirms copy: (copyData) => void
   onEditNote,  // Callback when user clicks edit: (editData) => void
   onNoteUpdated, // Callback when a note is updated (for edit feature)
+  isNoteExpanded,
+  onToggleNoteExpanded,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [isFallbackNoteExpanded, setIsFallbackNoteExpanded] = useState(false);
+
+  // Only play the enter animation on initial mount, not on re-mounts
+  const hasAnimatedRef = useRef(false);
+  useEffect(() => { hasAnimatedRef.current = true; }, []);
 
   // ============================================
   // Entry type configuration
@@ -162,6 +175,12 @@ const TimelineEntry = ({
       label: 'Referral',
       color: 'sky',
       nodeClass: 'timeline-node-sky'
+    },
+    chart: {
+      icon: ClipboardList,
+      label: 'Chart',
+      color: 'amber',
+      nodeClass: 'timeline-node-amber'
     }
   };
 
@@ -184,30 +203,6 @@ const TimelineEntry = ({
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
-      });
-    } catch {
-      return '';
-    }
-  };
-
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-
-      if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-      }
-      if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-      }
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
       });
     } catch {
       return '';
@@ -257,15 +252,14 @@ const TimelineEntry = ({
   // Check if entry has viewable detail content
   // ============================================
 
-  const hasDetailContent = () => {
-    // Notes with structured data
-    if (entry.data && typeof entry.data === 'object' && Object.keys(entry.data).length > 0) {
-      return true;
-    }
-    // Notes with content longer than preview
-    if (entry.content && entry.content.length > 150) return true;
-    return false;
-  };
+  const hasDetailContent = hasEntryDetailContent(entry);
+  const canInlineExpand = isInlineExpandableNoteEntry(entry);
+  const noteBodyId = normalizeExpansionId(entry?.id)
+    ? `chronicle-note-body-${normalizeExpansionId(entry.id)}`
+    : undefined;
+  const noteExpanded = typeof isNoteExpanded === 'boolean'
+    ? isNoteExpanded
+    : isFallbackNoteExpanded;
 
   // ============================================
   // Check if entry is a copyable clinical note
@@ -327,6 +321,19 @@ const TimelineEntry = ({
     });
   };
 
+  const handleToggleNoteExpanded = () => {
+    if (!canInlineExpand) {
+      return;
+    }
+
+    if (onToggleNoteExpanded && entry?.id !== null && entry?.id !== undefined) {
+      onToggleNoteExpanded(entry.id);
+      return;
+    }
+
+    setIsFallbackNoteExpanded((previous) => !previous);
+  };
+
   // ============================================
   // Render content based on entry type
   // ============================================
@@ -342,7 +349,17 @@ const TimelineEntry = ({
         return <MedicationContent medication={entry.data} entry={entry} />;
       case 'referral':
         return <ReferralContent referral={entry.data} />;
+      case 'chart':
+        return <ChartSummaryContent entry={entry} />;
       default:
+        if (canInlineExpand && noteExpanded) {
+          return (
+            <ExpandedNoteContent
+              entry={entry}
+              noteBodyId={noteBodyId}
+            />
+          );
+        }
         // Generic note preview
         return <NotePreview entry={entry} />;
     }
@@ -356,10 +373,10 @@ const TimelineEntry = ({
     <article
       className={cn(
         "relative pl-8 pb-8 last:pb-0",
-        "animate-chronicle-enter",
+        !hasAnimatedRef.current && "animate-chronicle-enter",
         className
       )}
-      style={{ animationDelay: `${index * 50}ms` }}
+      style={!hasAnimatedRef.current ? { animationDelay: `${index * 50}ms` } : undefined}
     >
       {/* Timeline spine */}
       <div className="timeline-spine" />
@@ -410,9 +427,26 @@ const TimelineEntry = ({
         {renderContent()}
 
         {/* Action buttons */}
-        {(hasDetailContent() || isCopyableNote() || isEditableNote()) && (
+        {(hasDetailContent || isCopyableNote() || isEditableNote() || canInlineExpand) && (
           <div className="mt-3 flex items-center gap-3">
-            {hasDetailContent() && (
+            {canInlineExpand && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-mono text-xs text-primary p-0 h-auto hover:bg-transparent"
+                onClick={handleToggleNoteExpanded}
+                aria-controls={noteBodyId}
+                aria-expanded={noteExpanded}
+              >
+                {noteExpanded ? (
+                  <ChevronUp className="h-3 w-3 mr-1" />
+                ) : (
+                  <ChevronDown className="h-3 w-3 mr-1" />
+                )}
+                {noteExpanded ? 'Collapse note' : 'Open note'}
+              </Button>
+            )}
+            {hasDetailContent && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -420,7 +454,7 @@ const TimelineEntry = ({
                 onClick={() => setIsModalOpen(true)}
               >
                 <Expand className="h-3 w-3 mr-1" />
-                View full note
+                {canInlineExpand ? 'Focus view' : 'View details'}
               </Button>
             )}
             {isEditableNote() && onEditNote && (
@@ -1024,6 +1058,27 @@ const ReferralContent = ({ referral }) => {
   );
 };
 
+const ChartSummaryContent = ({ entry }) => (
+  <div className="space-y-2">
+    <div className="flex items-center justify-between gap-3">
+      <p className="font-medium text-foreground">
+        {entry.data?.template_name || entry.title || 'Clinical Chart'}
+      </p>
+      {entry.data?.scope_type && (
+        <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
+          {entry.data.scope_type}
+        </span>
+      )}
+    </div>
+    {entry.content && (
+      <p className="text-sm text-muted-foreground">{entry.content}</p>
+    )}
+    {entry.data?.notes && (
+      <p className="text-xs text-muted-foreground">{entry.data.notes}</p>
+    )}
+  </div>
+);
+
 /**
  * Preferred ordering for clinical note sections (for preview extraction)
  */
@@ -1032,6 +1087,38 @@ const PREVIEW_SECTION_ORDER = [
   'chief_complaint', 'chiefComplaint', 'history', 'examination',
   'diagnosis', 'treatment', 'findings', 'recommendations'
 ];
+
+const NoteBodyFallback = () => (
+  <div className="space-y-3">
+    <div className="h-4 w-24 rounded bg-muted/80" />
+    <div className="h-4 w-full rounded bg-muted/70" />
+    <div className="h-4 w-5/6 rounded bg-muted/60" />
+    <div className="h-4 w-2/3 rounded bg-muted/50" />
+  </div>
+);
+
+const ExpandedNoteContent = ({ entry, noteBodyId }) => (
+  <div className="space-y-4">
+    {entry.title && (
+      <h4 className="font-medium text-foreground">{entry.title}</h4>
+    )}
+    <div
+      id={noteBodyId}
+      className="rounded-xl border border-border/70 bg-background/80 p-4 shadow-sm"
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicSize: '320px',
+      }}
+    >
+      <Suspense fallback={<NoteBodyFallback />}>
+        <ChronicleNoteBody
+          content={entry.content}
+          data={entry.data}
+        />
+      </Suspense>
+    </div>
+  </div>
+);
 
 /**
  * NotePreview - Generic preview for any note type
@@ -1130,7 +1217,7 @@ const NotePreview = ({ entry }) => {
       {/* Empty state */}
       {previewItems.length === 0 && !content && (
         <p className="text-sm text-muted-foreground/60 italic">
-          Click to view details...
+          Open details to review this entry.
         </p>
       )}
     </div>

@@ -8,21 +8,39 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
-import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
+import Layers from 'lucide-react/dist/esm/icons/layers.js';
+import Link2 from 'lucide-react/dist/esm/icons/link-2.js';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   useBillingDashboardMetrics,
   useRecentInvoices,
   useRecentPayments,
+  useActiveFacilityBillingSettings,
+  useCurrentCashSession,
+  useCashSessionTotals,
+  useOpenCashSession,
+  useCloseCashSession,
 } from '@/features/billing/hooks';
 
 export default function BillingDashboardPage() {
@@ -45,6 +63,20 @@ export default function BillingDashboardPage() {
     data: recentPayments,
     isLoading: paymentsLoading,
   } = useRecentPayments({ limit: 5 });
+
+  // Cash controls (optional)
+  const { data: settingsRows } = useActiveFacilityBillingSettings();
+  const billingSettings = Array.isArray(settingsRows) ? settingsRows[0] : null;
+  const cashControlEnabled = !!billingSettings?.cash_control_enabled;
+  const CashIcon = cashControlEnabled ? Clock : AlertTriangle;
+  const { data: currentSessionData } = useCurrentCashSession({ enabled: cashControlEnabled });
+  const currentSession = currentSessionData?.session || null;
+  const { data: currentTotalsData } = useCashSessionTotals(currentSession?.id, { enabled: !!currentSession?.id });
+  const openCashSessionMutation = useOpenCashSession();
+  const closeCashSessionMutation = useCloseCashSession();
+  const [openingFloat, setOpeningFloat] = useState('0.00');
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [countedCash, setCountedCash] = useState('');
 
   const isLoading = metricsLoading || invoicesLoading || paymentsLoading;
 
@@ -176,6 +208,107 @@ export default function BillingDashboardPage() {
           />
         </section>
 
+        {/* Cash Controls */}
+        <section className="bg-card/50 border border-border rounded-2xl p-6">
+          <header className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-muted">
+                <CashIcon className={cn("h-5 w-5", cashControlEnabled ? "text-muted-foreground" : "text-destructive")} />
+              </div>
+              <div>
+                <h2 className="font-display text-xl text-foreground">Cash Session</h2>
+                <p className="text-sm text-muted-foreground">
+                  {cashControlEnabled ? 'Cash controls are enabled for this facility.' : 'Cash controls are disabled for this facility.'}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/billing/cash-sessions')}
+              className="font-mono text-xs text-muted-foreground hover:text-foreground"
+            >
+              View Sessions
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          </header>
+
+          {!cashControlEnabled ? (
+            <div className="rounded-xl border border-border bg-muted/10 p-4">
+              <p className="text-sm text-muted-foreground">
+                Enable cash controls to require cashier sessions and compute close-of-day variance.
+              </p>
+            </div>
+          ) : currentSession ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="rounded-xl bg-muted/20 border border-border/50 p-4">
+                <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Opened At</p>
+                <p className="font-mono text-sm text-foreground">{formatDate(currentSession.opened_at)}</p>
+                <p className="font-mono text-xs text-muted-foreground mt-2">
+                  Float: {formatCurrency(currentSession.opening_float_amount)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-muted/20 border border-border/50 p-4">
+                <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Expected Cash So Far</p>
+                <p className="font-display text-2xl text-foreground">
+                  {formatCurrency(currentTotalsData?.expected_cash_amount || 0)}
+                </p>
+                <p className="font-mono text-xs text-muted-foreground mt-1">
+                  Includes float + movements + cash payments
+                </p>
+              </div>
+              <div className="rounded-xl bg-muted/20 border border-border/50 p-4 flex flex-col justify-between">
+                <div>
+                  <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Closeout</p>
+                  <p className="text-sm text-foreground">
+                    Enter counted cash to close and record variance.
+                  </p>
+                </div>
+                <Button
+                  className="mt-4 font-mono text-xs"
+                  onClick={() => {
+                    setCountedCash('');
+                    setCloseDialogOpen(true);
+                  }}
+                  disabled={closeCashSessionMutation.isPending}
+                >
+                  Close Session
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+              <div className="flex-1 space-y-2">
+                <Label className="font-mono text-xs uppercase tracking-wider">Opening Float (GHS)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={openingFloat}
+                  onChange={(e) => setOpeningFloat(e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <Button
+                className="font-mono text-xs"
+                disabled={openCashSessionMutation.isPending}
+                onClick={async () => {
+                  try {
+                    await openCashSessionMutation.mutateAsync({
+                      opening_float_amount: parseFloat(openingFloat || 0),
+                    });
+                    toast.success('Cash session opened');
+                  } catch (err) {
+                    toast.error(err.message || 'Failed to open cash session');
+                  }
+                }}
+              >
+                {openCashSessionMutation.isPending ? 'Opening…' : 'Open Session'}
+              </Button>
+            </div>
+          )}
+        </section>
+
         {/* Recent Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Invoices */}
@@ -264,13 +397,89 @@ export default function BillingDashboardPage() {
               onClick={() => navigate('/billing/payments')}
             />
             <QuickActionButton
+              icon={CreditCard}
+              label="PSP"
+              onClick={() => navigate('/billing/psp')}
+            />
+            <QuickActionButton
+              icon={FileSpreadsheet}
+              label="NHIS + AR"
+              onClick={() => navigate('/billing/nhis')}
+            />
+            <QuickActionButton
               icon={Shield}
               label="Insurance"
               onClick={() => navigate('/billing/insurance')}
             />
+            <QuickActionButton
+              icon={Layers}
+              label="Catalog"
+              onClick={() => navigate('/billing/catalog')}
+            />
+            <QuickActionButton
+              icon={Link2}
+              label="NHIS Mappings"
+              onClick={() => navigate('/billing/nhis/mappings')}
+            />
           </div>
         </section>
       </main>
+
+      {/* Close dialog */}
+      <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Close Cash Session</DialogTitle>
+            <DialogDescription>
+              Enter the counted cash amount to compute variance and close the session.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-xs uppercase tracking-wider">Counted Cash (GHS)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={countedCash}
+              onChange={(e) => setCountedCash(e.target.value)}
+              className="font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              Expected so far: {formatCurrency(currentTotalsData?.expected_cash_amount || 0)}
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="font-mono text-xs"
+              onClick={() => setCloseDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="font-mono text-xs"
+              disabled={closeCashSessionMutation.isPending}
+              onClick={async () => {
+                if (!currentSession) return;
+                try {
+                  await closeCashSessionMutation.mutateAsync({
+                    sessionId: currentSession.id,
+                    data: { counted_cash_amount: parseFloat(countedCash || 0) },
+                  });
+                  toast.success('Session closed');
+                  setCloseDialogOpen(false);
+                } catch (err) {
+                  toast.error(err.message || 'Failed to close session');
+                }
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }
@@ -454,7 +663,8 @@ function formatDate(dateString) {
 function formatPaymentMethod(method) {
   const methods = {
     cash: 'Cash',
-    card: 'Card',
+    credit_card: 'Credit',
+    debit_card: 'Debit',
     mobile_money: 'MoMo',
     bank_transfer: 'Bank',
     insurance: 'Insurance',

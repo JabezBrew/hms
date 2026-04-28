@@ -1,26 +1,36 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, NotFound
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes as api_permission_classes
 from apps.core.pagination import StandardResultsSetPagination
 from datetime import timedelta
+from django.conf import settings
 from django.db import transaction, models
-from django.db.models import Q, Exists, OuterRef
+from django.db.models import Q, Exists, OuterRef, Subquery
 from django.utils import timezone
 from itertools import chain
 from operator import attrgetter
 import copy
 import logging
 
-from .models import NoteTemplate, NoteEntry, NoteEntryVersion, Prescription
+from .models import NoteTemplate, NoteTemplateRevision, NoteEntry, NoteEntryVersion, Prescription
 from .serializers import (
     NoteTemplateSerializer, NoteTemplateListSerializer, NoteEntrySerializer,
     NoteEntryCloneSerializer, NoteEntryVersionSerializer, NoteEntryUpdateSerializer,
     PrescriptionSerializer, PrescriptionCreateSerializer,
     PrescriptionUpdateSerializer, PrescriptionDiscontinueSerializer,
-    NoteEntryListSerializer, PrescriptionListSerializer
+    NoteEntryListSerializer, PrescriptionListSerializer,
+    NoteTemplateRevisionSerializer, NoteTemplateRevisionCreateSerializer,
+    NoteTemplateRenderSerializer,
+)
+from .template_utils import (
+    build_template_token_values,
+    infer_template_mode,
+    normalize_template_structure,
+    render_template_defaults,
 )
 from ..users.permissions import IsAdminOrDoctor, IsAdminOrNurse
+from ..users.rbac import IsDoctor
 from ..users.models import PractitionerProfile, PatientProfile
 from ..nursing.models import VitalSigns
 from ..fhir_client.client import fhir_client
@@ -32,7 +42,14 @@ from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..referrals.models import Referral
 from ..laboratory.models import LabOrder, LabOrderStatus
-from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from ..core.security import (
+    ACTIVE_ADMISSION_STATUSES,
+    FacilityScopedPermission,
+    check_clinical_access,
+    check_prescription_access,
+    get_accessible_patients_for_clinician,
+    get_user_facility,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +60,52 @@ def _require_patient_facility(request, patient):
         raise PermissionDenied("Facility context is required.")
     if patient.facility_id != facility.id:
         raise PermissionDenied("Patient does not belong to the active facility.")
+
+
+def _normalize_section_key(section_name):
+    """Normalize section keys for resilient matching across legacy data formats."""
+    if section_name is None:
+        return ''
+    return ''.join(ch for ch in str(section_name).strip().lower() if ch.isalnum())
+
+
+def _has_meaningful_section_value(value):
+    """Treat empty strings/containers as missing data while preserving valid scalar values."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _build_note_data_key_lookup(note_data):
+    """Build a normalized key lookup for section name resolution."""
+    if not isinstance(note_data, dict):
+        return {}
+
+    lookup = {}
+    for key in note_data.keys():
+        normalized = _normalize_section_key(key)
+        if normalized and normalized not in lookup:
+            lookup[normalized] = key
+    return lookup
+
+
+def _resolve_note_data_key(note_data, section_name, key_lookup=None):
+    """
+    Resolve a template section name to a key in note data.
+    Prefers exact matches, then falls back to normalized matching.
+    """
+    if not isinstance(note_data, dict) or not section_name:
+        return None
+
+    if section_name in note_data:
+        return section_name
+
+    lookup = key_lookup if key_lookup is not None else _build_note_data_key_lookup(note_data)
+    return lookup.get(_normalize_section_key(section_name))
 
 
 class NoteTemplateViewSet(viewsets.ModelViewSet):
@@ -84,6 +147,11 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             return NoteTemplate.objects.none()
+
+        latest_published_revision_qs = NoteTemplateRevision.objects.filter(
+            template_id=OuterRef('pk'),
+            status='published',
+        ).order_by('-version')
 
         # Admins can see all templates
         if user.user_type == 'admin':
@@ -143,17 +211,46 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         if is_public is not None:
             queryset = queryset.filter(is_public=is_public.lower() == 'true')
 
-        return queryset.order_by('-updated_at')
+        return queryset.annotate(
+            latest_published_revision_id=Subquery(latest_published_revision_qs.values('id')[:1]),
+            latest_published_revision_version=Subquery(latest_published_revision_qs.values('version')[:1]),
+            latest_published_revision_mode=Subquery(latest_published_revision_qs.values('mode')[:1]),
+            latest_published_revision_status=Subquery(latest_published_revision_qs.values('status')[:1]),
+        ).order_by('-updated_at')
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
         if not facility:
             raise PermissionDenied("Facility context is required.")
-        serializer.save(created_by=self.request.user, facility=facility)
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, facility=facility)
 
     def perform_update(self, serializer):
         """Set the updated_by field when updating a template."""
+        template = self.get_object()
+        if not self._can_manage_template(self.request.user, template):
+            raise PermissionDenied("You do not have permission to edit this template.")
         serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        if instance.is_system_template:
+            raise PermissionDenied("System templates cannot be deleted.")
+        if not self._can_manage_template(self.request.user, instance):
+            raise PermissionDenied("You do not have permission to delete this template.")
+        instance.delete()
+
+    def _can_manage_template(self, user, template):
+        if user.user_type == 'admin':
+            return True
+        return template.created_by_id == user.id
+
+    def _can_publish_template(self, user):
+        return user.user_type == 'admin'
+
+    def _get_latest_template_revision(self, template, status=None):
+        queryset = template.revisions.all()
+        if status:
+            queryset = queryset.filter(status=status)
+        return queryset.order_by('-version').first()
 
     @action(detail=False, methods=['get'])
     def available(self, request):
@@ -173,7 +270,7 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(request)
         if not facility:
             return Response([])
-        queryset = NoteTemplate.objects.filter(created_by=request.user, facility=facility)
+        queryset = self.get_queryset().filter(created_by=request.user, facility=facility)
         serializer = NoteTemplateListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
 
@@ -187,6 +284,150 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
             for value, label in NoteTemplate.CATEGORY_CHOICES
         ])
 
+    @action(detail=True, methods=['get', 'post'])
+    def revisions(self, request, pk=None):
+        """
+        GET: List revisions for a template.
+        POST: Create a new draft revision.
+        """
+        template = self.get_object()
+
+        if request.method == 'GET':
+            revisions = template.revisions.order_by('-version')
+            serializer = NoteTemplateRevisionSerializer(revisions, many=True, context={'request': request})
+            return Response(serializer.data)
+
+        if not self._can_manage_template(request.user, template):
+            raise PermissionDenied("You do not have permission to edit this template.")
+
+        serializer = NoteTemplateRevisionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        content = normalize_template_structure(validated_data.get('content'))
+        if not content.get('sections'):
+            return Response(
+                {'error': 'Template revision content must include at least one section.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        latest_revision = self._get_latest_template_revision(template)
+        next_version = (latest_revision.version + 1) if latest_revision else 1
+        revision_mode = validated_data.get('mode') or infer_template_mode(content)
+
+        revision = NoteTemplateRevision.objects.create(
+            template=template,
+            facility=template.facility,
+            version=next_version,
+            status='draft',
+            mode=revision_mode,
+            content=content,
+            change_summary=validated_data.get('change_summary', ''),
+            created_by=request.user,
+        )
+
+        output = NoteTemplateRevisionSerializer(revision, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path=r'revisions/(?P<revision_id>[^/.]+)/submit-review')
+    @transaction.atomic
+    def submit_revision_review(self, request, pk=None, revision_id=None):
+        template = self.get_object()
+        if not self._can_manage_template(request.user, template):
+            raise PermissionDenied("You do not have permission to edit this template.")
+
+        revision = template.revisions.filter(id=revision_id).first()
+        if not revision:
+            return Response({'error': 'Template revision not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if revision.status != 'draft':
+            return Response({'error': 'Only draft revisions can be submitted for review.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        revision.status = 'in_review'
+        revision.submitted_by = request.user
+        revision.submitted_at = timezone.now()
+        revision.save(update_fields=['status', 'submitted_by', 'submitted_at', 'updated_at'])
+
+        serializer = NoteTemplateRevisionSerializer(revision, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path=r'revisions/(?P<revision_id>[^/.]+)/publish')
+    @transaction.atomic
+    def publish_revision(self, request, pk=None, revision_id=None):
+        template = self.get_object()
+        if not self._can_publish_template(request.user):
+            raise PermissionDenied("Only admins can publish shared template revisions.")
+
+        revision = template.revisions.select_for_update().filter(id=revision_id).first()
+        if not revision:
+            return Response({'error': 'Template revision not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if revision.status == 'archived':
+            return Response({'error': 'Archived revisions cannot be published.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        template.revisions.exclude(id=revision.id).filter(status='published').update(status='archived')
+        revision.status = 'published'
+        revision.published_by = request.user
+        revision.published_at = timezone.now()
+        revision.save(update_fields=['status', 'published_by', 'published_at', 'updated_at'])
+
+        template.structure = revision.content
+        template.updated_by = request.user
+        template.save(update_fields=['structure', 'updated_by', 'updated_at'])
+
+        serializer = NoteTemplateRevisionSerializer(revision, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def render(self, request, pk=None):
+        """
+        Render template defaults with safe token substitution.
+        """
+        template = self.get_object()
+        serializer = NoteTemplateRenderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+
+        revision = None
+        revision_id = payload.get('revision_id')
+        if revision_id:
+            revision = template.revisions.filter(id=revision_id).first()
+            if not revision:
+                return Response({'error': 'Template revision not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not revision:
+            revision = self._get_latest_template_revision(template, status='published')
+        if not revision:
+            revision = self._get_latest_template_revision(template)
+
+        patient = None
+        patient_id = payload.get('patient_id')
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return Response({'error': 'Patient not found.'}, status=status.HTTP_404_NOT_FOUND)
+            _require_patient_facility(request, patient)
+            check_clinical_access(request.user, patient)
+
+        content = revision.content if revision else normalize_template_structure(template.structure)
+        token_values = build_template_token_values(
+            patient=patient,
+            today=timezone.localdate(),
+            base_data=payload.get('extra_tokens') or {},
+        )
+        rendered_data = render_template_defaults(
+            content=content,
+            token_values=token_values,
+            base_data=payload.get('base_data') or {},
+            apply_mode=payload.get('apply_mode', 'empty_only'),
+            selected_sections=payload.get('sections') or [],
+        )
+
+        return Response({
+            'template_id': str(template.id),
+            'revision_id': str(revision.id) if revision else None,
+            'revision_version': revision.version if revision else None,
+            'revision_status': revision.status if revision else None,
+            'revision_mode': revision.mode if revision else infer_template_mode(content),
+            'rendered_data': rendered_data,
+        })
+
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
         """
@@ -194,12 +435,15 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
         The new template will be private by default.
         """
         original = self.get_object()
+        source_revision = self._get_latest_template_revision(original, status='published')
+        source_content = source_revision.content if source_revision else normalize_template_structure(original.structure)
+        source_mode = source_revision.mode if source_revision else infer_template_mode(source_content)
 
         # Create a copy with new title and reset ownership
         new_template = NoteTemplate.objects.create(
             title=f"{original.title} (Copy)",
             description=original.description,
-            structure=original.structure,
+            structure=source_content,
             is_active=True,
             visibility='private',
             category=original.category,
@@ -207,6 +451,19 @@ class NoteTemplateViewSet(viewsets.ModelViewSet):
             estimated_steps=original.estimated_steps,
             created_by=request.user,
             facility=original.facility,
+            updated_by=request.user,
+        )
+
+        NoteTemplateRevision.objects.create(
+            template=new_template,
+            facility=new_template.facility,
+            version=1,
+            status='published',
+            mode=source_mode,
+            content=source_content,
+            created_by=request.user,
+            published_by=request.user,
+            published_at=timezone.now(),
         )
 
         serializer = NoteTemplateSerializer(new_template, context={'request': request})
@@ -236,7 +493,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             return NoteEntry.objects.none()
 
         queryset = NoteEntry.objects.select_related(
-            'template', 'patient', 'patient__user', 'encounter', 'practitioner'
+            'template', 'template_revision', 'patient', 'patient__user', 'encounter', 'practitioner'
         ).annotate(
             is_signed=Exists(
                 NoteEntryVersion.objects.filter(note_entry_id=OuterRef('pk'))
@@ -282,7 +539,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         Used by the frontend to show a section picker before cloning.
         """
         note = self.get_object()
-        template_structure = note.template.structure
+        template_structure = note.template.structure if note.template else None
 
         # Handle both list and dict structure formats
         if isinstance(template_structure, dict):
@@ -292,38 +549,46 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         else:
             template_sections = []
 
+        note_data = note.data if isinstance(note.data, dict) else {}
+        key_lookup = _build_note_data_key_lookup(note_data)
+
         sections_info = []
         for section in template_sections:
             # Handle different structure formats
             name = section.get('name') or section.get('section', '')
             section_type = section.get('type', 'text')
 
-            # Check if this section has data
-            has_data = name in note.data and note.data[name]
+            # Resolve source key with case/format tolerance (legacy compatibility).
+            source_key = _resolve_note_data_key(note_data, name, key_lookup)
+            section_data = note_data.get(source_key) if source_key is not None else None
+            has_data = _has_meaningful_section_value(section_data)
 
             # Generate preview (truncated content)
             preview = None
             if has_data:
-                section_data = note.data[name]
                 if isinstance(section_data, str):
-                    preview = section_data[:150] + ('...' if len(section_data) > 150 else '')
+                    normalized_text = section_data.strip()
+                    preview = normalized_text[:150] + ('...' if len(normalized_text) > 150 else '')
                 elif isinstance(section_data, dict):
                     # For structured sections, show first few key-value pairs
                     preview_parts = []
                     for key, value in list(section_data.items())[:3]:
-                        if value:
+                        if _has_meaningful_section_value(value):
                             preview_parts.append(f"{key}: {str(value)[:50]}")
                     preview = '; '.join(preview_parts)
                     if len(preview) > 150:
                         preview = preview[:150] + '...'
                 elif isinstance(section_data, list):
                     preview = f"{len(section_data)} items"
+                else:
+                    preview = str(section_data)[:150]
 
             sections_info.append({
                 'name': name,
                 'type': section_type,
                 'has_data': bool(has_data),
                 'preview': preview,
+                'source_key': source_key,
             })
 
         return Response(sections_info)
@@ -404,7 +669,9 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             template_sections = []
 
         valid_section_names = {
-            s.get('name') or s.get('section', '') for s in template_sections
+            section_name for section_name in (
+                s.get('name') or s.get('section', '') for s in template_sections
+            ) if section_name
         }
 
         # Determine which sections to copy
@@ -423,19 +690,28 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             sections_to_copy = valid_section_names
 
         # Build new data by copying selected sections
+        source_data = source_note.data if isinstance(source_note.data, dict) else {}
+        source_key_lookup = _build_note_data_key_lookup(source_data)
         new_data = {}
         for section_name in sections_to_copy:
-            if section_name in source_note.data:
-                # Deep copy the section data
-                new_data[section_name] = copy.deepcopy(source_note.data[section_name])
+            source_key = _resolve_note_data_key(source_data, section_name, source_key_lookup)
+            if source_key is not None:
+                # Keep template section names in copied data for consistent editor prefill.
+                new_data[section_name] = copy.deepcopy(source_data[source_key])
 
         # Create the new note entry
         facility = get_user_facility(request)
         if not facility or target_patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
         check_clinical_access(request.user, target_patient)
+        template_revision = source_note.template_revision or source_note.template.revisions.filter(
+            status='published'
+        ).order_by('-version').first()
+
         new_note = NoteEntry.objects.create(
             template=source_note.template,
+            template_revision=template_revision,
+            template_version=template_revision.version if template_revision else source_note.template_version,
             patient=target_patient,
             encounter=encounter,
             practitioner=practitioner_profile,
@@ -484,6 +760,13 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         # Add practitioner to the request data
         data = request.data.copy()
         data['practitioner'] = practitioner_profile.id
+        # Backwards-compatible aliases used by some frontend fallback paths.
+        if data.get('patient_id') and not data.get('patient'):
+            data['patient'] = data.get('patient_id')
+        if data.get('template_id') and not data.get('template'):
+            data['template'] = data.get('template_id')
+        if data.get('template_revision_id') and not data.get('template_revision'):
+            data['template_revision'] = data.get('template_revision_id')
 
         # Get patient for auto-encounter logic
         patient_id = data.get('patient')
@@ -1363,6 +1646,13 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             return PrescriptionDiscontinueSerializer
         return PrescriptionSerializer
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'discontinue', 'hold', 'resume', 'renew']:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsDoctor]
+        else:
+            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+        return [permission() for permission in permission_classes]
+
     def get_queryset(self):
         """
         Filter prescriptions based on query parameters.
@@ -1373,6 +1663,20 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 
         queryset = Prescription.objects.filter(facility=facility)
 
+        user = self.request.user
+        if user.user_type == 'patient':
+            queryset = queryset.filter(patient__user=user)
+        elif user.user_type == 'admin':
+            pass
+        elif user.user_type in ['doctor', 'nurse']:
+            if getattr(settings, 'TEAM_ACCESS_STRICT', False):
+                accessible_patients = get_accessible_patients_for_clinician(user, scope='clinical')
+                queryset = queryset.filter(patient__in=accessible_patients)
+        elif user.user_type == 'pharmacist':
+            queryset = queryset.filter(status='active')
+        else:
+            return Prescription.objects.none()
+
         # Filter by patient
         patient_id = self.request.query_params.get('patient')
         if patient_id:
@@ -1380,7 +1684,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             if not patient:
                 return queryset.none()
             _require_patient_facility(self.request, patient)
-            check_clinical_access(self.request.user, patient)
+            check_prescription_access(self.request.user, patient)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by status
@@ -1404,7 +1708,12 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         if prescribed_by:
             queryset = queryset.filter(prescribed_by_id=prescribed_by)
 
-        return queryset.select_related('patient', 'prescribed_by', 'discontinued_by')
+        return queryset.select_related('patient', 'prescribed_by', 'discontinued_by').order_by('-created_at')
+
+    def get_object(self):
+        prescription = super().get_object()
+        check_prescription_access(self.request.user, prescription.patient)
+        return prescription
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -1498,7 +1807,7 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             from ..wards.models import Admission
             is_admitted = Admission.objects.filter(
                 patient=patient,
-                status='admitted'
+                status__in=ACTIVE_ADMISSION_STATUSES
             ).exists()
 
             # Generate MAR if explicitly requested OR if auto and patient is admitted
@@ -1840,108 +2149,191 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 @api_permission_classes([permissions.IsAuthenticated])
 def patient_timeline(request, patient_id):
     """
-    Get a unified timeline of clinical events for a patient.
+    Compatibility shim for the legacy timeline endpoint.
 
-    Aggregates:
-    - Clinical notes (NoteEntry)
-    - Prescriptions
-    - Vital signs
-    - Referrals (sent and received)
-
-    Query Parameters:
-    - type: Filter by type (notes, vitals, prescriptions, referrals, all)
-    - search: Text search across entries
-    - page: Page number (default: 1)
-    - page_size: Items per page (default: 20, max: 100)
-    - start_date: Filter entries from this date (ISO format)
-    - end_date: Filter entries until this date (ISO format)
-    - encounter_id: Filter entries by specific encounter (UUID)
-
-    Returns paginated timeline entries sorted by timestamp (newest first).
+    The legacy response shape is preserved for older clients, but the
+    runtime work is delegated to the TimelineEvent-backed v2 query path.
     """
-    # Validate patient exists
-    try:
-        patient = PatientProfile.objects.get(id=patient_id)
-    except PatientProfile.DoesNotExist:
-        return Response(
-            {'error': 'Patient not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    # SECURITY: Check clinical data access
-    _require_patient_facility(request, patient)
-    check_clinical_access(request.user, patient)
-
-    # Parse query parameters
-    entry_type = request.query_params.get('type', 'all')
-    search_query = request.query_params.get('search', '').strip()
-    page = int(request.query_params.get('page', 1))
-    page_size = min(int(request.query_params.get('page_size', 20)), 100)
-    start_date = request.query_params.get('start_date')
-    end_date = request.query_params.get('end_date')
-    encounter_id = request.query_params.get('encounter_id')
-
-    # Parse dates
-    start_datetime = None
-    end_datetime = None
-    if start_date:
-        try:
-            start_datetime = timezone.datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-        except ValueError:
-            pass
-    if end_date:
-        try:
-            end_datetime = timezone.datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-        except ValueError:
-            pass
-
-    timeline_entries = []
-
-    # Fetch notes
-    if entry_type in ['all', 'notes']:
-        notes = _get_patient_notes(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(notes)
-
-    # Fetch prescriptions
-    if entry_type in ['all', 'prescriptions']:
-        prescriptions = _get_patient_prescriptions(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(prescriptions)
-
-    # Fetch vitals
-    if entry_type in ['all', 'vitals']:
-        vitals = _get_patient_vitals(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(vitals)
-
-    # Fetch referrals
-    if entry_type in ['all', 'referrals']:
-        referrals = _get_patient_referrals(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(referrals)
-
-    # Fetch lab results (bundled by order)
-    if entry_type in ['all', 'labs']:
-        labs = _get_patient_labs(patient, search_query, start_datetime, end_datetime, encounter_id)
-        timeline_entries.extend(labs)
-
-    # Sort all entries by timestamp (newest first)
-    timeline_entries.sort(key=lambda x: x['timestamp'], reverse=True)
-
-    # Calculate pagination
-    total_count = len(timeline_entries)
-    total_pages = (total_count + page_size - 1) // page_size
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-
-    paginated_entries = timeline_entries[start_idx:end_idx]
-
-    return Response({
-        'count': total_count,
-        'page': page,
-        'page_size': page_size,
-        'total_pages': total_pages,
-        'has_next': page < total_pages,
-        'has_previous': page > 1,
-        'results': paginated_entries
+    logger.warning("Deprecated clinical timeline endpoint accessed")
+    payload = _get_patient_timeline_payload_v2(request, patient_id)
+    response = Response({
+        **payload,
+        'results': [_format_legacy_timeline_entry(entry) for entry in payload['results']],
     })
+    response['X-Deprecated-Endpoint'] = '/api/clinical-notes/chronicle/<patient_id>/timeline/'
+    return response
+
+
+def _format_legacy_timeline_entry(entry):
+    """Translate v2 timeline entries back into the legacy client shape."""
+    entry_type = entry.get('type')
+    author = entry.get('author_name') or entry.get('author') or 'Unknown'
+    content = entry.get('content_summary') or entry.get('content') or ''
+
+    if entry_type == 'note':
+        template = entry.get('template') or {}
+        return {
+            'id': entry['id'],
+            'type': entry.get('note_type') or 'progress_note',
+            'entry_type': 'note',
+            'timestamp': entry['timestamp'],
+            'updated_at': entry.get('updated_at'),
+            'title': entry.get('title') or 'Clinical Note',
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': entry.get('data') or {},
+            'template_id': template.get('id'),
+            'template_title': template.get('title'),
+            'template': template or None,
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+            'version_count': entry.get('version_count', 0),
+            'has_edits': entry.get('has_edits', False),
+        }
+
+    if entry_type == 'prescription':
+        duration_days = entry.get('duration_days')
+        return {
+            'id': entry['id'],
+            'type': 'prescription',
+            'entry_type': 'prescription',
+            'timestamp': entry['timestamp'],
+            'title': f"{entry.get('medication_name', '')} {entry.get('dosage', '')}".strip(),
+            'content': ' - '.join(
+                part for part in [
+                    entry.get('route_display'),
+                    entry.get('frequency_display'),
+                    f"for {duration_days} days" if duration_days else None,
+                ] if part
+            ),
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'id': entry['id'],
+                'medication_name': entry.get('medication_name'),
+                'name': entry.get('medication_name'),
+                'dosage': entry.get('dosage'),
+                'dose': entry.get('dosage'),
+                'route': entry.get('route'),
+                'route_display': entry.get('route_display'),
+                'frequency': entry.get('frequency'),
+                'frequency_display': entry.get('frequency_display'),
+                'duration_days': duration_days,
+                'start_date': entry.get('start_date'),
+                'end_date': entry.get('end_date'),
+                'instructions': entry.get('instructions'),
+                'reason': entry.get('reason'),
+                'status': entry.get('status'),
+                'status_display': entry.get('status_display'),
+                'discontinue_reason': entry.get('discontinue_reason'),
+            },
+            'status': entry.get('status'),
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    if entry_type == 'vitals':
+        return {
+            'id': entry['id'],
+            'type': 'vitals',
+            'entry_type': 'vitals',
+            'timestamp': entry['timestamp'],
+            'title': entry.get('title') or 'Vital Signs',
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'temperature': entry.get('temperature'),
+                'heart_rate': entry.get('heart_rate'),
+                'blood_pressure': entry.get('blood_pressure'),
+                'blood_pressure_systolic': entry.get('blood_pressure_systolic'),
+                'blood_pressure_diastolic': entry.get('blood_pressure_diastolic'),
+                'respiratory_rate': entry.get('respiratory_rate'),
+                'oxygen_saturation': entry.get('oxygen_saturation'),
+                'pain_level': entry.get('pain_level'),
+                'notes': entry.get('notes'),
+            },
+            'is_critical': entry.get('is_critical', False),
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    if entry_type == 'lab':
+        return {
+            'id': entry['id'],
+            'type': 'lab_result',
+            'entry_type': 'lab_result',
+            'timestamp': entry['timestamp'],
+            'title': entry.get('title') or f"Lab Order #{entry.get('order_number')}",
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'order_id': entry['id'],
+                'order_number': entry.get('order_number'),
+                'status': entry.get('status'),
+                'priority': entry.get('priority'),
+                'priority_display': entry.get('priority_display'),
+                'clinical_notes': entry.get('clinical_notes'),
+                'ordered_at': entry.get('ordered_at'),
+                'completed_at': entry.get('completed_at'),
+                'tests_ordered': entry.get('tests_ordered') or [],
+                'results_summary': entry.get('results_summary'),
+                'results': entry.get('results') or [],
+                'tests': entry.get('tests') or [],
+            },
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    if entry_type == 'referral':
+        return {
+            'id': entry['id'],
+            'type': 'referral',
+            'entry_type': 'referral',
+            'timestamp': entry['timestamp'],
+            'title': entry.get('title') or 'Referral',
+            'content': content,
+            'author': author,
+            'author_id': entry.get('author_id'),
+            'data': {
+                'referral_number': entry.get('referral_number'),
+                'status': entry.get('status'),
+                'status_display': entry.get('status_display'),
+                'urgency': entry.get('urgency'),
+                'urgency_display': entry.get('urgency_display'),
+                'is_urgent': entry.get('is_urgent'),
+                'referring_department': entry.get('referring_department'),
+                'referred_to_provider': entry.get('referred_to_provider_name'),
+                'referred_to_department': entry.get('referred_to_department'),
+                'referred_to_specialty': entry.get('referred_to_specialty'),
+                'reason': entry.get('reason'),
+                'clinical_summary': entry.get('clinical_summary'),
+                'questions_for_specialist': entry.get('questions_for_specialist'),
+                'specialist_notes': entry.get('specialist_notes'),
+                'recommendations': entry.get('recommendations'),
+                'submitted_at': entry.get('submitted_at'),
+                'accepted_at': entry.get('accepted_at'),
+                'completed_at': entry.get('completed_at'),
+            },
+            'encounter_id': entry.get('encounter_id'),
+            'encounter': entry.get('encounter'),
+        }
+
+    return {
+        'id': entry['id'],
+        'type': entry_type,
+        'entry_type': entry_type,
+        'timestamp': entry['timestamp'],
+        'title': entry.get('title') or '',
+        'content': content,
+        'author': author,
+        'author_id': entry.get('author_id'),
+        'data': {},
+        'encounter_id': entry.get('encounter_id'),
+        'encounter': entry.get('encounter'),
+    }
 
 
 def _format_encounter_details(encounter):
@@ -2002,9 +2394,11 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
     for note in notes_queryset[:500]:  # Limit to prevent memory issues
         # Try to get author name
         author_name = 'Unknown'
+        author_id = None
         if note.practitioner and note.practitioner.staff and note.practitioner.staff.user:
             user = note.practitioner.staff.user
             author_name = f"{user.first_name} {user.last_name}".strip() or user.email
+            author_id = user.id
 
         # Extract note type from template
         note_type = 'progress_note'
@@ -2050,6 +2444,7 @@ def _get_patient_notes(patient, search_query, start_datetime, end_datetime, enco
             'title': title,
             'content': content_summary,
             'author': author_name,
+            'author_id': str(author_id) if author_id else None,
             'data': note.data,
             'template_id': str(note.template_id) if note.template_id else None,
             'template_title': note.template.title if note.template else None,
@@ -2363,12 +2758,17 @@ def _get_patient_labs(patient, search_query, start_datetime, end_datetime, encou
 
     # Apply search filter
     if search_query:
+        matching_tests = LabOrderTest.objects.filter(
+            order_id=OuterRef('pk')
+        ).filter(
+            DQ(test__name__icontains=search_query) |
+            DQ(test__short_name__icontains=search_query)
+        )
         labs_queryset = labs_queryset.filter(
             DQ(order_number__icontains=search_query) |
-            DQ(order_tests__test__name__icontains=search_query) |
-            DQ(order_tests__test__short_name__icontains=search_query) |
-            DQ(clinical_notes__icontains=search_query)
-        ).distinct()
+            DQ(clinical_notes__icontains=search_query) |
+            Exists(matching_tests)
+        )
 
     entries = []
     for order in labs_queryset[:100]:
@@ -2627,30 +3027,36 @@ def patient_clinical_summary(request, patient_id):
                     'severity': 'medium',
                 })
 
-    # Source 2: Get initial diagnosis from active admission workflow
+    # Source 2: Get initial diagnosis from the latest open admission case
     try:
-        from apps.workflows.models import AdmissionWorkflow
-        # AdmissionWorkflow is accessed through workflow.patient
-        # Only consider in_progress admissions (completed means discharged)
-        active_admission = AdmissionWorkflow.objects.filter(
-            workflow__patient=patient,
-            workflow__status='in_progress'
-        ).select_related('workflow').order_by('-workflow__created_at').first()
+        from apps.admissions.models import AdmissionCase
 
-        if active_admission and active_admission.initial_diagnosis:
-            dx_text = active_admission.initial_diagnosis.strip()
+        active_admission_case = AdmissionCase.objects.filter(
+            patient=patient,
+        ).exclude(
+            status__in=[AdmissionCase.Status.COMPLETED, AdmissionCase.Status.CANCELLED]
+        ).order_by('-requested_at').first()
+
+        if active_admission_case:
+            draft = active_admission_case.draft_payload or {}
+            dx_text = (
+                draft.get('initial_diagnosis')
+                or draft.get('admission_reason')
+                or draft.get('chief_complaint')
+                or ''
+            ).strip()
             if dx_text and dx_text.lower() not in seen_problems:
                 seen_problems.add(dx_text.lower())
                 problems.insert(0, {  # Insert at beginning as it's the admission diagnosis
-                    'id': f'admission-{active_admission.id}',
+                    'id': f'admission-case-{active_admission_case.id}',
                     'name': dx_text,
                     'source': 'admission',
-                    'source_date': active_admission.workflow.created_at.isoformat(),
+                    'source_date': active_admission_case.requested_at.isoformat(),
                     'is_primary': True,
                     'severity': 'high',
                 })
     except (ImportError, Exception):
-        pass  # workflows app not available
+        pass
 
     return Response({
         'medications': medications,
@@ -2680,7 +3086,7 @@ def timeline_stats(request, patient_id):
     _require_patient_facility(request, patient)
 
     # Count entries by type
-    notes_count = NoteEntry.objects.count()  # TODO: Filter by patient when we have proper linking
+    notes_count = NoteEntry.objects.filter(patient=patient).count()
     prescriptions_count = Prescription.objects.filter(patient=patient).count()
     vitals_count = VitalSigns.objects.filter(patient=patient).count()
 
@@ -2840,23 +3246,31 @@ def chronicle_context(request, patient_id):
                     'severity': 'medium',
                 })
 
-    # Source 2: Get initial diagnosis from active admission workflow
+    # Source 2: Get initial diagnosis from the latest open admission case
     try:
-        from apps.workflows.models import AdmissionWorkflow
-        active_admission_wf = AdmissionWorkflow.objects.filter(
-            workflow__patient=patient,
-            workflow__status='in_progress'
-        ).select_related('workflow').order_by('-workflow__created_at').first()
+        from apps.admissions.models import AdmissionCase
 
-        if active_admission_wf and active_admission_wf.initial_diagnosis:
-            dx_text = active_admission_wf.initial_diagnosis.strip()
+        active_admission_case = AdmissionCase.objects.filter(
+            patient=patient,
+        ).exclude(
+            status__in=[AdmissionCase.Status.COMPLETED, AdmissionCase.Status.CANCELLED]
+        ).order_by('-requested_at').first()
+
+        if active_admission_case:
+            draft = active_admission_case.draft_payload or {}
+            dx_text = (
+                draft.get('initial_diagnosis')
+                or draft.get('admission_reason')
+                or draft.get('chief_complaint')
+                or ''
+            ).strip()
             if dx_text and dx_text.lower() not in seen_problems:
                 seen_problems.add(dx_text.lower())
                 problems.insert(0, {
-                    'id': f'admission-{active_admission_wf.id}',
+                    'id': f'admission-case-{active_admission_case.id}',
                     'name': dx_text,
                     'source': 'admission',
-                    'source_date': active_admission_wf.workflow.created_at.isoformat(),
+                    'source_date': active_admission_case.requested_at.isoformat(),
                     'is_primary': True,
                     'severity': 'high',
                 })
@@ -2869,7 +3283,7 @@ def chronicle_context(request, patient_id):
         from apps.wards.models import Admission
         active_admission = Admission.objects.filter(
             patient=patient,
-            status__in=['admitted', 'waiting']
+            status__in=ACTIVE_ADMISSION_STATUSES
         ).select_related('bed__ward').first()
 
         if active_admission:
@@ -2887,9 +3301,33 @@ def chronicle_context(request, patient_id):
     # Get active encounter
     active_encounter = None
     try:
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
         encounter = Encounter.objects.filter(
             patient=patient,
-            status__in=['planned', 'in-progress', 'onleave']
+        ).filter(
+            (
+                Q(encounter_type='outpatient') &
+                Q(start_time__gte=today_start, start_time__lt=today_end) &
+                (
+                    Q(status='in-progress') |
+                    Q(
+                        status='planned',
+                        outpatient_visit__visit_status__in=[
+                            'checked_in',
+                            'waiting',
+                            'called',
+                            'in_progress',
+                            'on_hold',
+                            'ready_checkout',
+                        ],
+                    )
+                )
+            ) |
+            (
+                ~Q(encounter_type='outpatient') &
+                Q(status__in=['planned', 'in-progress', 'onleave'])
+            )
         ).order_by('-start_time').first()
 
         if encounter:
@@ -2977,17 +3415,18 @@ def patient_timeline_v2(request, patient_id):
 
     Returns paginated timeline entries with full source model details.
     """
+    return Response(_get_patient_timeline_payload_v2(request, patient_id))
+
+
+def _get_patient_timeline_payload_v2(request, patient_id):
+    """Build the chronicle timeline payload using TimelineEvent-backed pagination."""
     from .models import TimelineEvent
-    from apps.encounters.models import Encounter
 
     # Validate patient exists
     try:
         patient = PatientProfile.objects.get(id=patient_id)
     except PatientProfile.DoesNotExist:
-        return Response(
-            {'error': 'Patient not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        raise NotFound('Patient not found')
 
     # SECURITY: Check clinical data access
     check_clinical_access(request.user, patient)
@@ -3099,7 +3538,7 @@ def patient_timeline_v2(request, patient_id):
             id__in=events_by_model['LabOrder']
         ).select_related(
             'ordering_provider__staff__user', 'encounter'
-        ).prefetch_related('order_tests__test', 'order_tests__results')
+        ).prefetch_related('order_tests__test', 'order_tests__result')
         for lab in labs:
             source_data[('LabOrder', str(lab.id))] = lab
 
@@ -3115,6 +3554,20 @@ def patient_timeline_v2(request, patient_id):
         for ref in referrals:
             source_data[('Referral', str(ref.id))] = ref
 
+    if 'ChartEntry' in events_by_model:
+        from apps.charts.models import ChartEntry
+
+        chart_entries = ChartEntry.objects.filter(
+            id__in=events_by_model['ChartEntry']
+        ).select_related(
+            'assignment__template',
+            'assignment__encounter',
+            'assignment__admission',
+            'recorded_by__staff__user',
+        )
+        for chart_entry in chart_entries:
+            source_data[('ChartEntry', str(chart_entry.id))] = chart_entry
+
     # Build response entries with full details
     results = []
     for event in paginated_events:
@@ -3123,7 +3576,7 @@ def patient_timeline_v2(request, patient_id):
         if entry:
             results.append(entry)
 
-    return Response({
+    return {
         'count': total_count,
         'page': page,
         'page_size': page_size,
@@ -3131,7 +3584,7 @@ def patient_timeline_v2(request, patient_id):
         'has_next': page < total_pages,
         'has_previous': page > 1,
         'results': results,
-    })
+    }
 
 
 def _build_timeline_entry_v2(event, source_obj):
@@ -3166,6 +3619,8 @@ def _build_timeline_entry_v2(event, source_obj):
         return _format_lab_entry_v2(source_obj, event)
     elif event.source_model == 'Referral':
         return _format_referral_entry_v2(source_obj, event)
+    elif event.source_model == 'ChartEntry':
+        return _format_chart_entry_v2(source_obj, event)
 
     return None
 
@@ -3245,7 +3700,9 @@ def _format_prescription_entry_v2(rx, event):
         'instructions': rx.instructions,
         'reason': rx.reason,
         'status': rx.status,
+        'status_display': rx.get_status_display(),
         'is_critical': event.is_critical,
+        'discontinue_reason': rx.discontinue_reason,
         'encounter': _format_encounter_details(rx.encounter),
         'encounter_id': str(rx.encounter_id) if rx.encounter_id else None,
         'created_at': rx.created_at.isoformat(),
@@ -3280,10 +3737,36 @@ def _format_vitals_entry_v2(v, event):
     }
 
 
+def _format_chart_entry_v2(chart_entry, event):
+    assignment = chart_entry.assignment
+    template = assignment.template if assignment else None
+    return {
+        'id': str(chart_entry.id),
+        'type': 'chart',
+        'timestamp': chart_entry.observation_datetime.isoformat(),
+        'title': template.name if template else event.title,
+        'content_summary': event.content_summary,
+        'author_name': event.author_name,
+        'author_id': str(event.author_id) if event.author_id else None,
+        'is_critical': chart_entry.has_critical_values,
+        'template_name': template.name if template else event.template_title,
+        'template_system_key': getattr(template, 'system_key', ''),
+        'scope_type': getattr(template, 'scope_type', 'patient'),
+        'assignment_id': str(assignment.id) if assignment else None,
+        'encounter': _format_encounter_details(assignment.encounter if assignment else None),
+        'encounter_id': str(assignment.encounter_id) if assignment and assignment.encounter_id else None,
+        'notes': chart_entry.notes,
+        'created_at': chart_entry.created_at.isoformat(),
+        'updated_at': chart_entry.updated_at.isoformat(),
+    }
+
+
 def _format_lab_entry_v2(lab, event):
     """Format LabOrder for timeline (full details like v1)."""
     # Format tests
     tests = []
+    flat_results = []
+    summary = {'total': 0, 'normal': 0, 'abnormal': 0, 'critical': 0}
     for order_test in lab.order_tests.all():
         test_data = {
             'id': str(order_test.id),
@@ -3294,16 +3777,49 @@ def _format_lab_entry_v2(lab, event):
             'status': order_test.status,
             'results': [],
         }
-        # Include results if any
-        for result in order_test.results.all():
-            test_data['results'].append({
+
+        result = getattr(order_test, 'result', None)
+        if result:
+            is_critical = bool(result.is_critical())
+            is_abnormal = result.flag not in ['normal', None]
+            summary['total'] += 1
+            if is_critical:
+                summary['critical'] += 1
+            elif is_abnormal:
+                summary['abnormal'] += 1
+            else:
+                summary['normal'] += 1
+
+            reference_range = None
+            if result.reference_low is not None and result.reference_high is not None:
+                reference_range = f"{result.reference_low} - {result.reference_high}"
+            elif result.reference_low is not None:
+                reference_range = f"> {result.reference_low}"
+            elif result.reference_high is not None:
+                reference_range = f"< {result.reference_high}"
+
+            result_payload = {
                 'id': str(result.id),
                 'value': result.value,
                 'unit': result.unit,
-                'reference_range': result.reference_range,
+                'reference_range': reference_range,
                 'interpretation': result.interpretation,
-                'is_abnormal': result.is_abnormal,
+                'flag': result.flag,
+                'is_abnormal': is_abnormal,
+                'is_critical': is_critical,
                 'verified_at': result.verified_at.isoformat() if result.verified_at else None,
+            }
+            test_data['results'].append(result_payload)
+            flat_results.append({
+                'test_name': order_test.test.short_name,
+                'test_full_name': order_test.test.name,
+                'value': result.value,
+                'unit': result.unit,
+                'reference_range': reference_range,
+                'flag': result.flag,
+                'is_abnormal': is_abnormal,
+                'is_critical': is_critical,
+                'interpretation': result.interpretation,
             })
         tests.append(test_data)
 
@@ -3318,8 +3834,14 @@ def _format_lab_entry_v2(lab, event):
         'order_number': lab.order_number,
         'status': lab.status,
         'priority': lab.priority,
+        'priority_display': lab.get_priority_display(),
         'is_critical': event.is_critical,
         'clinical_notes': getattr(lab, 'clinical_notes', ''),
+        'ordered_at': lab.ordered_at.isoformat() if lab.ordered_at else None,
+        'completed_at': lab.completed_at.isoformat() if lab.completed_at else None,
+        'tests_ordered': [order_test.test.short_name for order_test in lab.order_tests.all()],
+        'results_summary': summary,
+        'results': flat_results,
         'tests': tests,
         'encounter': _format_encounter_details(lab.encounter),
         'encounter_id': str(lab.encounter_id) if lab.encounter_id else None,
@@ -3340,20 +3862,32 @@ def _format_referral_entry_v2(ref, event):
         'referral_number': ref.referral_number,
         'referred_to_specialty': ref.referred_to_specialty,
         'referred_to_department': ref.referred_to_department,
+        'referring_department': ref.referring_department,
         'referred_to_provider_name': (
             ref.referred_to_provider.staff.user.get_full_name()
             if ref.referred_to_provider and ref.referred_to_provider.staff and ref.referred_to_provider.staff.user
             else None
         ),
         'urgency': ref.urgency,
+        'urgency_display': ref.get_urgency_display(),
         'status': ref.status,
+        'status_display': ref.get_status_display(),
+        'is_urgent': ref.is_urgent,
         'is_critical': event.is_critical,
         'reason': ref.reason,
         'clinical_summary': ref.clinical_summary,
         'questions_for_specialist': ref.questions_for_specialist,
         'specialist_notes': ref.specialist_notes,
         'recommendations': ref.recommendations,
+        'submitted_at': ref.submitted_at.isoformat() if ref.submitted_at else None,
+        'accepted_at': ref.accepted_at.isoformat() if ref.accepted_at else None,
+        'completed_at': ref.completed_at.isoformat() if ref.completed_at else None,
         'encounter': _format_encounter_details(ref.encounter),
         'encounter_id': str(ref.encounter_id) if ref.encounter_id else None,
         'created_at': ref.created_at.isoformat(),
     }
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'clinical_notes')

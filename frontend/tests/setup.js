@@ -119,6 +119,12 @@ Object.defineProperty(window, 'scrollTo', {
   value: vi.fn(),
 })
 
+// Mock scrollIntoView (used by cmdk)
+Object.defineProperty(Element.prototype, 'scrollIntoView', {
+  writable: true,
+  value: vi.fn(),
+})
+
 // =============================================================================
 // Storage Mocks
 // =============================================================================

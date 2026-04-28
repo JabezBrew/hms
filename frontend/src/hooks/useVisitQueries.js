@@ -4,11 +4,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { visitsApi, triageApi } from '@/features/triage/api';
 import { appointmentKeys } from '@/features/appointments/hooks/useAppointmentQueries';
-import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries';
+import { invalidateEncounterMutationQueries } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
-import { dashboardKeys } from '@/hooks/useDashboardQueries';
+import {
+  dashboardKeys,
+  invalidateOperationalDoctorDashboardQueries,
+} from '@/hooks/useDashboardQueries';
+import {
+  hasQueryPrefix,
+  invalidateQueriesMatching,
+  invalidateQueryKeys,
+} from '@/shared/lib/queryInvalidation';
 
 // =============================================================================
 // Query Keys
@@ -28,6 +36,32 @@ export const triageKeys = {
   list: (filters) => triageKeyFactory.list(filters),
   detail: (id) => triageKeyFactory.detail(id),
 };
+
+function getVisitMutationEncounterId(variables) {
+  if (!variables) return null;
+
+  if (typeof variables === 'string' || typeof variables === 'number') {
+    return variables;
+  }
+
+  return variables.encounterId ?? variables.id ?? null;
+}
+
+export function invalidateVisitMutationQueries(queryClient, encounterId) {
+  const tasks = [
+    invalidateQueriesMatching(queryClient, (query) =>
+      hasQueryPrefix(query.queryKey, ['visits', 'waiting-room'])
+    ),
+    invalidateOperationalDoctorDashboardQueries(queryClient),
+    invalidateEncounterMutationQueries(queryClient, { encounterId }),
+  ];
+
+  if (encounterId) {
+    tasks.push(invalidateQueryKeys(queryClient, [visitKeys.detail(encounterId)]));
+  }
+
+  return Promise.all(tasks);
+}
 
 // =============================================================================
 // Waiting Room Queries
@@ -77,17 +111,16 @@ export function useVisit(encounterId, options = {}) {
 export function useVisitActions() {
   const queryClient = useQueryClient();
 
-  const invalidateVisitQueries = () => {
-    queryClient.invalidateQueries({ queryKey: visitKeys.all });
-    queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
-    queryClient.invalidateQueries({ queryKey: encounterKeys.all });
+  const invalidateVisitQueries = (variables) => {
+    const encounterId = getVisitMutationEncounterId(variables);
+    return invalidateVisitMutationQueries(queryClient, encounterId);
   };
 
   const addToWaiting = useMutation({
     mutationFn: (encounterId) => visitsApi.addToWaiting(encounterId),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Patient added to waiting room');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to add patient to waiting room');
@@ -96,9 +129,9 @@ export function useVisitActions() {
 
   const callPatient = useMutation({
     mutationFn: (encounterId) => visitsApi.call(encounterId),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Patient called');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to call patient');
@@ -107,9 +140,9 @@ export function useVisitActions() {
 
   const startConsultation = useMutation({
     mutationFn: (encounterId) => visitsApi.startConsultation(encounterId),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Consultation started');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to start consultation');
@@ -118,9 +151,9 @@ export function useVisitActions() {
 
   const putOnHold = useMutation({
     mutationFn: (encounterId) => visitsApi.hold(encounterId),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Consultation on hold');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to put on hold');
@@ -129,9 +162,9 @@ export function useVisitActions() {
 
   const endConsultation = useMutation({
     mutationFn: (encounterId) => visitsApi.endConsultation(encounterId),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Consultation ended');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to end consultation');
@@ -140,9 +173,9 @@ export function useVisitActions() {
 
   const checkout = useMutation({
     mutationFn: ({ encounterId, force = false }) => visitsApi.checkout(encounterId, force),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Patient checked out');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to checkout patient');
@@ -151,9 +184,9 @@ export function useVisitActions() {
 
   const markNoShow = useMutation({
     mutationFn: (encounterId) => visitsApi.noShow(encounterId),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast.success('Patient marked as no-show');
-      invalidateVisitQueries();
+      void invalidateVisitQueries(variables);
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to mark no-show');

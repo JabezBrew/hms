@@ -1,3 +1,5 @@
+import { getWebSocketBaseUrl } from './runtime-config';
+
 /**
  * WebSocket client for real-time HMS notifications.
  *
@@ -11,8 +13,6 @@
  *   ws.on('alert.new', (alert) => console.log('New alert:', alert));
  *   ws.connect();
  */
-
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8001';
 
 // Reconnection settings
 const INITIAL_RECONNECT_DELAY = 1000; // 1 second
@@ -38,11 +38,25 @@ class BaseWebSocket {
   }
 
   /**
-   * Build the WebSocket URL with authentication token.
+   * Build the WebSocket URL.
    */
   getUrl() {
-    const params = new URLSearchParams({ token: this.token });
-    return `${WS_BASE_URL}${this.path}?${params.toString()}`;
+    return `${getWebSocketBaseUrl()}${this.path}`;
+  }
+
+  /**
+   * Build requested subprotocols.
+   * Default auth transport is subprotocols: ['hms.jwt', '<access_token>'].
+   */
+  getProtocols() {
+    const protocols = [];
+    if (this.options.baseProtocol) {
+      protocols.push(this.options.baseProtocol);
+    }
+    if (this.token) {
+      protocols.push('hms.jwt', this.token);
+    }
+    return protocols.length > 0 ? protocols : undefined;
   }
 
   /**
@@ -56,7 +70,8 @@ class BaseWebSocket {
     this.isIntentionalClose = false;
 
     try {
-      this.ws = new WebSocket(this.getUrl());
+      const protocols = this.getProtocols();
+      this.ws = protocols ? new WebSocket(this.getUrl(), protocols) : new WebSocket(this.getUrl());
       this.setupEventHandlers();
     } catch (error) {
       console.error('[WebSocket] Connection error:', error);
@@ -303,8 +318,78 @@ export class NotificationWebSocket extends BaseWebSocket {
   }
 }
 
+/**
+ * WebSocket client for admin dashboard invalidations.
+ *
+ * Events:
+ * - dashboard.invalidate
+ * - connection.open
+ * - connection.close
+ * - connection.error
+ * - connection.failed
+ */
+export class AdminDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/admin/', token, options);
+  }
+}
+
+/**
+ * WebSocket client for doctor dashboard invalidations (my-work).
+ */
+export class DoctorDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/my-work/', token, options);
+  }
+}
+
+/**
+ * WebSocket client for clinic dashboard invalidations.
+ */
+export class ClinicDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/clinic/', token, options);
+  }
+}
+
+/**
+ * WebSocket client for nurse dashboard invalidations.
+ */
+export class NurseDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    const wardScope = options.wardScope && options.wardScope !== 'all'
+      ? `?ward=${encodeURIComponent(options.wardScope)}`
+      : ''
+    super(`/ws/dashboards/nurse/${wardScope}`, token, options);
+  }
+}
+
+/**
+ * WebSocket client for inpatient dashboard invalidations.
+ */
+export class InpatientDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/inpatient/', token, options);
+  }
+}
+
+/**
+ * WebSocket client for reception dashboard invalidations.
+ */
+export class ReceptionDashboardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    super('/ws/dashboards/reception/', token, options);
+  }
+}
+
 export default {
   AlertWebSocket,
   VitalsWebSocket,
   NotificationWebSocket,
+  AdminDashboardWebSocket,
+  DoctorDashboardWebSocket,
+  ClinicDashboardWebSocket,
+  NurseDashboardWebSocket,
+  InpatientDashboardWebSocket,
+  ReceptionDashboardWebSocket,
 };

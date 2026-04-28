@@ -21,7 +21,10 @@ import {
   DashboardGrid,
 } from '@/components/dashboard';
 import { WorkflowLauncher } from '@/components/workflow';
-import { useInpatientDashboard } from '@/features/dashboards/hooks';
+import {
+  useInpatientDashboard,
+  useInpatientDashboardLiveUpdates,
+} from '@/features/dashboards/hooks';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -36,15 +39,18 @@ import { PageState } from '@/shared/components/page/PageState';
 export default function InpatientDoctorDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const { isConnected: isLiveConnected } = useInpatientDashboardLiveUpdates({
+    enabled: Boolean(facilityCode),
+  });
 
-  // Fetch dashboard data with polling
+  // Fetch dashboard data with websocket-triggered refresh, polling fallback.
   const {
     data: dashboardData,
     isLoading,
     error,
     refetch,
     isFetching,
-  } = useInpatientDashboard({ refetchInterval: 30000 });
+  } = useInpatientDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
 
   if (!facilityCode) {
     return (
@@ -127,6 +133,12 @@ export default function InpatientDoctorDashboard() {
   const myPatients = dashboardData?.my_patients || [];
   const plannedDischarges = dashboardData?.planned_discharges || [];
   const pending = dashboardData?.pending || {};
+  const openWardRound = (patientId) => {
+    if (!patientId) {
+      return;
+    }
+    navigate(`/patients/${patientId}?action=ward_round`);
+  };
 
   return (
     <Layout>
@@ -272,10 +284,7 @@ export default function InpatientDoctorDashboard() {
                     {
                       label: 'Start Ward Round',
                       variant: 'default',
-                      onClick: () => {
-                        // Start ward round workflow
-                        console.log('Start ward round:', admission.id);
-                      },
+                      onClick: () => openWardRound(admission.patient_id),
                     },
                     {
                       label: 'View Details',
@@ -363,7 +372,7 @@ export default function InpatientDoctorDashboard() {
                     {
                       label: 'Ward Round',
                       variant: 'default',
-                      onClick: () => console.log('Start ward round:', patient.id),
+                      onClick: () => openWardRound(patient.patient_id),
                     },
                     {
                       label: 'View Chart',
@@ -429,7 +438,9 @@ export default function InpatientDoctorDashboard() {
                     {
                       label: 'Start Discharge',
                       variant: 'default',
-                      onClick: () => console.log('Start discharge:', discharge.id),
+                      onClick: () => navigate(
+                        `/patients/${discharge.patient_id}?action=discharge&admission=${discharge.id}&source=dashboard`
+                      ),
                     },
                     {
                       label: 'View Details',

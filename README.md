@@ -2,6 +2,14 @@
 
 A modern, modular, and scalable Hospital Management System using Django REST Framework for the backend and React (Vite) with shadcn/ui components for the frontend.
 
+## Codebase Documentation
+
+For detailed, implementation-level documentation of this repository:
+
+- `/Users/jebre/Desktop/hms/CODEBASE_DEEP_DIVE.md`
+- `/Users/jebre/Desktop/hms/backend/CODEBASE_BACKEND.md`
+- `/Users/jebre/Desktop/hms/frontend/CODEBASE_FRONTEND.md`
+
 ## Project Overview
 
 The Hospital Management System is designed to integrate with Google Cloud Healthcare API while implementing custom modules and logic that the API doesn't natively support.
@@ -87,6 +95,27 @@ The Hospital Management System is designed to integrate with Google Cloud Health
    ```bash
    npm run dev
    ```
+
+### Railway Frontend Deployment
+
+This repo is a monorepo. Deploy Railway services from the correct service root instead of deploying the repo root and expecting Railpack to infer the right app automatically.
+
+Known service roots:
+
+- `frontend` service -> `frontend/`
+- backend web/api service -> `backend/`
+- backend worker service -> `backend/`
+- backend beat service -> `backend/`
+
+For the Railway `frontend` service, upload the `frontend/` directory as the deployment root:
+
+```bash
+railway up frontend --path-as-root --service frontend --environment production
+```
+
+The same pattern applies to backend-related Railway services: use the `backend/` directory as the deployment root and ensure the Railway service points at the matching config file such as `/backend/railway.toml`, `/backend/railway.worker.toml`, or `/backend/railway.beat.toml`.
+
+Deploying the repo root with a plain `railway up` can cause Railpack to inspect the monorepo root, miss the intended app entrypoint, and fail build detection.
 
 ## Authentication
 

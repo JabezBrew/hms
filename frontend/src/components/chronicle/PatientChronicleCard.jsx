@@ -223,13 +223,16 @@ const PatientChronicleCard = ({
 
   const handleViewRecord = () => {
     if (patientId) {
+      if (onPrefetchPatient) {
+        onPrefetchPatient(patientId, 'navigation');
+      }
       navigate(`/patients/${patientId}`);
     }
   };
 
   const handleIntentPrefetch = () => {
     if (onPrefetchPatient && patientId) {
-      onPrefetchPatient(patientId);
+      onPrefetchPatient(patientId, 'hover');
     }
   };
 

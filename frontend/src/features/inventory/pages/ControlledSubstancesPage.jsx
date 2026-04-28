@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -273,6 +273,85 @@ export default function ControlledSubstancesPage() {
   const handleCount = (id) => navigate(`/inventory/controlled/${id}?action=count`);
   const handleWastage = (id) => navigate(`/inventory/controlled/${id}?action=wastage`);
 
+  const registerColumns = [
+    {
+      key: 'item',
+      header: 'Substance',
+      width: '260px',
+      render: (register) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{register.item_name || register.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{register.location_name || 'No location'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'balance',
+      header: 'Balance',
+      width: '120px',
+      render: (register) => (
+        <span className="font-mono text-sm text-foreground">{register.current_balance || 0}</span>
+      ),
+    },
+    {
+      key: 'audit',
+      header: 'Last Audit',
+      width: '160px',
+      render: (register) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {register.last_audit_date ? format(parseISO(register.last_audit_date), 'MMM d, yyyy') : 'Never'}
+        </span>
+      ),
+    },
+    {
+      key: 'alerts',
+      header: 'Alerts',
+      width: '180px',
+      render: (register) => {
+        const hasDiscrepancy = register.has_discrepancy || register.discrepancy_count > 0;
+        const lastAuditDays = register.last_audit_date
+          ? differenceInDays(new Date(), parseISO(register.last_audit_date))
+          : null;
+        const auditDue = lastAuditDays !== null && lastAuditDays > 30;
+        return (
+          <div className="flex flex-wrap gap-1">
+            {hasDiscrepancy && (
+              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 text-xs">
+                Discrepancy
+              </Badge>
+            )}
+            {auditDue && (
+              <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
+                Audit Due
+              </Badge>
+            )}
+            {!hasDiscrepancy && !auditDue && (
+              <span className="text-sm text-muted-foreground">None</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '220px',
+      render: (register) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleDispense(register.id); }}>
+            Dispense
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleCount(register.id); }}>
+            Count
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-destructive" onClick={(event) => { event.stopPropagation(); handleWastage(register.id); }}>
+            Wastage
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   if (isLoading) {
     return (
       <PageState variant="loading" fullHeight={false} className="space-y-6">
@@ -373,23 +452,18 @@ export default function ControlledSubstancesPage() {
       </div>
 
       {registers.length > 0 ? (
-        <VirtualizedGrid
-          items={registers}
-          minItemWidth={280}
-          rowHeight={260}
-          gap={16}
-          getItemKey={(register) => register.id}
-          renderItem={(register, index) => (
-            <ControlledRegisterCard
-              register={register}
-              index={index}
-              onClick={() => handleClick(register.id)}
-              onDispense={() => handleDispense(register.id)}
-              onCount={() => handleCount(register.id)}
-              onWastage={() => handleWastage(register.id)}
-            />
-          )}
-        />
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={registers}
+            rowKey={(register) => register.id}
+            rowHeight={68}
+            columns={registerColumns}
+            onRowClick={(register) => handleClick(register.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[1080px]"
+            headerClassName="bg-muted/50 border-b border-border"
+          />
+        </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <Shield className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />

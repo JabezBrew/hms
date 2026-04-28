@@ -4,6 +4,7 @@ import secrets
 from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
@@ -19,6 +20,15 @@ class User(AbstractUser):
     # Additional fields
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text="Require user to change password before full access."
+    )
+    password_changed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the last completed password change."
+    )
 
     GENDER_CHOICES = (
         ('M', 'Male'),
@@ -71,7 +81,11 @@ class Staff(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')
-    employee_id = models.CharField(max_length=20, unique=True)
+    employee_id = models.CharField(
+        max_length=40,
+        unique=True,
+        help_text="Staff identifier (e.g., EMP-MAIN-2026-0000001)"
+    )
     department = models.CharField(max_length=100)
     position = models.CharField(max_length=100)
     hire_date = models.DateField()
@@ -176,7 +190,11 @@ class PatientProfile(models.Model):
         db_index=True,
         help_text="MPI patient identity ID (control-plane reference)"
     )
-    medical_record_number = models.CharField(max_length=20, unique=True)
+    medical_record_number = models.CharField(
+        max_length=40,
+        unique=True,
+        help_text="Patient MRN (e.g., MRN-MAIN-2026-0000001)"
+    )
     nhis_id = models.CharField(max_length=50, blank=True, null=True)
     blood_group = models.CharField(max_length=5, blank=True, null=True)
     allergies = models.TextField(blank=True, null=True)
@@ -204,6 +222,46 @@ class PatientProfile(models.Model):
             models.Index(fields=['fhir_patient_id']),
             models.Index(fields=['created_at']),
         ]
+
+
+class IdentifierSequence(models.Model):
+    """
+    Per-facility, per-year sequence allocator for human-readable identifiers.
+    """
+
+    TYPE_MRN = 'mrn'
+    TYPE_EMPLOYEE = 'employee'
+    IDENTIFIER_TYPE_CHOICES = (
+        (TYPE_MRN, 'MRN'),
+        (TYPE_EMPLOYEE, 'Employee ID'),
+    )
+
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='identifier_sequences'
+    )
+    identifier_type = models.CharField(max_length=20, choices=IDENTIFIER_TYPE_CHOICES)
+    year = models.PositiveSmallIntegerField()
+    next_number = models.PositiveBigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'users_identifier_sequence'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'identifier_type', 'year'],
+                name='users_identifier_seq_facility_type_year_uniq',
+            ),
+            models.CheckConstraint(
+                check=models.Q(next_number__gte=1),
+                name='users_identifier_seq_next_number_gte_1',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.facility_id}:{self.identifier_type}:{self.year} -> {self.next_number}"
 
 
 class PasswordResetToken(models.Model):
@@ -467,7 +525,10 @@ class UserSession(models.Model):
 
     @property
     def is_active(self):
-        return self.revoked_at is None and self.expires_at > timezone.now()
+        now = timezone.now()
+        idle_timeout_minutes = max(getattr(settings, 'USER_SESSION_IDLE_TIMEOUT_MINUTES', 30), 1)
+        idle_cutoff = now - timedelta(minutes=idle_timeout_minutes)
+        return self.revoked_at is None and self.expires_at > now and self.last_seen_at > idle_cutoff
 
     def __str__(self):
         return f"Session for {self.user.email}"

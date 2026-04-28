@@ -92,7 +92,7 @@ const NotificationCenter = () => {
 
   // Referral notifications (only for doctors)
   const { data: referralNotifications = [], isLoading: referralsLoading } = useReferralNotifications(
-    {},
+    { page_size: 20 },
     { enabled: isDoctor && isPageActive }
   );
   const { data: unreadReferralCount = 0 } = useReferralNotificationCount({ enabled: isDoctor && isPageActive });

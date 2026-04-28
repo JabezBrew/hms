@@ -224,6 +224,12 @@ const ChartTemplateCard = ({
             {template.interval_display}
           </span>
 
+          {template.scope_type_display && (
+            <span className="font-mono text-[10px] sm:text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+              {template.scope_type_display}
+            </span>
+          )}
+
           {/* Visibility */}
           <span className={cn(
             "flex items-center gap-1 font-mono text-[10px] sm:text-xs",

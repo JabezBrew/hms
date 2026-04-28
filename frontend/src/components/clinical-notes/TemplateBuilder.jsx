@@ -1,40 +1,46 @@
-import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.js';
-import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
-import MoveUp from 'lucide-react/dist/esm/icons/move-up.js';
-import MoveDown from 'lucide-react/dist/esm/icons/move-down.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Eye from 'lucide-react/dist/esm/icons/eye.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import ListOrdered from 'lucide-react/dist/esm/icons/list-ordered.js';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Lock from 'lucide-react/dist/esm/icons/lock.js';
+import MoveDown from 'lucide-react/dist/esm/icons/move-down.js';
+import MoveUp from 'lucide-react/dist/esm/icons/move-up.js';
+import PlusCircle from 'lucide-react/dist/esm/icons/circle-plus.js';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import Globe from 'lucide-react/dist/esm/icons/globe.js';
-import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import Heart from 'lucide-react/dist/esm/icons/heart.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Folder from 'lucide-react/dist/esm/icons/folder.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import CircleDot from 'lucide-react/dist/esm/icons/circle-dot.js';
+import { useMemo, useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { useCreateNoteTemplate, useUpdateNoteTemplate } from '@/features/clinical-notes/hooks';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
 
-// Visibility options with icons and descriptions
 const VISIBILITY_OPTIONS = [
-  { value: 'private', label: 'Private', icon: Lock, description: 'Only you can see and use this template' },
-  { value: 'role', label: 'My Role', icon: Users, description: 'Shared with others in your role (e.g., all doctors)' },
-  { value: 'department', label: 'Department', icon: Building2, description: 'Shared with your department members' },
-  { value: 'public', label: 'Public', icon: Globe, description: 'Available to all users' },
+  { value: 'private', label: 'Private', icon: Lock, description: 'Only you can see and use this template.' },
+  { value: 'role', label: 'My Role', icon: Users, description: 'Shared with clinicians who have your role.' },
+  { value: 'department', label: 'Department', icon: Building2, description: 'Shared with members of a department.' },
+  { value: 'public', label: 'Public', icon: Globe, description: 'Available across the facility.' },
 ];
 
-// Category options with icons
 const CATEGORY_OPTIONS = [
   { value: 'general', label: 'General', icon: FileText },
   { value: 'soap', label: 'SOAP Notes', icon: ClipboardList },
@@ -47,7 +53,6 @@ const CATEGORY_OPTIONS = [
   { value: 'custom', label: 'Custom', icon: Folder },
 ];
 
-// Icon options for template display
 const ICON_OPTIONS = [
   { value: 'file-text', label: 'File Text' },
   { value: 'clipboard-list', label: 'Clipboard List' },
@@ -61,27 +66,129 @@ const ICON_OPTIONS = [
   { value: 'thermometer', label: 'Thermometer' },
 ];
 
-/**
- * Component for building and saving note templates
- * Supports visibility controls, categories, and custom sections
- */
-const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
-  // Handle both array and object structure formats
-  const getInitialStructure = () => {
-    if (!initialTemplate?.structure) return [];
-    if (Array.isArray(initialTemplate.structure)) return initialTemplate.structure;
-    if (initialTemplate.structure.sections) {
-      // Convert new format to old format for the form
-      return initialTemplate.structure.sections.map(section => ({
-        section: section.name || section.section || '',
-        type: section.type || 'text',
-        observation_type: section.observationType || section.observation_type || null,
-      }));
-    }
-    return [];
-  };
+const SECTION_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'observation', label: 'Observation' },
+  { value: 'condition', label: 'Condition' },
+  { value: 'medication_administration', label: 'Medication Administration' },
+];
 
-  const { register, control, handleSubmit, setValue, watch, formState: { errors } } = useForm({
+const OBSERVATION_TYPES = [
+  { value: 'vitals', label: 'Vitals' },
+  { value: 'subjective_symptoms', label: 'Subjective Symptoms' },
+  { value: 'allergy', label: 'Allergy' },
+  { value: 'fluid_balance', label: 'Fluid Balance' },
+];
+
+const TEMPLATE_MODE_OPTIONS = [
+  { value: 'structured', label: 'Structured' },
+  { value: 'written', label: 'Written' },
+  { value: 'hybrid', label: 'Hybrid' },
+];
+
+const QUICK_STARTS = [
+  {
+    value: 'soap',
+    label: 'SOAP',
+    category: 'soap',
+    estimatedSteps: 4,
+    sections: [
+      { section: 'Subjective', type: 'text', required: true },
+      { section: 'Objective', type: 'observation', observation_type: 'vitals', required: true },
+      { section: 'Assessment', type: 'condition', required: true },
+      { section: 'Plan', type: 'text', required: true },
+    ],
+  },
+  {
+    value: 'hpi',
+    label: 'HPI',
+    category: 'consultation',
+    estimatedSteps: 6,
+    sections: [
+      { section: 'Presenting Complaint(s)', type: 'text', required: true },
+      { section: 'History of Presenting Complaint', type: 'text', required: true },
+      { section: 'Past Medical History', type: 'text', required: false },
+      { section: 'Allergies', type: 'observation', observation_type: 'allergy', required: false },
+      { section: 'Physical Examination', type: 'text', required: true },
+      { section: 'Plan', type: 'text', required: true },
+    ],
+  },
+  {
+    value: 'nursing_vitals',
+    label: 'Nursing Vitals',
+    category: 'nursing',
+    estimatedSteps: 2,
+    sections: [
+      { section: 'Vitals', type: 'observation', observation_type: 'vitals', required: true },
+      { section: 'Nurse Notes', type: 'text', required: false },
+    ],
+  },
+  {
+    value: 'nursing_io',
+    label: 'Nursing I/O',
+    category: 'nursing',
+    estimatedSteps: 2,
+    sections: [
+      { section: 'I/O Chart', type: 'observation', observation_type: 'fluid_balance', required: true },
+      { section: 'Nurse Notes', type: 'text', required: false },
+    ],
+  },
+  {
+    value: 'nursing_meds',
+    label: 'Nursing Meds',
+    category: 'nursing',
+    estimatedSteps: 2,
+    sections: [
+      { section: 'Medication Given', type: 'medication_administration', required: true },
+      { section: 'Nurse Notes', type: 'text', required: false },
+    ],
+  },
+];
+
+const STEPS = [
+  { id: 1, name: 'Basics', icon: FileText },
+  { id: 2, name: 'Access', icon: Lock },
+  { id: 3, name: 'Structure', icon: ListOrdered },
+  { id: 4, name: 'Review', icon: Eye },
+];
+
+const toSectionDraft = (section = {}) => ({
+  section: section.name || section.section || '',
+  type: section.type || 'text',
+  required: section.required ?? false,
+  observation_type: section.observationType || section.observation_type || '',
+  default_text: section.default_text || section.defaultText || '',
+});
+
+const getInitialStructure = (initialTemplate) => {
+  if (!initialTemplate?.structure) {
+    return [];
+  }
+
+  if (Array.isArray(initialTemplate.structure)) {
+    return initialTemplate.structure.map((section) => toSectionDraft(section));
+  }
+
+  if (Array.isArray(initialTemplate.structure.sections)) {
+    return initialTemplate.structure.sections.map((section) => toSectionDraft(section));
+  }
+
+  return [];
+};
+
+const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
+  const [currentStep, setCurrentStep] = useState(1);
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    setValue,
+    watch,
+    trigger,
+    getValues,
+    formState: { errors, isDirty },
+  } = useForm({
     defaultValues: {
       title: initialTemplate?.title || '',
       description: initialTemplate?.description || '',
@@ -91,478 +198,776 @@ const TemplateBuilder = ({ onSuccess, initialTemplate = null }) => {
       category: initialTemplate?.category || 'custom',
       icon: initialTemplate?.icon || 'file-text',
       estimated_steps: initialTemplate?.estimated_steps || 3,
-      structure: getInitialStructure()
-    }
+      template_mode: initialTemplate?.latest_published_revision_mode || 'structured',
+      structure: getInitialStructure(initialTemplate),
+    },
   });
 
-  const visibility = watch('visibility');
-
-  const { fields, append, remove, move } = useFieldArray({
+  const { fields, append, remove, move, replace } = useFieldArray({
     control,
-    name: 'structure'
+    name: 'structure',
   });
 
   const createNoteTemplate = useCreateNoteTemplate();
   const updateNoteTemplate = useUpdateNoteTemplate();
+  const isSaving = initialTemplate ? updateNoteTemplate.isPending : createNoteTemplate.isPending;
 
-  // Add a new section to the template
-  const addSection = () => {
-    append({ 
-      section: '', 
-      type: 'text'
-    });
-  };
+  const visibility = watch('visibility');
+  const watchedStructure = watch('structure') || [];
+  const category = watch('category');
 
-  // Remove a section from the template
-  const removeSection = (index) => {
-    remove(index);
-  };
+  const categoryLabel = useMemo(() => {
+    return CATEGORY_OPTIONS.find((option) => option.value === category)?.label || 'Custom';
+  }, [category]);
 
-  // Move a section up in the template
-  const moveUp = (index) => {
-    if (index > 0) {
-      move(index, index - 1);
+  const validateStep = async (step) => {
+    if (step === 1) {
+      const isBasicValid = await trigger(['title', 'estimated_steps']);
+      if (!isBasicValid) {
+        toast.error('Complete required basic fields before continuing.');
+        return false;
+      }
+
+      const title = getValues('title')?.trim();
+      if (!title) {
+        toast.error('Template title is required.');
+        return false;
+      }
+
+      return true;
     }
-  };
 
-  // Move a section down in the template
-  const moveDown = (index) => {
-    if (index < fields.length - 1) {
-      move(index, index + 1);
+    if (step === 2) {
+      if (getValues('visibility') === 'department') {
+        const hasDepartment = await trigger('department');
+        if (!hasDepartment) {
+          toast.error('Department is required for department visibility.');
+          return false;
+        }
+      }
+
+      return true;
     }
+
+    if (step === 3) {
+      const structure = getValues('structure') || [];
+
+      if (!structure.length) {
+        toast.error('Add at least one section to the template.');
+        return false;
+      }
+
+      if (structure.some((section) => !section.section?.trim())) {
+        toast.error('Every section must have a name.');
+        return false;
+      }
+
+      if (structure.some((section) => section.type === 'observation' && !section.observation_type)) {
+        toast.error('Observation sections must include an observation type.');
+        return false;
+      }
+
+      return true;
+    }
+
+    return true;
   };
 
-  // Handle form submission
-  const onSubmit = async (data) => {
-    try {
-      // Validate that all sections have names
-      const invalidSections = data.structure.filter(section => !section.section?.trim());
-      if (invalidSections.length > 0) {
-        toast.error('All sections must have a name');
+  const goToStep = async (targetStep) => {
+    if (targetStep > currentStep) {
+      const isCurrentStepValid = await validateStep(currentStep);
+      if (!isCurrentStepValid) {
         return;
       }
+    }
 
-      // Convert form structure to the new format with sections array
-      const formattedData = {
-        ...data,
-        structure: {
-          sections: data.structure.map(section => ({
-            name: section.section,
-            type: section.type || 'text',
-            required: section.required ?? false,
-            ...(section.observation_type && { observationType: section.observation_type }),
-          }))
-        }
-      };
+    setCurrentStep(targetStep);
+  };
 
-      if (initialTemplate) {
-        // Update existing template
-        await updateNoteTemplate.mutateAsync({
-          id: initialTemplate.id,
-          data: formattedData
-        });
-
-        // Show success message
-        toast.success('Template updated successfully');
-      } else {
-        // Create new template
-        await createNoteTemplate.mutateAsync(formattedData);
-
-        // Show success message
-        toast.success('Template created successfully');
-      }
-
-      // Call onSuccess callback if provided
-      if (onSuccess) {
-        onSuccess();
-      }
-    } catch (error) {
-      toast.error(initialTemplate ? 'Failed to update template' : 'Failed to create template');
-      console.error('Error with template:', error);
+  const nextStep = () => {
+    if (currentStep < STEPS.length) {
+      void goToStep(currentStep + 1);
     }
   };
 
-  // Add predefined template structure
-  const addPredefinedTemplate = (templateType) => {
-    let templateStructure = [];
+  const previousStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep((prev) => prev - 1);
+    }
+  };
 
-    if (templateType === 'soap') {
-      templateStructure = [
-        { section: 'Subjective', type: 'text' },
-        { section: 'Objective', type: 'observation', observation_type: 'vitals' },
-        { section: 'Assessment', type: 'condition' },
-        { section: 'Plan', type: 'text' }
-      ];
-    } else if (templateType === 'hpi') {
-      templateStructure = [
-        { section: 'Presenting Complaint(s)', type: 'text' },
-        { section: 'History of Presenting Complaints (HPC)', type: 'text' },
-        { section: 'Review of Systems - CVS', type: 'text' },
-        { section: 'Review of Systems - Respiratory', type: 'text' },
-        { section: 'Review of Systems - Gastro', type: 'text' },
-        { section: 'Review of Systems - Genitourinary', type: 'text' },
-        { section: 'Review of Systems - MSK', type: 'text' },
-        { section: 'Review of Systems - Neuro', type: 'text' },
-        { section: 'Past Medical History', type: 'text' },
-        { section: 'Drug History', type: 'text' },
-        { section: 'Drug and Food Allergies', type: 'observation', observation_type: 'allergy' },
-        { section: 'Family History', type: 'text' },
-        { section: 'Social History', type: 'text' },
-        { section: 'Physical Examination - General', type: 'text' },
-        { section: 'Physical Examination - CVS', type: 'text' },
-        { section: 'Physical Examination - Respiratory', type: 'text' },
-        { section: 'Physical Examination - Gastrointestinal', type: 'text' },
-        { section: 'Physical Examination - Neurological', type: 'text' },
-        { section: 'Plan - Investigations', type: 'text' },
-        { section: 'Plan - Management', type: 'text' }
-      ];
-    } else if (templateType === 'nursing_vitals') {
-      templateStructure = [
-        { section: 'Vitals', type: 'observation', observation_type: 'vitals' },
-        { section: 'Notes', type: 'text' }
-      ];
-    } else if (templateType === 'nursing_io') {
-      templateStructure = [
-        { section: 'I/O Chart', type: 'observation', observation_type: 'fluid_balance' },
-        { section: 'Notes', type: 'text' }
-      ];
-    } else if (templateType === 'nursing_meds') {
-      templateStructure = [
-        { section: 'Medication Given', type: 'medication_administration' },
-        { section: 'Notes', type: 'text' }
-      ];
-    } else if (templateType === 'nursing_note') {
-      templateStructure = [
-        { section: 'Nurse Note', type: 'text' }
-      ];
+  const addSection = () => {
+    append({ section: '', type: 'text', required: false, observation_type: '', default_text: '' });
+  };
+
+  const applyQuickStart = (quickStartValue) => {
+    const template = QUICK_STARTS.find((item) => item.value === quickStartValue);
+    if (!template) {
+      return;
     }
 
-    // Clear existing structure and add the predefined template
-    setValue('structure', templateStructure);
+    replace(template.sections);
+    setValue('category', template.category, { shouldDirty: true });
+    setValue('estimated_steps', template.estimatedSteps, { shouldDirty: true });
+    toast.success(`${template.label} structure applied.`);
+  };
+
+  const onSubmit = async (data) => {
+    const isReadyToSave =
+      (await validateStep(1)) &&
+      (await validateStep(2)) &&
+      (await validateStep(3));
+
+    if (!isReadyToSave) {
+      return;
+    }
+
+    const formattedData = {
+      ...data,
+      title: data.title.trim(),
+      department: data.visibility === 'department' ? (data.department || '').trim() : '',
+      template_mode: data.template_mode || 'structured',
+      structure: {
+        sections: data.structure.map((section) => ({
+          name: section.section.trim(),
+          type: section.type || 'text',
+          required: section.required ?? false,
+          ...(section.default_text?.trim()
+            ? { default_text: section.default_text.trim() }
+            : {}),
+          ...(section.type === 'observation' && section.observation_type
+            ? { observationType: section.observation_type }
+            : {}),
+        })),
+      },
+    };
+
+    try {
+      if (initialTemplate) {
+        await updateNoteTemplate.mutateAsync({
+          id: initialTemplate.id,
+          data: formattedData,
+        });
+      } else {
+        await createNoteTemplate.mutateAsync(formattedData);
+      }
+
+      onSuccess?.();
+    } catch (error) {
+      toast.error(initialTemplate ? 'Failed to update template.' : 'Failed to create template.');
+      console.error('Error saving note template:', error);
+    }
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>{initialTemplate ? 'Edit Template' : 'Create Template'}</CardTitle>
-      </CardHeader>
+    <div className="border border-border rounded-2xl bg-card overflow-hidden">
+      <div className="px-4 sm:px-6 py-4 border-b border-border bg-muted/30">
+        <div className="flex items-center justify-center gap-1 sm:gap-2">
+          {STEPS.map((step, index) => {
+            const StepIcon = step.icon;
+            const isActive = currentStep === step.id;
+            const isCompleted = currentStep > step.id;
+            const isConnectorCompleted = currentStep >= step.id;
+
+            return (
+              <div key={step.id} className="flex items-center">
+                {index > 0 ? (
+                  <div
+                    className={cn(
+                      'h-px w-6 sm:w-10 mx-1 sm:mx-2',
+                      isConnectorCompleted ? 'bg-amber-500' : 'bg-border',
+                    )}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void goToStep(step.id);
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg transition-all',
+                    isActive ? 'bg-amber-100 dark:bg-amber-900/30' : 'hover:bg-muted',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-mono',
+                      isCompleted || isActive
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {isCompleted ? <Check className="h-3.5 w-3.5" /> : step.id}
+                  </span>
+                  <span
+                    className={cn(
+                      'hidden sm:inline font-mono text-xs',
+                      isActive ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {step.name}
+                  </span>
+                  <StepIcon className="sm:hidden h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="title">Template Title</Label>
-            <Input
-              id="title"
-              {...register('title', { required: true })}
-              placeholder="e.g., SOAP Note, Nursing Note"
-            />
-            {errors.title && (
-              <p className="text-red-500 text-sm">Title is required</p>
-            )}
-          </div>
+        <div className="p-4 sm:p-6 space-y-6 min-h-[420px]">
+          {currentStep === 1 ? (
+            <section className="space-y-5 animate-chronicle-enter">
+              <div>
+                <h2 className="font-display text-xl text-foreground">Template Basics</h2>
+                <p className="font-mono text-xs text-muted-foreground mt-1">
+                  Define identity and workflow intent for this note template.
+                </p>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              {...register('description')}
-              placeholder="Describe the purpose of this template"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="title" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Template Title *
+                </Label>
+                <Input
+                  id="title"
+                  {...register('title', { required: true })}
+                  placeholder="e.g., SOAP Note, Nursing Shift Note"
+                  className="font-mono"
+                />
+                {errors.title ? <p className="text-xs text-rose-600">Template title is required.</p> : null}
+              </div>
 
-          {/* Visibility and Category Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Visibility</Label>
-              <Select
-                defaultValue={watch('visibility')}
-                onValueChange={(value) => setValue('visibility', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select visibility" />
-                </SelectTrigger>
-                <SelectContent>
-                  {VISIBILITY_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    return (
-                      <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-center gap-2">
-                          <Icon className="h-4 w-4" />
-                          <span>{option.label}</span>
+              <div className="space-y-2">
+                <Label htmlFor="description" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Description
+                </Label>
+                <Textarea
+                  id="description"
+                  {...register('description')}
+                  placeholder="Describe when this template should be used."
+                  rows={3}
+                  className="font-mono text-sm resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Category
+                  </Label>
+                  <Select
+                    value={watch('category')}
+                    onValueChange={(value) => setValue('category', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger className="font-mono">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CATEGORY_OPTIONS.map((option) => {
+                        const Icon = option.icon;
+                        return (
+                          <SelectItem key={option.value} value={option.value} className="font-mono">
+                            <div className="flex items-center gap-2">
+                              <Icon className="h-4 w-4" />
+                              <span>{option.label}</span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Icon
+                  </Label>
+                  <Select
+                    value={watch('icon')}
+                    onValueChange={(value) => setValue('icon', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger className="font-mono">
+                      <SelectValue placeholder="Select icon" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ICON_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="font-mono">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Template Mode
+                  </Label>
+                  <Select
+                    value={watch('template_mode')}
+                    onValueChange={(value) => setValue('template_mode', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger className="font-mono">
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TEMPLATE_MODE_OPTIONS.map((modeOption) => (
+                        <SelectItem key={modeOption.value} value={modeOption.value} className="font-mono">
+                          {modeOption.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-w-sm">
+                <Label htmlFor="estimated_steps" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Estimated Steps
+                </Label>
+                <Input
+                  id="estimated_steps"
+                  type="number"
+                  min="1"
+                  max="10"
+                  className="font-mono"
+                  {...register('estimated_steps', {
+                    valueAsNumber: true,
+                    required: true,
+                    min: 1,
+                    max: 10,
+                  })}
+                />
+                {errors.estimated_steps ? (
+                  <p className="text-xs text-rose-600">Estimated steps must be between 1 and 10.</p>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {currentStep === 2 ? (
+            <section className="space-y-5 animate-chronicle-enter">
+              <div>
+                <h2 className="font-display text-xl text-foreground">Visibility & Status</h2>
+                <p className="font-mono text-xs text-muted-foreground mt-1">
+                  Control who can discover and apply this template.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {VISIBILITY_OPTIONS.map((option) => {
+                  const Icon = option.icon;
+                  const isSelected = visibility === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setValue('visibility', option.value, { shouldDirty: true })}
+                      className={cn(
+                        'p-4 rounded-xl border text-left transition-all',
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                          : 'border-border hover:border-primary/30',
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={cn(
+                            'mt-0.5 p-1.5 rounded-md',
+                            isSelected ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <div>
+                          <p className="font-mono text-sm text-foreground">{option.label}</p>
+                          <p className="font-mono text-[11px] text-muted-foreground mt-1">{option.description}</p>
                         </div>
-                      </SelectItem>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {visibility === 'department' ? (
+                <div className="space-y-2 max-w-md">
+                  <Label htmlFor="department" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Department *
+                  </Label>
+                  <Input
+                    id="department"
+                    {...register('department', {
+                      validate: (value) => {
+                        if (watch('visibility') !== 'department') {
+                          return true;
+                        }
+                        return Boolean(value?.trim());
+                      },
+                    })}
+                    placeholder="e.g., Cardiology, Emergency, Nursing"
+                    className="font-mono"
+                  />
+                  {errors.department ? (
+                    <p className="text-xs text-rose-600">Department is required for department visibility.</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card/50">
+                <div>
+                  <p className="font-mono text-sm text-foreground">Active Template</p>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">
+                    Inactive templates are hidden from routine template selection.
+                  </p>
+                </div>
+                <Switch
+                  id="is_active"
+                  checked={Boolean(watch('is_active'))}
+                  onCheckedChange={(checked) => setValue('is_active', checked, { shouldDirty: true })}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {currentStep === 3 ? (
+            <section className="space-y-5 animate-chronicle-enter">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-display text-xl text-foreground">Template Structure</h2>
+                  <p className="font-mono text-xs text-muted-foreground mt-1">
+                    Build the section flow clinicians will complete at bedside.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+                  onClick={addSection}
+                >
+                  <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                  Add Section
+                </Button>
+              </div>
+
+              <div className="rounded-xl border border-border p-4 bg-muted/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="h-4 w-4 text-amber-600" />
+                  <p className="font-mono text-xs text-foreground">Quick Start</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_STARTS.map((template) => (
+                    <Button
+                      key={template.value}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-[11px]"
+                      onClick={() => applyQuickStart(template.value)}
+                    >
+                      {template.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {fields.length === 0 ? (
+                <div className="text-center py-12 rounded-xl border border-dashed border-border">
+                  <ListOrdered className="h-10 w-10 mx-auto text-muted-foreground opacity-60" />
+                  <p className="font-mono text-sm text-muted-foreground mt-3">No sections added yet.</p>
+                  <p className="font-mono text-[11px] text-muted-foreground mt-1">
+                    Add a section or apply a quick start template.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {fields.map((field, index) => {
+                    const currentType = watch(`structure.${index}.type`) || 'text';
+                    const isObservation = currentType === 'observation';
+
+                    return (
+                      <div key={field.id} className="relative rounded-xl border border-border bg-card/60 p-4 sm:p-5">
+                        <div className="absolute top-3 right-3 flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => move(index, Math.max(index - 1, 0))}
+                            disabled={index === 0}
+                          >
+                            <MoveUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => move(index, Math.min(index + 1, fields.length - 1))}
+                            disabled={index === fields.length - 1}
+                          >
+                            <MoveDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-rose-500 hover:text-rose-600"
+                            onClick={() => remove(index)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label
+                              htmlFor={`structure.${index}.section`}
+                              className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                            >
+                              Section Name *
+                            </Label>
+                            <Input
+                              id={`structure.${index}.section`}
+                              {...register(`structure.${index}.section`, { required: true })}
+                              placeholder="e.g., Chief Complaint, Examination"
+                              className="font-mono"
+                            />
+                            {errors.structure?.[index]?.section ? (
+                              <p className="text-xs text-rose-600">Section name is required.</p>
+                            ) : null}
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                              Section Type
+                            </Label>
+                            <Select
+                              value={currentType}
+                              onValueChange={(value) => {
+                                setValue(`structure.${index}.type`, value, { shouldDirty: true });
+                                if (value !== 'observation') {
+                                  setValue(`structure.${index}.observation_type`, '', { shouldDirty: true });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="font-mono">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SECTION_TYPES.map((typeOption) => (
+                                  <SelectItem key={typeOption.value} value={typeOption.value} className="font-mono">
+                                    {typeOption.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {isObservation ? (
+                            <div className="space-y-2 md:col-span-2">
+                              <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                                Observation Type
+                              </Label>
+                              <Select
+                                value={watch(`structure.${index}.observation_type`) || undefined}
+                                onValueChange={(value) =>
+                                  setValue(`structure.${index}.observation_type`, value, { shouldDirty: true })
+                                }
+                              >
+                                <SelectTrigger className="font-mono">
+                                  <SelectValue placeholder="Select observation type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {OBSERVATION_TYPES.map((observationOption) => (
+                                    <SelectItem
+                                      key={observationOption.value}
+                                      value={observationOption.value}
+                                      className="font-mono"
+                                    >
+                                      {observationOption.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ) : null}
+
+                          <div className="space-y-2 md:col-span-2">
+                            <Label
+                              htmlFor={`structure.${index}.default_text`}
+                              className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                            >
+                              Starter Text
+                            </Label>
+                            <Textarea
+                              id={`structure.${index}.default_text`}
+                              {...register(`structure.${index}.default_text`)}
+                              rows={3}
+                              placeholder="Optional default wording. Supports placeholders like {{patient_name}}, {{age}}, {{today}}."
+                              className="font-mono text-xs resize-none"
+                            />
+                          </div>
+
+                          <div className="md:col-span-2 flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3">
+                            <div>
+                              <p className="font-mono text-xs text-foreground">Required Section</p>
+                              <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+                                Clinicians must complete this section before signing.
+                              </p>
+                            </div>
+                            <Switch
+                              checked={Boolean(watch(`structure.${index}.required`))}
+                              onCheckedChange={(checked) =>
+                                setValue(`structure.${index}.required`, checked, { shouldDirty: true })
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {VISIBILITY_OPTIONS.find(o => o.value === visibility)?.description}
-              </p>
-            </div>
+                </div>
+              )}
+            </section>
+          ) : null}
 
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select
-                defaultValue={watch('category')}
-                onValueChange={(value) => setValue('category', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORY_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    return (
-                      <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-center gap-2">
-                          <Icon className="h-4 w-4" />
-                          <span>{option.label}</span>
+          {currentStep === 4 ? (
+            <section className="space-y-5 animate-chronicle-enter">
+              <div>
+                <h2 className="font-display text-xl text-foreground">Review Template</h2>
+                <p className="font-mono text-xs text-muted-foreground mt-1">
+                  Final check before saving this chronicle workflow.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-border bg-card/60 p-4">
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Title</p>
+                  <p className="font-display text-lg text-foreground mt-1">{watch('title') || 'Untitled Template'}</p>
+                  <p className="font-mono text-xs text-muted-foreground mt-2">Category: {categoryLabel}</p>
+                </div>
+
+                <div className="rounded-xl border border-border bg-card/60 p-4">
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Access</p>
+                  <p className="font-mono text-sm text-foreground mt-1">{visibility || 'private'}</p>
+                  <p className="font-mono text-xs text-muted-foreground mt-2">
+                    {watch('is_active') ? 'Active and selectable' : 'Inactive after save'}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground mt-2">
+                    Mode: {watch('template_mode') || 'structured'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+                  <div>
+                    <p className="font-mono text-xs text-foreground">Sections</p>
+                    <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                      {watchedStructure.length} section{watchedStructure.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[10px] font-mono">
+                    <CircleDot className="h-3 w-3" />
+                    {watch('estimated_steps') || 0} steps
+                  </span>
+                </div>
+
+                <div className="p-3 sm:p-4 space-y-2">
+                  {watchedStructure.length === 0 ? (
+                    <p className="font-mono text-xs text-muted-foreground">No sections configured.</p>
+                  ) : (
+                    watchedStructure.map((section, index) => (
+                      <div
+                        key={`${section.section || 'section'}-${index}`}
+                        className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-3"
+                      >
+                        <div>
+                          <p className="font-mono text-sm text-foreground">
+                            {section.section || `Section ${index + 1}`}
+                          </p>
+                          <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
+                            {section.type}
+                            {section.type === 'observation' && section.observation_type
+                              ? ` · ${section.observation_type}`
+                              : ''}
+                          </p>
                         </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+                        <div className="flex items-center gap-2">
+                          {section.default_text?.trim() ? (
+                            <span className="font-mono text-[10px] text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
+                              Starter text
+                            </span>
+                          ) : null}
+                          {section.required ? (
+                            <span className="font-mono text-[10px] text-rose-600 bg-rose-500/10 px-2 py-1 rounded">
+                              Required
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </div>
 
-          {/* Department field (only shown when visibility is 'department') */}
-          {visibility === 'department' && (
-            <div className="space-y-2">
-              <Label htmlFor="department">Department</Label>
-              <Input
-                id="department"
-                {...register('department', { required: visibility === 'department' })}
-                placeholder="e.g., Cardiology, Emergency, Nursing"
-              />
-              {errors.department && (
-                <p className="text-red-500 text-sm">Department is required for department-level sharing</p>
+        <div className="px-4 sm:px-6 py-4 border-t border-border bg-card">
+          <div className="flex items-center justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={previousStep}
+              disabled={currentStep === 1}
+              className="font-mono text-xs"
+            >
+              <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              Previous
+            </Button>
+
+            <div className="flex items-center gap-2">
+              {isDirty ? <span className="font-mono text-[10px] text-muted-foreground hidden sm:inline">Unsaved changes</span> : null}
+              {currentStep < STEPS.length ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+                  onClick={nextStep}
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSaving}
+                  className="font-mono text-xs bg-amber-600 hover:bg-amber-700"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5 mr-1.5" />
+                      {initialTemplate ? 'Update Template' : 'Create Template'}
+                    </>
+                  )}
+                </Button>
               )}
             </div>
-          )}
-
-          {/* Icon and Steps Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Icon</Label>
-              <Select
-                defaultValue={watch('icon')}
-                onValueChange={(value) => setValue('icon', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select icon" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ICON_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="estimated_steps">Estimated Steps</Label>
-              <Input
-                id="estimated_steps"
-                type="number"
-                min="1"
-                max="10"
-                {...register('estimated_steps', { valueAsNumber: true, min: 1, max: 10 })}
-              />
-            </div>
-
-            <div className="flex items-center space-x-2 pt-8">
-              <Switch
-                id="is_active"
-                checked={watch('is_active')}
-                onCheckedChange={(checked) => setValue('is_active', checked)}
-              />
-              <Label htmlFor="is_active">Active</Label>
-            </div>
           </div>
-
-          <Separator />
-
-          {/* Predefined Templates */}
-          <div className="space-y-2">
-            <Label>Quick Start Templates</Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              Click to pre-fill the structure with a common template format
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addPredefinedTemplate('soap')}
-              >
-                SOAP
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addPredefinedTemplate('hpi')}
-              >
-                HPI
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addPredefinedTemplate('nursing_vitals')}
-              >
-                Nursing Vitals
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addPredefinedTemplate('nursing_io')}
-              >
-                Nursing I/O
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addPredefinedTemplate('nursing_meds')}
-              >
-                Nursing Meds
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addPredefinedTemplate('nursing_note')}
-              >
-                Nursing Note
-              </Button>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>Template Structure</Label>
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="sm"
-                onClick={addSection}
-              >
-                <PlusCircle className="h-4 w-4 mr-2" />
-                Add Section
-              </Button>
-            </div>
-
-            {fields.length === 0 && (
-              <p className="text-muted-foreground text-center py-4">
-                No sections added yet. Add sections to build your template.
-              </p>
-            )}
-
-            {fields.map((field, index) => (
-              <Card key={field.id} className="relative">
-                <CardContent className="pt-6 pb-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor={`structure.${index}.section`}>Section Name</Label>
-                      <Input
-                        id={`structure.${index}.section`}
-                        {...register(`structure.${index}.section`, { required: true })}
-                        placeholder="e.g., Chief Complaint, Vitals"
-                      />
-                      {errors.structure?.[index]?.section && (
-                        <p className="text-red-500 text-sm">Section name is required</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor={`structure.${index}.type`}>Section Type</Label>
-                      <Select
-                        defaultValue={field.type}
-                        onValueChange={(value) => setValue(`structure.${index}.type`, value)}
-                      >
-                        <SelectTrigger id={`structure.${index}.type`}>
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text">Text</SelectItem>
-                          <SelectItem value="observation">Observation</SelectItem>
-                          <SelectItem value="condition">Condition</SelectItem>
-                          <SelectItem value="medication_administration">Medication Administration</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {watch(`structure.${index}.type`) === 'observation' && (
-                      <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor={`structure.${index}.observation_type`}>Observation Type</Label>
-                        <Select
-                          defaultValue={field.observation_type}
-                          onValueChange={(value) => setValue(`structure.${index}.observation_type`, value)}
-                        >
-                          <SelectTrigger id={`structure.${index}.observation_type`}>
-                            <SelectValue placeholder="Select observation type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="vitals">Vitals</SelectItem>
-                            <SelectItem value="subjective_symptoms">Subjective Symptoms</SelectItem>
-                            <SelectItem value="allergy">Allergy</SelectItem>
-                            <SelectItem value="fluid_balance">Fluid Balance</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="absolute top-2 right-2 flex space-x-1">
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => moveUp(index)}
-                      disabled={index === 0}
-                    >
-                      <MoveUp className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => moveDown(index)}
-                      disabled={index === fields.length - 1}
-                    >
-                      <MoveDown className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => removeSection(index)}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button 
-            type="submit" 
-            disabled={(initialTemplate ? updateNoteTemplate.isPending : createNoteTemplate.isPending) || fields.length === 0}
-            className="w-full md:w-auto"
-          >
-            {(initialTemplate ? updateNoteTemplate.isPending : createNoteTemplate.isPending) ? 'Saving...' : 'Save Template'}
-          </Button>
-        </CardFooter>
+        </div>
       </form>
-    </Card>
+    </div>
   );
 };
 

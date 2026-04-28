@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { drugSafetyApi } from '@/shared/api/drugSafety';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -51,12 +52,12 @@ export function useDrugSearch(query, options = {}) {
  * @returns {Object} Query result with forms array
  */
 export function useDrugForms(rxcui, options = {}) {
+  const { enabled = true, ...queryOptions } = options;
   return useQuery({
     queryKey: drugSafetyKeys.drugForms(rxcui),
     queryFn: () => drugSafetyApi.getDrugForms(rxcui),
-    enabled: !!rxcui,
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours - drug forms don't change often
-    ...options,
+    enabled: !!rxcui && enabled,
+    ...immutableMetadataQueryOptions(queryOptions),
   });
 }
 
@@ -86,7 +87,7 @@ export function usePatientAllergies(patientId, options = {}) {
 export function useAllergies(filters = {}) {
   return useQuery({
     queryKey: drugSafetyKeys.allergiesList(filters),
-    queryFn: () => drugSafetyApi.getAllergies(filters),
+    queryFn: ({ signal }) => drugSafetyApi.getAllergies(filters, { signal }),
   });
 }
 
@@ -256,7 +257,7 @@ export function useDeactivateAllergy() {
 export function useAlerts(filters = {}) {
   return useQuery({
     queryKey: drugSafetyKeys.alertsList(filters),
-    queryFn: () => drugSafetyApi.getAlerts(filters),
+    queryFn: ({ signal }) => drugSafetyApi.getAlerts(filters, { signal }),
   });
 }
 

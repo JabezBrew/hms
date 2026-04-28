@@ -1,18 +1,33 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from .models import Staff, PractitionerProfile, PatientProfile, PractitionerFHIRMapping, UserPatientList, UserSession
-from apps.core.security import get_user_facility
+from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility
+from .identifiers import generate_unique_employee_id
 from .tasks import create_practitioner_in_fhir
+from .unit_assignment import auto_assign_staff_to_department_unit
 import random
 import string
-import datetime
 import logging
 
 User = get_user_model()
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+def _apply_admin_flags(user: User) -> None:
+    """
+    Keep Django admin flags consistent with our RBAC user_type.
+
+    Admin users should always be staff so permissions that rely on is_staff work.
+    We intentionally do not auto-escalate is_superuser here.
+    """
+    if not user:
+        return
+    if getattr(user, 'user_type', None) == 'admin' and not getattr(user, 'is_staff', False):
+        user.is_staff = True
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -22,10 +37,11 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
-                  'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined']
+                  'date_of_birth', 'gender', 'user_type', 'is_active',
+                  'must_change_password', 'date_joined']
         # SECURITY: user_type and is_active are read-only to prevent privilege escalation
         # Only admins can modify these fields via admin-specific endpoints
-        read_only_fields = ['id', 'date_joined', 'user_type', 'is_active']
+        read_only_fields = ['id', 'date_joined', 'user_type', 'is_active', 'must_change_password']
 
 
 class UserWithAccessContextSerializer(serializers.ModelSerializer):
@@ -41,8 +57,9 @@ class UserWithAccessContextSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
                   'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined',
+                  'must_change_password',
                   'is_offsite', 'offsite_mode', 'readonly_message']
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['id', 'date_joined', 'must_change_password']
 
     def get_is_offsite(self, obj):
         """Return whether the user is accessing from off-site."""
@@ -98,6 +115,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
             date_of_birth=validated_data.get('date_of_birth', None),
             user_type=validated_data.get('user_type', 'patient')
         )
+        _apply_admin_flags(user)
+        if user.user_type == 'admin':
+            user.save(update_fields=['is_staff'])
         return user
 
 
@@ -177,12 +197,12 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         # Second, check for legacy prefetched admissions cache
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             return next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
 
         # Fallback to DB query if not prefetched
-        return obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
     def get_current_ward(self, obj):
         """
@@ -243,6 +263,152 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         return None
 
 
+class PatientDemographicsSerializer(serializers.ModelSerializer):
+    """
+    Demographics-only patient payload for administrative workflows.
+    Excludes clinical fields such as allergies, blood group, and FHIR IDs.
+    """
+    user_details = serializers.SerializerMethodField()
+    address_line1 = serializers.SerializerMethodField()
+    address_line2 = serializers.SerializerMethodField()
+    city = serializers.SerializerMethodField()
+    state = serializers.SerializerMethodField()
+    postal_code = serializers.SerializerMethodField()
+    country = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'id',
+            'user',
+            'user_details',
+            'patient_identity_id',
+            'medical_record_number',
+            'nhis_id',
+            'emergency_contact_name',
+            'emergency_contact_phone',
+            'emergency_contact_relationship',
+            'address_line1',
+            'address_line2',
+            'city',
+            'state',
+            'postal_code',
+            'country',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_user_details(self, obj):
+        if not obj.user:
+            return None
+        return {
+            'id': str(obj.user.id),
+            'first_name': obj.user.first_name,
+            'last_name': obj.user.last_name,
+            'email': obj.user.email,
+            'phone_number': obj.user.phone_number,
+            'date_of_birth': obj.user.date_of_birth.isoformat() if obj.user.date_of_birth else None,
+            'gender': obj.user.gender,
+        }
+
+    def get_address_line1(self, obj):
+        return ''
+
+    def get_address_line2(self, obj):
+        return ''
+
+    def get_city(self, obj):
+        return ''
+
+    def get_state(self, obj):
+        return ''
+
+    def get_postal_code(self, obj):
+        return ''
+
+    def get_country(self, obj):
+        return ''
+
+
+class PatientDemographicsUpdateSerializer(serializers.ModelSerializer):
+    """
+    Update serializer for non-clinical demographic workflows.
+    """
+    user = serializers.DictField(required=False, write_only=True)
+    address_line1 = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    address_line2 = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    city = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    state = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    postal_code = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    country = serializers.CharField(required=False, allow_blank=True, write_only=True)
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'user',
+            'nhis_id',
+            'emergency_contact_name',
+            'emergency_contact_phone',
+            'emergency_contact_relationship',
+            'address_line1',
+            'address_line2',
+            'city',
+            'state',
+            'postal_code',
+            'country',
+        ]
+        extra_kwargs = {
+            'nhis_id': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'emergency_contact_name': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'emergency_contact_phone': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'emergency_contact_relationship': {'required': False, 'allow_blank': True, 'allow_null': True},
+        }
+
+    def validate_user(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected an object.")
+        allowed = {'first_name', 'last_name', 'email', 'phone_number', 'date_of_birth'}
+        unknown = set(value) - allowed
+        if unknown:
+            raise serializers.ValidationError(f"Unsupported user field(s): {', '.join(sorted(unknown))}.")
+        email = value.get('email')
+        if email:
+            current_user = self.instance.user if self.instance else None
+            qs = User.objects.filter(email=str(email).lower())
+            if current_user:
+                qs = qs.exclude(id=current_user.id)
+            if qs.exists():
+                raise serializers.ValidationError({"email": "This email is already in use."})
+        return value
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', None) or {}
+        for field in ['address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country']:
+            validated_data.pop(field, None)
+
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+
+        if user_data and instance.user:
+            user = instance.user
+            user_update_fields = []
+            for field in ['first_name', 'last_name', 'email', 'phone_number', 'date_of_birth']:
+                if field in user_data:
+                    value = user_data[field]
+                    if field == 'email' and value:
+                        value = str(value).lower()
+                    if field == 'date_of_birth' and isinstance(value, str):
+                        value = parse_date(value)
+                    setattr(user, field, value)
+                    user_update_fields.append(field)
+            if user_update_fields:
+                user.save(update_fields=user_update_fields)
+
+        instance.save()
+        return instance
+
+
 class PatientSearchListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for patient search results.
@@ -251,22 +417,105 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
     gender = serializers.CharField(source='user.gender', read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
     current_ward = serializers.SerializerMethodField()
+    patient_location = serializers.SerializerMethodField()
+    active_clinic_names = serializers.SerializerMethodField()
+    admission_status = serializers.SerializerMethodField()
+    registry_status = serializers.SerializerMethodField()
     admission_date = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientProfile
-        fields = ['id', 'medical_record_number', 'name', 'date_of_birth',
-                  'gender', 'current_ward', 'admission_date']
+        fields = [
+            'id',
+            'medical_record_number',
+            'name',
+            'date_of_birth',
+            'gender',
+            'created_at',
+            'current_ward',
+            'patient_location',
+            'active_clinic_names',
+            'admission_status',
+            'registry_status',
+            'admission_date',
+        ]
 
     def get_name(self, obj):
         """Get full name directly from prefetched user."""
         return obj.user.get_full_name()
 
+    def _get_active_admission(self, obj):
+        if hasattr(obj, 'active_admissions_list'):
+            return obj.active_admissions_list[0] if obj.active_admissions_list else None
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            return next(
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
+                None
+            )
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).select_related('bed', 'bed__ward').first()
+
+    def _get_active_encounters(self, obj):
+        active_visit_statuses = {
+            'checked_in',
+            'waiting',
+            'called',
+            'in_progress',
+            'on_hold',
+            'ready_checkout',
+        }
+
+        def _matches_operational_active_state(encounter):
+            if encounter.encounter_type != 'outpatient':
+                return encounter.status in ['planned', 'in-progress']
+
+            if encounter.status == 'in-progress':
+                return encounter.start_time <= timezone.now()
+
+            if encounter.status != 'planned':
+                return False
+
+            try:
+                visit = encounter.outpatient_visit
+            except Exception:
+                return False
+
+            return visit.visit_status in active_visit_statuses
+
+        if hasattr(obj, 'active_encounters_list'):
+            return [e for e in obj.active_encounters_list if _matches_operational_active_state(e)]
+
+        if hasattr(obj, '_prefetched_objects_cache') and 'encounters' in obj._prefetched_objects_cache:
+            return [e for e in obj.encounters.all() if _matches_operational_active_state(e)]
+
+        from apps.encounters.models import Encounter
+        encounters = Encounter.objects.filter(
+            patient=obj,
+            status__in=['planned', 'in-progress'],
+        ).select_related('clinic', 'outpatient_visit').order_by('-start_time', '-id')
+        return [e for e in encounters if _matches_operational_active_state(e)]
+
+    def _get_active_clinic_names(self, obj):
+        names = []
+        seen = set()
+        for encounter in self._get_active_encounters(obj):
+            if encounter.encounter_type != 'outpatient':
+                continue
+            clinic_name = None
+            if getattr(encounter, 'clinic', None):
+                clinic_name = encounter.clinic.name
+            elif encounter.location:
+                clinic_name = encounter.location
+            if clinic_name and clinic_name not in seen:
+                seen.add(clinic_name)
+                names.append(clinic_name)
+        return names
+
     def get_current_ward(self, obj):
         """Get ward name from prefetched active_admissions_list."""
-        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
-            admission = obj.active_admissions_list[0]
+        admission = self._get_active_admission(obj)
+        if admission:
             if admission.status == 'waiting':
                 return "Waiting List"
             if admission.bed:
@@ -274,12 +523,89 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return "Admitted (No Bed)"
         return None
 
+    def get_patient_location(self, obj):
+        """
+        Unified location for registry:
+        active ward/waiting list first, then active outpatient clinic/location.
+        """
+        admission = self._get_active_admission(obj)
+        if admission:
+            if admission.status == 'waiting':
+                return "Waiting List"
+            if admission.bed:
+                return admission.bed.ward.name
+            return "Admitted (No Bed)"
+
+        clinic_names = self._get_active_clinic_names(obj)
+        if clinic_names:
+            return clinic_names[0]
+
+        for encounter in self._get_active_encounters(obj):
+            if encounter.location:
+                return encounter.location
+        return None
+
+    def get_active_clinic_names(self, obj):
+        return self._get_active_clinic_names(obj)
+
     def get_admission_date(self, obj):
         """Get admission date from prefetched active_admissions_list."""
-        if hasattr(obj, 'active_admissions_list') and obj.active_admissions_list:
-            admission = obj.active_admissions_list[0]
+        admission = self._get_active_admission(obj)
+        if admission:
             if admission.admission_date:
                 return admission.admission_date.isoformat()
+        return None
+
+    def get_admission_status(self, obj):
+        """Get status from prefetched active_admissions_list."""
+        admission = self._get_active_admission(obj)
+        if admission:
+            return admission.status
+        return None
+
+    def get_registry_status(self, obj):
+        """
+        Registry status precedence:
+        active admission > active encounter > latest terminal admission > latest completed outpatient.
+        """
+        admission = self._get_active_admission(obj)
+        if admission:
+            return admission.status
+
+        active_encounters = self._get_active_encounters(obj)
+        if active_encounters:
+            return active_encounters[0].status
+
+        has_terminal_annotation = hasattr(obj, 'latest_terminal_admission_status')
+        latest_terminal_admission_status = getattr(obj, 'latest_terminal_admission_status', None)
+        if latest_terminal_admission_status:
+            return latest_terminal_admission_status
+
+        has_completed_annotation = hasattr(obj, 'latest_completed_outpatient_status')
+        latest_completed_outpatient_status = getattr(obj, 'latest_completed_outpatient_status', None)
+        if latest_completed_outpatient_status:
+            return latest_completed_outpatient_status
+
+        # Avoid per-row fallback queries when list-query annotations are present.
+        if has_terminal_annotation or has_completed_annotation:
+            return None
+
+        # Fallback if annotation is unavailable.
+        latest_terminal_admission_status = obj.admissions.filter(
+            status__in=['discharged', 'transferred', 'deceased']
+        ).order_by('-admission_date').values_list('status', flat=True).first()
+        if latest_terminal_admission_status:
+            return latest_terminal_admission_status
+
+        from apps.encounters.models import Encounter
+        latest_completed_outpatient_status = Encounter.objects.filter(
+            patient=obj,
+            encounter_type='outpatient',
+            status__in=['finished', 'cancelled'],
+        ).order_by('-end_time', '-start_time', '-id').values_list('status', flat=True).first()
+        if latest_completed_outpatient_status:
+            return latest_completed_outpatient_status
+
         return None
 
 
@@ -316,29 +642,6 @@ class PractitionerFHIRMappingSerializer(serializers.ModelSerializer):
                   'fhir_resource_version', 'last_synced', 'is_synced',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'last_synced', 'created_at', 'updated_at', 'created_by', 'updated_by']
-
-
-def generate_unique_employee_id():
-    """
-    Generate a unique employee ID following a specific pattern.
-    Format: EMP-YYYY-NNNNN where YYYY is the current year and NNNNN is a random 5-digit number
-    """
-    year = datetime.datetime.now().year
-
-    # Try up to 100 times to generate a unique employee ID
-    for _ in range(100):
-        # Generate a random 5-digit number
-        random_digits = ''.join(random.choices(string.digits, k=5))
-
-        # Create the employee ID in the format EMP-YYYY-NNNNN
-        employee_id = f"EMP-{year}-{random_digits}"
-
-        # Check if this employee ID already exists
-        if not Staff.objects.filter(employee_id=employee_id).exists():
-            return employee_id
-
-    # If we couldn't generate a unique employee ID after 100 attempts, raise an exception
-    raise Exception("Unable to generate a unique employee ID after multiple attempts.")
 
 
 def generate_secure_password(length=12):
@@ -393,6 +696,7 @@ class StaffInviteSerializer(serializers.Serializer):
     date_of_birth = serializers.DateField(required=False, allow_null=True)
 
     department = serializers.CharField()
+    department_unit_id = serializers.UUIDField(required=False, allow_null=True)
     position = serializers.CharField()
     hire_date = serializers.DateField()
 
@@ -445,13 +749,15 @@ class StaffInviteSerializer(serializers.Serializer):
             user.date_of_birth = validated_data.get('date_of_birth', user.date_of_birth)
             user.user_type = user_type
             user.is_active = True
+            _apply_admin_flags(user)
             user.save(update_fields=[
-                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active'
+                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active', 'is_staff'
             ])
         else:
             # Ensure no known password exists for invited accounts.
             user.set_unusable_password()
-            user.save(update_fields=['password'])
+            _apply_admin_flags(user)
+            user.save(update_fields=['password', 'is_staff'])
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")
@@ -464,7 +770,7 @@ class StaffInviteSerializer(serializers.Serializer):
         staff, staff_created = Staff.objects.get_or_create(
             user=user,
             defaults={
-                'employee_id': generate_unique_employee_id(),
+                'employee_id': generate_unique_employee_id(facility),
                 'department': validated_data['department'],
                 'position': validated_data['position'],
                 'hire_date': validated_data['hire_date'],
@@ -497,6 +803,20 @@ class StaffInviteSerializer(serializers.Serializer):
                 }
             )
 
+        try:
+            auto_assign_staff_to_department_unit(
+                staff,
+                facility=facility,
+                department_name=validated_data.get('department'),
+                department_unit_id=validated_data.get('department_unit_id'),
+                assigned_by=actor if getattr(actor, 'is_authenticated', False) else None,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to auto-assign invited staff to department unit",
+                extra={'staff_id': str(staff.id)},
+            )
+
         # Expose creation context to the view without changing API response.
         staff._user_created = created
         staff._user_had_usable_password = had_usable_password
@@ -519,6 +839,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
 
     # Staff fields
     department = serializers.CharField()
+    department_unit_id = serializers.UUIDField(required=False, allow_null=True)
     position = serializers.CharField()
     hire_date = serializers.DateField()
 
@@ -542,9 +863,13 @@ class StaffRegistrationSerializer(serializers.Serializer):
         # Check if email is already in use by an active staff member
         existing_user = User.objects.filter(email=data['email']).first()
         if existing_user:
-            # Check if this user has an active staff record
-            if hasattr(existing_user, 'staff') and existing_user.staff:
-                raise serializers.ValidationError({"email": "This email is already in use by an active staff member."})
+            existing_staff = getattr(existing_user, 'staff_profile', None)
+            if existing_staff:
+                if existing_user.is_active:
+                    raise serializers.ValidationError({"email": "This email is already in use by an active staff member."})
+                raise serializers.ValidationError({
+                    "email": "This email belongs to a deactivated staff account. Reactivate that staff record instead of re-registering."
+                })
             # Otherwise, we'll reuse this orphaned user - store it for create()
             data['_existing_user'] = existing_user
 
@@ -598,6 +923,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
             user.date_of_birth = validated_data['date_of_birth']
             user.user_type = validated_data['user_type']
             user.is_active = True
+            _apply_admin_flags(user)
             user.save()
         else:
             # Create new User
@@ -611,6 +937,8 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 date_of_birth=validated_data['date_of_birth'],
                 user_type=validated_data['user_type']
             )
+            _apply_admin_flags(user)
+            user.save(update_fields=['is_staff'])
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")
@@ -620,7 +948,7 @@ class StaffRegistrationSerializer(serializers.Serializer):
         user.facilities.add(facility)
 
         # Generate a unique employee ID
-        employee_id = generate_unique_employee_id()
+        employee_id = generate_unique_employee_id(facility)
 
         # Create Staff
         staff = Staff.objects.create(
@@ -645,13 +973,23 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 initiated_by=self.context['request'].user,
                 expiry_minutes=getattr(settings, 'PASSWORD_RESET_TOKEN_EXPIRY_MINUTES', 15),
             )
-            task = send_account_setup_email if (user_created or not user.has_usable_password()) else send_password_reset_email
-            task.delay(
-                user_id=str(user.id),
-                token=plain_token,
-                user_email=user.email,
-                user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
-            )
+            if user_created or not user.has_usable_password():
+                send_account_setup_email.delay(
+                    user_id=str(user.id),
+                    token=plain_token,
+                    user_email=user.email,
+                    user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
+                    employee_id=staff.employee_id,
+                    department=staff.department,
+                    position=staff.position,
+                )
+            else:
+                send_password_reset_email.delay(
+                    user_id=str(user.id),
+                    token=plain_token,
+                    user_email=user.email,
+                    user_name=f"{user.first_name} {user.last_name}".strip() or user.email,
+                )
         except Exception as e:
             logger.error(f"Failed to send account setup/reset email for user {user.id}: {e}")
 
@@ -685,6 +1023,20 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 )
             except Exception:
                 logger.warning("Failed to queue FHIR practitioner creation")
+
+        try:
+            auto_assign_staff_to_department_unit(
+                staff,
+                facility=facility,
+                department_name=validated_data.get('department'),
+                department_unit_id=validated_data.get('department_unit_id'),
+                assigned_by=getattr(self.context.get('request'), 'user', None),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to auto-assign registered staff to department unit",
+                extra={'staff_id': str(staff.id)},
+            )
 
         return staff
 
@@ -875,11 +1227,11 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         # Use prefetched admissions if available
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
         else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+            admission = obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
         if not admission:
             return None
@@ -896,11 +1248,11 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         """Get the ward ID where patient is admitted."""
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
         else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+            admission = obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
         if admission and admission.bed:
             return str(admission.bed.ward.id)
@@ -910,11 +1262,11 @@ class PatientProfileListSerializer(serializers.ModelSerializer):
         """Get the admission date if patient is currently admitted."""
         if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
             admission = next(
-                (a for a in obj.admissions.all() if a.status in ['admitted', 'waiting']),
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
                 None
             )
         else:
-            admission = obj.admissions.filter(status__in=['admitted', 'waiting']).first()
+            admission = obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).first()
 
         if admission:
             return admission.admission_date

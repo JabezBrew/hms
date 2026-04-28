@@ -1,8 +1,15 @@
+from decimal import Decimal
 from rest_framework import serializers
 from .models import (
     ServiceCategory, Service, ServicePrice, InsuranceProvider, InsurancePlan,
+    PayerServiceCode,
     PatientInsurance, Invoice, InvoiceItem, Payment, Claim, Receipt,
-    BillingRule, FacilityBillingSettings
+    ClaimValidationIssue, NHISClaimBatch, NHISClaimExportJob,
+    RemittanceImportJob, RemittanceLine, InsurancePosting,
+    PayerServiceCodeImportJob,
+    BillingRule, FacilityBillingSettings,
+    CashDrawer, CashSession, CashMovement,
+    PaymentIntent, PSPWebhookEvent, SettlementBatch, SettlementLine
 )
 from ..users.serializers import PatientProfileSerializer, UserSerializer
 
@@ -39,7 +46,7 @@ class InsuranceProviderSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = InsuranceProvider
-        fields = ['id', 'facility', 'name', 'code', 'contact_person', 'email', 'phone',
+        fields = ['id', 'facility', 'name', 'code', 'payer_type', 'contact_person', 'email', 'phone',
                   'address', 'is_active', 'created_at', 'updated_at',
                   'created_by', 'updated_by']
         read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
@@ -56,6 +63,26 @@ class InsurancePlanSerializer(serializers.ModelSerializer):
         fields = ['id', 'facility', 'provider', 'provider_name', 'name', 'code',
                   'description', 'coverage_percentage', 'annual_limit',
                   'is_active', 'created_at', 'updated_at', 'created_by', 'updated_by']
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+
+class PayerServiceCodeSerializer(serializers.ModelSerializer):
+    payer_name = serializers.ReadOnlyField(source='payer.name')
+    payer_code = serializers.ReadOnlyField(source='payer.code')
+    service_name = serializers.ReadOnlyField(source='service.name')
+    service_code = serializers.ReadOnlyField(source='service.code')
+
+    class Meta:
+        model = PayerServiceCode
+        fields = [
+            'id', 'facility',
+            'payer', 'payer_name', 'payer_code',
+            'service', 'service_name', 'service_code',
+            'external_code',
+            'effective_from', 'effective_until',
+            'is_active',
+            'created_at', 'updated_at', 'created_by', 'updated_by',
+        ]
         read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
@@ -95,6 +122,18 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 
+class InvoiceItemCreateSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for creating invoice line items.
+
+    SECURITY:
+    - unit_price is not accepted from the client; server resolves pricing.
+    """
+    class Meta:
+        model = InvoiceItem
+        fields = ['service', 'quantity', 'description']
+
+
 class PaymentSerializer(serializers.ModelSerializer):
     """
     Serializer for the Payment model.
@@ -107,10 +146,102 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = ['id', 'invoice', 'payment_date', 'amount', 'payment_method',
-                  'reference_number', 'notes', 'created_at', 'updated_at',
+                  'payer', 'status',
+                  'reference_number', 'notes',
+                  'cash_session',
+                  'voided_at', 'voided_by', 'void_reason',
+                  'created_at', 'updated_at',
                   'created_by', 'created_by_details', 'updated_by',
                   'receipt_number', 'receipt_id', 'receipt_date']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+
+class PaymentIntentListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for payment intents list.
+    """
+    invoice_number = serializers.ReadOnlyField(source='invoice.invoice_number')
+
+    class Meta:
+        model = PaymentIntent
+        fields = [
+            'id', 'invoice', 'invoice_number',
+            'amount', 'currency', 'payment_method',
+            'status', 'provider', 'provider_reference',
+            'created_at',
+        ]
+
+
+class PaymentIntentSerializer(serializers.ModelSerializer):
+    invoice_number = serializers.ReadOnlyField(source='invoice.invoice_number')
+    payment_id = serializers.UUIDField(source='payment.id', read_only=True, default=None)
+
+    class Meta:
+        model = PaymentIntent
+        fields = [
+            'id', 'facility', 'invoice', 'invoice_number',
+            'payer', 'amount', 'currency', 'payment_method',
+            'status', 'provider', 'client_reference', 'provider_reference',
+            'checkout_url', 'expires_at',
+            'cash_session', 'initiated_by',
+            'payment_id', 'paid_amount', 'fee_amount', 'paid_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'facility', 'payer', 'status',
+            'provider_reference', 'checkout_url', 'expires_at',
+            'client_reference',
+            'initiated_by', 'payment_id', 'paid_amount', 'fee_amount', 'paid_at',
+            'created_at', 'updated_at',
+        ]
+
+
+class PaymentIntentCreateSerializer(serializers.Serializer):
+    """
+    Create a PSP payment intent.
+
+    SECURITY:
+    - Amount is capped server-side by invoice.patient_balance_due.
+    """
+    invoice_id = serializers.UUIDField()
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    payment_method = serializers.ChoiceField(choices=[
+        'mobile_money',
+        'credit_card',
+        'debit_card',
+    ])
+    mobile_number = serializers.CharField(max_length=30)
+
+
+class SettlementLineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SettlementLine
+        fields = [
+            'id',
+            'provider_reference', 'client_reference', 'status',
+            'amount_gross', 'fee_amount', 'amount_net', 'paid_at',
+            'match_status', 'matched_intent', 'matched_payment', 'mismatch_reason',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class SettlementBatchSerializer(serializers.ModelSerializer):
+    uploaded_by_email = serializers.ReadOnlyField(source='uploaded_by.email', default=None)
+
+    class Meta:
+        model = SettlementBatch
+        fields = [
+            'id', 'facility', 'provider', 'statement_date',
+            'status', 'file_name', 'error_message',
+            'uploaded_by', 'uploaded_by_email', 'processed_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'facility', 'status',
+            'error_message', 'uploaded_by', 'uploaded_by_email', 'processed_at',
+            'created_at', 'updated_at',
+        ]
 
 
 class ReceiptSerializer(serializers.ModelSerializer):
@@ -139,7 +270,9 @@ class ClaimSerializer(serializers.ModelSerializer):
     class Meta:
         model = Claim
         fields = ['id', 'claim_number', 'invoice', 'invoice_number', 'patient_name',
-                  'submission_date', 'fhir_claim_id', 'fhir_explanation_of_benefit_id',
+                  'batch', 'submission_date', 'submitted_at', 'submitted_by', 'submission_reference',
+                  'paid_amount_total', 'last_paid_at',
+                  'fhir_claim_id', 'fhir_explanation_of_benefit_id',
                   'status', 'claimed_amount', 'approved_amount', 'response_date',
                   'rejection_reason', 'is_fully_approved', 'is_partially_approved',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
@@ -157,6 +290,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
     amount_paid = serializers.ReadOnlyField()
     balance_due = serializers.ReadOnlyField()
     is_fully_paid = serializers.ReadOnlyField()
+    # CFO-grade breakdown (minimal fields; no PHI)
+    patient_paid = serializers.ReadOnlyField()
+    insurance_paid = serializers.ReadOnlyField()
+    total_paid = serializers.ReadOnlyField()
+    patient_balance_due = serializers.ReadOnlyField()
+    insurance_balance_due = serializers.ReadOnlyField()
+    total_balance_due = serializers.ReadOnlyField()
+    is_patient_paid = serializers.ReadOnlyField()
     
     class Meta:
         model = Invoice
@@ -165,8 +306,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
                   'fhir_encounter_id', 'fhir_claim_id', 'subtotal', 'tax_amount',
                   'discount_amount', 'total_amount', 'patient_insurance',
                   'patient_insurance_details', 'insurance_amount',
-                  'patient_responsibility', 'status', 'notes', 'items', 'payments',
+                  'patient_responsibility', 'status', 'auto_update_enabled', 'notes', 'items', 'payments',
                   'amount_paid', 'balance_due', 'is_fully_paid',
+                  'patient_paid', 'insurance_paid', 'total_paid',
+                  'patient_balance_due', 'insurance_balance_due', 'total_balance_due',
+                  'is_patient_paid',
                   'created_at', 'updated_at', 'created_by', 'updated_by']
         read_only_fields = ['id', 'subtotal', 'tax_amount', 'total_amount',
                            'insurance_amount', 'patient_responsibility',
@@ -177,58 +321,95 @@ class InvoiceCreateUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating and updating Invoice with nested items.
     """
-    items = InvoiceItemSerializer(many=True)
+    items = InvoiceItemCreateSerializer(many=True)
     
     class Meta:
         model = Invoice
-        fields = ['id', 'invoice_number', 'patient', 'invoice_date', 'due_date',
+        fields = ['id', 'patient', 'invoice_date', 'due_date',
                   'admission', 'appointment_type', 'fhir_encounter_id',
                   'fhir_claim_id', 'discount_amount', 'patient_insurance',
                   'status', 'notes', 'items']
         read_only_fields = ['id']
     
     def create(self, validated_data):
+        """
+        Create invoice from services (server generates invoice_number and resolves pricing).
+
+        SECURITY:
+        - facility is derived from active facility context, not client input
+        - unit_price from client is ignored; PricingService resolves the authoritative price
+        """
+        from apps.core.security import get_user_facility
+        from apps.billing.services import InvoiceGenerationService, ServiceLine
+        from rest_framework.exceptions import PermissionDenied
+
+        request = self.context.get('request')
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        patient = validated_data.get('patient')
+        if patient and getattr(patient, 'facility_id', None) and patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+
         items_data = validated_data.pop('items')
-        invoice = Invoice.objects.create(**validated_data)
-        
-        for item_data in items_data:
-            InvoiceItem.objects.create(
-                invoice=invoice,
-                created_by=validated_data.get('created_by'),
-                updated_by=validated_data.get('updated_by'),
-                **item_data
-            )
-        
-        # Calculate totals
-        invoice.calculate_totals()
-        invoice.save()
-        
+        services = []
+        for item in items_data:
+            service = item.get('service')
+            if not service:
+                raise serializers.ValidationError({'items': 'Each item must include a service.'})
+            if getattr(service, 'facility_id', None) != facility.id:
+                raise PermissionDenied("Service does not belong to the active facility.")
+            if not getattr(service, 'is_active', True):
+                raise serializers.ValidationError({'items': f"Service is inactive: {service.id}"})
+
+            try:
+                quantity = int(item.get('quantity') or 1)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'items': 'quantity must be an integer.'})
+            if quantity <= 0:
+                raise serializers.ValidationError({'items': 'quantity must be greater than zero.'})
+
+            services.append(ServiceLine(
+                service=service,
+                quantity=quantity,
+                description=item.get('description') or None,
+            ))
+
+        created_by = (
+            validated_data.get('created_by') or
+            (request.user if request and getattr(request, 'user', None) and request.user.is_authenticated else None)
+        )
+
+        service = InvoiceGenerationService()
+        result = service.create_invoice(
+            patient=patient,
+            facility=facility,
+            services=services,
+            created_by=created_by,
+            notes=validated_data.get('notes'),
+            patient_insurance=validated_data.get('patient_insurance'),
+        )
+        if not result.success:
+            raise serializers.ValidationError({'detail': result.error_message or 'Failed to create invoice'})
+        invoice = result.invoice
+
+        # Allow explicit due_date override for manual invoice creation.
+        due_date = validated_data.get('due_date')
+        if due_date:
+            invoice.due_date = due_date
+            invoice.save(update_fields=['due_date', 'updated_at'])
+
         return invoice
     
     def update(self, instance, validated_data):
-        items_data = validated_data.pop('items', None)
-        
-        # Update invoice fields
+        # For v1 cash controls, treat invoice line items as immutable once created.
+        validated_data.pop('items', None)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        
-        if items_data is not None:
-            # Delete existing items
-            instance.items.all().delete()
-            
-            # Create new items
-            for item_data in items_data:
-                InvoiceItem.objects.create(
-                    invoice=instance,
-                    created_by=validated_data.get('updated_by'),
-                    updated_by=validated_data.get('updated_by'),
-                    **item_data
-                )
-        
-        # Calculate totals
-        instance.calculate_totals()
-        instance.save()
 
+        instance.save()
         return instance
 
 
@@ -274,7 +455,7 @@ class InvoiceListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'invoice_number', 'patient', 'patient_name', 'patient_mrn',
             'facility', 'facility_name', 'facility_code',
-            'invoice_date', 'due_date', 'total_amount', 'status',
+            'invoice_date', 'due_date', 'total_amount', 'status', 'auto_update_enabled',
             'amount_paid', 'balance_due', 'is_fully_paid',
             'items_count', 'payments_count', 'price_context'
         ]
@@ -285,9 +466,15 @@ class InvoiceListSerializer(serializers.ModelSerializer):
         return None
 
     def get_items_count(self, obj):
+        annotated = getattr(obj, 'items_count', None)
+        if annotated is not None:
+            return annotated
         return obj.items.count()
 
     def get_payments_count(self, obj):
+        annotated = getattr(obj, 'payments_count', None)
+        if annotated is not None:
+            return annotated
         return obj.payments.count()
 
 
@@ -311,6 +498,7 @@ class PaymentListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'invoice', 'invoice_number', 'patient_id', 'patient_name',
             'patient_mrn', 'payment_date', 'amount', 'payment_method',
+            'payer', 'status',
             'reference_number', 'receipt_number', 'receipt_id',
             'created_by_name', 'created_at'
         ]
@@ -339,8 +527,118 @@ class ClaimListSerializer(serializers.ModelSerializer):
         model = Claim
         fields = [
             'id', 'claim_number', 'invoice', 'invoice_number', 'patient_name',
-            'submission_date', 'status', 'claimed_amount', 'approved_amount',
+            'batch', 'submission_date', 'status', 'claimed_amount', 'approved_amount',
             'response_date', 'is_fully_approved', 'is_partially_approved'
+        ]
+
+
+class ClaimValidationIssueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClaimValidationIssue
+        fields = ['id', 'claim', 'severity', 'code', 'message', 'field', 'created_at']
+        read_only_fields = fields
+
+
+class NHISClaimBatchListSerializer(serializers.ModelSerializer):
+    claim_count = serializers.IntegerField(read_only=True)
+    total_claimed_amount = serializers.DecimalField(
+        read_only=True, max_digits=10, decimal_places=2, default=Decimal('0.00')
+    )
+
+    class Meta:
+        model = NHISClaimBatch
+        fields = [
+            'id', 'facility',
+            'period_start', 'period_end',
+            'status',
+            'claim_count', 'total_claimed_amount',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class NHISClaimBatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NHISClaimBatch
+        fields = [
+            'id', 'facility',
+            'period_start', 'period_end',
+            'status', 'notes',
+            'created_by', 'updated_by',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'facility', 'created_by', 'updated_by', 'created_at', 'updated_at']
+
+
+class NHISClaimExportJobSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NHISClaimExportJob
+        fields = [
+            'id', 'facility', 'batch',
+            'status', 'payload_checksum', 'error_message', 'expires_at',
+            'created_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'facility', 'status', 'payload_checksum', 'error_message',
+            'created_by', 'created_at', 'updated_at',
+        ]
+
+
+class RemittanceImportJobSerializer(serializers.ModelSerializer):
+    payer_name = serializers.ReadOnlyField(source='payer.name')
+
+    class Meta:
+        model = RemittanceImportJob
+        fields = [
+            'id', 'facility', 'payer', 'payer_name',
+            'status', 'file_name', 'payload_checksum', 'error_message',
+            'processed_at',
+            'created_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'facility', 'status', 'payload_checksum', 'error_message',
+            'processed_at',
+            'created_by', 'created_at', 'updated_at',
+        ]
+
+
+class RemittanceLineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RemittanceLine
+        fields = [
+            'id', 'job',
+            'claim_number', 'invoice_number',
+            'paid_amount', 'paid_date',
+            'match_status',
+            'matched_claim', 'matched_invoice',
+            'error_message',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class PayerServiceCodeImportJobSerializer(serializers.ModelSerializer):
+    payer_name = serializers.ReadOnlyField(source='payer.name')
+    payer_code = serializers.ReadOnlyField(source='payer.code')
+
+    class Meta:
+        model = PayerServiceCodeImportJob
+        fields = [
+            'id', 'facility',
+            'payer', 'payer_name', 'payer_code',
+            'status', 'seed_services',
+            'file_name', 'payload_checksum',
+            'summary', 'issues', 'error_message',
+            'processed_at', 'applied_at',
+            'created_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'facility',
+            'status',
+            'file_name', 'payload_checksum',
+            'summary', 'issues', 'error_message',
+            'processed_at', 'applied_at',
+            'created_by', 'created_at', 'updated_at',
         ]
 
 
@@ -433,14 +731,83 @@ class FacilityBillingSettingsSerializer(serializers.ModelSerializer):
             'accepted_payment_methods', 'default_payment_method',
             'auto_generate_invoice_on_encounter_complete',
             'auto_generate_invoice_on_discharge',
+            'default_consultation_service',
+            'ward_stay_service',
+            'lab_charge_trigger',
             'require_deposit_for_admission',
             'minimum_deposit_amount', 'minimum_deposit_percentage',
             'regular_hours_start', 'regular_hours_end',
             'weekend_hours_start', 'weekend_hours_end',
             'holidays', 'currency', 'decimal_places', 'rounding_method',
+            'cash_control_enabled', 'cash_variance_threshold_amount',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+# =============================================================================
+# CASH CONTROL SERIALIZERS
+# =============================================================================
+
+class CashDrawerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashDrawer
+        fields = [
+            'id', 'facility', 'code', 'name', 'location', 'is_active',
+            'created_at', 'updated_at', 'created_by', 'updated_by'
+        ]
+        read_only_fields = ['id', 'facility', 'created_at', 'updated_at', 'created_by', 'updated_by']
+
+
+class CashMovementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashMovement
+        fields = [
+            'id', 'session', 'direction', 'movement_type', 'amount',
+            'reference', 'notes', 'created_at', 'created_by'
+        ]
+        read_only_fields = ['id', 'created_at', 'created_by']
+
+
+class CashSessionSerializer(serializers.ModelSerializer):
+    opened_by_name = serializers.SerializerMethodField()
+    closed_by_name = serializers.SerializerMethodField()
+    drawer_code = serializers.CharField(source='drawer.code', read_only=True, default=None)
+    drawer_name = serializers.CharField(source='drawer.name', read_only=True, default=None)
+
+    class Meta:
+        model = CashSession
+        fields = [
+            'id', 'facility', 'drawer', 'drawer_code', 'drawer_name',
+            'status',
+            'opened_by', 'opened_by_name', 'opened_at', 'opening_float_amount',
+            'closed_by', 'closed_by_name', 'closed_at',
+            'expected_totals', 'expected_cash_amount',
+            'counted_cash_amount', 'variance_cash_amount',
+            'is_flagged',
+            'reviewed_by', 'reviewed_at', 'review_notes',
+            'notes',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'facility', 'status',
+            'opened_by', 'opened_at',
+            'closed_by', 'closed_at',
+            'expected_totals', 'expected_cash_amount',
+            'variance_cash_amount', 'is_flagged',
+            'reviewed_by', 'reviewed_at',
+            'created_at', 'updated_at'
+        ]
+
+    def get_opened_by_name(self, obj):
+        if obj.opened_by:
+            return obj.opened_by.get_full_name()
+        return None
+
+    def get_closed_by_name(self, obj):
+        if obj.closed_by:
+            return obj.closed_by.get_full_name()
+        return None
 
 
 # =============================================================================

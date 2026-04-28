@@ -3,8 +3,9 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import CalendarIcon from 'lucide-react/dist/esm/icons/calendar.js';
 import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
-import { useState, useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import { useState, useEffect, useMemo } from 'react';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import format from 'date-fns/format';
@@ -33,7 +34,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SearchBar } from '@/components/ui/search-bar';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Popover,
   PopoverContent,
@@ -79,6 +79,8 @@ const formSchema = z.object({
   }),
   active_to: z.date().optional(),
   is_active: z.boolean().default(true),
+  template_name: z.string().max(120).optional().or(z.literal('')),
+  practitioners: z.array(z.string().uuid()).optional(),
   breaks: z.array(z.object({
     start: z.string().min(1, "Start time is required"),
     end: z.string().min(1, "End time is required"),
@@ -88,13 +90,16 @@ const formSchema = z.object({
 const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   const { user } = useAuth();
   const isDoctor = user?.role === 'doctor';
+  const isAdmin = user?.role === 'admin';
   const currentUserPractitionerId = user?.practitionerId;
   const currentUserName = user ? `${user.firstName} ${user.lastName}` : '';
+  const canShareTemplate = isAdmin && !initialData;
 
   const [submitting, setSubmitting] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [selectedSharedPractitioner, setSelectedSharedPractitioner] = useState(null);
   const isEditing = !!initialData;
 
   // Determine if practitioner should be auto-filled (doctor creating their own schedule)
@@ -131,6 +136,32 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
     }
   }, [isEditing, initialData, setSearchTerm]);
 
+  const practitionerOptions = useMemo(() => {
+    if (!Array.isArray(practitioners)) return [];
+    return practitioners.map((practitioner) => {
+      if (practitioner?.name) {
+        return {
+          label: practitioner.name,
+          value: practitioner.id
+        };
+      }
+      if (practitioner.fhir_resource) {
+        const name = practitioner.fhir_resource.name?.[0];
+        const given = name?.given?.join(' ') || '';
+        const family = name?.family || '';
+        const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
+        return {
+          label: displayName,
+          value: practitioner.local_data?.id || practitioner.fhir_resource.id
+        };
+      }
+      return {
+        label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.user_details?.user_type?.charAt(0).toUpperCase() + practitioner.staff_details?.user_details?.user_type?.slice(1)}`.replace(/\s+/g, ' ').trim(),
+        value: practitioner.id
+      };
+    });
+  }, [practitioners]);
+
   // Days of week options
   const daysOfWeek = [
     { id: 0, label: 'Monday' },
@@ -156,6 +187,8 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
       active_from: initialData?.active_from ? new Date(initialData.active_from) : new Date(),
       active_to: initialData?.active_to ? new Date(initialData.active_to) : undefined,
       is_active: initialData?.is_active ?? true,
+      template_name: initialData?.template_name || '',
+      practitioners: [],
       breaks: initialData?.breaks || [],
     },
   });
@@ -164,6 +197,50 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
     control: form.control,
     name: "breaks",
   });
+
+  const selectedPrimaryPractitioner = useWatch({
+    control: form.control,
+    name: 'practitioner',
+    defaultValue: '',
+  });
+  const selectedSharedPractitioners = useWatch({
+    control: form.control,
+    name: 'practitioners',
+    defaultValue: [],
+  });
+
+  const selectedSharedOptionMap = useMemo(() => {
+    const map = new Map();
+    practitionerOptions.forEach((option) => map.set(option.value, option));
+    return map;
+  }, [practitionerOptions]);
+
+  const availableSharedPractitionerOptions = useMemo(() => {
+    return practitionerOptions.filter((option) => {
+      if (!option?.value) return false;
+      if (option.value === selectedPrimaryPractitioner) return false;
+      if (selectedSharedPractitioners.includes(option.value)) return false;
+      return true;
+    });
+  }, [practitionerOptions, selectedPrimaryPractitioner, selectedSharedPractitioners]);
+
+  const addSharedPractitioner = () => {
+    if (!selectedSharedPractitioner) return;
+    const current = form.getValues('practitioners') || [];
+    if (!current.includes(selectedSharedPractitioner)) {
+      form.setValue('practitioners', [...current, selectedSharedPractitioner], { shouldValidate: true });
+    }
+    setSelectedSharedPractitioner(null);
+  };
+
+  const removeSharedPractitioner = (practitionerId) => {
+    const current = form.getValues('practitioners') || [];
+    form.setValue(
+      'practitioners',
+      current.filter((id) => id !== practitionerId),
+      { shouldValidate: true }
+    );
+  };
 
   const handlePreview = async () => {
     const values = form.getValues();
@@ -203,6 +280,23 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
         active_to: data.active_to ? format(data.active_to, 'yyyy-MM-dd') : null,
       };
 
+      if (!canShareTemplate || isEditing) {
+        delete formattedData.practitioners;
+        delete formattedData.template_name;
+      } else {
+        const primaryPractitioner = formattedData.practitioner;
+        const additional = Array.isArray(formattedData.practitioners)
+          ? formattedData.practitioners.filter((id) => id && id !== primaryPractitioner)
+          : [];
+        if (additional.length > 0) {
+          formattedData.practitioners = additional;
+          formattedData.template_name = (formattedData.template_name || '').trim() || null;
+        } else {
+          delete formattedData.practitioners;
+          delete formattedData.template_name;
+        }
+      }
+
       if (isEditing) {
         // Update existing schedule using mutation
         updateRecurringScheduleMutation.mutate(
@@ -229,7 +323,12 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
           formattedData,
           {
             onSuccess: (result) => {
-              toast.success("Recurring schedule created successfully");
+              const createdCount = Number(result?.created_count || 0);
+              if (createdCount > 1) {
+                toast.success(`Recurring schedule template applied to ${createdCount} practitioners`);
+              } else {
+                toast.success("Recurring schedule created successfully");
+              }
               if (onSuccess) {
                 onSuccess(result);
               }
@@ -303,31 +402,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                 <FormLabel className="font-heading text-sm font-medium">Practitioner</FormLabel>
                 <FormControl>
                   <SearchBar
-                    options={Array.isArray(practitioners) ? practitioners.map((practitioner) => {
-                      // Check for simple name field first (from search API)
-                      if (practitioner?.name) {
-                        return {
-                          label: practitioner.name,
-                          value: practitioner.id
-                        };
-                      } else if (practitioner.fhir_resource) {
-                        // New structure with FHIR resource
-                        const name = practitioner.fhir_resource.name?.[0];
-                        const given = name?.given?.join(' ') || '';
-                        const family = name?.family || '';
-                        const displayName = `${family}, ${given}`.trim() || 'Unknown Practitioner';
-                        return {
-                          label: displayName,
-                          value: practitioner.fhir_resource.id
-                        };
-                      } else {
-                        // Old structure with staff_details
-                        return {
-                          label: `${practitioner.staff_details?.user_details?.first_name} ${practitioner.staff_details?.user_details?.last_name} - ${practitioner.staff_details?.user_details?.user_type?.charAt(0).toUpperCase() + practitioner.staff_details?.user_details?.user_type?.slice(1)}`.replace(/\s+/g, ' ').trim(),
-                          value: practitioner.id
-                        };
-                      }
-                    }) : []}
+                    options={practitionerOptions}
                     value={field.value}
                     onChange={field.onChange}
                     onInputChange={setSearchTerm}
@@ -347,6 +422,94 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
               </FormItem>
             )}
           />
+        )}
+
+        {canShareTemplate && (
+          <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
+            <div className="space-y-1">
+              <h4 className="font-heading text-sm font-medium">Share As Template</h4>
+              <p className="text-xs text-muted-foreground">
+                Apply this same recurring schedule to multiple practitioners in one save.
+              </p>
+            </div>
+
+            <FormField
+              control={form.control}
+              name="template_name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="font-heading text-xs font-medium">Template Name (Optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g., Internal Medicine Morning Clinic"
+                      className="font-mono text-xs"
+                      {...field}
+                      disabled={submitting}
+                    />
+                  </FormControl>
+                  <FormDescription className="text-xs text-muted-foreground">
+                    Used to label the shared schedule group.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="space-y-2">
+              <FormLabel className="font-heading text-xs font-medium">Additional Practitioners</FormLabel>
+              <div className="flex gap-2">
+                <SearchBar
+                  options={availableSharedPractitionerOptions}
+                  value={selectedSharedPractitioner}
+                  onChange={setSelectedSharedPractitioner}
+                  onInputChange={setSearchTerm}
+                  placeholder="Search to add practitioner"
+                  emptyMessage={isLoading ? "Searching..." : "No practitioners found."}
+                  searchPlaceholder="Search by name, employee ID, or license number..."
+                  disabled={submitting}
+                  maxHeight="16rem"
+                  isLoading={isLoading}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="font-mono text-xs whitespace-nowrap"
+                  onClick={addSharedPractitioner}
+                  disabled={!selectedSharedPractitioner || submitting}
+                >
+                  Add
+                </Button>
+              </div>
+
+              {selectedSharedPractitioners.length > 0 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {selectedSharedPractitioners.map((practitionerId) => {
+                    const option = selectedSharedOptionMap.get(practitionerId);
+                    return (
+                      <span
+                        key={practitionerId}
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1 font-mono text-[10px]"
+                      >
+                        <span className="max-w-[220px] truncate">{option?.label || practitionerId}</span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => removeSharedPractitioner(practitionerId)}
+                          aria-label="Remove practitioner"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No additional practitioners selected. This will create a single schedule.
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Days of Week */}

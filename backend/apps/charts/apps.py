@@ -8,4 +8,4 @@ class ChartsConfig(AppConfig):
 
     def ready(self):
         # Import signals when app is ready
-        pass
+        from . import signals  # noqa: F401

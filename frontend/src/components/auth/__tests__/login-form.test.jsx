@@ -51,8 +51,6 @@ function renderLoginForm() {
   )
 }
 
-const expectedFacilityCode = import.meta.env.VITE_DEFAULT_FACILITY_CODE || ''
-
 describe('LoginForm', () => {
   const mockLogin = vi.fn()
 
@@ -76,6 +74,7 @@ describe('LoginForm', () => {
       expect(screen.getByText('Sign in to access your account')).toBeInTheDocument()
       expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
       expect(screen.getByLabelText('Password')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Facility Code')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
     })
 
@@ -122,7 +121,7 @@ describe('LoginForm', () => {
       await user.type(screen.getByLabelText('Password'), 'password123')
       await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', expectedFacilityCode)
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
     })
 
     it('shows success notification on successful login', async () => {
@@ -162,7 +161,7 @@ describe('LoginForm', () => {
       await user.type(screen.getByLabelText('Password'), 'password123{enter}')
 
       await waitFor(() => {
-        expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', expectedFacilityCode)
+        expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
       })
     })
   })
@@ -437,7 +436,7 @@ describe('LoginForm', () => {
       await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       // Email should be trimmed before submission
-      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123', expectedFacilityCode)
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
     })
 
     it('handles empty form submission attempt', async () => {

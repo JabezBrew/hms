@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import AuditLog
+from apps.users.user_agent import summarize_user_agent
 
 
 class AuditLogSerializer(serializers.ModelSerializer):
@@ -9,6 +10,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
     action_display = serializers.SerializerMethodField()
     category_display = serializers.SerializerMethodField()
     time_ago = serializers.SerializerMethodField()
+    user_agent_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
@@ -29,6 +31,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             'changes',
             'ip_address',
             'user_agent',
+            'user_agent_summary',
             'timestamp',
             'time_ago',
         ]
@@ -71,6 +74,10 @@ class AuditLogSerializer(serializers.ModelSerializer):
             return f'{days} day{"s" if days != 1 else ""} ago'
         else:
             return obj.timestamp.strftime('%b %d, %Y')
+
+    def get_user_agent_summary(self, obj):
+        summary = summarize_user_agent(obj.user_agent or '')
+        return summary or None
 
 
 class AuditLogStatsSerializer(serializers.Serializer):

@@ -12,7 +12,7 @@ import { toRegistrationOptions, toAuthenticationOptions, serializeCredential } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useAuth } from '@/lib/auth.jsx'
+import { useAuth } from '@/lib/auth'
 
 export function MFAChallenge() {
   const {
@@ -29,20 +29,52 @@ export function MFAChallenge() {
   const [webauthnConfirmed, setWebauthnConfirmed] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [copiedSecret, setCopiedSecret] = useState(false)
+  const [challengeStatus, setChallengeStatus] = useState(null)
 
   useEffect(() => {
     setActiveSession(mfaSession)
   }, [mfaSession])
 
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadStatus = async () => {
+      if (!activeSession) {
+        setChallengeStatus(null)
+        return
+      }
+
+      try {
+        const status = await authApi.mfaStatus(activeSession)
+        if (!isCancelled) {
+          setChallengeStatus(status)
+        }
+      } catch {
+        if (!isCancelled) {
+          setChallengeStatus(null)
+        }
+      }
+    }
+
+    loadStatus()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [activeSession])
+
   const webauthnAvailable = useMemo(() => {
     return Boolean(window.PublicKeyCredential && navigator.credentials)
   }, [])
 
-  const hasConfiguredTotp = Boolean(mfaAvailableMethods?.totp)
-  const hasConfiguredWebauthn = Boolean(mfaAvailableMethods?.webauthn)
-  const shouldShowTotp = mfaEnrollmentRequired || hasConfiguredTotp
-  const shouldShowWebauthn = mfaEnrollmentRequired || hasConfiguredWebauthn
-  const shouldShowRecovery = !mfaEnrollmentRequired && (hasConfiguredTotp || hasConfiguredWebauthn)
+  const hasConfiguredTotp = Boolean(challengeStatus?.totp_enrolled ?? mfaAvailableMethods?.totp)
+  const hasConfiguredWebauthn = Boolean(challengeStatus?.webauthn_enrolled ?? mfaAvailableMethods?.webauthn)
+  const recoveryCodesRemaining = Number(challengeStatus?.recovery_codes_remaining ?? 0)
+
+  const shouldShowTotp = mfaEnrollmentRequired ? true : hasConfiguredTotp
+  const shouldShowWebauthn = mfaEnrollmentRequired ? true : hasConfiguredWebauthn
+  const shouldShowRecovery = !mfaEnrollmentRequired && recoveryCodesRemaining > 0
+  const noConfiguredMethods = !mfaEnrollmentRequired && !shouldShowTotp && !shouldShowWebauthn
 
   const handleCopySecret = async () => {
     if (totpSecret) {
@@ -335,7 +367,7 @@ export function MFAChallenge() {
             <div>
               <h3 className="font-heading font-medium text-foreground">Recovery Code</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Use a backup code if you lost access to other methods
+                Use a backup code if you lost access to other methods ({recoveryCodesRemaining} remaining)
               </p>
             </div>
           </div>
@@ -361,6 +393,13 @@ export function MFAChallenge() {
           >
             Use Recovery Code
           </Button>
+        </div>
+      )}
+
+      {noConfiguredMethods && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-700">
+          No configured MFA verification methods were found for this account.
+          Please contact support or complete enrollment first.
         </div>
       )}
     </div>

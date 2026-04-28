@@ -1,0 +1,306 @@
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
+import Boxes from 'lucide-react/dist/esm/icons/boxes.js'
+import Save from 'lucide-react/dist/esm/icons/save.js'
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { useFacilities } from '@/hooks/useFacilityQueries'
+import {
+  useCreateFeatureEntitlement,
+  useDeleteFeatureEntitlement,
+  useFeatureEntitlements,
+  useSystemCapabilities,
+} from '@/hooks/useSystemQueries'
+import { usePageMeta } from '@/shared/hooks/usePageMeta'
+import { PageHeader } from '@/shared/components/page/PageHeader'
+import { PageShell } from '@/shared/components/page/PageShell'
+
+const GLOBAL_SCOPE = 'global'
+const FACILITY_SCOPE = 'facility'
+const NO_FACILITY = '__none__'
+const EMPTY_ARRAY = []
+
+export default function FeatureEntitlementsPage() {
+  const navigate = useNavigate()
+  const [scope, setScope] = useState(GLOBAL_SCOPE)
+  const [facilityId, setFacilityId] = useState(NO_FACILITY)
+  const [featureKey, setFeatureKey] = useState('')
+  const [isEnabled, setIsEnabled] = useState(true)
+  const [reason, setReason] = useState('')
+
+  const { data: capabilities, isLoading: capabilitiesLoading } = useSystemCapabilities()
+  const { data: entitlements, isLoading: entitlementsLoading } = useFeatureEntitlements()
+  const { data: facilities = [] } = useFacilities({ includeInactive: true })
+  const createOverride = useCreateFeatureEntitlement()
+  const deleteOverride = useDeleteFeatureEntitlement()
+
+  const featureManifest = capabilities?.feature_manifest || EMPTY_ARRAY
+  const effectiveFeatures = capabilities?.features || {}
+  const featureSources = capabilities?.feature_sources || {}
+  const overrides = entitlements?.results || entitlements || []
+
+  const sortedFeatures = useMemo(
+    () => [...featureManifest].sort((a, b) => a.label.localeCompare(b.label)),
+    [featureManifest]
+  )
+
+  const pageMeta = usePageMeta({
+    title: 'Feature Entitlements | HMS',
+    breadcrumbs: [
+      { label: 'Settings', href: '/settings' },
+      { label: 'Feature Entitlements' },
+    ],
+  })
+
+  const submitOverride = async (event) => {
+    event.preventDefault()
+    if (!featureKey) {
+      toast.error('Choose a feature to override')
+      return
+    }
+    if (scope === FACILITY_SCOPE && facilityId === NO_FACILITY) {
+      toast.error('Choose a facility for a facility override')
+      return
+    }
+
+    try {
+      await createOverride.mutateAsync({
+        scope,
+        facility: scope === FACILITY_SCOPE ? facilityId : null,
+        feature_key: featureKey,
+        is_enabled: isEnabled,
+        reason,
+      })
+      toast.success('Feature override saved')
+      setReason('')
+    } catch (error) {
+      toast.error(error.message || 'Failed to save feature override')
+    }
+  }
+
+  const removeOverride = async (overrideId) => {
+    try {
+      await deleteOverride.mutateAsync(overrideId)
+      toast.success('Feature override removed')
+    } catch (error) {
+      toast.error(error.message || 'Failed to remove feature override')
+    }
+  }
+
+  const isLoading = capabilitiesLoading || entitlementsLoading
+
+  return (
+    <PageShell>
+      {pageMeta}
+      <PageHeader
+        title={(
+          <span className="flex items-center gap-3 sm:gap-4">
+            <span className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+              <Boxes className="h-6 w-6 sm:h-7 sm:w-7 text-primary" aria-hidden="true" />
+            </span>
+            Feature Entitlements
+          </span>
+        )}
+        description="Control clinic, hospital, and network product modules without changing the codebase."
+        contentClassName="max-w-6xl mx-auto w-full"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate('/settings')}
+          className="-ml-2 font-mono text-xs"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Settings
+        </Button>
+      </PageHeader>
+
+      <main className="p-4 sm:p-6 lg:p-8">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
+          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <h2 className="font-display text-xl text-foreground">Effective Features</h2>
+                <p className="text-sm text-muted-foreground">
+                  Profile: {capabilities?.profile_label || capabilities?.deployment_profile || 'Unknown'}
+                </p>
+              </div>
+              <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Facility {capabilities?.facility_code || 'global'}
+              </span>
+            </div>
+
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading feature matrix...</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {sortedFeatures.map((feature) => {
+                  const enabled = effectiveFeatures[feature.key] === true
+                  return (
+                    <div
+                      key={feature.key}
+                      className="rounded-xl border border-border bg-background/60 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-heading text-sm text-foreground">
+                            {feature.label}
+                          </h3>
+                          <p className="font-mono text-[11px] text-muted-foreground">
+                            {feature.key} · {feature.kind}
+                          </p>
+                        </div>
+                        <span
+                          className={`font-mono text-[10px] uppercase tracking-wider rounded-full px-2 py-1 ${
+                            enabled
+                              ? 'bg-emerald-500/10 text-emerald-400'
+                              : 'bg-rose-500/10 text-rose-400'
+                          }`}
+                        >
+                          {enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                      <p className="mt-3 font-mono text-[11px] text-muted-foreground">
+                        Source: {featureSources[feature.key] || 'unknown'}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+
+          <aside className="space-y-6">
+            <form
+              onSubmit={submitOverride}
+              className="bg-card border border-border rounded-2xl p-5 sm:p-6 space-y-4"
+            >
+              <div>
+                <h2 className="font-display text-xl text-foreground">Add Override</h2>
+                <p className="text-sm text-muted-foreground">
+                  Facility overrides win over global overrides and deployment defaults.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="font-mono text-xs uppercase">Scope</Label>
+                <Select value={scope} onValueChange={setScope}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={GLOBAL_SCOPE}>Global</SelectItem>
+                    <SelectItem value={FACILITY_SCOPE}>Facility</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {scope === FACILITY_SCOPE && (
+                <div className="space-y-2">
+                  <Label className="font-mono text-xs uppercase">Facility</Label>
+                  <Select value={facilityId} onValueChange={setFacilityId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Choose facility" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_FACILITY}>Choose facility</SelectItem>
+                      {facilities.map((facility) => (
+                        <SelectItem key={facility.id} value={facility.id}>
+                          {facility.code} · {facility.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label className="font-mono text-xs uppercase">Feature</Label>
+                <Select value={featureKey} onValueChange={setFeatureKey}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Choose feature" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sortedFeatures.map((feature) => (
+                      <SelectItem key={feature.key} value={feature.key}>
+                        {feature.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-border p-3">
+                <Label className="font-mono text-xs uppercase">Enabled</Label>
+                <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reason" className="font-mono text-xs uppercase">Reason</Label>
+                <Input
+                  id="reason"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  maxLength={255}
+                  placeholder="Optional operational reason"
+                />
+              </div>
+
+              <Button type="submit" disabled={createOverride.isPending} className="w-full">
+                <Save className="h-4 w-4 mr-2" />
+                Save Override
+              </Button>
+            </form>
+
+            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+              <h2 className="font-display text-xl text-foreground mb-4">Active Overrides</h2>
+              <div className="space-y-3">
+                {overrides.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No database overrides are active.</p>
+                ) : overrides.map((override) => (
+                  <div key={override.id} className="rounded-xl border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-heading text-sm">{override.feature_label}</p>
+                        <p className="font-mono text-[11px] text-muted-foreground">
+                          {override.scope}
+                          {override.facility_code ? ` · ${override.facility_code}` : ''}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeOverride(override.id)}
+                        disabled={deleteOverride.isPending}
+                        aria-label={`Remove ${override.feature_key} override`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="mt-2 font-mono text-[11px]">
+                      {override.is_enabled ? 'Enabled' : 'Disabled'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </PageShell>
+  )
+}

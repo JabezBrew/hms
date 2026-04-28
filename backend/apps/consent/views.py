@@ -137,9 +137,18 @@ class ConsentGrantViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def issue_token(self, request, pk=None):
         consent = self.get_object()
+        now = timezone.now()
         facility_code = _require_facility_code(request)
         if consent.source_facility_code != facility_code:
             raise PermissionDenied('Only the source facility can issue access tokens.')
+        if consent.expires_at and consent.expires_at <= now:
+            if consent.status == ConsentStatus.ACTIVE:
+                consent.status = ConsentStatus.EXPIRED
+                consent.save(update_fields=['status', 'updated_at'])
+            return Response(
+                {'detail': 'Consent has expired and cannot issue a token.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         if consent.status != ConsentStatus.ACTIVE:
             return Response(
                 {'detail': 'Consent must be active to issue a token.'},
@@ -156,11 +165,14 @@ class ConsentGrantViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        raw_token = issue_access_token(
-            consent,
-            target_facility_code=target_facility_code,
-            ttl_seconds=serializer.validated_data.get('ttl_seconds', 3600),
-        )
+        try:
+            raw_token = issue_access_token(
+                consent,
+                target_facility_code=target_facility_code,
+                ttl_seconds=serializer.validated_data.get('ttl_seconds', 3600),
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {'consent_id': str(consent.id), 'token': raw_token},
             status=status.HTTP_201_CREATED

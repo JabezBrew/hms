@@ -23,14 +23,27 @@ from .factories import (
 )
 from apps.users.tests.factories import PractitionerProfileFactory, PatientProfileFactory
 from apps.core.tests.factories import DefaultFacilityFactory
-from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
+from apps.organization.models import (
+    Clinic,
+    ClinicalUnit,
+    UnitTypeConfig,
+    DepartmentDutyType,
+    RosterEntry,
+)
+from apps.referrals.models import ClinicWaitlistEntry
+from apps.encounters.models import Encounter, OutpatientVisit
+from apps.users.models import Staff
 
 
 # Base URL prefix for appointments app
 BASE_URL = '/api/appointments'
 
 
-def create_clinic(facility):
+def create_clinic(
+    facility,
+    booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+    assignment_timing=Clinic.AssignmentTiming.BOOKING,
+):
     facility_type = UnitTypeConfig.objects.create(
         code=f"facility-{facility.id}",
         name='Facility',
@@ -61,6 +74,8 @@ def create_clinic(facility):
         department=department,
         code='OPD-GEN',
         name='General OPD',
+        booking_mode=booking_mode,
+        assignment_timing=assignment_timing,
         is_active=True,
     )
 
@@ -109,12 +124,67 @@ class TestAppointmentTypeViewSet:
         apt_type.refresh_from_db()
         assert apt_type.name == 'New Name'
 
+    def test_put_update_appointment_type(self, admin_client, db):
+        """PUT should allow full update for admins (matches frontend)."""
+        apt_type = AppointmentTypeFactory(
+            name='Old Name',
+            description='Old desc',
+            duration_minutes=30,
+            category='in_person',
+            color='#000000',
+            is_active=True,
+        )
+        payload = {
+            'name': 'Updated Name',
+            'description': 'Updated desc',
+            'duration_minutes': 45,
+            'category': 'telemedicine',
+            'color': '#123456',
+            'is_active': True,
+        }
+        response = admin_client.put(
+            f'{BASE_URL}/types/{apt_type.id}/',
+            payload,
+            format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+        apt_type.refresh_from_db()
+        assert apt_type.name == 'Updated Name'
+
     def test_delete_appointment_type(self, admin_client, db):
         """Test deleting an appointment type."""
         apt_type = AppointmentTypeFactory()
         response = admin_client.delete(f'{BASE_URL}/types/{apt_type.id}/')
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert not AppointmentType.objects.filter(id=apt_type.id).exists()
+
+    def test_non_admin_can_list_but_cannot_modify(self, doctor_client, db):
+        """Non-admins can read appointment types but cannot create/update/delete."""
+        AppointmentTypeFactory.create_batch(2)
+        response = doctor_client.get(f'{BASE_URL}/types/')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 2
+
+        create_resp = doctor_client.post(
+            f'{BASE_URL}/types/',
+            {
+                'name': 'Should Fail',
+                'description': 'No',
+                'duration_minutes': 30,
+                'category': 'in_person',
+                'color': '#FF5733',
+            },
+            format='json',
+        )
+        assert create_resp.status_code == status.HTTP_403_FORBIDDEN
+
+        apt_type = AppointmentTypeFactory(name='Immutable')
+        update_resp = doctor_client.patch(
+            f'{BASE_URL}/types/{apt_type.id}/',
+            {'name': 'Nope'},
+            format='json',
+        )
+        assert update_resp.status_code == status.HTTP_403_FORBIDDEN
 
     def test_requires_authentication(self, api_client, db):
         """Test that endpoint requires authentication."""
@@ -133,9 +203,9 @@ class TestRecurringScheduleViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 3
 
-    def test_create_recurring_schedule(self, admin_client, db):
+    def test_create_recurring_schedule(self, admin_client, default_facility, db):
         """Test creating a new recurring schedule."""
-        practitioner = PractitionerProfileFactory()
+        practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
         data = {
             'name': 'Morning Clinic',
             'practitioner': str(practitioner.id),
@@ -153,6 +223,139 @@ class TestRecurringScheduleViewSet:
         )
         assert response.status_code == status.HTTP_201_CREATED
         assert RecurringSchedule.objects.filter(name='Morning Clinic').exists()
+
+    def test_create_shared_recurring_schedule_for_multiple_practitioners(self, admin_client, default_facility, db):
+        """Creating with practitioners should clone one schedule per practitioner."""
+        practitioner_a = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        practitioner_b = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        data = {
+            'name': 'IM Morning Clinic',
+            'practitioner': str(practitioner_a.id),
+            'practitioners': [str(practitioner_b.id)],
+            'template_name': 'Internal Medicine Shared AM',
+            'days_of_week': [0, 1, 2, 3, 4],
+            'start_time': '09:00:00',
+            'end_time': '12:00:00',
+            'slot_duration': 30,
+            'active_from': str(date.today()),
+            'breaks': [],
+        }
+        response = admin_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            data,
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['created_count'] == 2
+        assert response.data['template_name'] == 'Internal Medicine Shared AM'
+        assert response.data['template_key']
+        assert len(response.data['created_schedules']) == 2
+
+        template_key = response.data['template_key']
+        created = RecurringSchedule.objects.filter(
+            template_key=template_key
+        ).order_by('practitioner_id')
+        assert created.count() == 2
+        assert set(created.values_list('practitioner_id', flat=True)) == {
+            practitioner_a.id, practitioner_b.id
+        }
+
+    def test_doctor_cannot_create_recurring_schedule_for_other_practitioners(
+        self, doctor_client, doctor_user, default_facility, db
+    ):
+        """Doctors can only create recurring schedules for themselves."""
+        staff = Staff.objects.create(
+            user=doctor_user,
+            employee_id='DOC-SHARE-001',
+            department='Internal Medicine',
+            position='Consultant',
+            hire_date=date.today() - timedelta(days=365),
+            primary_facility=default_facility,
+        )
+        own_practitioner = PractitionerProfileFactory(
+            staff=staff,
+            license_number='DOC-SHARE-LIC-001',
+        )
+        other_practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
+
+        data = {
+            'name': 'Doctor Shared Attempt',
+            'practitioner': str(own_practitioner.id),
+            'practitioners': [str(other_practitioner.id)],
+            'days_of_week': [0, 2, 4],
+            'start_time': '10:00:00',
+            'end_time': '14:00:00',
+            'slot_duration': 30,
+            'active_from': str(date.today()),
+            'breaks': [],
+        }
+
+        response = doctor_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            data,
+            format='json'
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'practitioners' in response.data
+
+    def test_create_recurring_schedule_rejects_clash_with_published_roster_clinic(
+        self, admin_client, default_facility, db
+    ):
+        clinic = create_clinic(
+            default_facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        target_date = timezone.localtime(timezone.now()).date() + timedelta(days=1)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Clinic Session',
+            code='POOL-CLASH',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[target_date.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=target_date,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+            source='manual',
+            status='published',
+        )
+
+        payload = {
+            'name': 'Direct Clinic Overlap',
+            'practitioner': str(practitioner.id),
+            'days_of_week': [target_date.weekday()],
+            'start_time': '10:00:00',
+            'end_time': '11:30:00',
+            'slot_duration': 30,
+            'active_from': target_date.isoformat(),
+            'active_to': target_date.isoformat(),
+            'breaks': [],
+        }
+        response = admin_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            payload,
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'start_time' in response.data
+        assert 'clashes' in str(response.data['start_time'][0]).lower()
 
     def test_retrieve_recurring_schedule(self, admin_client, db):
         """Test retrieving a single recurring schedule."""
@@ -393,6 +596,7 @@ class TestAppointmentViewSet:
             active_from=date.today(),
         )
 
+        scheduled_start = (timezone.now() + timedelta(minutes=30)).replace(second=0, microsecond=0)
         appointment = Appointment.objects.create(
             facility=facility,
             patient=patient,
@@ -400,14 +604,40 @@ class TestAppointmentViewSet:
             clinic=clinic,
             appointment_type=apt_type,
             status='booked',
-            start_time=timezone.make_aware(datetime.datetime.combine(date.today(), time(11, 0))),
-            end_time=timezone.make_aware(datetime.datetime.combine(date.today(), time(11, 30))),
+            start_time=scheduled_start,
+            end_time=scheduled_start + timedelta(minutes=30),
         )
 
         response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
         assert response.status_code == status.HTTP_201_CREATED
         appointment.refresh_from_db()
         assert appointment.status == 'arrived'
+        encounter = Encounter.objects.get(appointment=appointment)
+        assert encounter.status == 'planned'
+        assert encounter.start_time == appointment.start_time
+
+    def test_start_visit_rejects_check_in_before_window(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+        start_time = timezone.now() + timedelta(hours=3)
+
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+        )
+
+        response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "cannot be checked in yet" in str(response.data).lower()
 
     def test_create_appointment_missing_fields(self, admin_client, db):
         data = {
@@ -420,6 +650,545 @@ class TestAppointmentViewSet:
             format='json'
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_direct_clinic_requires_practitioner(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+            assignment_timing=Clinic.AssignmentTiming.BOOKING,
+        )
+        patient = PatientProfileFactory(facility=facility)
+        apt_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + timedelta(days=1)
+        end_time = start_time + timedelta(minutes=30)
+
+        payload = {
+            'patient': str(patient.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
+            'status': 'booked',
+            'source': 'scheduled',
+            'start_time': start_time.isoformat(),
+            'end_time': end_time.isoformat(),
+        }
+
+        response = admin_client.post(f'{BASE_URL}/appointments/', payload, format='json')
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'practitioner' in response.data
+
+    def test_pool_clinic_allows_booking_without_practitioner_when_roster_slot_exists(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        slot_start = time(10, 0)
+        slot_end = time(10, 30)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Clinic Duty',
+            code='CLINIC-DUTY',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        start_time = timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start))
+        end_time = timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end))
+        payload = {
+            'patient': str(patient.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
+            'status': 'booked',
+            'source': 'scheduled',
+            'start_time': start_time.isoformat(),
+            'end_time': end_time.isoformat(),
+        }
+
+        response = admin_client.post(f'{BASE_URL}/appointments/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        appointment = Appointment.objects.get(id=response.data['id'])
+        assert appointment.practitioner_id is None
+        assert appointment.assignment_status == Appointment.AssignmentStatus.PENDING
+
+    def test_start_visit_assigns_pool_clinic_practitioner_at_check_in(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        scheduled_start = (timezone.now() + timedelta(minutes=30)).replace(second=0, microsecond=0)
+        scheduled_end = scheduled_start + timedelta(minutes=30)
+        roster_date = timezone.localtime(scheduled_start).date()
+        slot_start = scheduled_start.time().replace(tzinfo=None)
+        slot_end = scheduled_end.time().replace(tzinfo=None)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Check-In Duty',
+            code='POOL-CHECK-IN',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[roster_date.weekday()],
+            is_24_hour=False,
+            start_time=slot_start,
+            end_time=slot_end,
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=roster_date,
+            practitioner=practitioner,
+            start_time=slot_start,
+            end_time=slot_end,
+            source='manual',
+            status='published',
+        )
+
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=None,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            source='scheduled',
+            start_time=scheduled_start,
+            end_time=scheduled_end,
+        )
+
+        response = admin_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_201_CREATED
+        appointment.refresh_from_db()
+        assert appointment.practitioner_id == practitioner.id
+        assert appointment.assignment_source == Appointment.AssignmentSource.CHECK_IN
+
+    def test_pool_clinic_full_slot_with_auto_waitlist_creates_waitlist_entry(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        booked_patient = PatientProfileFactory(facility=facility)
+        waitlist_patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        slot_start = time(12, 0)
+        slot_end = time(12, 30)
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Waitlist Duty',
+            code='WAITLIST-DUTY',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=slot_start,
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        Appointment.objects.create(
+            facility=facility,
+            patient=booked_patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            source='scheduled',
+            start_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start)),
+            end_time=timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end)),
+        )
+
+        payload = {
+            'patient': str(waitlist_patient.id),
+            'clinic': str(clinic.id),
+            'appointment_type': str(apt_type.id),
+            'status': 'booked',
+            'source': 'scheduled',
+            'start_time': timezone.make_aware(datetime.datetime.combine(tomorrow, slot_start)).isoformat(),
+            'end_time': timezone.make_aware(datetime.datetime.combine(tomorrow, slot_end)).isoformat(),
+            'auto_waitlist': True,
+        }
+        response = admin_client.post(f'{BASE_URL}/appointments/', payload, format='json')
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.data.get('waitlisted') is True
+        assert ClinicWaitlistEntry.objects.filter(
+            clinic=clinic,
+            patient=waitlist_patient,
+            status='waiting',
+        ).exists()
+
+    def test_available_slots_supports_pool_clinic_query(self, admin_client, db):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        practitioner = PractitionerProfileFactory()
+
+        tomorrow = timezone.now().date() + timedelta(days=1)
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Slots Duty',
+            code='POOL-SLOTS',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            source='manual',
+            status='published',
+        )
+
+        response = admin_client.get(
+            f'{BASE_URL}/appointments/available_slots/',
+            {
+                'clinic_id': str(clinic.id),
+                'start_date': tomorrow.isoformat(),
+                'end_date': tomorrow.isoformat(),
+                'status': 'free',
+            }
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('clinic_mode') == Clinic.BookingMode.CLINIC_POOL
+        assert response.data.get('total', 0) > 0
+
+    def test_available_slots_can_force_practitioner_schedule_only(self, admin_client, default_facility, db):
+        clinic = create_clinic(
+            default_facility,
+            booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
+            assignment_timing=Clinic.AssignmentTiming.BOOKING,
+        )
+        practitioner = PractitionerProfileFactory()
+
+        tomorrow = timezone.localtime(timezone.now()).date() + timedelta(days=1)
+
+        RecurringScheduleFactory(
+            practitioner=practitioner,
+            facility=default_facility,
+            days_of_week=[tomorrow.weekday()],
+            start_time=time(14, 0),
+            end_time=time(15, 0),
+            slot_duration=30,
+            active_from=tomorrow - timedelta(days=1),
+            migrated_to_roster=False,
+        )
+
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Morning Roster Duty',
+            code='ROSTER-AM',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            source='manual',
+            status='published',
+        )
+
+        response = admin_client.get(
+            f'{BASE_URL}/appointments/available_slots/',
+            {
+                'practitioner_id': str(practitioner.id),
+                'start_date': tomorrow.isoformat(),
+                'end_date': tomorrow.isoformat(),
+                'status': 'free',
+                'use_roster': 'false',
+            }
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        slots = response.data.get('slots') or []
+        assert slots
+        assert all(slot.get('source') == 'recurring_schedule' for slot in slots)
+        slot_hours = {datetime.datetime.fromisoformat(slot['start']).hour for slot in slots}
+        assert slot_hours == {14}
+
+    def test_pool_clinic_bookings_decrement_capacity_even_when_unassigned(self, admin_client, default_facility, db):
+        """
+        Pool bookings often have practitioner=NULL until check-in. Availability must still
+        reflect booked capacity, and server-side validation must prevent overbooking.
+        """
+        facility = default_facility
+        clinic = create_clinic(
+            facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient1 = PatientProfileFactory(facility=facility)
+        patient2 = PatientProfileFactory(facility=facility)
+        apt_type = AppointmentTypeFactory(duration_minutes=30)
+
+        tomorrow = timezone.localtime(timezone.now()).date() + timedelta(days=1)
+        start_t = time(9, 0)
+        end_t = time(10, 0)
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Pool Capacity Duty',
+            code='POOL-CAP',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[tomorrow.weekday()],
+            is_24_hour=False,
+            start_time=start_t,
+            end_time=end_t,
+            slot_duration_minutes=30,
+            max_patients_per_slot=2,
+            clinic=clinic,
+            is_active=True,
+        )
+        # Team roster (no staff assignments needed) should still create bookable capacity.
+        team_type = UnitTypeConfig.objects.create(
+            code=f"team-{facility.id}",
+            name='Team',
+            depth_level=2,
+        )
+        team_type.allowed_parent_types.add(clinic.department.unit_type)
+        team = ClinicalUnit.objects.create(
+            unit_type=team_type,
+            code='POOL-TEAM',
+            name='Pool Team',
+            parent=clinic.department,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=tomorrow,
+            team=team,
+            start_time=start_t,
+            end_time=end_t,
+            source='manual',
+            status='published',
+        )
+
+        slot_start = timezone.make_aware(datetime.datetime.combine(tomorrow, start_t))
+        slot_end = timezone.make_aware(datetime.datetime.combine(tomorrow, time(9, 30)))
+
+        # First booking consumes the only capacity; practitioner remains NULL (pool clinic).
+        response = admin_client.post(
+            f'{BASE_URL}/appointments/',
+            {
+                'patient': str(patient1.id),
+                'clinic': str(clinic.id),
+                'appointment_type': str(apt_type.id),
+                'status': 'booked',
+                'source': 'scheduled',
+                'start_time': slot_start.isoformat(),
+                'end_time': slot_end.isoformat(),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Availability should now show this window as fully booked.
+        response = admin_client.get(
+            f'{BASE_URL}/appointments/available_slots/',
+            {
+                'clinic_id': str(clinic.id),
+                'start_date': tomorrow.isoformat(),
+                'end_date': tomorrow.isoformat(),
+                'status': '',
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        slots = response.data.get('slots') or []
+        assert slots, "Expected pool windows to be returned"
+        first = slots[0]
+        assert first['capacity']['booked'] == 1
+        assert first['capacity']['remaining'] == 1
+
+        # Second booking should still succeed (capacity=2 for this window).
+        response = admin_client.post(
+            f'{BASE_URL}/appointments/',
+            {
+                'patient': str(patient2.id),
+                'clinic': str(clinic.id),
+                'appointment_type': str(apt_type.id),
+                'status': 'booked',
+                'source': 'scheduled',
+                'start_time': slot_start.isoformat(),
+                'end_time': slot_end.isoformat(),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Third booking must be rejected by capacity validation.
+        patient3 = PatientProfileFactory(facility=facility)
+        response = admin_client.post(
+            f'{BASE_URL}/appointments/',
+            {
+                'patient': str(patient3.id),
+                'clinic': str(clinic.id),
+                'appointment_type': str(apt_type.id),
+                'status': 'booked',
+                'source': 'scheduled',
+                'start_time': slot_start.isoformat(),
+                'end_time': slot_end.isoformat(),
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.tier1
+class TestWalkInArrivals:
+    def test_start_visit_allows_receptionist(self, receptionist_client, default_facility, db):
+        clinic = create_clinic(default_facility)
+        patient = PatientProfileFactory(facility=default_facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + timedelta(minutes=30)
+        end_time = start_time + timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=default_facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        response = receptionist_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_walk_in_check_in_creates_waiting_visit(self, receptionist_client, default_facility, db):
+        clinic = create_clinic(
+            default_facility,
+            booking_mode=Clinic.BookingMode.CLINIC_POOL,
+            assignment_timing=Clinic.AssignmentTiming.CHECK_IN,
+        )
+        patient = PatientProfileFactory(facility=default_facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory(duration_minutes=30, category='walk_in')
+
+        today = timezone.localtime(timezone.now()).date()
+        duty_type = DepartmentDutyType.objects.create(
+            department=clinic.department,
+            name='Walk-In Duty',
+            code='WALK-IN-DUTY',
+            category='clinic',
+            rotation_type='none',
+            applicable_days=[today.weekday()],
+            is_24_hour=False,
+            start_time=time(9, 0),
+            end_time=time(14, 0),
+            slot_duration_minutes=30,
+            max_patients_per_slot=1,
+            clinic=clinic,
+            is_active=True,
+        )
+        RosterEntry.objects.create(
+            department=clinic.department,
+            duty_type=duty_type,
+            date=today,
+            practitioner=practitioner,
+            start_time=time(9, 0),
+            end_time=time(14, 0),
+            source='manual',
+            status='published',
+        )
+
+        fixed_now = timezone.make_aware(datetime.datetime.combine(today, time(10, 15)))
+        with patch('apps.appointments.views.timezone.now', return_value=fixed_now):
+            response = receptionist_client.post(
+                f'{BASE_URL}/appointments/walk-in-check-in/',
+                {'patient': str(patient.id), 'clinic': str(clinic.id), 'reason': 'Walk-in'},
+                format='json',
+            )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        appointment = Appointment.objects.get(id=response.data['appointment_id'])
+        assert appointment.source == 'walk_in'
+        assert appointment.status == 'arrived'
+        assert appointment.appointment_type_id == apt_type.id
+
+        visit = OutpatientVisit.objects.get(encounter_id=response.data['encounter_id'])
+        assert visit.visit_status == OutpatientVisit.VisitStatus.WAITING
 
 
 @pytest.mark.tier2

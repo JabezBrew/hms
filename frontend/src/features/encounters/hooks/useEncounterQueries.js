@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { encountersApi } from '@/features/encounters/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
+import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 
 // Query keys
 const baseKeys = createKeyFactory('encounters');
@@ -12,6 +13,72 @@ export const encounterKeys = {
   patients: () => [...encounterKeys.all, 'patients'],
   practitioners: () => [...encounterKeys.all, 'practitioners'],
 };
+
+function normalizeIdentifier(value) {
+  if (!value) return null;
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (typeof value === 'object') {
+    return value.id ?? value.uuid ?? null;
+  }
+  return null;
+}
+
+export function resolveEncounterPatientId(queryClient, { encounterId, patientId, sources = [] } = {}) {
+  const candidates = [];
+
+  if (patientId) {
+    candidates.push(patientId);
+  }
+
+  for (const source of sources) {
+    if (!source) continue;
+    candidates.push(source);
+
+    if (typeof source === 'object') {
+      candidates.push(
+        source.patient_id,
+        source.patientId,
+        source.patient,
+        source.patient?.id,
+      );
+    }
+  }
+
+  if (encounterId) {
+    const cachedEncounter = queryClient.getQueryData(encounterKeys.detail(encounterId));
+    if (cachedEncounter) {
+      candidates.push(
+        cachedEncounter.patient_id,
+        cachedEncounter.patientId,
+        cachedEncounter.patient,
+        cachedEncounter.patient?.id,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentifier(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+export function invalidateEncounterMutationQueries(queryClient, { encounterId, patientId } = {}) {
+  const queryKeys = [encounterKeys.lists()];
+
+  if (encounterId) {
+    queryKeys.push(encounterKeys.detail(encounterId));
+  }
+
+  if (patientId) {
+    queryKeys.push(encounterKeys.forPatient(patientId));
+  }
+
+  return invalidateQueryKeys(queryClient, queryKeys);
+}
 
 /**
  * Get encounters list with optional filtering
@@ -49,7 +116,7 @@ export function useEncounter(id) {
 export function usePatientEncounters(patientId, options = {}) {
   return useQuery({
     queryKey: encounterKeys.forPatient(patientId),
-    queryFn: () => encountersApi.getEncountersForPatient(patientId),
+    queryFn: ({ signal }) => encountersApi.getEncountersForPatient(patientId, { signal }),
     enabled: !!patientId,
     staleTime: 60 * 1000, // 60 seconds
     ...options,
@@ -65,9 +132,18 @@ export function useCreateEncounter() {
   
   return useMutation({
     mutationFn: (data) => encountersApi.createEncounter(data),
-    onSuccess: () => {
-      // Invalidate the encounters list query to refetch
-      queryClient.invalidateQueries({ queryKey: encounterKeys.lists() });
+    onSuccess: (data, variables) => {
+      const encounterId = normalizeIdentifier(data?.id);
+      const patientId = resolveEncounterPatientId(queryClient, {
+        encounterId,
+        sources: [data, variables],
+      });
+
+      if (encounterId) {
+        queryClient.setQueryData(encounterKeys.detail(encounterId), data);
+      }
+
+      void invalidateEncounterMutationQueries(queryClient, { encounterId, patientId });
     },
   });
 }
@@ -112,12 +188,13 @@ export function useUpdateEncounter() {
 
     // Always refetch after error or success to ensure consistency
     onSettled: (data, error, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: encounterKeys.detail(variables.id)
+      const encounterId = normalizeIdentifier(variables?.id);
+      const patientId = resolveEncounterPatientId(queryClient, {
+        encounterId,
+        sources: [data, variables?.data],
       });
-      queryClient.invalidateQueries({
-        queryKey: encounterKeys.lists()
-      });
+
+      void invalidateEncounterMutationQueries(queryClient, { encounterId, patientId });
     },
   });
 }
@@ -132,14 +209,13 @@ export function useDeleteEncounter() {
   return useMutation({
     mutationFn: (id) => encountersApi.deleteEncounter(id),
     onSuccess: (data, variables) => {
-      // Invalidate the encounter detail query
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.detail(variables) 
+      const encounterId = normalizeIdentifier(variables);
+      const patientId = resolveEncounterPatientId(queryClient, {
+        encounterId,
+        sources: [data],
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.lists() 
-      });
+
+      void invalidateEncounterMutationQueries(queryClient, { encounterId, patientId });
     },
   });
 }
@@ -154,14 +230,13 @@ export function useDischargePatient() {
   return useMutation({
     mutationFn: ({ id, data }) => encountersApi.dischargePatient(id, data),
     onSuccess: (data, variables) => {
-      // Update the cache for this specific encounter
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.detail(variables.id) 
+      const encounterId = normalizeIdentifier(variables?.id);
+      const patientId = resolveEncounterPatientId(queryClient, {
+        encounterId,
+        sources: [data, variables?.data],
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.lists() 
-      });
+
+      void invalidateEncounterMutationQueries(queryClient, { encounterId, patientId });
     },
   });
 }
@@ -176,14 +251,13 @@ export function useCancelEncounter() {
   return useMutation({
     mutationFn: (id) => encountersApi.cancelEncounter(id),
     onSuccess: (data, variables) => {
-      // Update the cache for this specific encounter
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.detail(variables) 
+      const encounterId = normalizeIdentifier(variables);
+      const patientId = resolveEncounterPatientId(queryClient, {
+        encounterId,
+        sources: [data],
       });
-      // Also invalidate the list to reflect changes
-      queryClient.invalidateQueries({ 
-        queryKey: encounterKeys.lists() 
-      });
+
+      void invalidateEncounterMutationQueries(queryClient, { encounterId, patientId });
     },
   });
 }

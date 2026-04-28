@@ -43,7 +43,7 @@ const StaffChronicleCard = ({
 
   const getEmployeeId = (staff) => staff?.employee_id || "No ID";
 
-  const getUserType = (staff) => staff?.user_details?.user_type || 'staff';
+  const getUserType = (staff) => staff?.user_type || staff?.user_details?.user_type || 'staff';
 
   const getDepartment = (staff) => staff?.department || null;
 
@@ -210,7 +210,7 @@ const StaffChronicleCard = ({
   const handleManageSchedule = (e) => {
     e.stopPropagation();
     if (staffId) {
-      navigate(`/staff/${staffId}/schedule`);
+      navigate(`/staff/${staffId}`);
     }
   };
 
@@ -338,7 +338,7 @@ const StaffChronicleCard = ({
           >
             View Profile
           </Button>
-          {(userType === 'doctor' || userType === 'nurse') && (
+          {userType === 'doctor' && (
             <Button
               size="sm"
               className="font-mono text-[10px] sm:text-xs h-8 flex-1 sm:flex-none"

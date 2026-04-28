@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.indexes import GinIndex
 from ..users.models import PatientProfile
 
 User = get_user_model()
@@ -53,7 +54,62 @@ class PatientSearch(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.user.email} - {self.search_query}"
+        timestamp = self.search_date.isoformat() if self.search_date else "pending"
+        return f"{self.user.email} - patient search [{timestamp}]"
+
+
+class PatientSearchIndex(models.Model):
+    """
+    Compact projection table for patient search lookups.
+
+    This keeps the hot text-search path off the wider patient/profile join graph.
+    """
+    patient_profile = models.OneToOneField(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='search_projection',
+        primary_key=True,
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='patient_search_indexes',
+    )
+    first_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
+    full_name = models.CharField(max_length=301, blank=True)
+    medical_record_number = models.CharField(max_length=40)
+    nhis_id = models.CharField(max_length=50, blank=True, null=True)
+    search_document = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['facility', 'patient_profile'], name='pat_search_idx_fac_pat_idx'),
+            GinIndex(
+                name='pat_search_idx_name_trgm',
+                fields=['full_name'],
+                opclasses=['gin_trgm_ops'],
+            ),
+            GinIndex(
+                name='pat_search_idx_doc_trgm',
+                fields=['search_document'],
+                opclasses=['gin_trgm_ops'],
+            ),
+            GinIndex(
+                name='pat_search_idx_mrn_trgm',
+                fields=['medical_record_number'],
+                opclasses=['gin_trgm_ops'],
+            ),
+            GinIndex(
+                name='pat_search_idx_nhis_trgm',
+                fields=['nhis_id'],
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Search index for {self.patient_profile_id}"
 
 
 class RecentPatient(models.Model):

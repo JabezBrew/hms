@@ -1,9 +1,11 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
+from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Prefetch, Count, Case, When, Sum
+from django.db.models.functions import TruncDate
 from django.db import transaction
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -13,6 +15,7 @@ from django.conf import settings
 from datetime import timedelta, datetime
 import logging
 
+from apps.core.metrics import inc_counter, measure_duration, observe_histogram, track_query_count
 from ..core.pagination import StandardResultsSetPagination, SmallResultsSetPagination
 from apps.core.cache_utils import facility_cache_key
 
@@ -22,6 +25,7 @@ from .models import (
 )
 from .serializers import (
     VitalSignsSerializer, VitalSignsCreateSerializer, VitalSignsListSerializer,
+    VitalSignsTrendSerializer,
     NursingTaskSerializer, NursingTaskCreateSerializer, NursingTaskUpdateSerializer,
     NursingTaskListSerializer,
     NursingAlertSerializer, NursingAlertAcknowledgeSerializer, NursingAlertListSerializer,
@@ -33,7 +37,7 @@ from .serializers import (
     TreatmentSheetEntryCreateSerializer,
     SupplyRequestSerializer, SupplyRequestListSerializer, SupplyRequestCreateSerializer,
     FluidBalanceSerializer, FluidBalanceListSerializer, FluidBalanceCreateSerializer,
-    FluidBalanceSummarySerializer
+    FluidBalanceSummarySerializer, FluidBalanceTrendPointSerializer,
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
 from ..wards.models import Admission
@@ -42,13 +46,80 @@ from ..users.models import PatientProfile, PractitionerProfile
 from ..audit.services import AuditService
 from ..audit.models import AuditCategory, AuditAction
 from ..core.security import (
+    ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
     check_clinical_access,
     get_user_facility,
     get_accessible_patients_for_clinician,
+    scope_queryset_to_clinical_access,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _scope_nursing_patient_queryset(request, queryset, *, patient_lookup='patient'):
+    """Apply facility and clinical patient access scoping for nursing querysets."""
+    facility = get_user_facility(request)
+    if not facility:
+        return queryset.none()
+
+    queryset = queryset.filter(facility=facility)
+    queryset = scope_queryset_to_clinical_access(
+        queryset,
+        request.user,
+        patient_lookup=patient_lookup,
+    )
+
+    patient_id = request.query_params.get('patient') or request.query_params.get('patient_id')
+    if patient_id:
+        patient = PatientProfile.objects.filter(id=patient_id).first()
+        if not patient:
+            return queryset.none()
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
+        queryset = queryset.filter(**{f'{patient_lookup}_id': patient_id})
+
+    return queryset
+
+
+def _get_request_practitioner(user):
+    """Resolve the caller's practitioner profile through the staff relation."""
+    return PractitionerProfile.objects.filter(staff__user=user).first()
+
+
+def _parse_datetime_range(request):
+    """
+    Parse optional start/end date query params into an aware [start, end) range.
+    """
+
+    tz = timezone.get_current_timezone()
+    start_dt = None
+    end_dt = None
+
+    start_date = request.query_params.get('start_date')
+    if start_date:
+        try:
+            parsed_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError as exc:
+            raise ValidationError({'start_date': 'Invalid date format. Use YYYY-MM-DD'}) from exc
+        start_dt = timezone.make_aware(datetime.combine(parsed_start, datetime.min.time()), tz)
+
+    end_date = request.query_params.get('end_date')
+    if end_date:
+        try:
+            parsed_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError as exc:
+            raise ValidationError({'end_date': 'Invalid date format. Use YYYY-MM-DD'}) from exc
+        end_dt = timezone.make_aware(
+            datetime.combine(parsed_end + timedelta(days=1), datetime.min.time()),
+            tz,
+        )
+
+    if start_dt and end_dt and end_dt <= start_dt:
+        raise ValidationError({'end_date': 'end_date must be after start_date'})
+
+    return start_dt, end_dt
 
 
 class VitalSignsViewSet(viewsets.ModelViewSet):
@@ -69,21 +140,7 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return VitalSigns.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by date range
         start_date = self.request.query_params.get('start_date')
@@ -179,9 +236,17 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
             description=f"Recorded vital signs for {patient.user.get_full_name()}: {', '.join(vitals_summary)}" if vitals_summary else f"Recorded vital signs for {patient.user.get_full_name()}",
         )
 
-        # Return full serializer data with encounter_created flag
-        output_serializer = VitalSignsSerializer(vital_signs)
-        response_data = output_serializer.data
+        # Re-fetch with only the relations needed for the lightweight create payload.
+        response_vital_signs = VitalSigns.objects.select_related(
+            'patient__user',
+            'recorded_by__staff__user',
+        ).get(pk=vital_signs.pk)
+        response_data = VitalSignsListSerializer(response_vital_signs).data
+        response_data['encounter'] = str(response_vital_signs.encounter_id)
+        response_data['recorded_by'] = (
+            str(response_vital_signs.recorded_by_id) if response_vital_signs.recorded_by_id else None
+        )
+        response_data['notes'] = response_vital_signs.notes
         response_data['encounter_created'] = encounter_created
 
         return Response(response_data, status=status.HTTP_201_CREATED)
@@ -207,15 +272,49 @@ class VitalSignsViewSet(viewsets.ModelViewSet):
         if patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
 
-        days = int(request.query_params.get('days', 7))
-        start_date = timezone.now() - timedelta(days=days)
-
         vitals = VitalSigns.objects.filter(
             patient=patient,
-            recorded_at__gte=start_date
+            facility=facility,
         ).order_by('recorded_at')
 
-        serializer = VitalSignsSerializer(vitals, many=True)
+        encounter_id = request.query_params.get('encounter_id') or request.query_params.get('encounter')
+        admission_id = request.query_params.get('admission_id') or request.query_params.get('admission')
+        if encounter_id:
+            vitals = vitals.filter(encounter_id=encounter_id)
+        elif admission_id:
+            vitals = vitals.filter(encounter__admission_id=admission_id)
+
+        start_dt, end_dt = _parse_datetime_range(request)
+        if start_dt:
+            vitals = vitals.filter(recorded_at__gte=start_dt)
+        if end_dt:
+            vitals = vitals.filter(recorded_at__lt=end_dt)
+
+        days = request.query_params.get('days')
+        if days not in (None, ''):
+            try:
+                day_window = int(days)
+            except ValueError as exc:
+                raise ValidationError({'days': 'days must be an integer'}) from exc
+            if day_window < 0:
+                raise ValidationError({'days': 'days must be 0 or greater'})
+            if day_window > 0:
+                vitals = vitals.filter(recorded_at__gte=timezone.now() - timedelta(days=day_window))
+
+        vitals = vitals.only(
+            'id',
+            'encounter_id',
+            'recorded_at',
+            'temperature',
+            'heart_rate',
+            'blood_pressure_systolic',
+            'blood_pressure_diastolic',
+            'respiratory_rate',
+            'oxygen_saturation',
+            'pain_level',
+        )
+
+        serializer = VitalSignsTrendSerializer(vitals, many=True)
         return Response(serializer.data)
 
 
@@ -241,21 +340,7 @@ class NursingTaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering and nurse-specific tasks."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return NursingTask.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by scheduled date range
         start_date = self.request.query_params.get('start_date')
@@ -269,8 +354,9 @@ class NursingTaskViewSet(viewsets.ModelViewSet):
         # Filter for current user's tasks
         my_tasks = self.request.query_params.get('my_tasks')
         if my_tasks and my_tasks.lower() == 'true':
-            if hasattr(self.request.user, 'practitioner_profile'):
-                queryset = queryset.filter(assigned_to=self.request.user.practitioner_profile)
+            practitioner = _get_request_practitioner(self.request.user)
+            if practitioner:
+                queryset = queryset.filter(assigned_to=practitioner)
 
         return queryset
 
@@ -347,21 +433,7 @@ class NursingAlertViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to show unacknowledged alerts by default."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return NursingAlert.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Show only unacknowledged alerts by default
         show_all = self.request.query_params.get('show_all')
@@ -422,7 +494,10 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         'patient', 'patient__user', 'administered_by', 'prescribed_by', 'created_by'
     ).all()
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsNurseOrDoctor]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['patient', 'status', 'administered_by']
+    ordering_fields = ['scheduled_time', 'administered_time', 'created_at']
+    ordering = ['-scheduled_time']
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
@@ -436,21 +511,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return MedicationAdministration.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by scheduled date range
         start_date = self.request.query_params.get('start_date')
@@ -743,7 +804,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 elif encounter.patient:
                     admission = Admission.objects.filter(
                         patient=encounter.patient,
-                        status='admitted'
+                        status__in=ACTIVE_ADMISSION_STATUSES
                     ).select_related('patient', 'patient__user').first()
             except Encounter.DoesNotExist:
                 pass
@@ -759,6 +820,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Facility context is required.")
         if admission.facility_id != facility.id:
             raise PermissionDenied("Admission does not belong to the active facility.")
+        check_clinical_access(request.user, admission.patient)
 
         # Parse date range
         start_date_str = request.query_params.get('start_date')
@@ -938,6 +1000,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
         return Response({
             'admission_id': str(admission.id),
+            'patient_id': str(admission.patient_id),
             'patient_name': f"{admission.patient.user.first_name} {admission.patient.user.last_name}",
             'patient_mrn': admission.patient.medical_record_number,
             'date_range': {
@@ -1002,10 +1065,7 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
         return ShiftHandoffSerializer
 
     def get_queryset(self):
-        facility = get_user_facility(self.request)
-        if not facility:
-            return ShiftHandoff.objects.none()
-        return super().get_queryset().filter(facility=facility)
+        return _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
@@ -1014,6 +1074,8 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
         patient = serializer.validated_data.get('patient')
         if patient and patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
+        if patient:
+            check_clinical_access(self.request.user, patient)
         serializer.save(created_by=self.request.user, facility=facility)
 
     @action(detail=False, methods=['get'])
@@ -1029,7 +1091,7 @@ class ShiftHandoffViewSet(viewsets.ModelViewSet):
 class MonitoringPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
-    max_page_size = 100
+    max_page_size = 50
 
 
 class PatientMonitoringViewSet(viewsets.ViewSet):
@@ -1070,25 +1132,34 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 raise PermissionDenied("Facility context is required.")
 
             try:
-                page = int(request.query_params.get('page', 1))
-                page_size = int(request.query_params.get('page_size', 20))
+                page = max(int(request.query_params.get('page', 1)), 1)
+                requested_page_size = int(request.query_params.get('page_size', 20))
             except (ValueError, TypeError):
                 page = 1
-                page_size = 20
+                requested_page_size = 20
+
+            page_size = max(1, min(requested_page_size, self.pagination_class.max_page_size))
 
             # Build cache key based on query params
             cache_key = facility_cache_key(
                 f'nursing_dashboard_{ward_id or "all"}_u{request.user.id}_p{page}_ps{page_size}'
             )
+            stale_cache_key = f'{cache_key}_stale'
             lock_key = f'{cache_key}_lock'
             
             # Try to get from cache first
             cached_result = cache.get(cache_key)
             if cached_result is not None:
+                inc_counter(
+                    'hms_dashboard_cache_events_total',
+                    labels={'dashboard': 'nursing_monitoring', 'result': 'hit'},
+                    description='Dashboard cache hits, misses, and stale serves.',
+                )
                 return Response(cached_result)
             
             # Cache miss - try to acquire lock for single-flight
             # Using cache.add() as a distributed lock (returns True if set, False if exists)
+            stale_result = cache.get(stale_cache_key)
             lock_acquired = cache.add(lock_key, '1', timeout=30)  # 30s lock timeout
             
             # If we didn't get the lock, another request is building the cache.
@@ -1099,126 +1170,142 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 # Quick retry - check if cache was populated while we waited
                 cached_result = cache.get(cache_key)
                 if cached_result is not None:
+                    inc_counter(
+                        'hms_dashboard_cache_events_total',
+                        labels={'dashboard': 'nursing_monitoring', 'result': 'hit'},
+                        description='Dashboard cache hits, misses, and stale serves.',
+                    )
                     return Response(cached_result)
-                # Still no cache - proceed with query rather than blocking threads
-                # This allows some duplicate queries but prevents thread starvation
+                if stale_result is not None:
+                    inc_counter(
+                        'hms_dashboard_cache_events_total',
+                        labels={'dashboard': 'nursing_monitoring', 'result': 'stale'},
+                        description='Dashboard cache hits, misses, and stale serves.',
+                    )
+                    return Response(stale_result)
+                # Cold-cache fallback: recompute locally rather than blocking request threads.
             
+            inc_counter(
+                'hms_dashboard_cache_events_total',
+                labels={'dashboard': 'nursing_monitoring', 'result': 'miss'},
+                description='Dashboard cache hits, misses, and stale serves.',
+            )
 
             try:
-                # Calculate time boundaries for prefetch filters
-                now = timezone.now()
-                twenty_four_hours_ago = now - timedelta(hours=24)
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                today_end = today_start + timedelta(days=1)
-                two_hours_later = now + timedelta(hours=2)
+                with track_query_count() as query_counter:
+                    with measure_duration(
+                        'hms_dashboard_latency_seconds',
+                        labels={'dashboard': 'nursing_monitoring'},
+                        description='Dashboard compute latency in seconds.',
+                    ):
+                        # Calculate time boundaries for prefetch filters
+                        now = timezone.now()
+                        twenty_four_hours_ago = now - timedelta(hours=24)
+                        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                        today_end = today_start + timedelta(days=1)
+                        two_hours_later = now + timedelta(hours=2)
 
-                # OPTIMIZED: Get currently admitted patients with all related data prefetched
-                # This reduces 81 queries (4 queries × 20 patients + 1) to just 5-6 queries
-                admissions = Admission.objects.filter(
-                    status='admitted',
-                    facility=facility
-                ).select_related(
-                    'patient__user',
-                    'bed__ward',
-                    'admitting_doctor__staff__user'
-                ).prefetch_related(
-                    # Prefetch recent vital signs (last 24 hours)
-                    Prefetch(
-                        'patient__vital_signs',
-                        queryset=VitalSigns.objects.filter(
-                            recorded_at__gte=twenty_four_hours_ago
-                        ).order_by('-recorded_at')[:5],
-                        to_attr='recent_vitals_list'
-                    ),
-                    # Prefetch active alerts (unacknowledged)
-                    Prefetch(
-                        'patient__nursing_alerts',
-                        queryset=NursingAlert.objects.filter(
-                            is_acknowledged=False
-                        ).order_by('-severity', '-created_at')[:5],
-                        to_attr='active_alerts_list'
-                    ),
-                    # Prefetch pending tasks for today
-                    Prefetch(
-                        'patient__nursing_tasks',
-                        queryset=NursingTask.objects.filter(
-                            status__in=['pending', 'overdue'],
-                            scheduled_time__gte=today_start,
-                            scheduled_time__lt=today_end
-                        ).order_by('scheduled_time')[:10],
-                        to_attr='pending_tasks_list'
-                    ),
-                    # Prefetch medications due in next 2 hours
-                    Prefetch(
-                        'patient__medication_administrations',
-                        queryset=MedicationAdministration.objects.filter(
-                            status='scheduled',
-                            scheduled_time__gte=now,
-                            scheduled_time__lte=two_hours_later
-                        ).order_by('scheduled_time')[:10],
-                        to_attr='medications_due_list'
-                    ),
-                ).order_by('-admission_date')
+                        admissions = Admission.objects.filter(
+                            status__in=ACTIVE_ADMISSION_STATUSES,
+                            facility=facility
+                        ).select_related(
+                            'patient__user',
+                            'bed__ward',
+                            'admitting_doctor__staff__user'
+                        ).prefetch_related(
+                            Prefetch(
+                                'patient__vital_signs',
+                                queryset=VitalSigns.objects.filter(
+                                    recorded_at__gte=twenty_four_hours_ago
+                                ).order_by('-recorded_at')[:5],
+                                to_attr='recent_vitals_list'
+                            ),
+                            Prefetch(
+                                'patient__nursing_alerts',
+                                queryset=NursingAlert.objects.filter(
+                                    is_acknowledged=False
+                                ).order_by('-severity', '-created_at')[:5],
+                                to_attr='active_alerts_list'
+                            ),
+                            Prefetch(
+                                'patient__nursing_tasks',
+                                queryset=NursingTask.objects.filter(
+                                    status__in=['pending', 'overdue'],
+                                    scheduled_time__gte=today_start,
+                                    scheduled_time__lt=today_end
+                                ).order_by('scheduled_time')[:10],
+                                to_attr='pending_tasks_list'
+                            ),
+                            Prefetch(
+                                'patient__medication_administrations',
+                                queryset=MedicationAdministration.objects.filter(
+                                    status='scheduled',
+                                    scheduled_time__gte=now,
+                                    scheduled_time__lte=two_hours_later
+                                ).order_by('scheduled_time')[:10],
+                                to_attr='medications_due_list'
+                            ),
+                        ).order_by('-admission_date')
 
-                # Restrict to accessible patients for nurses
-                if request.user.user_type == 'nurse' and getattr(settings, 'TEAM_ACCESS_STRICT', True):
-                    accessible_patients = get_accessible_patients_for_clinician(request.user)
-                    admissions = admissions.filter(patient__in=accessible_patients)
+                        if request.user.user_type == 'nurse' and getattr(settings, 'TEAM_ACCESS_STRICT', True):
+                            accessible_patients = get_accessible_patients_for_clinician(request.user)
+                            admissions = admissions.filter(patient__in=accessible_patients)
 
-                # Filter by ward if specified
-                if ward_id:
-                    admissions = admissions.filter(bed__ward_id=ward_id)
+                        if ward_id:
+                            admissions = admissions.filter(bed__ward_id=ward_id)
 
-                # Get total count with caching (avoid expensive count on every request)
-                count_cache_key = facility_cache_key(
-                    f'nursing_dashboard_count_{ward_id or "all"}_u{request.user.id}'
-                )
-                total_count = cache.get(count_cache_key)
-                if total_count is None:
-                    total_count = admissions.count()
-                    cache.set(count_cache_key, total_count, 120)  # Cache count for 120 seconds
+                        count_cache_key = facility_cache_key(
+                            f'nursing_dashboard_count_{ward_id or "all"}_u{request.user.id}'
+                        )
+                        total_count = cache.get(count_cache_key)
+                        if total_count is None:
+                            total_count = admissions.count()
+                            cache.set(count_cache_key, total_count, 120)
 
-                # Apply pagination
-                start = (page - 1) * page_size
-                end = start + page_size
-                admissions = list(admissions[start:end])
+                        start = (page - 1) * page_size
+                        end = start + page_size
+                        admissions = list(admissions[start:end])
 
-                monitoring_data = []
+                        monitoring_data = []
 
-                for admission in admissions:
-                    patient = admission.patient
+                        for admission in admissions:
+                            patient = admission.patient
 
-                    # Use prefetched data instead of making individual queries
-                    recent_vitals = getattr(patient, 'recent_vitals_list', [])
-                    latest_vitals = recent_vitals[0] if recent_vitals else None
+                            recent_vitals = getattr(patient, 'recent_vitals_list', [])
+                            latest_vitals = recent_vitals[0] if recent_vitals else None
 
-                    active_alerts = getattr(patient, 'active_alerts_list', [])
-                    pending_tasks = getattr(patient, 'pending_tasks_list', [])
-                    medications_due = getattr(patient, 'medications_due_list', [])
+                            active_alerts = getattr(patient, 'active_alerts_list', [])
+                            pending_tasks = getattr(patient, 'pending_tasks_list', [])
+                            medications_due = getattr(patient, 'medications_due_list', [])
 
-                    monitoring_data.append({
-                        'patient': patient,
-                        'admission': admission,
-                        'latest_vitals': latest_vitals,
-                        'active_alerts': active_alerts,
-                        'pending_tasks': pending_tasks,
-                        'medications_due': medications_due
-                    })
+                            monitoring_data.append({
+                                'patient': patient,
+                                'admission': admission,
+                                'latest_vitals': latest_vitals,
+                                'active_alerts': active_alerts,
+                                'pending_tasks': pending_tasks,
+                                'medications_due': medications_due
+                            })
 
-                # Use lightweight list serializer for dashboard (97% payload reduction)
-                serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
+                        serializer = PatientMonitoringListSerializer(monitoring_data, many=True)
 
-                # Build response data
-                result = {
-                    'count': total_count,
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': (total_count + page_size - 1) // page_size,
-                    'results': serializer.data
-                }
+                        result = {
+                            'count': total_count,
+                            'page': page,
+                            'page_size': page_size,
+                            'total_pages': (total_count + page_size - 1) // page_size,
+                            'results': serializer.data
+                        }
                 
-                # Cache the result for 60 seconds
-                cache.set(cache_key, result, 60)
+                        cache.set(cache_key, result, 60)
+                        cache.set(stale_cache_key, result, 300)
+                observe_histogram(
+                    'hms_dashboard_query_count',
+                    query_counter.count,
+                    labels={'dashboard': 'nursing_monitoring'},
+                    description='SQL statements executed to build a dashboard response.',
+                    buckets=(1, 2, 4, 8, 12, 16, 24, 32),
+                )
                 
                 return Response(result)
             
@@ -1227,16 +1314,11 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
                 if lock_acquired:
                     cache.delete(lock_key)
 
-        except Exception as e:
-            # Log the error and return a proper error response
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"Error in patient monitoring dashboard: {str(e)}")
-            print(error_details)
+        except Exception:
+            logger.exception("Error in patient monitoring dashboard")
 
             return Response({
                 'error': 'Failed to fetch patient monitoring data',
-                'detail': str(e),
                 'count': 0,
                 'page': 1,
                 'page_size': 20,
@@ -1271,7 +1353,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         # Get current admission
         admission = Admission.objects.filter(
             patient=patient,
-            status='admitted'
+            status__in=ACTIVE_ADMISSION_STATUSES
         ).select_related('bed', 'bed__ward').first()
 
         # Get recent vital signs (last 24 hours)
@@ -1351,7 +1433,7 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         # Get patients currently admitted to this ward
         ward_patients = PatientProfile.objects.filter(
             admissions__bed__ward_id=ward_id,
-            admissions__status='admitted'
+            admissions__status__in=ACTIVE_ADMISSION_STATUSES
         ).values_list('id', flat=True)
 
         # Find nurses who have recorded activities for these patients in last 7 days
@@ -1366,13 +1448,13 @@ class PatientMonitoringViewSet(viewsets.ViewSet):
         # Get nurses from completed tasks
         task_nurses = NursingTask.objects.filter(
             patient_id__in=ward_patients,
-            completed_at__gte=recent_cutoff
+            completed_time__gte=recent_cutoff
         ).values_list('completed_by_id', flat=True).distinct()
 
         # Get nurses from medication administrations
         med_nurses = MedicationAdministration.objects.filter(
             patient_id__in=ward_patients,
-            administered_at__gte=recent_cutoff
+            administered_time__gte=recent_cutoff
         ).values_list('administered_by_id', flat=True).distinct()
 
         # Combine all nurse IDs
@@ -1535,7 +1617,7 @@ class TreatmentSheetEntryViewSet(viewsets.ModelViewSet):
                 encounter = Encounter.objects.select_related('patient').get(id=admission_id)
                 admission = Admission.objects.filter(
                     patient=encounter.patient,
-                    status='admitted'
+                    status__in=ACTIVE_ADMISSION_STATUSES
                 ).select_related('patient', 'patient__user', 'bed', 'bed__ward').first()
             except Encounter.DoesNotExist:
                 pass
@@ -1811,7 +1893,7 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         'treatment_entry__admission__bed__ward',
         'requested_by', 'requested_by__staff', 'requested_by__staff__user'
     ).all()
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsNurseOrAdmin]
     filterset_fields = ['status', 'treatment_entry', 'requested_by']
     pagination_class = StandardResultsSetPagination
 
@@ -1829,17 +1911,21 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         if not facility:
             return SupplyRequest.objects.none()
 
-        queryset = super().get_queryset().filter(facility=facility)
+        queryset = _scope_nursing_patient_queryset(
+            self.request,
+            super().get_queryset(),
+            patient_lookup='treatment_entry__patient',
+        )
+
+        if getattr(self.request.user, 'user_type', None) == 'nurse':
+            practitioner = _get_request_practitioner(self.request.user)
+            if not practitioner:
+                return queryset.none()
+            queryset = queryset.filter(requested_by=practitioner)
 
         # Filter by patient
         patient_id = self.request.query_params.get('patient_id')
         if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
             queryset = queryset.filter(treatment_entry__patient_id=patient_id)
 
         # Filter by admission
@@ -1860,7 +1946,7 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
         if patient:
             check_clinical_access(self.request.user, patient)
         serializer.save(
-            requested_by=getattr(self.request.user, 'practitioner_profile', None),
+            requested_by=_get_request_practitioner(self.request.user),
             facility=facility
         )
 
@@ -1895,6 +1981,12 @@ class SupplyRequestViewSet(viewsets.ModelViewSet):
             admission_id=admission_id,
             facility=facility,
         )
+
+        if getattr(request.user, 'user_type', None) == 'nurse':
+            practitioner = _get_request_practitioner(request.user)
+            if not practitioner:
+                return Response([])
+            requests = requests.filter(requested_by=practitioner)
 
         serializer = SupplyRequestListSerializer(requests, many=True)
         return Response(serializer.data)
@@ -1933,21 +2025,7 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add date filtering and exclude soft-deleted entries."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return FluidBalance.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Exclude soft-deleted entries by default
         include_deleted = self.request.query_params.get('include_deleted', 'false').lower() == 'true'
@@ -2197,6 +2275,69 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=['get'])
+    def trends(self, request):
+        """
+        Get aggregated fluid-balance trend points for a patient.
+
+        Query params:
+        - patient (required): Patient ID
+        - admission_id / admission (optional): Scope to a single admission
+        - start_date / end_date (optional): Inclusive date range
+        """
+        patient_id = request.query_params.get('patient')
+        if not patient_id:
+            return Response(
+                {'error': 'patient parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        check_clinical_access(request.user, patient_id)
+        patient = PatientProfile.objects.get(id=patient_id)
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+
+        entries = FluidBalance.objects.filter(
+            patient=patient,
+            facility=facility,
+            is_deleted=False,
+        )
+
+        admission_id = request.query_params.get('admission_id') or request.query_params.get('admission')
+        if admission_id:
+            entries = entries.filter(admission_id=admission_id)
+
+        start_dt, end_dt = _parse_datetime_range(request)
+        if start_dt:
+            entries = entries.filter(recorded_at__gte=start_dt)
+        if end_dt:
+            entries = entries.filter(recorded_at__lt=end_dt)
+
+        rows = entries.annotate(
+            bucket_date=TruncDate('recorded_at', tzinfo=timezone.get_current_timezone())
+        ).values('bucket_date').annotate(
+            intake=Sum(Case(When(entry_type='intake', then='volume_ml'))),
+            output=Sum(Case(When(entry_type='output', then='volume_ml'))),
+        ).order_by('bucket_date')
+
+        trend_points = []
+        for row in rows:
+            intake = row['intake'] or 0
+            output = row['output'] or 0
+            trend_points.append({
+                'date': row['bucket_date'],
+                'intake': intake,
+                'output': output,
+                'balance': intake - output,
+            })
+
+        serializer = FluidBalanceTrendPointSerializer(trend_points, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
     def check_alerts(self, request):
         """
         Check if patient's fluid balance triggers any configured alerts.
@@ -2333,3 +2474,8 @@ class FluidBalanceViewSet(viewsets.ModelViewSet):
                 'balance': balance
             }
         })
+
+
+from apps.core.features import bind_required_feature
+
+bind_required_feature(globals(), 'nursing_workflows')

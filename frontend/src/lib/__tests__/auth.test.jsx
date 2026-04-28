@@ -87,6 +87,7 @@ function TestConsumer() {
       <div data-testid="user">{auth.user ? JSON.stringify(auth.user) : 'null'}</div>
       <div data-testid="loading">{auth.loading.toString()}</div>
       <div data-testid="isAuthenticated">{auth.isAuthenticated.toString()}</div>
+      <div data-testid="passwordChangeRequired">{Boolean(auth.passwordChangeRequired).toString()}</div>
       <div data-testid="error">{auth.error || 'null'}</div>
       <button onClick={() => auth.login('test@test.com', 'password123').catch(() => {})}>Login</button>
       <button onClick={() => auth.logout()}>Logout</button>
@@ -193,6 +194,34 @@ describe('AuthProvider', () => {
       })
 
       expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
+      expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(notifications.success).not.toHaveBeenCalled()
+    })
+
+    it('still clears startup-expired session when backend logout fails', async () => {
+      const storedUser = {
+        id: 'user-123',
+        email: 'stored@test.com',
+        role: 'doctor',
+      }
+
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = (Date.now() - 9 * 60 * 60 * 1000).toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+      authApi.logout.mockRejectedValueOnce(new Error('Network error'))
+
+      render(
+        <AuthProvider>
+          <TestConsumer />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading').textContent).toBe('false')
+      })
+
+      expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
     })
   })
 
@@ -263,6 +292,71 @@ describe('AuthProvider', () => {
         expect(storedUser.role).toBe('doctor')
         expect(storedUser.email).toBe('doctor@test.com')
       })
+    })
+
+    it('stores the inferred facility code returned by the server', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+      authApi.login.mockResolvedValue({
+        access: 'access-token-123',
+        user: {
+          id: 'user-123',
+          email: 'doctor@test.com',
+          user_type: 'doctor',
+          facility_code: 'SATELLITE',
+        },
+      })
+
+      render(
+        <AuthProvider>
+          <TestConsumer />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading').textContent).toBe('false')
+      })
+
+      await user.click(screen.getByText('Login'))
+
+      await waitFor(() => {
+        const storedUser = JSON.parse(localStorageMock.store[AUTH_STORAGE.user])
+        expect(storedUser.facilityCode).toBe('SATELLITE')
+      })
+    })
+
+    it('stores first-login password change requirement in auth state', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+      authApi.login.mockResolvedValue({
+        access: 'access-token-123',
+        password_change_required: true,
+        user: {
+          id: 'user-123',
+          email: 'doctor@test.com',
+          user_type: 'doctor',
+          must_change_password: true,
+        },
+      })
+
+      render(
+        <AuthProvider>
+          <TestConsumer />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loading').textContent).toBe('false')
+      })
+
+      await user.click(screen.getByText('Login'))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('passwordChangeRequired').textContent).toBe('true')
+      })
+
+      const storedUser = JSON.parse(localStorageMock.store[AUTH_STORAGE.user])
+      expect(storedUser.passwordChangeRequired).toBe(true)
     })
 
     it('handles login failure', async () => {
@@ -443,6 +537,41 @@ describe('AuthProvider', () => {
       await waitFor(() => {
         expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
       })
+    })
+
+    it('deduplicates concurrent backend logout requests', async () => {
+      const storedUser = {
+        id: 'user-123',
+        email: 'test@test.com',
+        role: 'doctor',
+      }
+
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+      mockPerformTokenRefresh.mockResolvedValue('access-token-123')
+
+      authApi.logout.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({}), 50))
+      )
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+        expect(result.current.isAuthenticated).toBe(true)
+      })
+
+      await act(async () => {
+        const p1 = result.current.logout(false)
+        const p2 = result.current.logout(false)
+        vi.advanceTimersByTime(60)
+        await Promise.all([p1, p2])
+      })
+
+      expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(notifications.success).toHaveBeenCalledTimes(1)
+      expect(result.current.isAuthenticated).toBe(false)
     })
   })
 

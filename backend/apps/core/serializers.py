@@ -12,6 +12,10 @@ Example usage:
 """
 from rest_framework import serializers
 
+from hms_backend.feature_manifest import FEATURE_MANIFEST
+
+from .models import FeatureEntitlementOverride
+
 
 class MinimalUserSerializer(serializers.Serializer):
     """
@@ -135,6 +139,60 @@ class FacilityFluidBalanceSettingsSerializer(serializers.Serializer):
     enable_intake_alerts = serializers.BooleanField()
     enable_output_alerts = serializers.BooleanField()
     enable_balance_alerts = serializers.BooleanField()
+
+
+class FeatureEntitlementOverrideSerializer(serializers.ModelSerializer):
+    facility_code = serializers.CharField(source='facility.code', read_only=True)
+    feature_label = serializers.SerializerMethodField()
+    created_by_email = serializers.EmailField(source='created_by.email', read_only=True)
+    updated_by_email = serializers.EmailField(source='updated_by.email', read_only=True)
+
+    class Meta:
+        model = FeatureEntitlementOverride
+        fields = [
+            'id',
+            'scope',
+            'facility',
+            'facility_code',
+            'feature_key',
+            'feature_label',
+            'is_enabled',
+            'reason',
+            'created_by_email',
+            'updated_by_email',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'facility_code',
+            'feature_label',
+            'created_by_email',
+            'updated_by_email',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_feature_label(self, obj):
+        return FEATURE_MANIFEST.get(obj.feature_key, {}).get('label', obj.feature_key)
+
+    def validate_feature_key(self, value):
+        if value not in FEATURE_MANIFEST:
+            raise serializers.ValidationError('Unknown feature key.')
+        return value
+
+    def validate(self, attrs):
+        scope = attrs.get('scope', getattr(self.instance, 'scope', None))
+        facility = attrs.get('facility', getattr(self.instance, 'facility', None))
+        if scope == FeatureEntitlementOverride.SCOPE_GLOBAL and facility is not None:
+            raise serializers.ValidationError({
+                'facility': 'Global overrides cannot have a facility.',
+            })
+        if scope == FeatureEntitlementOverride.SCOPE_FACILITY and facility is None:
+            raise serializers.ValidationError({
+                'facility': 'Facility overrides require a facility.',
+            })
+        return attrs
 
 
 class BreakGlassRequestSerializer(serializers.Serializer):

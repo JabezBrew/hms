@@ -13,14 +13,16 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
-import { useState, useMemo } from "react";
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import VirtualizedList from '@/components/ui/VirtualizedList';
+import { TablePagination } from '@/components/ui/table-pagination';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -32,6 +34,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,11 +59,15 @@ import { StatCard } from "@/components/dashboard";
 import format from "date-fns/format";
 import { useAuth } from "@/lib/auth";
 import {
-  useLabResults,
+  usePaginatedLabResults,
+  useLabInterpretation,
   useVerifyLabResult,
   useBulkVerifyLabResults,
 } from "@/features/laboratory/hooks";
+import { useDebounce } from '@/hooks/use-debounce';
 import { toast } from "sonner";
+
+const RESULTS_PAGE_SIZE = 100;
 
 /**
  * LabResultsPage - Lab results grouped by order with patient context
@@ -79,6 +93,9 @@ export default function LabResultsPage() {
   const [verificationFilter, setVerificationFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("all");
   const [expandedOrders, setExpandedOrders] = useState(new Set());
+  const [page, setPage] = useState(1);
+
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Verify dialog state
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
@@ -88,9 +105,21 @@ export default function LabResultsPage() {
   const [selectedResultIds, setSelectedResultIds] = useState([]);
   const [verificationNotes, setVerificationNotes] = useState("");
 
+  // AI interpretation dialog state
+  const [interpretDialogOpen, setInterpretDialogOpen] = useState(false);
+  const [interpretAudience, setInterpretAudience] = useState("clinician");
+  const [interpretContext, setInterpretContext] = useState(null);
+
   // Build query filters
   const queryFilters = useMemo(() => {
-    const filters = {};
+    const filters = {
+      page,
+      page_size: RESULTS_PAGE_SIZE,
+    };
+
+    if (debouncedSearchQuery.trim()) {
+      filters.search = debouncedSearchQuery.trim();
+    }
 
     if (verificationFilter !== "all") {
       filters.is_verified = verificationFilter === "verified";
@@ -101,20 +130,44 @@ export default function LabResultsPage() {
     }
 
     return filters;
-  }, [verificationFilter, activeTab]);
+  }, [verificationFilter, activeTab, debouncedSearchQuery, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, verificationFilter, activeTab]);
 
   // Fetch results
-  const { data: resultsData, isLoading, refetch } = useLabResults(queryFilters);
+  const { data: resultsData, isLoading, isFetching, refetch } = usePaginatedLabResults(queryFilters);
 
   // Mutations
   const verifyMutation = useVerifyLabResult();
   const bulkVerifyMutation = useBulkVerifyLabResults();
 
+  const interpretationResultId =
+    interpretContext?.mode === "result" ? interpretContext.sourceId : null;
+  const interpretationOrderId =
+    interpretContext?.mode === "order" ? interpretContext.sourceId : null;
+
+  const clinicianInterpretation = useLabInterpretation({
+    resultId: interpretationResultId,
+    orderId: interpretationOrderId,
+    audience: "clinician",
+    enabled: interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "clinician",
+  });
+
+  const patientInterpretation = useLabInterpretation({
+    resultId: interpretationResultId,
+    orderId: interpretationOrderId,
+    audience: "patient",
+    enabled: interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "patient",
+  });
+
   // Process results data
   const results = useMemo(() => {
-    const data = resultsData?.results || resultsData || [];
+    const data = resultsData?.results || [];
     return Array.isArray(data) ? data : [];
   }, [resultsData]);
+  const totalCount = resultsData?.count || 0;
 
   // Group results by order
   const groupedResults = useMemo(() => {
@@ -162,33 +215,54 @@ export default function LabResultsPage() {
     );
   }, [results]);
 
-  // Client-side search filtering
-  const filteredGroups = useMemo(() => {
-    if (!searchQuery.trim()) return groupedResults;
-
-    const query = searchQuery.toLowerCase();
-    return groupedResults.filter((group) => {
-      return (
-        group.order_number?.toLowerCase().includes(query) ||
-        group.patient_name?.toLowerCase().includes(query) ||
-        group.patient_mrn?.toLowerCase().includes(query) ||
-        group.results.some((r) => r.test_name?.toLowerCase().includes(query))
-      );
-    });
-  }, [groupedResults, searchQuery]);
+  const filteredGroups = groupedResults;
 
   // Calculate stats
   const stats = useMemo(() => {
-    const total = results.length;
+    const total = totalCount;
+    const visible = results.length;
     const verified = results.filter((r) => r.is_verified).length;
-    const pending = total - verified;
+    const pending = visible - verified;
     const critical = results.filter((r) =>
       ["critical_low", "critical_high"].includes(r.flag)
     ).length;
     const orders = groupedResults.length;
 
-    return { total, verified, pending, critical, orders };
-  }, [results, groupedResults]);
+    return { total, visible, verified, pending, critical, orders };
+  }, [results, groupedResults, totalCount]);
+
+  const activeInterpretation =
+    interpretAudience === "patient" ? patientInterpretation : clinicianInterpretation;
+
+  const interpretationPayload = activeInterpretation.data?.result || null;
+  const interpretationConfidenceBand =
+    activeInterpretation.data?.confidence_band || "needs_review";
+  const interpretationConfidence =
+    typeof activeInterpretation.data?.confidence === "number"
+      ? Math.round(activeInterpretation.data.confidence * 100)
+      : null;
+
+  const interpretationResultItems = useMemo(() => {
+    if (!interpretationPayload) return [];
+    if (interpretationPayload.mode === "order") {
+      return interpretationPayload.results || [];
+    }
+    if (interpretationPayload.result) {
+      return [interpretationPayload.result];
+    }
+    return [];
+  }, [interpretationPayload]);
+
+  const interpretationSuggestedChecks = useMemo(() => {
+    if (!interpretationPayload) return [];
+    if (Array.isArray(interpretationPayload.suggested_next_checks)) {
+      return interpretationPayload.suggested_next_checks;
+    }
+    if (Array.isArray(interpretationPayload.result?.suggested_next_checks)) {
+      return interpretationPayload.result.suggested_next_checks;
+    }
+    return [];
+  }, [interpretationPayload]);
 
   // Format date
   const formatDate = (dateString) => {
@@ -225,6 +299,28 @@ export default function LabResultsPage() {
     return configs[flag] || configs.normal;
   };
 
+  const getConfidenceConfig = (band) => {
+    const configs = {
+      normal: {
+        label: "Normal",
+        className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      },
+      advisory: {
+        label: "Advisory",
+        className: "bg-amber-50 text-amber-700 border-amber-200",
+      },
+      needs_review: {
+        label: "Needs Review",
+        className: "bg-rose-50 text-rose-700 border-rose-200",
+      },
+      fallback: {
+        label: "Fallback",
+        className: "bg-rose-50 text-rose-700 border-rose-200",
+      },
+    };
+    return configs[band] || configs.needs_review;
+  };
+
   // Toggle order expansion
   const toggleOrderExpansion = (orderId) => {
     setExpandedOrders((prev) => {
@@ -236,6 +332,196 @@ export default function LabResultsPage() {
       }
       return next;
     });
+  };
+
+  const expandedGroups = useMemo(
+    () => filteredGroups.filter((group) => expandedOrders.has(group._key)),
+    [expandedOrders, filteredGroups]
+  );
+
+  const resultGroupColumns = useMemo(() => ([
+    {
+      key: "patient",
+      header: "Patient",
+      width: "240px",
+      render: (group) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{group.patient_name || "Unknown Patient"}</p>
+          <p className="font-mono text-xs text-muted-foreground">MRN: {group.patient_mrn || "No MRN"}</p>
+        </div>
+      ),
+    },
+    {
+      key: "order",
+      header: "Order",
+      width: "180px",
+      render: (group) => (
+        <span className="font-mono text-sm font-medium text-primary">{group.order_number}</span>
+      ),
+    },
+    {
+      key: "provider",
+      header: "Ordering Provider",
+      width: "200px",
+      render: (group) => (
+        <span className="truncate text-sm text-muted-foreground">
+          {group.ordering_provider || "Unknown"}
+        </span>
+      ),
+    },
+    {
+      key: "panels",
+      header: "Panels",
+      width: "220px",
+      render: (group) => {
+        const panelNames = Array.from(group.panels);
+        if (!panelNames.length) {
+          return <span className="text-sm text-muted-foreground">No panels</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {panelNames.slice(0, 2).map((panel) => (
+              <Badge key={panel} variant="outline" className="border-sky-200 bg-sky-50 text-sky-700 text-xs">
+                {panel}
+              </Badge>
+            ))}
+            {panelNames.length > 2 && (
+              <Badge variant="outline" className="text-xs">
+                +{panelNames.length - 2}
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "summary",
+      header: "Summary",
+      width: "160px",
+      render: (group) => {
+        const unverifiedCount = group.results.filter((result) => !result.is_verified).length;
+        return (
+          <div className="space-y-1">
+            <p className="text-sm text-foreground">{group.results.length} tests</p>
+            <p className="text-xs text-muted-foreground">
+              {unverifiedCount > 0 ? `${unverifiedCount} pending` : "All verified"}
+            </p>
+          </div>
+        );
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "140px",
+      render: (group) => {
+        const unverifiedCount = group.results.filter((result) => !result.is_verified).length;
+        if (group.hasCritical) {
+          return (
+            <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 text-xs">
+              Critical
+            </Badge>
+          );
+        }
+        return (
+          <Badge
+            variant="outline"
+            className={unverifiedCount === 0
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 text-xs"
+              : "border-amber-200 bg-amber-50 text-amber-700 text-xs"}
+          >
+            {unverifiedCount === 0 ? "Verified" : "Pending"}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "performed",
+      header: "Performed",
+      width: "180px",
+      render: (group) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {formatDate(group.performed_at)}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "240px",
+      render: (group) => {
+        const unverifiedCount = group.results.filter((result) => !result.is_verified).length;
+        return (
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                openOrderInterpretation(group);
+              }}
+            >
+              <Sparkles className="mr-1 h-3 w-3" />
+              Interpret
+            </Button>
+            {canVerify && unverifiedCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleBatchVerifyClick(group);
+                }}
+              >
+                Verify All
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleOrderExpansion(group._key);
+              }}
+            >
+              {expandedOrders.has(group._key) ? "Hide" : "Details"}
+            </Button>
+          </div>
+        );
+      },
+    },
+  ]), [canVerify, expandedOrders]);
+
+  const openResultInterpretation = (result, group) => {
+    setInterpretAudience("clinician");
+    setInterpretContext({
+      mode: "result",
+      sourceId: result.id,
+      testName: result.test_name,
+      orderNumber: group.order_number,
+      patientName: group.patient_name,
+    });
+    setInterpretDialogOpen(true);
+  };
+
+  const openOrderInterpretation = (group) => {
+    if (!group.order_id) {
+      toast.error("Order interpretation requires an order ID.");
+      return;
+    }
+
+    setInterpretAudience("clinician");
+    setInterpretContext({
+      mode: "order",
+      sourceId: group.order_id,
+      orderNumber: group.order_number,
+      patientName: group.patient_name,
+      resultCount: group.results.length,
+    });
+    setInterpretDialogOpen(true);
   };
 
   // Handle single result verify click
@@ -297,9 +583,10 @@ export default function LabResultsPage() {
   const handleClearFilters = () => {
     setSearchQuery("");
     setVerificationFilter("all");
+    setPage(1);
   };
 
-  const hasActiveFilters = searchQuery || verificationFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() || verificationFilter !== "all";
 
   // Filter options
   const verificationOptions = [
@@ -316,10 +603,13 @@ export default function LabResultsPage() {
         title="Lab Results"
         description={(
           <span>
-            {stats.orders} orders · {stats.total} results
+            {stats.total} matching results
+            <span className="ml-2 text-muted-foreground">
+              ({stats.orders} orders on this page)
+            </span>
             {stats.critical > 0 && (
               <span className="text-rose-600 ml-2">
-                ({stats.critical} critical)
+                ({stats.critical} critical on this page)
               </span>
             )}
           </span>
@@ -330,8 +620,9 @@ export default function LabResultsPage() {
             size="sm"
             onClick={() => refetch()}
             className="flex items-center gap-2"
+            disabled={isFetching}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
             Refresh
           </Button>
         )}
@@ -345,19 +636,19 @@ export default function LabResultsPage() {
             color="sky"
           />
           <StatCard
-            title="Verified"
-            value={stats.verified}
+            title="Visible"
+            value={stats.visible}
             icon={CheckCircle2}
             color="emerald"
           />
           <StatCard
-            title="Pending"
+            title="Pending Page"
             value={stats.pending}
             icon={Clock}
             color="amber"
           />
           <StatCard
-            title="Critical"
+            title="Critical Page"
             value={stats.critical}
             icon={AlertTriangle}
             color="rose"
@@ -491,53 +782,52 @@ export default function LabResultsPage() {
             )}
           </div>
         ) : (
-          <VirtualizedList
-            items={filteredGroups}
-            estimateSize={260}
-            gap={16}
-            getItemKey={(group) => group._key}
-            renderItem={(group, groupIndex) => {
-              const isExpanded = expandedOrders.has(group._key);
-              const unverifiedCount = group.results.filter(
-                (r) => !r.is_verified
-              ).length;
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+              <VirtualizedTable
+                rows={filteredGroups}
+                rowKey={(group) => group._key}
+                rowHeight={68}
+                columns={resultGroupColumns}
+                onRowClick={(group) => toggleOrderExpansion(group._key)}
+                rowClassName="hover:bg-muted/30"
+                className="min-w-[1480px]"
+                headerClassName="bg-muted/50 border-b border-border"
+              />
+            </div>
+
+            {expandedGroups.map((group, groupIndex) => {
+              const unverifiedCount = group.results.filter((result) => !result.is_verified).length;
               const panelNames = Array.from(group.panels);
 
               return (
                 <Card
+                  key={group._key}
                   className={cn(
                     "animate-chronicle-enter overflow-hidden",
                     group.hasCritical && "border-rose-200 bg-rose-50/30"
                   )}
-                  style={{ animationDelay: `${groupIndex * 50}ms` }}
+                  style={{ animationDelay: `${groupIndex * 40}ms` }}
                 >
-                  {/* Order Header */}
                   <CardHeader className="pb-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      {/* Patient & Order Info */}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="mb-1 flex items-center gap-2">
                           <Link
                             to={`/patients/${group.patient_id}/chronicle`}
-                            className="font-display text-lg text-foreground hover:text-sky-600 transition-colors truncate"
+                            className="truncate font-display text-lg text-foreground transition-colors hover:text-sky-600"
                           >
                             {group.patient_name || "Unknown Patient"}
                           </Link>
                           {group.hasCritical && (
-                            <Badge
-                              variant="outline"
-                              className="bg-rose-100 text-rose-700 border-rose-300"
-                            >
-                              <AlertTriangle className="h-3 w-3 mr-1" />
+                            <Badge variant="outline" className="border-rose-300 bg-rose-100 text-rose-700">
+                              <AlertTriangle className="mr-1 h-3 w-3" />
                               Critical
                             </Badge>
                           )}
                           {unverifiedCount === 0 && group.results.length > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="bg-emerald-100 text-emerald-700 border-emerald-300"
-                            >
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                            <Badge variant="outline" className="border-emerald-300 bg-emerald-100 text-emerald-700">
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
                               Verified
                             </Badge>
                           )}
@@ -547,9 +837,7 @@ export default function LabResultsPage() {
                             <User className="h-3 w-3" />
                             {group.patient_mrn || "No MRN"}
                           </span>
-                          <span className="font-mono text-xs">
-                            Order: {group.order_number}
-                          </span>
+                          <span className="font-mono text-xs">Order: {group.order_number}</span>
                           {group.ordering_provider && (
                             <span className="flex items-center gap-1">
                               <Stethoscope className="h-3 w-3" />
@@ -558,14 +846,14 @@ export default function LabResultsPage() {
                           )}
                         </div>
                         {panelNames.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
+                          <div className="mt-2 flex flex-wrap gap-1.5">
                             {panelNames.map((panel) => (
                               <Badge
                                 key={panel}
                                 variant="outline"
-                                className="bg-sky-50 text-sky-700 border-sky-200 text-xs"
+                                className="border-sky-200 bg-sky-50 text-sky-700 text-xs"
                               >
-                                <Package className="h-3 w-3 mr-1" />
+                                <Package className="mr-1 h-3 w-3" />
                                 {panel}
                               </Badge>
                             ))}
@@ -573,15 +861,24 @@ export default function LabResultsPage() {
                         )}
                       </div>
 
-                      {/* Actions */}
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openOrderInterpretation(group)}
+                          disabled={!group.order_id}
+                          className="text-xs"
+                        >
+                          <Sparkles className="mr-1 h-3 w-3" />
+                          Interpret Order
+                        </Button>
                         {canVerify && unverifiedCount > 0 && (
                           <Button
                             size="sm"
                             onClick={() => handleBatchVerifyClick(group)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                            className="bg-emerald-600 text-xs text-white hover:bg-emerald-700"
                           >
-                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
                             Verify All ({unverifiedCount})
                           </Button>
                         )}
@@ -591,190 +888,308 @@ export default function LabResultsPage() {
                           onClick={() => toggleOrderExpansion(group._key)}
                           className="text-muted-foreground"
                         >
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                          <span className="ml-1 text-xs">
-                            {group.results.length} tests
-                          </span>
+                          <ChevronUp className="h-4 w-4" />
+                          <span className="ml-1 text-xs">Hide</span>
                         </Button>
                       </div>
                     </div>
                   </CardHeader>
 
-                  {/* Results Table */}
-                  {isExpanded && (
-                    <CardContent className="pt-0">
-                      <div className="border border-border rounded-lg overflow-hidden">
-                        <table className="w-full">
-                          <thead className="bg-muted/50">
-                            <tr className="text-xs font-mono uppercase text-muted-foreground">
-                              <th className="text-left px-4 py-2">Test</th>
-                              <th className="text-left px-4 py-2">Result</th>
-                              <th className="text-left px-4 py-2">Reference</th>
-                              <th className="text-left px-4 py-2">Flag</th>
-                              <th className="text-left px-4 py-2">Status</th>
-                              {canVerify && (
-                                <th className="text-right px-4 py-2">Action</th>
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {group.results.map((result) => {
-                              const flagConfig = getFlagConfig(result.flag);
-                              const FlagIcon = flagConfig.icon;
+                  <CardContent className="pt-0">
+                    <div className="overflow-hidden rounded-lg border border-border">
+                      <table className="w-full">
+                        <thead className="bg-muted/50">
+                          <tr className="text-xs uppercase text-muted-foreground font-mono">
+                            <th className="px-4 py-2 text-left">Test</th>
+                            <th className="px-4 py-2 text-left">Result</th>
+                            <th className="px-4 py-2 text-left">Reference</th>
+                            <th className="px-4 py-2 text-left">Flag</th>
+                            <th className="px-4 py-2 text-left">Status</th>
+                            <th className="px-4 py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {group.results.map((result) => {
+                            const flagConfig = getFlagConfig(result.flag);
+                            const FlagIcon = flagConfig.icon;
 
-                              return (
-                                <tr
-                                  key={result.id}
-                                  className={cn(
-                                    "text-sm",
-                                    [
-                                      "critical_low",
-                                      "critical_high",
-                                    ].includes(result.flag) &&
-                                      "bg-rose-50/50 dark:bg-rose-900/10"
+                            return (
+                              <tr
+                                key={result.id}
+                                className={cn(
+                                  "text-sm",
+                                  ["critical_low", "critical_high"].includes(result.flag) &&
+                                    "bg-rose-50/50 dark:bg-rose-900/10"
+                                )}
+                              >
+                                <td className="px-4 py-2.5">
+                                  <span className="font-medium">{result.test_name}</span>
+                                  {result.test_code && (
+                                    <span className="ml-2 text-xs text-muted-foreground">
+                                      ({result.test_code})
+                                    </span>
                                   )}
-                                >
-                                  <td className="px-4 py-2.5">
-                                    <span className="font-medium">
-                                      {result.test_name}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-1.5">
+                                    {FlagIcon && <FlagIcon className={cn("h-4 w-4", flagConfig.className)} />}
+                                    <span className={cn("font-mono", flagConfig.className)}>
+                                      {result.value} {result.unit}
                                     </span>
-                                    {result.test_code && (
-                                      <span className="text-xs text-muted-foreground ml-2">
-                                        ({result.test_code})
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <div className="flex items-center gap-1.5">
-                                      {FlagIcon && (
-                                        <FlagIcon
-                                          className={cn(
-                                            "h-4 w-4",
-                                            flagConfig.className
-                                          )}
-                                        />
-                                      )}
-                                      <span
-                                        className={cn(
-                                          "font-mono",
-                                          flagConfig.className
-                                        )}
-                                      >
-                                        {result.value} {result.unit}
-                                      </span>
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className="font-mono text-xs text-muted-foreground">
-                                      {result.reference_low || "-"} -{" "}
-                                      {result.reference_high || "-"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span
-                                      className={cn(
-                                        "text-xs",
-                                        flagConfig.className
-                                      )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <span className="font-mono text-xs text-muted-foreground">
+                                    {result.reference_low || "-"} - {result.reference_high || "-"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <span className={cn("text-xs", flagConfig.className)}>{flagConfig.label}</span>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {result.is_verified ? (
+                                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
+                                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                                      Verified
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
+                                      <Clock className="mr-1 h-3 w-3" />
+                                      Pending
+                                    </Badge>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openResultInterpretation(result, group)}
+                                      className="h-7 text-xs"
                                     >
-                                      {flagConfig.label}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    {result.is_verified ? (
-                                      <Badge
-                                        variant="outline"
-                                        className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs"
+                                      <Sparkles className="mr-1 h-3 w-3" />
+                                      Interpret
+                                    </Button>
+                                    {canVerify && !result.is_verified && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleVerifyClick(result)}
+                                        className="h-7 text-xs"
                                       >
-                                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                                        Verified
-                                      </Badge>
-                                    ) : (
-                                      <Badge
-                                        variant="outline"
-                                        className="bg-amber-50 text-amber-700 border-amber-200 text-xs"
-                                      >
-                                        <Clock className="h-3 w-3 mr-1" />
-                                        Pending
-                                      </Badge>
+                                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                                        Verify
+                                      </Button>
                                     )}
-                                  </td>
-                                  {canVerify && (
-                                    <td className="px-4 py-2.5 text-right">
-                                      {!result.is_verified && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            handleVerifyClick(result)
-                                          }
-                                          className="text-xs h-7"
-                                        >
-                                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                                          Verify
-                                        </Button>
-                                      )}
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="flex justify-end mt-2 text-xs text-muted-foreground">
-                        {formatDate(group.performed_at)}
-                      </div>
-                    </CardContent>
-                  )}
-
-                  {/* Collapsed Summary */}
-                  {!isExpanded && (
-                    <CardContent className="pt-0">
-                      <div className="flex flex-wrap gap-2">
-                        {group.results.slice(0, 6).map((result) => {
-                          const flagConfig = getFlagConfig(result.flag);
-                          return (
-                            <Badge
-                              key={result.id}
-                              variant="outline"
-                              className={cn(
-                                "text-xs",
-                                result.flag === "normal"
-                                  ? "bg-stone-50 border-stone-200"
-                                  : result.flag?.includes("critical")
-                                  ? "bg-rose-50 border-rose-200 text-rose-700"
-                                  : "bg-amber-50 border-amber-200 text-amber-700"
-                              )}
-                            >
-                              {result.test_name}:{" "}
-                              <span className="font-mono ml-1">
-                                {result.value}
-                              </span>
-                            </Badge>
-                          );
-                        })}
-                        {group.results.length > 6 && (
-                          <Badge
-                            variant="outline"
-                            className="text-xs bg-stone-50 border-stone-200"
-                          >
-                            +{group.results.length - 6} more
-                          </Badge>
-                        )}
-                      </div>
-                    </CardContent>
-                  )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-2 flex justify-end text-xs text-muted-foreground">
+                      {formatDate(group.performed_at)}
+                    </div>
+                  </CardContent>
                 </Card>
               );
-            }}
-          />
+            })}
+          </div>
         )}
       </main>
+
+      {totalCount > RESULTS_PAGE_SIZE && (
+        <div className="px-4 sm:px-6 pb-6">
+          <TablePagination
+            currentPage={page}
+            totalCount={totalCount}
+            pageSize={RESULTS_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="results"
+          />
+        </div>
+      )}
+
+      <Dialog
+        open={interpretDialogOpen}
+        onOpenChange={(nextOpen) => {
+          setInterpretDialogOpen(nextOpen);
+          if (!nextOpen) {
+            setInterpretAudience("clinician");
+            setInterpretContext(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-amber-600" />
+              AI Lab Interpretation
+            </DialogTitle>
+            <DialogDescription>
+              Advisory output only. Clinical review is required before treatment
+              or ordering decisions.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {interpretContext?.patientName && (
+                <Badge variant="outline" className="text-xs">
+                  {interpretContext.patientName}
+                </Badge>
+              )}
+              {interpretContext?.orderNumber && (
+                <Badge variant="outline" className="text-xs font-mono">
+                  {interpretContext.orderNumber}
+                </Badge>
+              )}
+              {interpretContext?.testName && (
+                <Badge variant="outline" className="text-xs">
+                  {interpretContext.testName}
+                </Badge>
+              )}
+            </div>
+
+            <Tabs value={interpretAudience} onValueChange={setInterpretAudience}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="clinician">Clinician View</TabsTrigger>
+                <TabsTrigger value="patient">Patient View</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {activeInterpretation.isLoading && (
+              <div className="space-y-2 pt-2">
+                <Skeleton className="h-5 w-56" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            )}
+
+            {activeInterpretation.isError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                <p className="text-sm text-rose-700">
+                  {activeInterpretation.error?.message || "Failed to load interpretation."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => activeInterpretation.refetch()}
+                  className="mt-2"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+
+            {!activeInterpretation.isLoading &&
+              !activeInterpretation.isError &&
+              interpretationPayload && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn("text-xs", getConfidenceConfig(interpretationConfidenceBand).className)}
+                    >
+                      {getConfidenceConfig(interpretationConfidenceBand).label}
+                    </Badge>
+                    {interpretationConfidence !== null && (
+                      <Badge variant="outline" className="text-xs font-mono">
+                        Confidence {interpretationConfidence}%
+                      </Badge>
+                    )}
+                    {activeInterpretation.data?.requires_human_review && (
+                      <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                        Human Review Required
+                      </Badge>
+                    )}
+                  </div>
+
+                  <p className="text-sm leading-relaxed text-foreground">
+                    {interpretationPayload.summary || "No summary available."}
+                  </p>
+
+                  {interpretationSuggestedChecks.length > 0 && (
+                    <div className="rounded-lg border bg-background p-3">
+                      <h4 className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">
+                        Suggested Next Checks
+                      </h4>
+                      <ul className="space-y-1">
+                        {interpretationSuggestedChecks.slice(0, 4).map((item) => (
+                          <li key={item} className="text-sm text-foreground">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {interpretationResultItems.length > 0 && (
+                    <div className="rounded-lg border bg-background p-3">
+                      <h4 className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">
+                        Result Breakdown
+                      </h4>
+                      <div className="space-y-2">
+                        {interpretationResultItems.slice(0, 6).map((item) => (
+                          <div
+                            key={item.result_id || `${item.test_code}:${item.performed_at}`}
+                            className="rounded-md border border-border/70 p-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium text-foreground">
+                                {item.test_name}
+                              </span>
+                              <Badge variant="outline" className="text-xs">
+                                {item.flag}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.summary}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(activeInterpretation.data?.citations || []).length > 0 && (
+                    <div className="rounded-lg border bg-background p-3">
+                      <h4 className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">
+                        Evidence
+                      </h4>
+                      <div className="space-y-1">
+                        {(activeInterpretation.data?.citations || []).slice(0, 3).map((citation) => (
+                          <div
+                            key={`${citation.source}:${citation.result_id}:${citation.field}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            {citation.test_name}: {citation.value}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setInterpretDialogOpen(false);
+                setInterpretAudience("clinician");
+                setInterpretContext(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Verify Dialog */}
       <AlertDialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>

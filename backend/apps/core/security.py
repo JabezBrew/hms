@@ -7,16 +7,18 @@ This module implements DATA-TYPE SPECIFIC access control with team-based enforce
 - Support staff can ONLY access their specific data domain
 """
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import BasePermission
 from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 import logging
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger(__name__)
 
 
-ACTIVE_ADMISSION_STATUSES = ['admitted', 'waiting']
+ACTIVE_ADMISSION_STATUSES = ['admitted', 'pending_discharge']
 ACTIVE_ENCOUNTER_STATUSES = ['planned', 'in-progress']
 
 
@@ -65,6 +67,29 @@ def get_user_facility_codes(user):
     return set(normalized_codes)
 
 
+def _ensure_user_can_reference_patient_facility(user, patient_profile):
+    if not user or not getattr(user, 'is_authenticated', False):
+        raise PermissionDenied("Authentication required.")
+
+    if getattr(user, 'user_type', None) == 'admin':
+        return
+
+    patient_facility = getattr(patient_profile, 'facility', None)
+    patient_facility_code = normalize_facility_code(getattr(patient_facility, 'code', None))
+    if not patient_facility_code:
+        raise PermissionDenied("Patient facility is required.")
+
+    allowed_codes = get_user_facility_codes(user)
+    if patient_facility_code in allowed_codes:
+        return
+
+    default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
+    if not allowed_codes and default_facility_code and patient_facility_code == default_facility_code:
+        return
+
+    raise PermissionDenied("Patient does not belong to an authorized facility.")
+
+
 def get_user_facility(request):
     if request is not None and getattr(request, '_cached_user_facility_resolved', False):
         return getattr(request, '_cached_user_facility', None)
@@ -78,11 +103,12 @@ def get_user_facility(request):
     user = getattr(request, 'user', None) if request else None
     allowed_codes = None
     allow_cross_facility = False
+    default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
     is_admin = False
     primary_facility = None
     primary_code = None
     if user and getattr(user, 'is_authenticated', False):
-        allow_cross_facility = getattr(settings, 'ALLOW_CROSS_FACILITY_ACCESS', False)
+        allow_cross_facility = feature_enabled('cross_facility_access')
         is_admin = bool(getattr(user, 'user_type', None) == 'admin')
         primary_facility = getattr(user, 'primary_facility', None)
         if primary_facility:
@@ -104,7 +130,10 @@ def get_user_facility(request):
         if primary_code and facility_code == primary_code:
             return True
         resolved_codes = _load_allowed_codes()
-        return not resolved_codes or facility_code in resolved_codes
+        if resolved_codes:
+            return facility_code in resolved_codes
+        # Users without explicit assignments may only access deployment default facility.
+        return bool(default_facility_code and facility_code == default_facility_code)
 
     facility = getattr(request, 'facility', None)
     if facility:
@@ -275,6 +304,32 @@ class FacilityScopedPermission(BasePermission):
 
         return False
 
+
+class FeatureRequiredPermission(BasePermission):
+    """
+    Allow endpoints to declare `required_feature = 'feature_key'`.
+    """
+    message = "This feature is not enabled for the current deployment."
+
+    def has_permission(self, request, view):
+        required_feature = getattr(view, 'required_feature', None)
+        if not required_feature:
+            return True
+        if feature_enabled(required_feature, request=request):
+            return True
+        raise NotFound({
+            'detail': self.message,
+            'code': 'feature_disabled',
+        })
+
+
+def require_feature(feature_key):
+    if not feature_enabled(feature_key):
+        raise PermissionDenied(
+            "This feature is not enabled for the current deployment."
+        )
+
+
 def _get_patient_profile(patient_or_id):
     """Helper to get PatientProfile from ID or instance."""
     from apps.users.models import PatientProfile
@@ -441,6 +496,35 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
     ).distinct()
 
 
+def scope_queryset_to_clinical_access(queryset, user, *, patient_lookup='patient', scope='clinical'):
+    """
+    Restrict a queryset to patients the caller may access for clinical workflows.
+
+    Args:
+        queryset: Base queryset already scoped to the active facility.
+        user: Authenticated user.
+        patient_lookup: Django ORM path from queryset model to PatientProfile.
+        scope: Break-glass scope to apply when TEAM_ACCESS_STRICT is enabled.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return queryset.none()
+
+    user_type = getattr(user, 'user_type', None)
+    if user_type == 'admin':
+        return queryset
+
+    if user_type == 'patient':
+        return queryset.filter(**{f'{patient_lookup}__user': user})
+
+    if user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
+        if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
+            return queryset
+        accessible_patients = get_accessible_patients_for_clinician(user, scope=scope)
+        return queryset.filter(**{f'{patient_lookup}__in': accessible_patients})
+
+    return queryset.none()
+
+
 def check_clinical_access(user, patient_or_id):
     """
     SECURITY: Check access to CLINICAL data (vitals, notes, encounters, diagnoses).
@@ -449,6 +533,7 @@ def check_clinical_access(user, patient_or_id):
     Denied: Lab Tech, Pharmacist, Billing, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -458,7 +543,7 @@ def check_clinical_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             return True
 
@@ -481,6 +566,7 @@ def check_lab_access(user, patient_or_id):
     Denied: Pharmacist, Billing, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -490,14 +576,21 @@ def check_lab_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'lab_technician':
-        from apps.laboratory.models import LabOrder
+        from apps.laboratory.models import LabOrder, LabOrderStatus
         if LabOrder.objects.filter(
             patient=patient_profile,
-            status__in=['pending', 'in_progress', 'collected', 'completed']
+            facility=patient_profile.facility,
+            status__in=[
+                LabOrderStatus.ORDERED,
+                LabOrderStatus.COLLECTED,
+                LabOrderStatus.RECEIVED,
+                LabOrderStatus.PROCESSING,
+                LabOrderStatus.COMPLETED,
+            ]
         ).exists():
             return True
         raise PermissionDenied("No lab orders found for this patient.")
@@ -513,6 +606,7 @@ def check_prescription_access(user, patient_or_id):
     Denied: Lab Tech, Billing, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -522,13 +616,14 @@ def check_prescription_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'pharmacist':
         from apps.clinical_notes.models import Prescription
         if Prescription.objects.filter(
             patient=patient_profile,
+            facility=patient_profile.facility,
             status='active'
         ).exists():
             return True
@@ -545,6 +640,7 @@ def check_billing_access(user, patient_or_id):
     Denied: Doctor, Nurse, Lab Tech, Pharmacist, Receptionist
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -568,6 +664,7 @@ def check_demographics_access(user, patient_or_id):
     Denied: Lab Tech, Pharmacist, Billing (unless they have billing records)
     """
     patient_profile = _get_patient_profile(patient_or_id)
+    _ensure_user_can_reference_patient_facility(user, patient_profile)
 
     if user.user_type == 'admin':
         return True
@@ -577,23 +674,23 @@ def check_demographics_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse', 'receptionist']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor', 'receptionist']:
         return True
 
     # Support staff can see demographics only if they have relevant records
     if user.user_type == 'lab_technician':
         from apps.laboratory.models import LabOrder
-        if LabOrder.objects.filter(patient=patient_profile).exists():
+        if LabOrder.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists():
             return True
 
     if user.user_type == 'pharmacist':
         from apps.clinical_notes.models import Prescription
-        if Prescription.objects.filter(patient=patient_profile).exists():
+        if Prescription.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists():
             return True
 
     if user.user_type == 'billing':
         from apps.billing.models import Invoice
-        if Invoice.objects.filter(patient=patient_profile).exists():
+        if Invoice.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists():
             return True
 
     raise PermissionDenied("You do not have access to this patient's data.")
@@ -623,6 +720,11 @@ def get_access_flags(user, patient_or_id):
         'demographics': False,
     }
 
+    try:
+        _ensure_user_can_reference_patient_facility(user, patient_profile)
+    except PermissionDenied:
+        return flags
+
     # Admin has full access
     if user.user_type == 'admin':
         return {k: True for k in flags}
@@ -634,7 +736,7 @@ def get_access_flags(user, patient_or_id):
         return flags
 
     # Clinical staff (doctor, nurse)
-    if user.user_type in ['doctor', 'nurse']:
+    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
         flags['demographics'] = True
 
         # Check team access or break-glass for clinical data
@@ -658,13 +760,20 @@ def get_access_flags(user, patient_or_id):
 
     # Lab technician - check for lab orders
     if user.user_type == 'lab_technician':
-        from apps.laboratory.models import LabOrder
+        from apps.laboratory.models import LabOrder, LabOrderStatus
         has_orders = LabOrder.objects.filter(
             patient=patient_profile,
-            status__in=['pending', 'in_progress', 'collected', 'completed']
+            facility=patient_profile.facility,
+            status__in=[
+                LabOrderStatus.ORDERED,
+                LabOrderStatus.COLLECTED,
+                LabOrderStatus.RECEIVED,
+                LabOrderStatus.PROCESSING,
+                LabOrderStatus.COMPLETED,
+            ]
         ).exists()
         flags['lab'] = has_orders
-        flags['demographics'] = LabOrder.objects.filter(patient=patient_profile).exists()
+        flags['demographics'] = LabOrder.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists()
         return flags
 
     # Pharmacist - check for prescriptions
@@ -672,16 +781,17 @@ def get_access_flags(user, patient_or_id):
         from apps.clinical_notes.models import Prescription
         flags['prescription'] = Prescription.objects.filter(
             patient=patient_profile,
+            facility=patient_profile.facility,
             status='active'
         ).exists()
-        flags['demographics'] = Prescription.objects.filter(patient=patient_profile).exists()
+        flags['demographics'] = Prescription.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists()
         return flags
 
     # Billing staff
     if user.user_type == 'billing':
         from apps.billing.models import Invoice
         flags['billing'] = True
-        flags['demographics'] = Invoice.objects.filter(patient=patient_profile).exists()
+        flags['demographics'] = Invoice.objects.filter(patient=patient_profile, facility=patient_profile.facility).exists()
         return flags
 
     return flags

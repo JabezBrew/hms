@@ -125,6 +125,99 @@ class NoteTemplate(models.Model):
         super().save(*args, **kwargs)
 
 
+class NoteTemplateRevision(models.Model):
+    """
+    Immutable revision for a note template.
+    Keeps authored defaults/version history independent from note entries.
+    """
+
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('in_review', 'In Review'),
+        ('published', 'Published'),
+        ('archived', 'Archived'),
+    ]
+
+    MODE_CHOICES = [
+        ('structured', 'Structured'),
+        ('written', 'Written'),
+        ('hybrid', 'Hybrid'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template = models.ForeignKey(
+        NoteTemplate,
+        on_delete=models.CASCADE,
+        related_name='revisions'
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.PROTECT,
+        related_name='note_template_revisions'
+    )
+    version = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='draft'
+    )
+    mode = models.CharField(
+        max_length=20,
+        choices=MODE_CHOICES,
+        default='structured'
+    )
+    content = models.JSONField(default=dict)
+    change_summary = models.CharField(max_length=255, blank=True)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_note_template_revisions'
+    )
+    submitted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='submitted_note_template_revisions'
+    )
+    published_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='published_note_template_revisions'
+    )
+
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-version']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['template', 'version'],
+                name='clinical_notes_template_revision_version_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['template'],
+                condition=models.Q(status='published'),
+                name='clinical_notes_one_published_revision_per_template',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['template', 'status', '-version']),
+            models.Index(fields=['facility', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.template.title} v{self.version}"
+
+
 class NoteEntry(models.Model):
     """
     Model for submitted clinical note entries.
@@ -133,6 +226,19 @@ class NoteEntry(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     template = models.ForeignKey(NoteTemplate, on_delete=models.CASCADE, related_name='entries')
+    template_revision = models.ForeignKey(
+        'NoteTemplateRevision',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='entries',
+        help_text="Immutable template revision used to initialize this note."
+    )
+    template_version = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Template revision version used at note creation."
+    )
 
     # Patient - direct link for querying
     patient = models.ForeignKey(
@@ -186,6 +292,7 @@ class NoteEntry(models.Model):
             models.Index(fields=['patient', '-created_at']),
             models.Index(fields=['encounter', '-created_at']),
             models.Index(fields=['facility', '-created_at']),
+            models.Index(fields=['facility', 'template', '-created_at']),
         ]
 
     def __str__(self):
@@ -373,6 +480,14 @@ class Prescription(models.Model):
         related_name='prescriptions',
         help_text="The clinical encounter/visit during which this was prescribed"
     )
+    discharge_case = models.ForeignKey(
+        'discharge.DischargeCase',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='prescriptions',
+        help_text="Optional discharge case for take-home discharge medications."
+    )
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -392,6 +507,7 @@ class Prescription(models.Model):
         db_table = 'clinical_prescriptions'
         indexes = [
             models.Index(fields=['facility', 'status', '-created_at']),
+            models.Index(fields=['discharge_case', 'status']),
         ]
 
     def __str__(self):
@@ -464,6 +580,7 @@ class TimelineEvent(models.Model):
         ('lab', 'Lab Order'),
         ('referral', 'Referral'),
         ('fluid', 'Fluid Balance'),
+        ('chart', 'Clinical Chart'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

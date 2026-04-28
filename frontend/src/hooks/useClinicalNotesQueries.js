@@ -1,7 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clinicalNotesApi } from '@/features/clinical-notes/api';
+import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
-import { timelineKeys } from './useTimelineQueries';
+import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
+import { invalidatePatientTimelineQueries } from './useTimelineQueries';
+import { emitOnboardingEvent } from '@/features/onboarding';
 
 // Query keys
 const clinicalNotesKeyFactory = createKeyFactory('clinical-notes');
@@ -22,6 +25,117 @@ export const clinicalNotesKeys = {
   entryVersion: (id, version) => keyWith('clinical-notes', 'entries', id, 'version', version),
 };
 
+function normalizeIdentifier(value) {
+  if (!value) return null;
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (typeof value === 'object') {
+    return value.id ?? value.uuid ?? null;
+  }
+  return null;
+}
+
+function getCachedNoteEntry(queryClient, entryId) {
+  if (!entryId) return null;
+  return queryClient.getQueryData(clinicalNotesKeys.entry(entryId));
+}
+
+function resolveNotePatientId(queryClient, { entryId, patientId, sources = [] } = {}) {
+  const candidates = [];
+
+  if (patientId) {
+    candidates.push(patientId);
+  }
+
+  for (const source of sources) {
+    if (!source) continue;
+    candidates.push(source);
+
+    if (typeof source === 'object') {
+      candidates.push(source.patient, source.patient_id, source.patientId, source.patient?.id);
+    }
+  }
+
+  if (entryId) {
+    const cachedEntry = getCachedNoteEntry(queryClient, entryId);
+    if (cachedEntry) {
+      candidates.push(
+        cachedEntry.patient,
+        cachedEntry.patient_id,
+        cachedEntry.patientId,
+        cachedEntry.patient?.id,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentifier(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function resolveNoteEncounterId(queryClient, { entryId, encounterId, sources = [] } = {}) {
+  const candidates = [];
+
+  if (encounterId) {
+    candidates.push(encounterId);
+  }
+
+  for (const source of sources) {
+    if (!source) continue;
+    candidates.push(source);
+
+    if (typeof source === 'object') {
+      candidates.push(source.encounter, source.encounter_id, source.encounterId, source.encounter?.id);
+    }
+  }
+
+  if (entryId) {
+    const cachedEntry = getCachedNoteEntry(queryClient, entryId);
+    if (cachedEntry) {
+      candidates.push(
+        cachedEntry.encounter,
+        cachedEntry.encounter_id,
+        cachedEntry.encounterId,
+        cachedEntry.encounter?.id,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentifier(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+export function invalidateClinicalNoteMutationQueries(
+  queryClient,
+  { entryId, patientId, encounterId } = {},
+) {
+  const tasks = [queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() })];
+
+  if (entryId) {
+    tasks.push(invalidateQueryKeys(queryClient, [clinicalNotesKeys.entry(entryId)]));
+  }
+
+  if (encounterId) {
+    tasks.push(invalidateQueryKeys(queryClient, [clinicalNotesKeys.entriesByEncounter(encounterId)]));
+  }
+
+  if (patientId) {
+    tasks.push(invalidatePatientTimelineQueries(queryClient, patientId));
+  }
+
+  return Promise.all(tasks);
+}
+
 /**
  * Get note templates with optional filtering
  * @param {Object} filters - Query parameters for filtering
@@ -30,7 +144,7 @@ export const clinicalNotesKeys = {
 export function useNoteTemplates(filters = {}) {
   return useQuery({
     queryKey: keyWith('clinical-notes', 'templates', filters),
-    queryFn: () => clinicalNotesApi.getNoteTemplates(filters),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteTemplates(filters, { signal }),
   });
 }
 
@@ -38,10 +152,12 @@ export function useNoteTemplates(filters = {}) {
  * Get active note templates
  * @returns {Object} Query result
  */
-export function useActiveNoteTemplates() {
+export function useActiveNoteTemplates(options = {}) {
+  const { enabled = true, ...filters } = options;
   return useQuery({
-    queryKey: keyWith('clinical-notes', 'templates', { active: true }),
-    queryFn: () => clinicalNotesApi.getActiveNoteTemplates(),
+    queryKey: keyWith('clinical-notes', 'templates', { active: true, ...filters }),
+    queryFn: ({ signal }) => clinicalNotesApi.getActiveNoteTemplates(filters, { signal }),
+    enabled,
   });
 }
 
@@ -67,9 +183,27 @@ export function useCreateNoteTemplate() {
   
   return useMutation({
     mutationFn: (data) => clinicalNotesApi.createNoteTemplate(data),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       // Invalidate the templates list query to refetch
       queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.templates() });
+
+      const sectionsFromResponse = Array.isArray(data?.structure)
+        ? data.structure
+        : data?.structure?.sections;
+      const sectionsFromRequest = Array.isArray(variables?.structure)
+        ? variables.structure
+        : variables?.structure?.sections;
+      const sectionCount = Array.isArray(sectionsFromResponse)
+        ? sectionsFromResponse.length
+        : Array.isArray(sectionsFromRequest)
+        ? sectionsFromRequest.length
+        : 0;
+
+      emitOnboardingEvent('templates.note.created', {
+        success: true,
+        template_id: data?.id || null,
+        section_count: sectionCount,
+      });
     },
   });
 }
@@ -157,7 +291,7 @@ export function useAvailableNoteTemplates(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: clinicalNotesKeys.availableTemplates(),
-    queryFn: () => clinicalNotesApi.getAvailableTemplates(),
+    queryFn: ({ signal }) => clinicalNotesApi.getAvailableTemplates({ signal }),
     enabled,
   });
 }
@@ -169,7 +303,7 @@ export function useAvailableNoteTemplates(options = {}) {
 export function useMyNoteTemplates() {
   return useQuery({
     queryKey: clinicalNotesKeys.myTemplates(),
-    queryFn: () => clinicalNotesApi.getMyTemplates(),
+    queryFn: ({ signal }) => clinicalNotesApi.getMyTemplates({ signal }),
   });
 }
 
@@ -181,7 +315,7 @@ export function useTemplateCategories() {
   return useQuery({
     queryKey: clinicalNotesKeys.templateCategories(),
     queryFn: () => clinicalNotesApi.getTemplateCategories(),
-    staleTime: 1000 * 60 * 60, // Categories don't change often, cache for 1 hour
+    ...immutableMetadataQueryOptions(),
   });
 }
 
@@ -210,7 +344,7 @@ export function useDuplicateNoteTemplate() {
 export function useNoteEntries(filters = {}) {
   return useQuery({
     queryKey: clinicalNotesKeys.entriesList(filters),
-    queryFn: () => clinicalNotesApi.getNoteEntries(filters),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntries(filters, { signal }),
   });
 }
 
@@ -219,11 +353,12 @@ export function useNoteEntries(filters = {}) {
  * @param {string} encounterId - Encounter ID
  * @returns {Object} Query result
  */
-export function useNoteEntriesForEncounter(encounterId) {
+export function useNoteEntriesForEncounter(encounterId, options = {}) {
+  const { enabled = true, ...filters } = options;
   return useQuery({
-    queryKey: clinicalNotesKeys.entriesByEncounter(encounterId),
-    queryFn: () => clinicalNotesApi.getNoteEntriesForEncounter(encounterId),
-    enabled: !!encounterId, // Only run the query if we have an encounter ID
+    queryKey: keyWith('clinical-notes', 'entries', 'encounter', encounterId, { filters }),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntriesForEncounter(encounterId, filters, { signal }),
+    enabled: !!encounterId && enabled, // Only run the query if we have an encounter ID
   });
 }
 
@@ -249,16 +384,33 @@ export function useCreateNoteEntry() {
 
   return useMutation({
     mutationFn: (data) => clinicalNotesApi.createNoteEntry(data),
-    onSuccess: (data) => {
-      // Invalidate the entries list query to refetch
-      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
+    onSuccess: (data, variables) => {
+      const entryId = normalizeIdentifier(data?.id);
+      const patientId = resolveNotePatientId(queryClient, {
+        entryId,
+        sources: [data, variables],
+      });
+      const encounterId = resolveNoteEncounterId(queryClient, {
+        entryId,
+        sources: [data, variables],
+      });
 
-      // If the entry is associated with an encounter, invalidate that specific query
-      if (data.encounter_id) {
-        queryClient.invalidateQueries({
-          queryKey: clinicalNotesKeys.entriesByEncounter(data.encounter_id)
-        });
+      if (entryId) {
+        queryClient.setQueryData(clinicalNotesKeys.entry(entryId), data);
       }
+
+      void invalidateClinicalNoteMutationQueries(queryClient, {
+        entryId,
+        patientId,
+        encounterId,
+      });
+
+      emitOnboardingEvent('chronicle.note_created', {
+        success: true,
+        note_id: data?.id || null,
+        template_id: data?.template || variables?.template || null,
+        patient_id: data?.patient || variables?.patient || null,
+      });
     },
   });
 }
@@ -288,18 +440,25 @@ export function useCloneNoteEntry() {
   return useMutation({
     mutationFn: ({ id, data }) => clinicalNotesApi.cloneNoteEntry(id, data),
     onSuccess: (data) => {
-      // Invalidate entries to show the new cloned note
-      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
+      const entryId = normalizeIdentifier(data?.id);
+      const patientId = resolveNotePatientId(queryClient, {
+        entryId,
+        sources: [data],
+      });
+      const encounterId = resolveNoteEncounterId(queryClient, {
+        entryId,
+        sources: [data],
+      });
 
-      // Invalidate timeline queries (patient timeline uses different keys)
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
-
-      // If there's an encounter, invalidate that too
-      if (data.encounter) {
-        queryClient.invalidateQueries({
-          queryKey: clinicalNotesKeys.entriesByEncounter(data.encounter)
-        });
+      if (entryId) {
+        queryClient.setQueryData(clinicalNotesKeys.entry(entryId), data);
       }
+
+      void invalidateClinicalNoteMutationQueries(queryClient, {
+        entryId,
+        patientId,
+        encounterId,
+      });
     },
   });
 }
@@ -315,18 +474,23 @@ export function useUpdateNoteEntry() {
     mutationFn: ({ id, data, editReason }) =>
       clinicalNotesApi.updateNoteEntry(id, data, editReason),
     onSuccess: (data, variables) => {
-      // Invalidate the entry query to reflect updates
-      queryClient.invalidateQueries({
-        queryKey: clinicalNotesKeys.entry(variables.id)
+      const entryId = normalizeIdentifier(variables?.id);
+      const patientId = resolveNotePatientId(queryClient, {
+        entryId,
+        sources: [data],
       });
-      // Invalidate history since a new version was created
-      queryClient.invalidateQueries({
-        queryKey: clinicalNotesKeys.entryHistory(variables.id)
+      const encounterId = resolveNoteEncounterId(queryClient, {
+        entryId,
+        sources: [data],
       });
-      // Invalidate entries list
-      queryClient.invalidateQueries({ queryKey: clinicalNotesKeys.entries() });
-      // Invalidate timeline queries
-      queryClient.invalidateQueries({ queryKey: timelineKeys.all });
+
+      queryClient.setQueryData(clinicalNotesKeys.entry(entryId), data);
+      void invalidateQueryKeys(queryClient, [clinicalNotesKeys.entryHistory(entryId)]);
+      void invalidateClinicalNoteMutationQueries(queryClient, {
+        entryId,
+        patientId,
+        encounterId,
+      });
     },
   });
 }

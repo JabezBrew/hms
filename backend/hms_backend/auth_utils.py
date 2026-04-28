@@ -1,30 +1,39 @@
 """
 Authentication response helpers.
 """
+import logging
+
 from django.conf import settings
 from rest_framework.response import Response
 
+from hms_backend.middleware import get_client_ip
 from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
+
+logger = logging.getLogger(__name__)
 
 
 def get_access_context(request):
     from apps.core.models import SiteNetwork, OffSiteAccessSettings
 
-    client_ip = request.META.get('HTTP_X_FORWARDED_FOR')
-    if client_ip:
-        client_ip = client_ip.split(',')[0].strip()
-    else:
-        client_ip = request.META.get('REMOTE_ADDR')
+    client_ip = get_client_ip(request)
 
-    is_offsite = not SiteNetwork.is_ip_on_site(client_ip)
-    settings_obj = OffSiteAccessSettings.get_settings()
+    try:
+        is_offsite = not SiteNetwork.is_ip_on_site(client_ip)
+        settings_obj = OffSiteAccessSettings.get_settings()
+        offsite_mode = settings_obj.offsite_mode
+        readonly_message = settings_obj.readonly_message
+    except Exception:
+        logger.exception("Failed to resolve off-site access context during authentication response.")
+        is_offsite = True
+        offsite_mode = 'readonly'
+        readonly_message = "System is in restricted mode. Write operations are temporarily disabled."
 
     return {
         'is_offsite': is_offsite,
-        'offsite_mode': settings_obj.offsite_mode,
+        'offsite_mode': offsite_mode,
         'readonly_message': (
-            settings_obj.readonly_message
-            if is_offsite and settings_obj.offsite_mode == 'readonly'
+            readonly_message
+            if is_offsite and offsite_mode == 'readonly'
             else None
         ),
     }
@@ -33,6 +42,7 @@ def get_access_context(request):
 def build_auth_response(request, user, facility_code=None):
     resolved_facility = resolve_user_facility_code(user, facility_code)
     tokens = get_tokens_for_user(user, facility_code=resolved_facility)
+    password_change_required = bool(getattr(user, 'must_change_password', False))
 
     staff_id = None
     practitioner_id = None
@@ -52,6 +62,7 @@ def build_auth_response(request, user, facility_code=None):
 
     response = Response({
         'access': tokens['access'],
+        'password_change_required': password_change_required,
         'user': {
             'email': user.email,
             'id': user.id,
@@ -61,6 +72,7 @@ def build_auth_response(request, user, facility_code=None):
             'staff_id': staff_id,
             'practitioner_id': practitioner_id,
             'facility_code': resolved_facility or None,
+            'must_change_password': password_change_required,
         },
         'access_context': access_context,
     })

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, handleApiError } from '@/lib/api-client';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
+import { authApi } from '@/shared/api/auth';
 
 /**
  * Settings API functions
@@ -68,9 +69,33 @@ const settingsApi = {
 
   getMfaStatus: async () => {
     try {
-      return await apiClient.get('/auth/mfa/status/');
+      return await authApi.mfaStatus();
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch MFA status'));
+    }
+  },
+
+  mfaTotpStart: async () => {
+    try {
+      return await authApi.mfaTotpStart();
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to start TOTP setup'));
+    }
+  },
+
+  mfaTotpConfirm: async (code) => {
+    try {
+      return await authApi.mfaTotpConfirm(code);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to confirm TOTP setup'));
+    }
+  },
+
+  mfaRecoveryGenerate: async () => {
+    try {
+      return await authApi.mfaRecoveryGenerate();
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to generate recovery codes'));
     }
   },
 };
@@ -168,5 +193,47 @@ export function useMfaStatus() {
     queryKey: settingsKeys.mfaStatus(),
     queryFn: settingsApi.getMfaStatus,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
+ * Hook to start TOTP enrollment.
+ */
+export function useMfaTotpStart() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: settingsApi.mfaTotpStart,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.mfaStatus() });
+    },
+  });
+}
+
+/**
+ * Hook to confirm TOTP enrollment.
+ */
+export function useMfaTotpConfirm() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: settingsApi.mfaTotpConfirm,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.mfaStatus() });
+    },
+  });
+}
+
+/**
+ * Hook to generate or rotate recovery codes.
+ */
+export function useMfaRecoveryGenerate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: settingsApi.mfaRecoveryGenerate,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.mfaStatus() });
+    },
   });
 }

@@ -9,8 +9,8 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import MoreVertical from 'lucide-react/dist/esm/icons/ellipsis-vertical.js';
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js';
 import CalendarX from 'lucide-react/dist/esm/icons/calendar-x.js';
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
@@ -51,6 +51,7 @@ import {
   useDeleteBlockedTime
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import { useSearchPractitioners } from '@/features/encounters/hooks/useEncounterQueries';
+import { usePractitioner } from '@/features/staff/hooks';
 import RecurringScheduleForm from '@/components/appointments/RecurringScheduleForm';
 import BlockedTimeForm from '@/components/appointments/BlockedTimeForm';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
@@ -70,10 +71,17 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
  * - Quick actions
  */
 const PractitionerAvailabilityPage = () => {
-  const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const userRole = user?.role;
   const isDoctor = userRole === 'doctor';
+  const practitionerFromState = location.state?.practitionerId
+    ? String(location.state.practitionerId)
+    : null;
+  const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const practitionerFromQuery = useMemo(() => {
+    return queryParams.get('practitioner');
+  }, [queryParams]);
   const pageMeta = usePageMeta({
     title: isDoctor
       ? 'My Availability | Hospital Management System'
@@ -83,13 +91,26 @@ const PractitionerAvailabilityPage = () => {
 
   const [activeTab, setActiveTab] = useState('schedules'); // 'schedules' | 'blocked'
 
-  // Initialize selectedPractitioner - doctors start with their own ID to avoid double fetch
-  const [selectedPractitioner, setSelectedPractitioner] = useState(() => {
+  const desiredSelectedPractitioner = useMemo(() => {
     if (isDoctor && user?.practitionerId) {
-      return user.practitionerId;
+      return String(user.practitionerId);
+    }
+    if (practitionerFromState) {
+      return practitionerFromState;
+    }
+    if (practitionerFromQuery) {
+      return String(practitionerFromQuery);
     }
     return null;
-  });
+  }, [isDoctor, practitionerFromQuery, practitionerFromState, user?.practitionerId]);
+
+  // Keep selection synchronized when arriving via redirect query params.
+  const [selectedPractitioner, setSelectedPractitioner] = useState(desiredSelectedPractitioner);
+  useEffect(() => {
+    setSelectedPractitioner((current) => (
+      current === desiredSelectedPractitioner ? current : desiredSelectedPractitioner
+    ));
+  }, [desiredSelectedPractitioner]);
 
   // Dialog states
   const [isCreateRecurringDialogOpen, setIsCreateRecurringDialogOpen] = useState(false);
@@ -132,7 +153,6 @@ const PractitionerAvailabilityPage = () => {
   } = useBlockedTimes(scheduleFilters);
 
   // Practitioner search
-  const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
   const {
     data: practitioners = [],
     isLoading: practitionersLoading,
@@ -140,19 +160,38 @@ const PractitionerAvailabilityPage = () => {
   } = useSearchPractitioners();
 
   const handleSearchChange = (value) => {
-    setPractitionerSearchQuery(value);
     setPractitionerSearchTerm(value);
   };
+
+  const { data: selectedPractitionerDetails } = usePractitioner(selectedPractitioner);
+
+  const selectedPractitionerLabel = useMemo(() => {
+    if (!selectedPractitionerDetails) return null;
+
+    if (selectedPractitionerDetails?.name) {
+      return selectedPractitionerDetails.name;
+    }
+
+    const userDetails = selectedPractitionerDetails?.staff_details?.user_details
+      || selectedPractitionerDetails?.staff?.user_details
+      || selectedPractitionerDetails?.staff?.user
+      || selectedPractitionerDetails?.user;
+
+    const first = userDetails?.first_name || '';
+    const last = userDetails?.last_name || '';
+    const full = `${first} ${last}`.trim();
+    return full || null;
+  }, [selectedPractitionerDetails]);
 
   // Format practitioner options
   const practitionerOptions = useMemo(() => {
     if (!Array.isArray(practitioners)) return [];
-    return practitioners.map(practitioner => {
+    const options = practitioners.map(practitioner => {
       // Check for simple name field first (from search API)
       if (practitioner?.name) {
         return {
           label: practitioner.name,
-          value: practitioner.id
+          value: String(practitioner.id)
         };
       } else if (practitioner.fhir_resource) {
         const name = practitioner.fhir_resource.name?.[0];
@@ -161,30 +200,42 @@ const PractitionerAvailabilityPage = () => {
         const displayName = `${family}, ${given}`.trim() || 'Unknown';
         return {
           label: displayName,
-          value: practitioner.local_data?.id || practitioner.fhir_resource.id
+          value: String(practitioner.local_data?.id || practitioner.fhir_resource.id)
         };
       } else if (practitioner.local_data?.staff_details?.user_details) {
         // Handle nested local_data structure from search API
         const user = practitioner.local_data.staff_details.user_details;
         return {
           label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown',
-          value: practitioner.local_data.id
+          value: String(practitioner.local_data.id)
         };
       } else if (practitioner.staff_details?.user_details) {
         // Handle direct staff_details structure
         const user = practitioner.staff_details.user_details;
         return {
           label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown',
-          value: practitioner.id
+          value: String(practitioner.id)
         };
       } else {
         return {
           label: practitioner.user?.full_name || 'Unknown',
-          value: practitioner.id
+          value: String(practitioner.id)
         };
       }
     });
-  }, [practitioners]);
+
+    if (!selectedPractitioner) return options;
+    const hasSelectedOption = options.some((option) => option.value === String(selectedPractitioner));
+    if (hasSelectedOption) return options;
+
+    return [
+      {
+        label: selectedPractitionerLabel || 'Selected practitioner',
+        value: String(selectedPractitioner),
+      },
+      ...options,
+    ];
+  }, [practitioners, selectedPractitioner, selectedPractitionerLabel]);
 
   // Mutations
   const deleteRecurringMutation = useDeleteRecurringSchedule();
@@ -226,7 +277,7 @@ const PractitionerAvailabilityPage = () => {
         setIsDeleteRecurringDialogOpen(false);
         toast.success('Schedule deleted successfully');
       },
-      onError: (error) => {
+      onError: (_error) => {
         toast.error('Failed to delete schedule');
       }
     });
@@ -248,18 +299,13 @@ const PractitionerAvailabilityPage = () => {
         setIsDeleteBlockedTimeDialogOpen(false);
         toast.success('Blocked time deleted successfully');
       },
-      onError: (error) => {
+      onError: (_error) => {
         toast.error('Failed to delete blocked time');
       }
     });
   };
 
   const getPractitionerName = (item) => item.practitioner_name || 'Unknown';
-
-  const formatDaysOfWeek = (days) => {
-    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days.map(d => dayNames[d]).join(', ');
-  };
 
   // Loading state
   if (recurringLoading && blockedTimesLoading) {
@@ -385,6 +431,7 @@ const PractitionerAvailabilityPage = () => {
               ) : (
                 <DoctorAvailabilityCalendar
                   practitionerId={selectedPractitioner}
+                  useRoster={false}
                   onSlotSelect={(slot) => {
                     toast.info(`Selected: ${new Date(slot.start).toLocaleTimeString()} - ${new Date(slot.end).toLocaleTimeString()}`);
                   }}

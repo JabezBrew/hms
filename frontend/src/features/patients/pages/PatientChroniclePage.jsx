@@ -12,8 +12,8 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
-import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
+import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
@@ -25,9 +25,15 @@ import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQu
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
 import { cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import PatientIdentityHero from "@/components/chronicle/PatientIdentityHero";
 import ClinicalSummarySidebar from "@/components/chronicle/ClinicalSummarySidebar";
@@ -35,43 +41,93 @@ import TimelineEntry from "@/components/chronicle/TimelineEntry";
 import BreakGlassDialog from "@/components/chronicle/BreakGlassDialog";
 import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
-import ChartAssignmentCard from "@/components/charts/ChartAssignmentCard";
-import { chartKeys, useChartAssignments } from "@/features/charts/hooks";
-import { laboratoryApi } from "@/features/laboratory/api";
-import { labKeys } from "@/features/laboratory/hooks";
-import { drugSafetyApi } from "@/shared/api/drugSafety";
-import { drugSafetyKeys } from "@/hooks/useDrugSafetyQueries";
-import { keyWith } from "@/shared/lib/queryKeys";
+import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
+import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
+import {
+  getInitialExpandedEncounterIds,
+  getInitialExpandedNoteIds,
+  normalizeExpansionId,
+} from "@/components/chronicle/chronicleNoteUtils";
+import {
+  chronicleWorkspaceIds,
+  prefetchChronicleWorkspaceResources,
+} from "@/features/patients/chronicle/workspaceRegistry";
+import {
+  buildChronicleSearch,
+  CHRONICLE_ALL_VISITS,
+  CHRONICLE_VISIT_PARAM,
+  resolveChronicleVisitScope,
+  stripTransientChronicleParams,
+} from "@/features/patients/chronicle/visitScopeUtils";
+import { emitOnboardingEvent } from "@/features/onboarding";
+import { usePageMeta } from "@/shared/hooks/usePageMeta";
+import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
 
 import { useDebounce } from "@/hooks/use-debounce";
+const DISCHARGE_CASE_ROLES = new Set([
+  'admin',
+  'doctor',
+  'nurse',
+  'head_nurse',
+  'nurse_practitioner',
+  'inpatient_doctor',
+  'practitioner',
+  'physician',
+  'billing',
+]);
 
-const loadAddNoteSlideOver = () => import("@/components/chronicle/AddNoteSlideOver");
-const loadAddVitalsSlideOver = () => import("@/components/chronicle/AddVitalsSlideOver");
-const loadAddPrescriptionSlideOver = () => import("@/components/chronicle/AddPrescriptionSlideOver");
-const loadAddFluidBalanceSlideOver = () => import("@/components/chronicle/AddFluidBalanceSlideOver");
-const loadPatientInsuranceSlideOver = () => import("@/components/chronicle/PatientInsuranceSlideOver");
-const loadWardRoundSlideOver = () => import("@/components/chronicle/WardRoundSlideOver");
-const loadConsultationSlideOver = () => import("@/components/chronicle/ConsultationSlideOver");
-const loadAddChartSlideOver = () => import("@/components/charts/AddChartSlideOver");
-const loadChartEntryForm = () => import("@/components/charts/ChartEntryForm");
-const loadLabOrderForm = () => import("@/components/laboratory/LabOrderForm");
-const loadReferralForm = () => import("@/components/referrals/ReferralForm");
-const loadCrossFacilitySharePanel = () => import("@/components/consent/CrossFacilitySharePanel");
-const loadReceiveRecordPanel = () => import("@/components/interop/ReceiveRecordPanel");
+function getEncounterKind(encounter) {
+  const encounterType = encounter?.encounter_type || encounter?.type;
+  return typeof encounterType === 'string' ? encounterType.toLowerCase() : 'outpatient';
+}
 
-const AddNoteSlideOver = lazy(loadAddNoteSlideOver);
-const AddVitalsSlideOver = lazy(loadAddVitalsSlideOver);
-const AddPrescriptionSlideOver = lazy(loadAddPrescriptionSlideOver);
-const AddFluidBalanceSlideOver = lazy(loadAddFluidBalanceSlideOver);
-const PatientInsuranceSlideOver = lazy(loadPatientInsuranceSlideOver);
-const WardRoundSlideOver = lazy(loadWardRoundSlideOver);
-const ConsultationSlideOver = lazy(loadConsultationSlideOver);
-const AddChartSlideOver = lazy(loadAddChartSlideOver);
-const ChartEntryForm = lazy(loadChartEntryForm);
-const LabOrderForm = lazy(loadLabOrderForm);
-const ReferralForm = lazy(loadReferralForm);
-const CrossFacilitySharePanel = lazy(loadCrossFacilitySharePanel);
-const ReceiveRecordPanel = lazy(loadReceiveRecordPanel);
+function formatEncounterDateRange(encounter) {
+  const start = encounter?.start_time
+    ? new Date(encounter.start_time).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : 'Unknown date';
+
+  const end = encounter?.end_time
+    ? new Date(encounter.end_time).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
+
+  return end && end !== start ? `${start} - ${end}` : start;
+}
+
+function formatEncounterScopeLabel(encounter, activeEncounterId) {
+  if (!encounter) {
+    return 'Select visit';
+  }
+
+  const encounterKind = getEncounterKind(encounter);
+  const encounterTypeLabel = encounterKind === 'inpatient'
+    ? 'Inpatient'
+    : encounterKind === 'emergency'
+      ? 'Emergency'
+      : 'Outpatient';
+
+  const details = [formatEncounterDateRange(encounter)];
+
+  if (encounter?.practitioner_name) {
+    details.push(encounter.practitioner_name);
+  }
+
+  if (encounter?.status) {
+    details.push(encounter.status);
+  }
+
+  const prefix = String(encounter?.id) === String(activeEncounterId)
+    ? 'Current'
+    : encounterTypeLabel;
+
+  return `${prefix} visit - ${details.join(' • ')}`;
+}
 
 /**
  * PatientChroniclePage - Magazine-style patient health record view
@@ -90,16 +146,23 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const { user, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const prefetchedActionsRef = useRef(new Set());
+  const openedPatientChartsRef = useRef(new Set());
+  const lastFilterEventRef = useRef(null);
+  const encounterExpansionSeedRef = useRef(null);
+  const noteExpansionSeedRef = useRef(null);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
-  const [expandedEncounters, setExpandedEncounters] = useState(new Set(['unlinked'])); // Track which encounter groups are expanded
+  const [expandedEncounters, setExpandedEncounters] = useState(() => new Set());
+  const [expandedNoteIds, setExpandedNoteIds] = useState(() => new Set());
 
   // Copy forward state - holds template and data for pre-filling note editor
   const [copyForwardData, setCopyForwardData] = useState(null);
 
   // Edit note state - holds note ID and data for editing existing notes
   const [editNoteData, setEditNoteData] = useState(null);
+  const [requestedDischargeAdmissionId, setRequestedDischargeAdmissionId] = useState(null);
+  const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
 
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
@@ -108,70 +171,116 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Check for action query params (e.g., from referral inbox)
   const actionParam = searchParams.get('action');
   const referralIdParam = searchParams.get('referral_id');
+  const admissionParam = searchParams.get('admission');
+  const visitParam = searchParams.get(CHRONICLE_VISIT_PARAM);
   const clearQueryParams = useCallback(() => {
-    if (location.search) {
-      navigate(location.pathname, { replace: true });
+    const nextSearch = stripTransientChronicleParams(location.search);
+    if (nextSearch !== location.search) {
+      navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
     }
   }, [location.pathname, location.search, navigate]);
 
   // Slide-over management - auto-collapses sidebar when any slide-over opens
-  const slideOvers = useMultipleSlideOvers([
-    'note',
-    'vitals',
-    'prescription',
-    'labs',
-    'referral',
-    'crossFacility',
-    'receiveRecord',
-    'fluids',
-    'charts',
-    'chartEntry',
-    'insurance',
-    'wardRound',
-    'consultation',
-  ]);
+  const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
+  const [trendReviewTab, setTrendReviewTab] = useState('vitals');
 
-  // Chart entry state - which assignment is being recorded
-  const [activeChartAssignment, setActiveChartAssignment] = useState(null);
+  // Fetch patient data (includes access flags for conditional fetching)
+  const { data: patient, isLoading, error, refetch } = usePatient(id);
+  const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
+  const patientPath = id ? `/patients/${id}` : '/patients';
+  const pageMeta = usePageMeta({
+    title: patientName ? `${patientName} | Hospital Management System` : 'Patient | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: patientName || 'Patient', path: patientPath },
+    ],
+  });
+
+  // Check if user has clinical access (from patient endpoint response)
+  const hasClinicalAccess = patient?.access?.clinical === true;
+  const patientLocalId = patient?.local_data?.id || patient?.id || id;
+  const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+  const prefetchWorkspaceForOpen = useCallback((workspaceId) => {
+    prefetchChronicleWorkspaceResources(workspaceId, { patientLocalId, queryClient });
+  }, [patientLocalId, queryClient]);
 
   // Auto-open slide-over based on action query param or defaultAction prop
   const wardRoundParam = searchParams.get('wardRound');
   const consultationParam = searchParams.get('consultation');
+  const openChronicleWorkspace = useCallback((workspaceId) => {
+    prefetchWorkspaceForOpen(workspaceId);
+    slideOvers.open(workspaceId);
+  }, [prefetchWorkspaceForOpen, slideOvers]);
+
   useEffect(() => {
     const action = actionParam || defaultAction;
     if (action === 'add_note') {
-      loadAddNoteSlideOver();
-      slideOvers.open('note');
+      openChronicleWorkspace('note');
       // Clear the query params after opening
       if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
-      loadWardRoundSlideOver();
-      slideOvers.open('wardRound');
+      openChronicleWorkspace('wardRound');
       // Clear the query params after opening
       if (actionParam || wardRoundParam) clearQueryParams();
     } else if (action === 'consultation' || consultationParam === 'true') {
-      loadConsultationSlideOver();
-      slideOvers.open('consultation');
+      openChronicleWorkspace('consultation');
       // Clear the query params after opening
       if (actionParam || consultationParam) clearQueryParams();
+    } else if (action === 'discharge') {
+      const admissionId = admissionParam
+        || patient?.local_data?.current_admission_id
+        || patient?.current_admission_id;
+
+      if (!admissionId) {
+        if (!patient && !admissionParam) {
+          return;
+        }
+        toast.error('No active admission found for this patient');
+        if (actionParam || admissionParam) clearQueryParams();
+        return;
+      }
+
+      setRequestedDischargeAdmissionId(String(admissionId));
+      openChronicleWorkspace('discharge');
+      if (actionParam || admissionParam) clearQueryParams();
     } else if (action === 'add_prescription') {
-      loadAddPrescriptionSlideOver();
-      slideOvers.open('prescription');
+      openChronicleWorkspace('prescription');
       if (actionParam) clearQueryParams();
+    } else if (action === 'treatment_sheet') {
+      const admissionId = admissionParam
+        || patient?.local_data?.current_admission_id
+        || patient?.current_admission_id;
+
+      if (!admissionId) {
+        if (!patient && !admissionParam) {
+          return;
+        }
+        toast.error('No active admission found for this patient');
+        if (actionParam || admissionParam) clearQueryParams();
+        return;
+      }
+
+      setRequestedTreatmentSheetAdmissionId(String(admissionId));
+      openChronicleWorkspace('treatmentSheet');
+      if (actionParam || admissionParam) clearQueryParams();
     }
-  }, [actionParam, defaultAction, wardRoundParam, consultationParam, slideOvers, clearQueryParams]);
+  }, [
+    actionParam,
+    defaultAction,
+    wardRoundParam,
+    consultationParam,
+    admissionParam,
+    patient,
+    openChronicleWorkspace,
+    clearQueryParams,
+  ]);
 
   // Debounce search input
   const debouncedSearch = useDebounce(searchInput, 300);
 
   // Check if any slide-over is open (for timeline compression)
   const isAnySlideOverOpen = slideOvers.activeSlideOver !== null;
-
-  // Fetch patient data (includes access flags for conditional fetching)
-  const { data: patient, isLoading, error, refetch } = usePatient(id);
-
-  // Check if user has clinical access (from patient endpoint response)
-  const hasClinicalAccess = patient?.access?.clinical === true;
+  const isCopilotSlideOverOpen = slideOvers.isOpen('copilot');
 
   // ====== TIER 1: Chronicle Context (optimized single-call) ======
   // Only fetch if user has clinical access - prevents wasted 403 requests
@@ -184,10 +293,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
     enabled: hasClinicalAccess,
   });
 
-  const canFetchClinical = hasClinicalAccess && !isContextLoading && !contextError;
+  const canFetchClinical = hasClinicalAccess;
+  const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
 
   // Fetch patient encounters for grouping
-  const { data: encounters, refetch: refetchEncounters } = usePatientEncounters(id, {
+  const {
+    data: encounters,
+    isLoading: areEncountersLoading,
+    refetch: refetchEncounters,
+  } = usePatientEncounters(id, {
     enabled: canFetchClinical,
   });
 
@@ -197,20 +311,138 @@ const PatientChroniclePage = ({ defaultAction }) => {
   });
   const patientInsurance = insuranceData?.results || insuranceData || [];
 
+  // Find the active encounter (in-progress inpatient admission takes priority)
+  const activeEncounter = useMemo(() => {
+    if (!encounters || encounters.length === 0) return null;
+    const activeOutpatientVisitStatuses = new Set([
+      'checked_in',
+      'waiting',
+      'called',
+      'in_progress',
+      'on_hold',
+      'ready_checkout',
+    ]);
+
+    const activeInpatient = encounters.find((encounter) => (
+      encounter.status === 'in-progress'
+      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(encounter))
+    ));
+
+    if (activeInpatient) {
+      return activeInpatient;
+    }
+
+    const activeAny = encounters.find((encounter) => encounter.status === 'in-progress');
+    if (activeAny) {
+      return activeAny;
+    }
+
+    return encounters.find((encounter) => (
+      getEncounterKind(encounter) === 'outpatient'
+      && encounter.status === 'planned'
+      && activeOutpatientVisitStatuses.has(encounter.outpatient_visit_status)
+    )) || null;
+  }, [encounters]);
+
+  const resolvedVisitScope = useMemo(() => resolveChronicleVisitScope({
+    requestedVisit: visitParam,
+    activeEncounterId: chronicleContext?.active_encounter?.id || activeEncounter?.id,
+    encounters,
+    areEncountersLoading,
+  }), [
+    activeEncounter?.id,
+    areEncountersLoading,
+    chronicleContext?.active_encounter?.id,
+    encounters,
+    visitParam,
+  ]);
+  const isAllVisitsScope = resolvedVisitScope === CHRONICLE_ALL_VISITS;
+  const selectedEncounterId = !resolvedVisitScope || isAllVisitsScope ? null : resolvedVisitScope;
+  const isVisitScopePending = canFetchClinical && !resolvedVisitScope;
+  const selectedEncounter = useMemo(
+    () => encounters?.find((encounter) => String(encounter.id) === String(selectedEncounterId)) || null,
+    [encounters, selectedEncounterId]
+  );
+  const chartContextEncounter = useMemo(() => {
+    if (isAllVisitsScope) {
+      return null;
+    }
+    return selectedEncounter || activeEncounter || null;
+  }, [activeEncounter, isAllVisitsScope, selectedEncounter]);
+  const chartContextAdmissionId = chartContextEncounter?.admission_id
+    || chartContextEncounter?.admission?.id
+    || null;
+  const visitScopeOptions = useMemo(() => {
+    const options = [{
+      value: CHRONICLE_ALL_VISITS,
+      label: 'All history',
+    }];
+
+    if (!Array.isArray(encounters)) {
+      return options;
+    }
+
+    return options.concat(
+      encounters.map((encounter) => ({
+        value: String(encounter.id),
+        label: formatEncounterScopeLabel(encounter, activeEncounter?.id),
+      }))
+    );
+  }, [activeEncounter?.id, encounters]);
+
   // Get patient ID for clinical queries - use URL id directly to enable parallel loading
   // The URL id is the patient UUID which works for all clinical endpoints
-  const patientLocalId = patient?.local_data?.id || patient?.id || id;
-  const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+  const copilotPatientName = useMemo(() => {
+    const details = patient?.local_data || patient;
+    if (!details) return 'Patient';
+
+    const userDetails = details.user_details;
+    if (!userDetails) {
+      return details.name || 'Patient';
+    }
+
+    const fullName = `${userDetails.first_name || ''} ${userDetails.last_name || ''}`.trim();
+    return fullName || details.name || 'Patient';
+  }, [patient]);
+
+  useEffect(() => {
+    if (!hasClinicalAccess || !patientLocalId) {
+      return;
+    }
+    if (openedPatientChartsRef.current.has(patientLocalId)) {
+      return;
+    }
+    openedPatientChartsRef.current.add(patientLocalId);
+    emitOnboardingEvent('patients.chart_opened', {
+      success: true,
+      patient_id: patientLocalId,
+    });
+  }, [hasClinicalAccess, patientLocalId]);
+
+  useEffect(() => {
+    if (!patientLocalId) {
+      return;
+    }
+    const token = `${patientLocalId}:${activeFilter}`;
+    if (lastFilterEventRef.current === token) {
+      return;
+    }
+    lastFilterEventRef.current = token;
+    emitOnboardingEvent('chronicle.filter_changed', {
+      filter: activeFilter,
+      patient_id: patientLocalId,
+    });
+  }, [activeFilter, patientLocalId]);
 
   useEffect(() => {
     prefetchedActionsRef.current = new Set();
+    setRequestedDischargeAdmissionId(null);
   }, [id]);
 
   // Use chronicle context data directly - no more legacy fallback needed
   const medications = chronicleContext?.active_medications || [];
   const parsedAllergies = chronicleContext?.allergies || [];
   const problems = chronicleContext?.active_problems || [];
-  const admissionStatus = chronicleContext?.admission_status;
 
   // Get latest vitals from context
   const latestVitals = chronicleContext?.latest_vitals;
@@ -255,14 +487,15 @@ const PatientChroniclePage = ({ defaultAction }) => {
     if (latestVitals.blood_pressure) {
       const parts = latestVitals.blood_pressure.split('/');
       const systolic = parts.length > 0 ? Number(parts[0]) : null;
+      const bpAbnormal = systolic != null && !isNaN(systolic) && (systolic > 140 || systolic < 90);
       results.push({
         id: `bp-${vitalsId}`,
         name: 'BP',
         value: latestVitals.blood_pressure,
         unit: 'mmHg',
         timestamp,
-        is_abnormal: systolic ? (systolic > 140 || systolic < 90) : false,
-        abnormal_direction: systolic > 140 ? 'high' : 'low',
+        is_abnormal: bpAbnormal,
+        abnormal_direction: bpAbnormal ? (systolic > 140 ? 'high' : 'low') : null,
       });
     }
 
@@ -296,17 +529,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
     // Use primitive vitalsId as dependency - will only re-run when vitals actually change
   }, [vitalsId, vitalsRecordedAt, latestVitals]);
 
-  // Fetch active chart assignments for this patient
-  const { data: chartAssignments, refetch: refetchCharts } = useChartAssignments(
-    {
-      patient: patientLocalId,
-      status: 'active',
-    },
-    {
-      enabled: canFetchClinical,
-    }
-  );
-
   // Map filter to API type
   const typeMapping = {
     'all': 'all',
@@ -329,7 +551,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     type: typeMapping[activeFilter] || 'all',
     search: debouncedSearch,
     pageSize: 20,
-    enabled: canFetchClinical,
+    encounterId: selectedEncounterId || undefined,
+    enabled: canFetchClinical && !!resolvedVisitScope,
   });
 
   // Invalidate timeline cache helper
@@ -438,22 +661,18 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return timelineEntries;
   }, [timelineEntries, activeFilter]);
 
-  // Find the active encounter (in-progress inpatient admission takes priority)
-  const activeEncounter = useMemo(() => {
-    if (!encounters || encounters.length === 0) return null;
-
-    // First look for an active inpatient admission
-    const activeInpatient = encounters.find(enc =>
-      enc.status === 'in-progress' &&
-      ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(enc.encounter_type?.toLowerCase())
-    );
-
-    if (activeInpatient) return activeInpatient;
-
-    // Otherwise look for any in-progress encounter
-    const activeAny = encounters.find(enc => enc.status === 'in-progress');
-    return activeAny || null;
-  }, [encounters]);
+  const dischargeCaseAdmissionId = useMemo(() => (
+    requestedDischargeAdmissionId
+    || patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || activeEncounter?.admission_id
+    || null
+  ), [
+    activeEncounter?.admission_id,
+    patient?.current_admission_id,
+    patient?.local_data?.current_admission_id,
+    requestedDischargeAdmissionId,
+  ]);
 
   // Group entries by encounter
   const groupedByEncounter = useMemo(() => {
@@ -510,14 +729,85 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return groups;
   }, [filteredEntries, encounters]);
 
+  const expansionSeedKey = useMemo(() => (
+    `${id}:${resolvedVisitScope || 'pending'}:${activeFilter}:${debouncedSearch.trim().toLowerCase()}`
+  ), [activeFilter, debouncedSearch, id, resolvedVisitScope]);
+
+  // Use stable length values instead of array references to avoid spurious re-runs.
+  // The seed key already captures meaningful changes (patient, visit scope, filter, search).
+  const encounterGroupCount = groupedByEncounter.encounters.length;
+  const unlinkedEntryCount = groupedByEncounter.unlinked.length;
+
+  useEffect(() => {
+    if (encounterGroupCount > 0 && areEncountersLoading) {
+      return;
+    }
+    if (encounterGroupCount === 0 && unlinkedEntryCount === 0) {
+      return;
+    }
+    if (encounterExpansionSeedRef.current === expansionSeedKey) {
+      return;
+    }
+
+    setExpandedEncounters(getInitialExpandedEncounterIds({
+      encounters: groupedByEncounter.encounters,
+      unlinkedEntries: groupedByEncounter.unlinked,
+      activeEncounterId: activeEncounter?.id,
+    }));
+    encounterExpansionSeedRef.current = expansionSeedKey;
+  }, [
+    activeEncounter?.id,
+    areEncountersLoading,
+    expansionSeedKey,
+    encounterGroupCount,
+    unlinkedEntryCount,
+  ]);
+
+  useEffect(() => {
+    if (filteredEntries.length === 0) {
+      return;
+    }
+    if (noteExpansionSeedRef.current === expansionSeedKey) {
+      return;
+    }
+
+    setExpandedNoteIds(getInitialExpandedNoteIds({
+      entries: filteredEntries,
+      activeFilter,
+    }));
+    noteExpansionSeedRef.current = expansionSeedKey;
+  }, [activeFilter, expansionSeedKey, filteredEntries]);
+
   // Toggle encounter expansion
   const toggleEncounter = useCallback((encounterId) => {
+    const normalizedEncounterId = normalizeExpansionId(encounterId);
+    if (!normalizedEncounterId) {
+      return;
+    }
+
     setExpandedEncounters(prev => {
       const next = new Set(prev);
-      if (next.has(encounterId)) {
-        next.delete(encounterId);
+      if (next.has(normalizedEncounterId)) {
+        next.delete(normalizedEncounterId);
       } else {
-        next.add(encounterId);
+        next.add(normalizedEncounterId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleNoteExpanded = useCallback((noteId) => {
+    const normalizedNoteId = normalizeExpansionId(noteId);
+    if (!normalizedNoteId) {
+      return;
+    }
+
+    setExpandedNoteIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(normalizedNoteId)) {
+        next.delete(normalizedNoteId);
+      } else {
+        next.add(normalizedNoteId);
       }
       return next;
     });
@@ -525,8 +815,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Expand all encounters
   const expandAll = useCallback(() => {
-    const allIds = new Set(['unlinked']);
-    groupedByEncounter.encounters.forEach(g => allIds.add(g.encounter.id));
+    const allIds = new Set();
+    if (groupedByEncounter.unlinked.length > 0) {
+      allIds.add('unlinked');
+    }
+    groupedByEncounter.encounters.forEach((group) => {
+      const normalizedEncounterId = normalizeExpansionId(group.encounter?.id);
+      if (normalizedEncounterId) {
+        allIds.add(normalizedEncounterId);
+      }
+    });
     setExpandedEncounters(allIds);
   }, [groupedByEncounter]);
 
@@ -537,6 +835,20 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Get total count for display
   const totalCount = useMemo(() => getTimelineTotalCount(timelineData), [timelineData]);
+
+  useEffect(() => {
+    if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
+      return;
+    }
+
+    const nextSearch = buildChronicleSearch(location.search, {
+      updates: {
+        [CHRONICLE_VISIT_PARAM]: resolvedVisitScope,
+      },
+    });
+
+    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
+  }, [location.pathname, location.search, navigate, resolvedVisitScope, visitParam]);
 
   // ============================================
   // Event handlers
@@ -559,147 +871,60 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
     prefetchedActionsRef.current.add(actionToken);
-
-    if (action === 'note') {
-      loadAddNoteSlideOver();
-      return;
-    }
-
-    if (action === 'vitals') {
-      loadAddVitalsSlideOver();
-      return;
-    }
-
-    if (action === 'prescription') {
-      loadAddPrescriptionSlideOver();
-      if (patientLocalId) {
-        void queryClient.prefetchQuery({
-          queryKey: drugSafetyKeys.patientAllergies(patientLocalId),
-          queryFn: () => drugSafetyApi.getPatientAllergies(patientLocalId),
-          staleTime: 60 * 1000,
-        });
-      }
-      return;
-    }
-
-    if (action === 'labs') {
-      loadLabOrderForm();
-      void queryClient.prefetchQuery({
-        queryKey: labKeys.testsList({}),
-        queryFn: () => laboratoryApi.getLabTests({}),
-        staleTime: 60 * 1000,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: labKeys.panelsList({}),
-        queryFn: () => laboratoryApi.getLabPanels({}),
-        staleTime: 60 * 1000,
-      });
-      return;
-    }
-
-    if (action === 'referral') {
-      loadReferralForm();
-      return;
-    }
-
-    if (action === 'crossFacility') {
-      loadCrossFacilitySharePanel();
-      return;
-    }
-
-    if (action === 'receiveRecord') {
-      loadReceiveRecordPanel();
-      return;
-    }
-
-    if (action === 'fluids') {
-      loadAddFluidBalanceSlideOver();
-      return;
-    }
-
-    if (action === 'charts') {
-      loadAddChartSlideOver();
-      void queryClient.prefetchQuery({
-        queryKey: keyWith('charts', 'templates', 'list', undefined, undefined, undefined, true),
-        queryFn: () => apiClient.get('/charts/templates/?is_active=true'),
-        staleTime: 60 * 1000,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: chartKeys.categories(),
-        queryFn: () => apiClient.get('/charts/templates/categories/').then((response) => response.categories),
-        staleTime: 60 * 60 * 1000,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: chartKeys.intervals(),
-        queryFn: () => apiClient.get('/charts/templates/intervals/').then((response) => response.intervals),
-        staleTime: 60 * 60 * 1000,
-      });
-      return;
-    }
-
-    if (action === 'chartEntry') {
-      loadChartEntryForm();
-      return;
-    }
-
-    if (action === 'insurance') {
-      loadPatientInsuranceSlideOver();
-      return;
-    }
-
-    if (action === 'wardRound') {
-      loadWardRoundSlideOver();
-      return;
-    }
-
-    if (action === 'consultation') {
-      loadConsultationSlideOver();
-    }
+    prefetchChronicleWorkspaceResources(action, { patientLocalId, queryClient });
   }, [patientLocalId, queryClient]);
 
   // Slide-over handlers - using the centralized hook
+  const handleAskChronicle = useCallback(() => {
+    openChronicleWorkspace('copilot');
+  }, [openChronicleWorkspace]);
   const handleAddNote = useCallback(() => {
-    prefetchActionResources('note');
-    slideOvers.open('note');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('note');
+  }, [openChronicleWorkspace]);
   const handleRecordVitals = useCallback(() => {
-    prefetchActionResources('vitals');
-    slideOvers.open('vitals');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('vitals');
+  }, [openChronicleWorkspace]);
   const handlePrescribe = useCallback(() => {
-    prefetchActionResources('prescription');
-    slideOvers.open('prescription');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('prescription');
+  }, [openChronicleWorkspace]);
   const handleOrderLabs = useCallback(() => {
-    prefetchActionResources('labs');
-    slideOvers.open('labs');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('labs');
+  }, [openChronicleWorkspace]);
   const handleRequestConsult = useCallback(() => {
-    prefetchActionResources('referral');
-    slideOvers.open('referral');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('referral');
+  }, [openChronicleWorkspace]);
   const handleShareRecord = useCallback(() => {
-    prefetchActionResources('crossFacility');
-    slideOvers.open('crossFacility');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('crossFacility');
+  }, [openChronicleWorkspace]);
   const handleReceiveRecord = useCallback(() => {
-    prefetchActionResources('receiveRecord');
-    slideOvers.open('receiveRecord');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('receiveRecord');
+  }, [openChronicleWorkspace]);
   const handleRecordFluids = useCallback(() => {
-    prefetchActionResources('fluids');
-    slideOvers.open('fluids');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('fluids');
+  }, [openChronicleWorkspace]);
   const handleStartWardRound = useCallback(() => {
-    prefetchActionResources('wardRound');
-    slideOvers.open('wardRound');
-  }, [prefetchActionResources, slideOvers]);
+    openChronicleWorkspace('wardRound');
+  }, [openChronicleWorkspace]);
+  const handleStartDischarge = useCallback(() => {
+    const admissionId = patient?.local_data?.current_admission_id
+      || patient?.current_admission_id
+      || activeEncounter?.admission_id;
+
+    if (!admissionId) {
+      toast.error('No active admission found for this patient');
+      return;
+    }
+
+    setRequestedDischargeAdmissionId(String(admissionId));
+    openChronicleWorkspace('discharge');
+  }, [patient, activeEncounter, openChronicleWorkspace]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
     slideOvers.close();
     setCopyForwardData(null); // Clear copy forward data when closing
     setEditNoteData(null); // Clear edit note data when closing
+    setRequestedDischargeAdmissionId(null);
   }, [slideOvers]);
 
   // Created handlers - refresh data and close
@@ -725,11 +950,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
       sectionsCopied: copyData.sectionsCopied,
     });
     setEditNoteData(null); // Clear any edit data
-    slideOvers.open('note');
+    openChronicleWorkspace('note');
     toast.success("Note copied", {
       description: `${copyData.sectionsCopied?.length || 0} sections ready to edit`,
     });
-  }, [slideOvers]);
+  }, [openChronicleWorkspace]);
 
   // Handle edit note from timeline - opens note editor in edit mode
   const handleEditNote = useCallback((editData) => {
@@ -745,8 +970,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
       data: editData.data,
     });
     setCopyForwardData(null); // Clear any copy data
-    slideOvers.open('note');
-  }, [slideOvers]);
+    openChronicleWorkspace('note');
+  }, [openChronicleWorkspace]);
 
   const handleVitalsRecorded = useCallback(() => {
     refreshData();
@@ -773,34 +998,104 @@ const PatientChroniclePage = ({ defaultAction }) => {
     slideOvers.close();
   }, [refreshData, slideOvers]);
 
-  // Chart handlers
-  const handleAssignChart = useCallback(() => {
-    prefetchActionResources('charts');
-    slideOvers.open('charts');
-  }, [prefetchActionResources, slideOvers]);
-
-  const handleChartAssigned = useCallback(() => {
-    refetchCharts();
-    slideOvers.close();
-  }, [refetchCharts, slideOvers]);
-
-  const handleRecordChartEntry = useCallback((assignment) => {
-    prefetchActionResources('chartEntry');
-    setActiveChartAssignment(assignment);
-    slideOvers.open('chartEntry');
-  }, [prefetchActionResources, slideOvers]);
-
-  const handleChartEntryRecorded = useCallback(() => {
-    refetchCharts();
+  const handleDischargeCompleted = useCallback(() => {
     refreshData();
     slideOvers.close();
-    setActiveChartAssignment(null);
-  }, [refetchCharts, refreshData, slideOvers]);
+    setRequestedDischargeAdmissionId(null);
+  }, [refreshData, slideOvers]);
 
-  const handleChartSlideOverClose = useCallback(() => {
-    slideOvers.close();
-    setActiveChartAssignment(null);
-  }, [slideOvers]);
+  const handleViewMedicationHistory = useCallback(() => {
+    openChronicleWorkspace('medicationHistory');
+  }, [openChronicleWorkspace]);
+
+  const handleViewTrends = useCallback((tab = 'vitals') => {
+    setTrendReviewTab(tab);
+    openChronicleWorkspace('trends');
+  }, [openChronicleWorkspace]);
+
+  const handleManageInsurance = useCallback(() => {
+    openChronicleWorkspace('insurance');
+  }, [openChronicleWorkspace]);
+
+  const handleVisitScopeChange = useCallback((nextVisitScope) => {
+    const nextSearch = buildChronicleSearch(location.search, {
+      updates: {
+        [CHRONICLE_VISIT_PARAM]: nextVisitScope,
+      },
+    });
+
+    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
+  const handleViewAllHistory = useCallback(() => {
+    handleVisitScopeChange(CHRONICLE_ALL_VISITS);
+  }, [handleVisitScopeChange]);
+
+  const handleViewCurrentVisit = useCallback(() => {
+    if (!activeEncounter?.id) {
+      return;
+    }
+
+    handleVisitScopeChange(String(activeEncounter.id));
+  }, [activeEncounter?.id, handleVisitScopeChange]);
+
+  const handleConsultationCompleted = useCallback(() => {
+    refetchTimeline?.();
+    refetchContext?.();
+  }, [refetchTimeline, refetchContext]);
+
+  const workspaceContext = useMemo(() => ({
+    patientId: id,
+    patient,
+    activeEncounter,
+    selectedEncounter: chartContextEncounter,
+    selectedEncounterId: chartContextEncounter?.id || null,
+    selectedAdmissionId: chartContextAdmissionId,
+    chronicleAllHistory: isAllVisitsScope,
+    initialTrendTab: trendReviewTab,
+    patientIdentityId,
+    referralId: referralIdParam,
+    copilotPatientName,
+    copyForwardData,
+    editNoteData,
+    requestedDischargeAdmissionId,
+    requestedTreatmentSheetAdmissionId,
+    onClose: handleSlideOverClose,
+    onNoteCreated: handleNoteCreated,
+    onVitalsRecorded: handleVitalsRecorded,
+    onPrescriptionCreated: handlePrescriptionCreated,
+    onLabOrderCreated: handleLabOrderCreated,
+    onReferralCreated: handleReferralCreated,
+    onFluidRecorded: refreshData,
+    onWardRoundCompleted: handleWardRoundCompleted,
+    onConsultationCompleted: handleConsultationCompleted,
+    onDischargeCompleted: handleDischargeCompleted,
+  }), [
+    id,
+    patient,
+    activeEncounter,
+    chartContextEncounter,
+    chartContextAdmissionId,
+    isAllVisitsScope,
+    trendReviewTab,
+    patientIdentityId,
+    referralIdParam,
+    copilotPatientName,
+    copyForwardData,
+    editNoteData,
+    requestedDischargeAdmissionId,
+    requestedTreatmentSheetAdmissionId,
+    handleSlideOverClose,
+    handleNoteCreated,
+    handleVitalsRecorded,
+    handlePrescriptionCreated,
+    handleLabOrderCreated,
+    handleReferralCreated,
+    refreshData,
+    handleWardRoundCompleted,
+    handleConsultationCompleted,
+    handleDischargeCompleted,
+  ]);
 
   // Schedule Follow-up handler (navigate to appointments page)
   const handleScheduleFollowUp = useCallback(() => {
@@ -816,11 +1111,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         patient?.current_admission_id;
 
     if (admissionId) {
-      navigate(`/nursing/treatment-sheet?admission=${admissionId}`);
+      setRequestedTreatmentSheetAdmissionId(String(admissionId));
+      openChronicleWorkspace('treatmentSheet');
     } else {
       toast.error('No active admission found for this patient');
     }
-  }, [navigate, activeEncounter, patient]);
+  }, [activeEncounter, patient, openChronicleWorkspace]);
 
   const userRole = user?.role || user?.user_type;
   const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);
@@ -873,109 +1169,112 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   if (accessDenied) {
     const patientDetails = patient?.local_data || patient;
-    const patientName = patientDetails?.user_details
-      ? `${patientDetails.user_details.first_name || ''} ${patientDetails.user_details.last_name || ''}`.trim()
-      : patientDetails?.name;
     const patientMrn = patientDetails?.medical_record_number || patientDetails?.mrn;
 
     return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
-          <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-center gap-2">
-                <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
-                  Access Restricted
-                </span>
-                {breakGlassExpiresAt && (
-                  <span className="badge-chronicle-amber text-[10px]">
-                    Break-glass active
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background">
+          <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-16">
+            <div className="rounded-2xl border border-border/70 bg-card/70 p-8 shadow-sm chronicle-card-glow">
+              <div className="flex flex-col gap-6">
+                <div className="flex items-center gap-2">
+                  <span className="badge-chronicle-rose text-[10px] uppercase tracking-[0.2em]">
+                    Access Restricted
                   </span>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <h2 className="font-display text-2xl text-foreground">
-                  Team-based access required
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  This patient record is protected by team-based access controls.
-                  Request break-glass only for urgent clinical need. All access is audited.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/70 bg-background/60 p-4">
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Patient
-                </p>
-                <p className="text-sm text-foreground">
-                  {patientName || "Unknown Patient"}
-                </p>
-                {patientMrn && (
-                  <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
-                )}
-              </div>
-
-              {canRequestBreakGlass ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    onClick={() => setBreakGlassOpen(true)}
-                    className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
-                  >
-                    Request Break-Glass Access
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Provide a reason to unlock this record for a limited time.
-                  </span>
+                  {breakGlassExpiresAt && (
+                    <span className="badge-chronicle-amber text-[10px]">
+                      Break-glass active
+                    </span>
+                  )}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Break-glass access is available to clinical staff only.
-                </p>
-              )}
+
+                <div className="space-y-2">
+                  <h2 className="font-display text-2xl text-foreground">
+                    Team-based access required
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    This patient record is protected by team-based access controls.
+                    Request break-glass only for urgent clinical need. All access is audited.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    Patient
+                  </p>
+                  <p className="text-sm text-foreground">
+                    {patientName || "Unknown Patient"}
+                  </p>
+                  {patientMrn && (
+                    <p className="text-xs text-muted-foreground">MRN {patientMrn}</p>
+                  )}
+                </div>
+
+                {canRequestBreakGlass ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      onClick={() => setBreakGlassOpen(true)}
+                      className="bg-[oklch(0.65_0.22_15)] text-white hover:bg-[oklch(0.60_0.22_15)]"
+                    >
+                      Request Break-Glass Access
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Provide a reason to unlock this record for a limited time.
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Break-glass access is available to clinical staff only.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        <BreakGlassDialog
-          open={isBreakGlassOpen}
-          onOpenChange={setBreakGlassOpen}
-          patientName={patientName}
-          patientMrn={patientMrn}
-          reason={breakGlassReason}
-          onReasonChange={setBreakGlassReason}
-          onSubmit={handleBreakGlassSubmit}
-          isSubmitting={breakGlassMutation.isPending}
-          ttlMinutes={30}
-        />
-      </div>
+          <BreakGlassDialog
+            open={isBreakGlassOpen}
+            onOpenChange={setBreakGlassOpen}
+            patientName={patientName}
+            patientMrn={patientMrn}
+            reason={breakGlassReason}
+            onReasonChange={setBreakGlassReason}
+            onSubmit={handleBreakGlassSubmit}
+            isSubmitting={breakGlassMutation.isPending}
+            ttlMinutes={30}
+          />
+        </div>
+      </>
     );
   }
 
   if (isLoading || isContextLoading || authLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        {/* Hero skeleton */}
-        <div className="bg-card border-b border-border px-6 py-8">
-          <Skeleton className="h-12 w-64 mb-4" />
-          <Skeleton className="h-4 w-96 mb-2" />
-          <Skeleton className="h-4 w-48" />
-        </div>
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background">
+          {/* Hero skeleton */}
+          <div className="bg-card border-b border-border px-6 py-8">
+            <Skeleton className="h-12 w-64 mb-4" />
+            <Skeleton className="h-4 w-96 mb-2" />
+            <Skeleton className="h-4 w-48" />
+          </div>
 
-        {/* Content skeleton */}
-        <div className="flex">
-          <div className="w-80 border-r border-border p-6 space-y-6">
-            <Skeleton className="h-40 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-          <div className="flex-1 p-6 space-y-4">
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
+          {/* Content skeleton */}
+          <div className="flex">
+            <div className="w-80 border-r border-border p-6 space-y-6">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+            <div className="flex-1 p-6 space-y-4">
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -985,23 +1284,26 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   if (hasGateError) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <h2 className="text-2xl font-display text-foreground">
-            Unable to load patient record
-          </h2>
-          <p className="text-muted-foreground">
-            {gateError?.message || 'An error occurred while fetching patient data.'}
-          </p>
-          <Button onClick={() => {
-            refetch();
-            refetchContext();
-          }}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
+      <>
+        {pageMeta}
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <h2 className="text-2xl font-display text-foreground">
+              Unable to load patient record
+            </h2>
+            <p className="text-muted-foreground">
+              {gateError?.message || 'An error occurred while fetching patient data.'}
+            </p>
+            <Button onClick={() => {
+              refetch();
+              refetchContext();
+            }}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -1010,602 +1312,495 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // ============================================
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Patient Identity Hero */}
-      <PatientIdentityHero
-        patient={patient}
-        onActionIntent={prefetchActionResources}
-        onAddNote={handleAddNote}
-        onRecordVitals={handleRecordVitals}
-        onPrescribe={handlePrescribe}
-        onOrderLabs={handleOrderLabs}
-        onRequestConsult={handleRequestConsult}
-        onShareRecord={handleShareRecord}
-        onReceiveRecord={handleReceiveRecord}
-        onScheduleFollowUp={handleScheduleFollowUp}
-        onViewTreatmentSheet={handleViewTreatmentSheet}
-        onRecordFluids={handleRecordFluids}
-        onAssignChart={handleAssignChart}
-        onStartWardRound={handleStartWardRound}
-        onManageInsurance={() => {
-          prefetchActionResources('insurance');
-          slideOvers.open('insurance');
-        }}
-        insurance={patientInsurance}
-        activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
-      />
-
-      {/* Main Content: Sidebar + Timeline */}
-      <div className={cn(
-        "flex transition-all duration-300",
-        isAnySlideOverOpen && "lg:mr-[50%]"
-      )}>
-        {/* Clinical Summary Sidebar */}
-        <ClinicalSummarySidebar
+    <>
+      {pageMeta}
+      <div className="min-h-screen bg-background">
+        {/* Patient Identity Hero */}
+        <PatientIdentityHero
           patient={patient}
-          problems={problems}
-          medications={medications}
-          allergies={allergies}
-          labResults={labResults}
-          className={cn(
-            "hidden lg:block",
-            isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
-          )}
+          onActionIntent={prefetchActionResources}
+          onAskChronicle={handleAskChronicle}
+          onAddNote={handleAddNote}
+          onRecordVitals={handleRecordVitals}
+          onPrescribe={handlePrescribe}
+          onOrderLabs={handleOrderLabs}
+          onRequestConsult={handleRequestConsult}
+          onShareRecord={handleShareRecord}
+          onReceiveRecord={handleReceiveRecord}
+          onScheduleFollowUp={handleScheduleFollowUp}
+          onViewTreatmentSheet={handleViewTreatmentSheet}
+          onViewMedicationHistory={handleViewMedicationHistory}
+          onRecordFluids={handleRecordFluids}
+          onStartWardRound={handleStartWardRound}
+          onStartDischarge={handleStartDischarge}
+          onManageInsurance={handleManageInsurance}
+          insurance={patientInsurance}
+          activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
         />
 
-        {/* Timeline Chronicle */}
-        <main className="flex-1 p-6 transition-all duration-300">
-          {/* Active Charts Section - Show if patient has assigned charts */}
-          {chartAssignments?.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
+        {canViewDischargeCase && dischargeCaseAdmissionId && (
+          <div className="px-6 pt-6">
+            <DischargeCasePanel
+              admissionId={dischargeCaseAdmissionId}
+              title="Discharge Clearance"
+            />
+          </div>
+        )}
+
+        {/* Main Content: Sidebar + Timeline */}
+        <div className={cn(
+          "flex transition-all duration-300",
+          isCopilotSlideOverOpen
+            ? "lg:mr-[34rem]"
+            : isAnySlideOverOpen && "lg:mr-[50%]"
+        )}>
+          {/* Clinical Summary Sidebar */}
+          <ClinicalSummarySidebar
+            patient={patient}
+            problems={problems}
+            medications={medications}
+            allergies={allergies}
+            labResults={labResults}
+            onViewVitalsTrends={() => handleViewTrends('vitals')}
+            onViewFluidTrends={() => handleViewTrends('fluids')}
+            className={cn(
+              "hidden lg:block",
+              isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
+            )}
+          />
+
+          {/* Timeline Chronicle */}
+          <main className="flex-1 p-6 transition-all duration-300">
+          <div className="min-w-0 max-w-4xl mx-auto">
+            {/* Timeline Header with Search and Filters */}
+            <div className="mb-6 space-y-4">
+              {/* Title and count */}
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4 text-amber-600" />
-                  <h3 className="font-mono text-sm font-medium text-foreground">
-                    Active Charts
-                  </h3>
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    {chartAssignments.length}
-                  </span>
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="font-display text-2xl text-foreground">
+                    Clinical Chronicle
+                  </h2>
+                  {totalCount > 0 && (
+                    <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                      {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+                    </span>
+                  )}
+                  {selectedEncounter && !isAllVisitsScope && (
+                    <span className="font-mono text-xs text-muted-foreground/80">
+                      Focused on {formatEncounterScopeLabel(selectedEncounter, activeEncounter?.id)}
+                    </span>
+                  )}
+                  {/* Show encounter count hint when some encounters have no documentation */}
+                  {isAllVisitsScope && encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
+                    <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
+                      • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
+                    </span>
+                  )}
                 </div>
+
+                {/* Refresh button */}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleAssignChart}
+                  onClick={() => refetchTimeline()}
                   className="font-mono text-xs"
                 >
-                  + Assign Chart
+                  <RefreshCw className={cn(
+                    "h-3.5 w-3.5 mr-1.5",
+                    isTimelineLoading && "animate-spin"
+                  )} />
+                  Refresh
                 </Button>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {chartAssignments.slice(0, 6).map((assignment, index) => (
-                  <ChartAssignmentCard
-                    key={assignment.id}
-                    assignment={assignment}
-                    index={index}
-                    onRecordEntry={handleRecordChartEntry}
-                    compact
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Visit focus
+                  </span>
+                </div>
+                <Select
+                  value={resolvedVisitScope || CHRONICLE_ALL_VISITS}
+                  onValueChange={handleVisitScopeChange}
+                >
+                  <SelectTrigger className="min-w-[260px] max-w-[420px] font-mono text-xs">
+                    <SelectValue placeholder="Select visit" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[200]">
+                    {visitScopeOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="font-mono text-xs"
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!isAllVisitsScope && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleViewAllHistory}
+                    className="h-8 px-2 font-mono text-xs"
+                  >
+                    All history
+                  </Button>
+                )}
+                {activeEncounter?.id && selectedEncounterId !== String(activeEncounter.id) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleViewCurrentVisit}
+                    className="h-8 px-2 font-mono text-xs"
+                  >
+                    Current visit
+                  </Button>
+                )}
+              </div>
+
+              {/* Search and Filter row */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Search Input */}
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search notes, prescriptions..."
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    className="pl-9 font-mono text-sm"
                   />
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
 
-          {/* Timeline Header with Search and Filters */}
-          <div className="space-y-4 mb-6">
-            {/* Title and count */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-muted-foreground" />
-                <h2 className="font-display text-2xl text-foreground">
-                  Clinical Chronicle
-                </h2>
-                {totalCount > 0 && (
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                    {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
-                  </span>
-                )}
-                {/* Show encounter count hint when some encounters have no documentation */}
-                {encounters?.length > 0 && encounters.length > groupedByEncounter.encounters.length && (
-                  <span className="font-mono text-xs text-muted-foreground/70" title="Some encounters have no clinical documentation">
-                    • {encounters.length} encounters ({groupedByEncounter.encounters.length} documented)
-                  </span>
-                )}
-              </div>
+                {/* Filter Tabs */}
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex rounded-lg bg-muted p-1" data-onboarding="chronicle-filter-group">
+                    {[
+                      { key: 'all', label: 'All', icon: null },
+                      { key: 'progress_note', label: 'Notes', icon: FileText },
+                      { key: 'vitals', label: 'Vitals', icon: Activity },
+                      { key: 'medication', label: 'Meds', icon: Pill },
+                      { key: 'lab_result', label: 'Labs', icon: TestTube }
+                    ].map(filter => (
+                      <button
+                        key={filter.key}
+                        onClick={() => setActiveFilter(filter.key)}
+                        data-onboarding={
+                          filter.key === 'all'
+                            ? 'chronicle-filter-all'
+                            : filter.key === 'progress_note'
+                              ? 'chronicle-filter-notes'
+                              : undefined
+                        }
+                        className={cn(
+                          "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
+                          "flex items-center gap-1.5",
+                          activeFilter === filter.key
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {filter.icon && <filter.icon className="h-3 w-3" />}
+                        {filter.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-              {/* Refresh button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => refetchTimeline()}
-                className="font-mono text-xs"
-              >
-                <RefreshCw className={cn(
-                  "h-3.5 w-3.5 mr-1.5",
-                  isTimelineLoading && "animate-spin"
-                )} />
-                Refresh
-              </Button>
-            </div>
-
-            {/* Search and Filter row */}
-            <div className="flex items-center gap-4">
-              {/* Search Input */}
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Search notes, prescriptions..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="pl-9 font-mono text-sm"
-                />
-              </div>
-
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <div className="flex bg-muted rounded-lg p-1">
-                  {[
-                    { key: 'all', label: 'All', icon: null },
-                    { key: 'progress_note', label: 'Notes', icon: FileText },
-                    { key: 'vitals', label: 'Vitals', icon: Activity },
-                    { key: 'medication', label: 'Meds', icon: Pill },
-                    { key: 'lab_result', label: 'Labs', icon: TestTube }
-                  ].map(filter => (
-                    <button
-                      key={filter.key}
-                      onClick={() => setActiveFilter(filter.key)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-md font-mono text-xs transition-colors",
-                        "flex items-center gap-1.5",
-                        activeFilter === filter.key
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
+                {/* Expand/Collapse All */}
+                {isAllVisitsScope && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={expandAll}
+                      className="h-8 px-2 font-mono text-xs"
                     >
-                      {filter.icon && <filter.icon className="h-3 w-3" />}
-                      {filter.label}
-                    </button>
+                      Expand visits
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={collapseAll}
+                      className="h-8 px-2 font-mono text-xs"
+                    >
+                      Collapse visits
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Timeline Entries Grouped by Encounter */}
+            <div className="relative space-y-4">
+              {/* Loading state for initial load */}
+              {(isTimelineLoading || isVisitScopePending) && filteredEntries.length === 0 && (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="pl-8 pb-6">
+                      <Skeleton className="h-32 w-full rounded-xl" />
+                    </div>
                   ))}
                 </div>
-              </div>
+              )}
 
-              {/* Expand/Collapse All */}
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={expandAll}
-                  className="font-mono text-xs h-8 px-2"
-                >
-                  Expand All
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={collapseAll}
-                  className="font-mono text-xs h-8 px-2"
-                >
-                  Collapse
-                </Button>
-              </div>
-            </div>
-          </div>
+              {/* Encounter Groups */}
+              {groupedByEncounter.encounters.map(({ encounter, entries }) => {
+                const normalizedEncounterId = normalizeExpansionId(encounter.id);
+                const isExpanded = normalizedEncounterId
+                  ? expandedEncounters.has(normalizedEncounterId)
+                  : false;
+                const dateRange = formatEncounterDateRange(encounter);
+                const encounterKind = getEncounterKind(encounter);
+                const typeIcon = encounterKind === 'inpatient' ? Building2 : Calendar;
+                const TypeIcon = typeIcon;
 
-          {/* Timeline Entries Grouped by Encounter */}
-          <div className="relative space-y-4">
-            {/* Loading state for initial load */}
-            {isTimelineLoading && filteredEntries.length === 0 && (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="pl-8 pb-6">
-                    <Skeleton className="h-32 w-full rounded-xl" />
-                  </div>
-                ))}
-              </div>
-            )}
+                return (
+                  <div key={encounter.id} className="overflow-hidden rounded-lg border border-border bg-card">
+                    {/* Encounter Header */}
+                    <button
+                      onClick={() => toggleEncounter(normalizedEncounterId)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                      )}
 
-            {/* Encounter Groups */}
-            {groupedByEncounter.encounters.map(({ encounter, entries }) => {
-              const isExpanded = expandedEncounters.has(encounter.id);
-              const encounterDate = encounter.start_time
-                ? new Date(encounter.start_time).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  })
-                : 'Unknown date';
+                      <div className={cn(
+                        "rounded-lg p-2",
+                        encounterKind === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
+                      )}>
+                        <TypeIcon className={cn(
+                          "h-4 w-4",
+                          encounterKind === 'inpatient' ? "text-blue-500" : "text-amber-500"
+                        )} />
+                      </div>
 
-              const encounterEndDate = encounter.end_time
-                ? new Date(encounter.end_time).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric'
-                  })
-                : null;
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium capitalize">
+                            {encounter.encounter_type === 'inpatient' ? 'Inpatient Admission' :
+                             encounter.encounter_type === 'emergency' ? 'Emergency Visit' : 'Outpatient Visit'}
+                          </span>
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 font-mono text-xs",
+                            encounter.status === 'finished' && "bg-muted text-muted-foreground",
+                            encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
+                            encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
+                          )}>
+                            {encounter.status}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{dateRange}</span>
+                          {encounter.practitioner_name && (
+                            <>
+                              <span>•</span>
+                              <span>{encounter.practitioner_name}</span>
+                            </>
+                          )}
+                          {encounter.location && (
+                            <>
+                              <span>•</span>
+                              <span>{encounter.location}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
 
-              const dateRange = encounterEndDate && encounterEndDate !== encounterDate
-                ? `${encounterDate} - ${encounterEndDate}`
-                : encounterDate;
-
-              const typeIcon = encounter.type === 'inpatient' ? Building2 : Calendar;
-              const TypeIcon = typeIcon;
-
-              return (
-                <div key={encounter.id} className="border border-border rounded-lg overflow-hidden bg-card">
-                  {/* Encounter Header */}
-                  <button
-                    onClick={() => toggleEncounter(encounter.id)}
-                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    )}
-
-                    <div className={cn(
-                      "p-2 rounded-lg",
-                      encounter.type === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
-                    )}>
-                      <TypeIcon className={cn(
-                        "h-4 w-4",
-                        encounter.type === 'inpatient' ? "text-blue-500" : "text-amber-500"
-                      )} />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm capitalize">
-                          {encounter.encounter_type === 'inpatient' ? 'Inpatient Admission' :
-                           encounter.encounter_type === 'emergency' ? 'Emergency Visit' : 'Outpatient Visit'}
-                        </span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-full text-xs font-mono",
-                          encounter.status === 'finished' && "bg-muted text-muted-foreground",
-                          encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
-                          encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
-                        )}>
-                          {encounter.status}
+                        <div className="hidden xl:flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 font-mono text-[10px]"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleViewMedicationHistory();
+                            }}
+                          >
+                            <Pill className="h-3.5 w-3.5 mr-1" />
+                            Meds
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 font-mono text-[10px]"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRecordFluids();
+                            }}
+                          >
+                            <Droplets className="h-3.5 w-3.5 mr-1" />
+                            Fluids
+                          </Button>
+                        </div>
+
+                        <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                          {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
                         </span>
                       </div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                        <span>{dateRange}</span>
-                        {encounter.practitioner_name && (
-                          <>
-                            <span>•</span>
-                            <span>{encounter.practitioner_name}</span>
-                          </>
-                        )}
-                        {encounter.location && (
-                          <>
-                            <span>•</span>
-                            <span>{encounter.location}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    </button>
 
-                    <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                      {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-                    </span>
-                  </button>
-
-                  {/* Encounter Entries */}
-                  {isExpanded && (
-                    <div className="border-t border-border px-4 py-3 space-y-3">
+                    {/* Encounter Entries — CSS-hidden instead of unmount to avoid animation replay */}
+                    <div className={cn("space-y-3 border-t border-border px-4 py-3", !isExpanded && "hidden")}>
                       {entries.map((entry, index) => (
                         <TimelineEntry
                           key={entry.id}
                           entry={entry}
                           index={index}
                           currentUserId={user?.id}
+                          isNoteExpanded={entry.id !== null && entry.id !== undefined
+                            ? expandedNoteIds.has(String(entry.id))
+                            : false}
+                          onToggleNoteExpanded={toggleNoteExpanded}
                           onCopyNote={handleCopyNote}
                           onEditNote={handleEditNote}
                           onNoteUpdated={refetchTimeline}
                         />
                       ))}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Unlinked Entries */}
-            {groupedByEncounter.unlinked.length > 0 && (
-              <div className="border border-dashed border-border rounded-lg overflow-hidden bg-card/50">
-                {/* Unlinked Header */}
-                <button
-                  onClick={() => toggleEncounter('unlinked')}
-                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent/50 transition-colors text-left"
-                >
-                  {expandedEncounters.has('unlinked') ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  )}
-
-                  <div className="p-2 rounded-lg bg-muted">
-                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
                   </div>
+                );
+              })}
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm text-muted-foreground">
-                        Unlinked Entries
-                      </span>
+              {/* Unlinked Entries */}
+              {groupedByEncounter.unlinked.length > 0 && (
+                <div className="overflow-hidden rounded-lg border border-dashed border-border bg-card/50">
+                  {/* Unlinked Header */}
+                  <button
+                    onClick={() => toggleEncounter('unlinked')}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+                  >
+                    {expandedEncounters.has('unlinked') ? (
+                      <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                    )}
+
+                    <div className="rounded-lg bg-muted p-2">
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      Legacy data without encounter context
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          Unlinked Entries
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Legacy data without encounter context
+                      </div>
                     </div>
-                  </div>
 
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                    {groupedByEncounter.unlinked.length} {groupedByEncounter.unlinked.length === 1 ? 'entry' : 'entries'}
-                  </span>
-                </button>
+                    <span className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
+                      {groupedByEncounter.unlinked.length} {groupedByEncounter.unlinked.length === 1 ? 'entry' : 'entries'}
+                    </span>
+                  </button>
 
-                {/* Unlinked Entries List */}
-                {expandedEncounters.has('unlinked') && (
-                  <div className="border-t border-dashed border-border px-4 py-3 space-y-3">
+                  {/* Unlinked Entries List — CSS-hidden instead of unmount */}
+                  <div className={cn("space-y-3 border-t border-dashed border-border px-4 py-3", !expandedEncounters.has('unlinked') && "hidden")}>
                     {groupedByEncounter.unlinked.map((entry, index) => (
                       <TimelineEntry
                         key={entry.id}
                         entry={entry}
                         index={index}
                         currentUserId={user?.id}
+                        isNoteExpanded={entry.id !== null && entry.id !== undefined
+                          ? expandedNoteIds.has(String(entry.id))
+                          : false}
+                        onToggleNoteExpanded={toggleNoteExpanded}
                         onCopyNote={handleCopyNote}
                         onEditNote={handleEditNote}
                         onNoteUpdated={refetchTimeline}
                       />
                     ))}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* Empty state */}
-            {!isTimelineLoading && filteredEntries.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="font-mono text-sm">
-                  {searchInput ? 'No entries match your search' : 'No entries found'}
-                </p>
-                {searchInput && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSearchInput('')}
-                    className="mt-2 font-mono text-xs"
-                  >
-                    Clear search
-                  </Button>
-                )}
-              </div>
-            )}
+              {/* Empty state */}
+              {!isTimelineLoading && filteredEntries.length === 0 && (
+                <div className="py-12 text-center text-muted-foreground">
+                  <p className="font-mono text-sm">
+                    {searchInput
+                      ? 'No entries match your search'
+                      : selectedEncounterId
+                        ? 'No chronicle entries for this visit yet'
+                        : 'No entries found'}
+                  </p>
+                  {searchInput && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSearchInput('')}
+                      className="mt-2 font-mono text-xs"
+                    >
+                      Clear search
+                    </Button>
+                  )}
+                  {!searchInput && selectedEncounterId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleViewAllHistory}
+                      className="mt-2 font-mono text-xs"
+                    >
+                      View all history
+                    </Button>
+                  )}
+                </div>
+              )}
 
-            {/* Infinite scroll trigger */}
-            {hasNextPage && (
-              <div
-                ref={loadMoreRef}
-                className="flex items-center justify-center py-8"
-              >
-                {isFetchingNextPage ? (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="font-mono text-xs">Loading more...</span>
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => fetchNextPage()}
-                    className="font-mono text-xs"
-                  >
-                    Load more
-                  </Button>
-                )}
-              </div>
-            )}
+              {/* Infinite scroll trigger */}
+              {hasNextPage && (
+                <div
+                  ref={loadMoreRef}
+                  className="flex items-center justify-center py-8"
+                >
+                  {isFetchingNextPage ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="font-mono text-xs">Loading more...</span>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => fetchNextPage()}
+                      className="font-mono text-xs"
+                    >
+                      Load more
+                    </Button>
+                  )}
+                </div>
+              )}
 
-            {/* End of timeline indicator */}
-            {!hasNextPage && filteredEntries.length > 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <div className="w-12 h-px bg-border mx-auto mb-2" />
-                <p className="font-mono text-xs">End of timeline</p>
-              </div>
-            )}
+              {/* End of timeline indicator */}
+              {!hasNextPage && filteredEntries.length > 0 && (
+                <div className="py-8 text-center text-muted-foreground">
+                  <div className="mx-auto mb-2 h-px w-12 bg-border" />
+                  <p className="font-mono text-xs">End of timeline</p>
+                </div>
+              )}
+            </div>
           </div>
-        </main>
+          </main>
 
-        {/* Add Note Slide-Over Panel */}
-        {slideOvers.isOpen('note') && (
-          <Suspense fallback={null}>
-            <AddNoteSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onNoteCreated={handleNoteCreated}
-              initialTemplate={editNoteData?.template || copyForwardData?.template}
-              initialData={editNoteData?.data || copyForwardData?.data}
-              editNoteId={editNoteData?.noteId}
-            />
-          </Suspense>
-        )}
-
-        {/* Add Vitals Slide-Over Panel */}
-        {slideOvers.isOpen('vitals') && (
-          <Suspense fallback={null}>
-            <AddVitalsSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onVitalsRecorded={handleVitalsRecorded}
-            />
-          </Suspense>
-        )}
-
-        {/* Add Prescription Slide-Over Panel */}
-        {slideOvers.isOpen('prescription') && (
-          <Suspense fallback={null}>
-            <AddPrescriptionSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onPrescriptionCreated={handlePrescriptionCreated}
-            />
-          </Suspense>
-        )}
-
-        {/* Lab Order Form Slide-Over */}
-        {slideOvers.isOpen('labs') && (
-          <Suspense fallback={null}>
-            <LabOrderForm
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onOrderCreated={handleLabOrderCreated}
-            />
-          </Suspense>
-        )}
-
-        {/* Referral/Consult Form Slide-Over */}
-        {slideOvers.isOpen('referral') && (
-          <Suspense fallback={null}>
-            <ReferralForm
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              encounter={activeEncounter}
-              onReferralCreated={handleReferralCreated}
-            />
-          </Suspense>
-        )}
-
-        {slideOvers.isOpen('crossFacility') && (
-          <Suspense fallback={null}>
-            <CrossFacilitySharePanel
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              patientIdentityId={patientIdentityId}
-            />
-          </Suspense>
-        )}
-
-        {slideOvers.isOpen('receiveRecord') && (
-          <Suspense fallback={null}>
-            <ReceiveRecordPanel
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-            />
-          </Suspense>
-        )}
-
-        {/* Fluid Balance Slide-Over */}
-        {slideOvers.isOpen('fluids') && (
-          <Suspense fallback={null}>
-            <AddFluidBalanceSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              admission={
-                // Use actual WardAdmission ID, not encounter ID
-                // The admission prop expects a WardAdmission object with id
-                patient?.local_data?.current_admission_id
-                  ? { id: patient.local_data.current_admission_id }
-                  : patient?.current_admission_id
-                    ? { id: patient.current_admission_id }
-                    : null
-              }
-              onFluidRecorded={refreshData}
-            />
-          </Suspense>
-        )}
-
-        {/* Chart Assignment Slide-Over */}
-        {slideOvers.isOpen('charts') && (
-          <Suspense fallback={null}>
-            <AddChartSlideOver
-              open
-              onClose={handleChartSlideOverClose}
-              patient={patient}
-              admission={
-                patient?.local_data?.current_admission_id
-                  ? { id: patient.local_data.current_admission_id }
-                  : patient?.current_admission_id
-                    ? { id: patient.current_admission_id }
-                    : null
-              }
-              onChartAssigned={handleChartAssigned}
-            />
-          </Suspense>
-        )}
-
-        {/* Chart Entry Form Slide-Over */}
-        {slideOvers.isOpen('chartEntry') && (
-          <Suspense fallback={null}>
-            <ChartEntryForm
-              open
-              onClose={handleChartSlideOverClose}
-              assignmentId={activeChartAssignment?.id}
-              patient={patient}
-              onEntryRecorded={handleChartEntryRecorded}
-            />
-          </Suspense>
-        )}
-
-        {/* Patient Insurance Slide-Over */}
-        {slideOvers.isOpen('insurance') && (
-          <Suspense fallback={null}>
-            <PatientInsuranceSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-            />
-          </Suspense>
-        )}
-
-        {/* Ward Round Slide-Over */}
-        {slideOvers.isOpen('wardRound') && (
-          <Suspense fallback={null}>
-            <WardRoundSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              admission={
-                patient?.local_data?.current_admission_id
-                  ? { id: patient.local_data.current_admission_id }
-                  : patient?.current_admission_id
-                    ? { id: patient.current_admission_id }
-                    : null
-              }
-              onComplete={handleWardRoundCompleted}
-            />
-          </Suspense>
-        )}
-
-        {/* Consultation Slide-Over */}
-        {slideOvers.isOpen('consultation') && (
-          <Suspense fallback={null}>
-            <ConsultationSlideOver
-              open
-              onClose={handleSlideOverClose}
-              patient={patient}
-              referralId={referralIdParam}
-              onComplete={() => {
-                refetchTimeline?.();
-                refetchContext?.();
-              }}
-            />
-          </Suspense>
-        )}
+          <ChronicleWorkspaceHost
+            activeWorkspace={slideOvers.activeSlideOver}
+            workspaceContext={workspaceContext}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

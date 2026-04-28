@@ -3,9 +3,9 @@ Workflow engines - Business logic for clinical workflows
 """
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from typing import Dict, Any, Optional, List
 import logging
-from apps.organization.services import UnitHierarchyService
 
 def _extract_string_value(value, preferred_keys=None) -> str:
     """
@@ -46,13 +46,15 @@ def _extract_string_value(value, preferred_keys=None) -> str:
 
 from .models import (
     ClinicalWorkflow, ConsultationWorkflow, ClinicalNoteWorkflow,
-    WardRoundWorkflow, AdmissionWorkflow, DischargeWorkflow,
+    WardRoundWorkflow, DischargeWorkflow,
     WorkflowStatus, WorkflowType, ClinicalNoteType
 )
-from .definitions import WorkflowDefinition, WorkflowStepDefinition
+from .definitions import WorkflowDefinition, WorkflowStepDefinition, FieldType
 from .registry import get_workflow_definition, WORKFLOW_DEFINITIONS
+from apps.core.security import ACTIVE_ADMISSION_STATUSES
+from apps.discharge.services import submit_medical_discharge
 from apps.users.models import PatientProfile
-from apps.wards.models import Admission, Ward, Bed
+from apps.wards.models import Admission
 from apps.encounters.proxies import EncounterProxy
 from apps.clinical_notes.models import NoteEntry
 
@@ -130,13 +132,42 @@ class BaseWorkflowEngine:
         except ValueError as e:
             return [str(e)]
 
-        # Validate required fields
-        for field in step_config.fields:
-            if field.required and not step_data.get(field.name):
-                errors.append(f"{field.label} is required")
+        errors.extend(cls._validate_required_fields(step_config, step_data))
 
         # TODO: Add more validation rules based on ValidationRule definitions
 
+        return errors
+
+    @staticmethod
+    def _is_missing_required_value(field_type: FieldType, value: Any) -> bool:
+        """Return True if a required field value should be treated as missing."""
+        if field_type == FieldType.BOOLEAN:
+            return value is not True
+
+        if value is None:
+            return True
+
+        if isinstance(value, str):
+            return value.strip() == ''
+
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) == 0
+
+        return False
+
+    @classmethod
+    def _validate_required_fields(
+        cls,
+        step_config: WorkflowStepDefinition,
+        step_data: Dict[str, Any],
+    ) -> List[str]:
+        errors = []
+        for field in step_config.fields:
+            if not field.required:
+                continue
+            value = (step_data or {}).get(field.name)
+            if cls._is_missing_required_value(field.field_type, value):
+                errors.append(f"{field.label} is required")
         return errors
 
     @staticmethod
@@ -181,7 +212,13 @@ class ConsultationEngine(BaseWorkflowEngine):
 
     @staticmethod
     @transaction.atomic
-    def start(user, patient_id, appointment_id: Optional[str] = None, initial_data: Optional[Dict] = None) -> Dict[str, Any]:
+    def start(
+        user,
+        patient_id,
+        appointment_id: Optional[str] = None,
+        encounter_id: Optional[str] = None,
+        initial_data: Optional[Dict] = None
+    ) -> Dict[str, Any]:
         """
         Initialize a new consultation workflow
 
@@ -198,7 +235,7 @@ class ConsultationEngine(BaseWorkflowEngine):
         try:
             patient = PatientProfile.objects.get(id=patient_id)
         except PatientProfile.DoesNotExist:
-            raise ValueError(f"Patient with ID {patient_id} not found")
+            raise ValueError("Patient not found")
 
         # Prepare initial context
         prep_data = ConsultationEngine._load_prep_data(patient)
@@ -222,6 +259,8 @@ class ConsultationEngine(BaseWorkflowEngine):
             'appointment_id': appointment_id,
             'prep_data': prep_data,
         }
+        if encounter_id:
+            context_data['encounter_id'] = str(encounter_id)
 
         if initial_data:
             context_data.update(initial_data)
@@ -232,6 +271,7 @@ class ConsultationEngine(BaseWorkflowEngine):
             status=WorkflowStatus.IN_PROGRESS,
             user=user,
             patient=patient,
+            encounter_id=str(encounter_id) if encounter_id else None,
             current_step=1,
             total_steps=5,
             context_data=context_data,
@@ -243,7 +283,7 @@ class ConsultationEngine(BaseWorkflowEngine):
             appointment_id=appointment_id,
         )
 
-        logger.info(f"Started consultation workflow {workflow.id} for patient {patient.id}")
+        logger.info("Started consultation workflow %s", workflow.id)
 
         return {
             'workflow': workflow,
@@ -354,7 +394,10 @@ class ConsultationEngine(BaseWorkflowEngine):
         """
         from apps.clinical_notes.models import NoteTemplate
         from apps.users.models import PractitionerProfile
-        from apps.encounters.services import get_or_create_active_encounter
+        from apps.encounters.services import (
+            ensure_encounter_for_entry,
+            get_or_create_active_encounter,
+        )
 
         context = workflow.context_data
         consultation_data = workflow.consultation_data
@@ -379,13 +422,22 @@ class ConsultationEngine(BaseWorkflowEngine):
             ['chief_complaint']
         )
 
-        # Get or create Django Encounter (local model)
-        encounter, encounter_created = get_or_create_active_encounter(
-            patient=workflow.patient,
-            practitioner=practitioner,
-            encounter_type=encounter_type,
-            reason=reason
-        )
+        explicit_encounter_id = workflow.encounter_id or context.get('encounter_id')
+        if explicit_encounter_id:
+            encounter, encounter_created = ensure_encounter_for_entry(
+                patient=workflow.patient,
+                practitioner=practitioner,
+                encounter_id=explicit_encounter_id,
+                encounter_type=encounter_type,
+                reason=reason,
+            )
+        else:
+            encounter, encounter_created = get_or_create_active_encounter(
+                patient=workflow.patient,
+                practitioner=practitioner,
+                encounter_type=encounter_type,
+                reason=reason
+            )
 
         logger.info(f"{'Created' if encounter_created else 'Found existing'} encounter {encounter.id} for workflow {workflow.id}")
 
@@ -541,7 +593,7 @@ class WardRoundEngine(BaseWorkflowEngine):
             admission = Admission.objects.select_related('bed__ward').get(
                 id=admission_id,
                 patient=patient,
-                status='admitted'
+                status__in=ACTIVE_ADMISSION_STATUSES
             )
         except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
             raise ValueError(str(e))
@@ -574,7 +626,7 @@ class WardRoundEngine(BaseWorkflowEngine):
         # Create type-specific data model
         ward_round_data = WardRoundWorkflow.objects.create(workflow=workflow)
 
-        logger.info(f"Started ward round workflow {workflow.id} for patient {patient_id}")
+        logger.info("Started ward round workflow %s", workflow.id)
 
         return {
             'workflow': workflow,
@@ -849,279 +901,6 @@ class WardRoundEngine(BaseWorkflowEngine):
         }
 
 
-class AdmissionEngine(BaseWorkflowEngine):
-    """
-    Business logic for admission workflow
-    Handles patient admissions with bed assignment
-    """
-
-    workflow_definition = WORKFLOW_DEFINITIONS[WorkflowType.ADMISSION]
-
-    @staticmethod
-    @transaction.atomic
-    def start(user, patient_id, initial_data=None) -> Dict[str, Any]:
-        """
-        Start admission workflow
-
-        Args:
-            user: User starting the workflow
-            patient_id: PatientProfile ID (UUID)
-            initial_data: Optional initial context data
-
-        Returns:
-            Dictionary containing workflow and admission_data instances
-        """
-        try:
-            patient = PatientProfile.objects.get(id=patient_id)
-        except PatientProfile.DoesNotExist:
-            raise ValueError(f"Patient with ID {patient_id} not found")
-
-        definition = AdmissionEngine.get_definition()
-
-        # Prepare context data
-        context_data = {
-            'patient_name': patient.user.get_full_name(),
-            'mrn': patient.medical_record_number,
-            'prep_data': AdmissionEngine._load_prep_data(patient),
-        }
-
-        if initial_data:
-            context_data.update(initial_data)
-
-        # Create workflow
-        workflow = ClinicalWorkflow.objects.create(
-            workflow_type=WorkflowType.ADMISSION,
-            status=WorkflowStatus.IN_PROGRESS,
-            user=user,
-            patient=patient,
-            current_step=1,
-            total_steps=definition.total_steps,
-            context_data=context_data,
-        )
-
-        # Create type-specific data model
-        admission_data = AdmissionWorkflow.objects.create(workflow=workflow)
-
-        logger.info(f"Started admission workflow {workflow.id} for patient {patient_id}")
-
-        return {
-            'workflow': workflow,
-            'admission_data': admission_data,
-        }
-
-    @staticmethod
-    def _load_prep_data(patient) -> Dict:
-        """Load context data for admission"""
-        return {
-            'patient_name': patient.user.get_full_name(),
-            'mrn': patient.medical_record_number,
-            'dob': patient.user.date_of_birth.isoformat() if hasattr(patient.user, 'date_of_birth') and patient.user.date_of_birth else None,
-        }
-
-    @staticmethod
-    @transaction.atomic
-    def update_step(workflow, step_number, step_data) -> ClinicalWorkflow:
-        """Update admission step data"""
-        admission_data = workflow.admission_data
-
-        # Update admission specific fields
-        for field, value in step_data.items():
-            if hasattr(admission_data, field):
-                setattr(admission_data, field, value)
-        admission_data.save()
-
-        # Update workflow
-        workflow.context_data.update(step_data)
-        workflow.mark_step_complete(step_number)
-        if step_number < workflow.total_steps:
-            workflow.advance_to_step(step_number + 1)
-        workflow.save()
-
-        logger.info(f"Updated admission workflow {workflow.id} step {step_number}")
-
-        return workflow
-
-    @staticmethod
-    @transaction.atomic
-    def complete(workflow, final_data) -> Dict[str, Any]:
-        """Complete admission and create admission record"""
-        from apps.clinical_notes.models import NoteTemplate
-        from apps.users.models import PractitionerProfile
-        from apps.encounters.models import Encounter
-
-        admission_data = workflow.admission_data
-
-        # Update final data
-        for field, value in final_data.items():
-            if hasattr(admission_data, field):
-                setattr(admission_data, field, value)
-        admission_data.save()
-
-        # Get practitioner profile
-        practitioner = None
-        if hasattr(workflow.user, 'practitionerprofile'):
-            practitioner = workflow.user.practitionerprofile
-        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
-            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
-
-        if not practitioner:
-            try:
-                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
-            except PractitionerProfile.DoesNotExist:
-                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
-                practitioner = None
-
-        # Resolve primary team from ward allocation when available
-        admitting_practitioner = practitioner
-        primary_team = None
-        if admission_data.ward_id:
-            try:
-                from apps.organization.models import UnitWardAllocation
-
-                ward = Bed.objects.get(id=admission_data.bed_id).ward if admission_data.bed_id else None
-                if ward:
-                    unit_allocation = UnitWardAllocation.objects.filter(
-                        ward=ward, is_active=True
-                    ).select_related('unit').first()
-
-                    if unit_allocation:
-                        primary_team = unit_allocation.unit
-            except Exception as e:
-                logger.warning(f"Could not resolve primary team: {e}")
-
-        # Create Admission record
-        admission = Admission.objects.create(
-            patient=workflow.patient,
-            admitting_doctor=admitting_practitioner,
-            primary_team=primary_team,
-            ward_id=admission_data.ward_id,
-            bed_id=admission_data.bed_id,
-            admission_date=timezone.now(),
-            admission_type=admission_data.admission_type,
-            admission_notes=admission_data.admission_reason,
-            status='admitted',
-        )
-
-        # Mark bed as occupied
-        if admission_data.bed_id:
-            try:
-                bed = Bed.objects.get(id=admission_data.bed_id)
-                bed.status = 'occupied'
-                bed.save()
-            except Bed.DoesNotExist:
-                logger.warning(f"Bed {admission_data.bed_id} not found")
-
-        # Create local Django Encounter for the admission
-        reason = _extract_string_value(
-            admission_data.admission_reason,
-            ['admission_reason', 'reason', 'chief_complaint']
-        )
-
-        department_unit = None
-        if admission.bed and admission.bed.ward and admission.bed.ward.department:
-            department_unit = UnitHierarchyService.get_department_unit_for_core_department(
-                admission.bed.ward.department,
-                facility=workflow.patient.facility
-            )
-
-        encounter = Encounter.objects.create(
-            patient=workflow.patient,
-            facility=workflow.patient.facility,
-            practitioner=admitting_practitioner,
-            department=department_unit,
-            encounter_type='inpatient',
-            status='in-progress',
-            start_time=timezone.now(),
-            reason=reason,
-            admission=admission,
-        )
-        from apps.organization.services import TeamAssignmentService
-        TeamAssignmentService.assign_initial_team(
-            encounter=encounter,
-            team=primary_team,
-            use_roster=True,
-            context='inpatient'
-        )
-        if admission.bed:
-            TeamAssignmentService.reassign_team_on_bed_assignment(
-                encounter=encounter,
-                bed=admission.bed
-            )
-
-        workflow.encounter_id = str(encounter.id)
-
-        # Create admission note with proper model fields
-        note = None
-        if practitioner:
-            try:
-                # Get or create an admission template
-                template = NoteTemplate.objects.filter(
-                    category='admission',
-                    is_active=True
-                ).first()
-
-                if not template:
-                    template = NoteTemplate.objects.create(
-                        title='Admission Note',
-                        category='admission',
-                        visibility='public',
-                        is_active=True,
-                        structure={
-                            'sections': [
-                                {'name': 'Admission Reason', 'type': 'text'},
-                                {'name': 'History of Present Illness', 'type': 'text'},
-                                {'name': 'Past Medical History', 'type': 'text'},
-                                {'name': 'Physical Examination', 'type': 'text'},
-                                {'name': 'Assessment and Plan', 'type': 'text'},
-                            ]
-                        }
-                    )
-                    logger.info(f"Created default admission template {template.id}")
-
-                # Build note data
-                note_data = {
-                    'Admission Reason': reason,
-                    'Admission Note': admission_data.admission_note or '',
-                    '_metadata': {
-                        'ward': str(admission_data.ward_id) if admission_data.ward_id else None,
-                        'bed': str(admission_data.bed_id) if admission_data.bed_id else None,
-                        'admission_type': admission_data.admission_type,
-                    }
-                }
-
-                note = NoteEntry.objects.create(
-                    template=template,
-                    patient=workflow.patient,
-                    encounter=encounter,
-                    practitioner=practitioner,
-                    data=note_data,
-                )
-
-                logger.info(f"Created admission note {note.id} for workflow {workflow.id}")
-
-            except Exception as e:
-                logger.error(f"Failed to create admission note for workflow {workflow.id}: {str(e)}")
-
-        workflow.complete_workflow()
-
-        logger.info(f"Completed admission workflow {workflow.id}, created admission {admission.id}")
-
-        artifacts = [
-            {'type': 'encounter', 'id': str(encounter.id)},
-            {'type': 'admission_record', 'id': str(admission.id)},
-        ]
-        if note:
-            artifacts.append({'type': 'note', 'id': str(note.id)})
-
-        return {
-            'success': True,
-            'workflow_id': str(workflow.id),
-            'admission_id': str(admission.id),
-            'encounter_id': str(encounter.id),
-            'artifacts': artifacts,
-        }
-
-
 class DischargeEngine(BaseWorkflowEngine):
     """
     Business logic for discharge workflow
@@ -1129,6 +908,14 @@ class DischargeEngine(BaseWorkflowEngine):
     """
 
     workflow_definition = WORKFLOW_DEFINITIONS[WorkflowType.DISCHARGE]
+
+    STEP_KEYS = {
+        'discharge_planning',
+        'medications',
+        'instructions',
+        'documentation',
+        'summary',
+    }
 
     @staticmethod
     @transaction.atomic
@@ -1150,10 +937,27 @@ class DischargeEngine(BaseWorkflowEngine):
             admission = Admission.objects.select_related('bed__ward').get(
                 id=admission_id,
                 patient=patient,
-                status='admitted'
+                status__in=ACTIVE_ADMISSION_STATUSES
             )
         except (PatientProfile.DoesNotExist, Admission.DoesNotExist) as e:
             raise ValueError(str(e))
+
+        existing_workflow = ClinicalWorkflow.objects.filter(
+            workflow_type=WorkflowType.DISCHARGE,
+            patient=patient,
+            status__in=[WorkflowStatus.DRAFT, WorkflowStatus.IN_PROGRESS],
+            context_data__admission_id=str(admission_id),
+        ).select_related('discharge_data').order_by('-created_at').first()
+        if existing_workflow:
+            logger.info(
+                "Resuming discharge workflow %s",
+                existing_workflow.id,
+            )
+            return {
+                'workflow': existing_workflow,
+                'discharge_data': existing_workflow.discharge_data,
+                'resumed': True,
+            }
 
         definition = DischargeEngine.get_definition()
 
@@ -1182,11 +986,12 @@ class DischargeEngine(BaseWorkflowEngine):
         # Create type-specific data model
         discharge_data = DischargeWorkflow.objects.create(workflow=workflow)
 
-        logger.info(f"Started discharge workflow {workflow.id} for patient {patient_id}")
+        logger.info("Started discharge workflow %s", workflow.id)
 
         return {
             'workflow': workflow,
             'discharge_data': discharge_data,
+            'resumed': False,
         }
 
     @staticmethod
@@ -1201,22 +1006,82 @@ class DischargeEngine(BaseWorkflowEngine):
             'admission_date': admission.admission_date.isoformat(),
         }
 
+    @classmethod
+    def _flatten_discharge_payload(cls, payload: Any) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+
+        flattened: Dict[str, Any] = {}
+        for key, value in payload.items():
+            if key in cls.STEP_KEYS and isinstance(value, dict):
+                flattened.update(value)
+                continue
+            flattened[key] = value
+        return flattened
+
+    @staticmethod
+    def _coerce_discharge_field(field: str, value: Any) -> Any:
+        if field == 'discharge_date' and isinstance(value, str) and value:
+            parsed = parse_datetime(value)
+            if parsed is None:
+                raise ValueError("Discharge Date & Time must be a valid ISO datetime.")
+            return parsed
+        return value
+
+    @classmethod
+    def _validate_step_requirements(
+        cls,
+        step_number: int,
+        payload: Dict[str, Any],
+        discharge_data: DischargeWorkflow,
+    ) -> List[str]:
+        step_config = cls.get_step_config(step_number)
+        normalized_payload = payload or {}
+
+        step_payload = {}
+        for field in step_config.fields:
+            if field.name in normalized_payload:
+                step_payload[field.name] = normalized_payload[field.name]
+            else:
+                step_payload[field.name] = getattr(discharge_data, field.name, None)
+
+        errors = cls._validate_required_fields(step_config, step_payload)
+
+        if step_number == 2 and step_payload.get('medications_reconciled') is not True:
+            errors.append("Medication Reconciliation Completed must be confirmed.")
+
+        return errors
+
     @staticmethod
     @transaction.atomic
     def update_step(workflow, step_number, step_data) -> ClinicalWorkflow:
         """Update discharge step data"""
+        if workflow.status == WorkflowStatus.COMPLETED:
+            raise ValueError("Discharge workflow already completed.")
+
         discharge_data = workflow.discharge_data
+        normalized_step_data = DischargeEngine._flatten_discharge_payload(step_data)
+
+        validation_errors = DischargeEngine._validate_step_requirements(
+            step_number=step_number,
+            payload=normalized_step_data,
+            discharge_data=discharge_data,
+        )
+        if validation_errors:
+            unique_errors = list(dict.fromkeys(validation_errors))
+            raise ValueError("; ".join(unique_errors))
 
         # Update discharge specific fields
-        for field, value in step_data.items():
+        for field, value in normalized_step_data.items():
             if hasattr(discharge_data, field):
-                setattr(discharge_data, field, value)
+                coerced_value = DischargeEngine._coerce_discharge_field(field, value)
+                setattr(discharge_data, field, coerced_value)
         discharge_data.save()
 
         # Update workflow
-        workflow.context_data.update(step_data)
+        workflow.context_data.update(normalized_step_data)
         workflow.mark_step_complete(step_number)
-        if step_number < workflow.total_steps:
+        if step_number < workflow.total_steps and workflow.current_step == step_number:
             workflow.advance_to_step(step_number + 1)
         workflow.save()
 
@@ -1226,137 +1091,121 @@ class DischargeEngine(BaseWorkflowEngine):
 
     @staticmethod
     @transaction.atomic
-    def complete(workflow, final_data) -> Dict[str, Any]:
-        """Complete discharge and update admission record"""
-        from apps.clinical_notes.models import NoteTemplate
-        from apps.users.models import PractitionerProfile
-        from apps.encounters.services import get_or_create_active_encounter
+    def complete(workflow, final_data, idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        """Submit medical discharge for downstream billing and nursing clearance."""
+
+        if workflow.status == WorkflowStatus.COMPLETED:
+            stored_key = workflow.context_data.get('completion_idempotency_key')
+            stored_result = workflow.context_data.get('completion_result')
+            if (
+                idempotency_key
+                and stored_key
+                and stored_key == idempotency_key
+                and isinstance(stored_result, dict)
+            ):
+                return stored_result
+            raise ValueError("Discharge workflow already completed.")
 
         discharge_data = workflow.discharge_data
+        normalized_final_data = DischargeEngine._flatten_discharge_payload(final_data)
+
+        all_validation_errors: List[str] = []
+        for step_number in range(1, workflow.total_steps + 1):
+            all_validation_errors.extend(
+                DischargeEngine._validate_step_requirements(
+                    step_number=step_number,
+                    payload=normalized_final_data,
+                    discharge_data=discharge_data,
+                )
+            )
+        if all_validation_errors:
+            unique_errors = list(dict.fromkeys(all_validation_errors))
+            raise ValueError("; ".join(unique_errors))
+
+        admission_id = workflow.context_data.get('admission_id')
+        if not admission_id:
+            raise ValueError("Missing admission context for discharge workflow.")
+
+        try:
+            admission = Admission.objects.select_for_update().get(
+                id=admission_id,
+                patient=workflow.patient,
+            )
+        except Admission.DoesNotExist as exc:
+            raise ValueError("Admission not found for discharge workflow.") from exc
+
+        if admission.status not in ACTIVE_ADMISSION_STATUSES:
+            raise ValueError(f"Admission is not active. Current status: {admission.status}.")
 
         # Update final data
-        for field, value in final_data.items():
+        for field, value in normalized_final_data.items():
             if hasattr(discharge_data, field):
-                setattr(discharge_data, field, value)
+                coerced_value = DischargeEngine._coerce_discharge_field(field, value)
+                setattr(discharge_data, field, coerced_value)
         discharge_data.save()
 
-        # Get practitioner profile
-        practitioner = None
-        if hasattr(workflow.user, 'practitionerprofile'):
-            practitioner = workflow.user.practitionerprofile
-        elif hasattr(workflow.user, 'staff') and workflow.user.staff:
-            practitioner = getattr(workflow.user.staff, 'practitioner_profile', None)
-
-        if not practitioner:
-            try:
-                practitioner = PractitionerProfile.objects.get(staff__user=workflow.user)
-            except PractitionerProfile.DoesNotExist:
-                logger.warning(f"No practitioner profile found for user {workflow.user.id}")
-                practitioner = None
-
-        # Update Admission record
-        admission_id = workflow.context_data.get('admission_id')
-        admission = None
-        if admission_id:
-            try:
-                admission = Admission.objects.get(id=admission_id)
-                admission.discharge_date = discharge_data.discharge_date or timezone.now()
-                admission.status = 'discharged'
-                admission.discharge_notes = discharge_data.discharge_summary
-                admission.save()
-
-                # Mark bed as available
-                if admission.bed:
-                    admission.bed.status = 'available'
-                    admission.bed.save()
-
-                logger.info(f"Updated admission {admission_id} to discharged status")
-            except Admission.DoesNotExist:
-                logger.warning(f"Admission {admission_id} not found")
-
-        # Get or create encounter
-        encounter, _ = get_or_create_active_encounter(
-            patient=workflow.patient,
-            practitioner=practitioner,
-            encounter_type='inpatient',
-            reason='Discharge'
+        medical_ready_at = discharge_data.discharge_date or timezone.now()
+        case = submit_medical_discharge(
+            admission=admission,
+            workflow=workflow,
+            actor=workflow.user,
+            medical_ready_at=medical_ready_at,
+            discharge_disposition=discharge_data.discharge_disposition,
+            discharge_summary=discharge_data.discharge_summary,
+            follow_up_appointments=discharge_data.follow_up_appointments,
+            discharge_prescriptions=discharge_data.discharge_prescriptions,
+            notes_snapshot={
+                'transportation': discharge_data.transportation,
+                'warning_signs': discharge_data.warning_signs,
+                'medication_changes': discharge_data.medication_changes,
+            },
         )
 
-        # Update encounter status to finished
-        encounter.status = 'finished'
-        encounter.end_time = timezone.now()
-        encounter.discharge_disposition = discharge_data.discharge_disposition if hasattr(discharge_data, 'discharge_disposition') else None
-        encounter.save()
+        blockers = []
+        advisory_tasks = []
+        for task in case.tasks.all().order_by('blocking', 'task_type'):
+            task_summary = {
+                'id': str(task.id),
+                'task_type': task.task_type,
+                'status': task.status,
+                'assigned_role': task.assigned_role,
+            }
+            if task.blocking:
+                blockers.append(task_summary)
+            else:
+                advisory_tasks.append(task_summary)
 
-        # Create discharge note with proper model fields
-        note = None
-        if practitioner:
-            try:
-                # Get or create a discharge template
-                template = NoteTemplate.objects.filter(
-                    category='discharge',
-                    is_active=True
-                ).first()
+        artifacts = [
+            {'type': 'discharge_case', 'id': str(case.id)},
+            {'type': 'encounter_update', 'id': str(case.encounter_id)},
+            {'type': 'discharge_record', 'id': str(admission_id)},
+        ]
+        if case.discharge_note_id:
+            artifacts.append({'type': 'note', 'id': str(case.discharge_note_id)})
 
-                if not template:
-                    template = NoteTemplate.objects.create(
-                        title='Discharge Summary',
-                        category='discharge',
-                        visibility='public',
-                        is_active=True,
-                        structure={
-                            'sections': [
-                                {'name': 'Hospital Course', 'type': 'text'},
-                                {'name': 'Discharge Diagnosis', 'type': 'text'},
-                                {'name': 'Discharge Medications', 'type': 'text'},
-                                {'name': 'Follow-up Instructions', 'type': 'text'},
-                            ]
-                        }
-                    )
-                    logger.info(f"Created default discharge template {template.id}")
+        completion_result = {
+            'success': True,
+            'workflow_id': str(workflow.id),
+            'discharge_case_id': str(case.id),
+            'admission_id': str(admission_id),
+            'admission_status': admission.status,
+            'case_status': case.status,
+            'encounter_id': str(case.encounter_id) if case.encounter_id else None,
+            'blockers': blockers,
+            'advisory_tasks': advisory_tasks,
+            'artifacts': artifacts,
+        }
 
-                # Build note data
-                note_data = {
-                    'Discharge Summary': discharge_data.discharge_summary or '',
-                    'Follow-up Instructions': discharge_data.follow_up_instructions or '' if hasattr(discharge_data, 'follow_up_instructions') else '',
-                    '_metadata': {
-                        'discharge_date': (discharge_data.discharge_date or timezone.now()).isoformat() if discharge_data.discharge_date else timezone.now().isoformat(),
-                        'admission_id': str(admission_id) if admission_id else None,
-                    }
-                }
-
-                note = NoteEntry.objects.create(
-                    template=template,
-                    patient=workflow.patient,
-                    encounter=encounter,
-                    practitioner=practitioner,
-                    data=note_data,
-                )
-
-                logger.info(f"Created discharge note {note.id} for workflow {workflow.id}")
-
-            except Exception as e:
-                logger.error(f"Failed to create discharge note for workflow {workflow.id}: {str(e)}")
-
-        workflow.encounter_id = str(encounter.id)
+        workflow.encounter_id = str(case.encounter_id) if case.encounter_id else workflow.encounter_id
+        workflow.context_data['completion_result'] = completion_result
+        if idempotency_key:
+            workflow.context_data['completion_idempotency_key'] = idempotency_key
+        workflow.save(update_fields=['encounter_id', 'context_data', 'updated_at'])
         workflow.complete_workflow()
 
         logger.info(f"Completed discharge workflow {workflow.id}")
 
-        artifacts = [
-            {'type': 'encounter_update', 'id': str(encounter.id)},
-            {'type': 'discharge_record', 'id': admission_id},
-        ]
-        if note:
-            artifacts.append({'type': 'note', 'id': str(note.id)})
-
-        return {
-            'success': True,
-            'workflow_id': str(workflow.id),
-            'admission_id': admission_id,
-            'encounter_id': str(encounter.id),
-            'artifacts': artifacts,
-        }
+        return completion_result
 
 
 class ClinicalNoteEngine(BaseWorkflowEngine):
@@ -1438,7 +1287,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         try:
             patient = PatientProfile.objects.get(id=patient_id)
         except PatientProfile.DoesNotExist:
-            raise ValueError(f"Patient with ID {patient_id} not found")
+            raise ValueError("Patient not found")
 
         # Get step configuration
         step_config = ClinicalNoteEngine.NOTE_TYPE_STEPS[note_type]
@@ -1470,7 +1319,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
             note_type=note_type,
         )
 
-        logger.info(f"Started clinical note workflow {workflow.id} ({note_type}) for patient {patient.id}")
+        logger.info("Started clinical note workflow %s (%s)", workflow.id, note_type)
 
         return {
             'workflow': workflow,
@@ -1545,7 +1394,8 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         final_data: Dict[str, Any],
         encounter_type: str = 'outpatient',
         encounter_status: str = 'finished',
-        template_id: Optional[str] = None
+        template_id: Optional[str] = None,
+        template_revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Complete clinical note workflow and generate artifacts
@@ -1556,11 +1406,12 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
             encounter_type: Type of encounter to create
             encounter_status: Status of encounter
             template_id: UUID of the template to use for the note
+            template_revision_id: UUID of the template revision used to initialize note data
 
         Returns:
             Dictionary with encounter_id and generated artifacts
         """
-        from apps.clinical_notes.models import NoteTemplate
+        from apps.clinical_notes.models import NoteTemplate, NoteTemplateRevision
         from apps.users.models import PractitionerProfile
         from apps.encounters.services import get_or_create_active_encounter
 
@@ -1574,18 +1425,37 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
                     setattr(clinical_note_data, field, value)
             clinical_note_data.save()
 
-        # Get template_id from parameter or context
+        # Get template identifiers from parameter or context
         if not template_id:
             template_id = context.get('template_id')
+        if not template_revision_id:
+            template_revision_id = context.get('template_revision_id')
 
-        # Get template
+        # Resolve revision and template
+        template_revision = None
+        if template_revision_id:
+            template_revision = NoteTemplateRevision.objects.select_related('template').filter(
+                id=template_revision_id
+            ).first()
+
         template = None
         if template_id:
             template = NoteTemplate.objects.filter(id=template_id).first()
+        elif template_revision:
+            template = template_revision.template
+
+        if template_revision and template and template_revision.template_id != template.id:
+            raise ValueError("Template revision does not belong to the selected template")
 
         if not template:
             logger.error(f"No template found for workflow {workflow.id}, template_id={template_id}")
             raise ValueError("Template is required to create a clinical note")
+
+        if not template_revision:
+            template_revision = NoteTemplateRevision.objects.filter(
+                template=template,
+                status='published',
+            ).order_by('-version').first()
 
         # Get practitioner profile
         practitioner = None
@@ -1621,6 +1491,8 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         try:
             note = NoteEntry.objects.create(
                 template=template,
+                template_revision=template_revision,
+                template_version=template_revision.version if template_revision else None,
                 patient=workflow.patient,
                 encounter=encounter,
                 practitioner=practitioner,

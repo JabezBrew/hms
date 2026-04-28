@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import VirtualizedGrid from '@/components/ui/VirtualizedGrid';
+import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -339,6 +339,63 @@ export default function TransferRequestsPage() {
     });
   };
 
+  const transferColumns = [
+    {
+      key: 'number',
+      header: 'Transfer #',
+      width: '180px',
+      render: (transfer) => <span className="font-mono text-sm font-medium text-primary">{transfer.transfer_number || transfer.number}</span>,
+    },
+    {
+      key: 'route',
+      header: 'Route',
+      width: '260px',
+      render: (transfer) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-foreground">{transfer.from_location_name || 'Source'} → {transfer.to_location_name || 'Destination'}</p>
+          <p className="truncate text-xs text-muted-foreground">{transfer.requested_by_name || 'Unknown requester'}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '140px',
+      render: (transfer) => {
+        const statusConfig = getStatusConfig(transfer.status);
+        return <Badge variant="outline" className={cn('text-xs', statusConfig.bgColor, statusConfig.textColor, statusConfig.borderColor)}>{statusConfig.label}</Badge>;
+      },
+    },
+    {
+      key: 'created',
+      header: 'Created',
+      width: '160px',
+      render: (transfer) => (
+        <span className="font-mono text-sm text-muted-foreground">
+          {transfer.created_at ? format(parseISO(transfer.created_at), 'MMM d, yyyy') : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '200px',
+      render: (transfer) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleApprove(transfer.id); }}>
+            Approve
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleDispatch(transfer.id); }}>
+            Dispatch
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleReceive(transfer.id); }}>
+            Receive
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   const handleCloseSheet = () => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
@@ -464,23 +521,18 @@ export default function TransferRequestsPage() {
       </div>
 
       {transfers.length > 0 ? (
-        <VirtualizedGrid
-          items={transfers}
-          minItemWidth={280}
-          rowHeight={260}
-          gap={16}
-          getItemKey={(transfer) => transfer.id}
-          renderItem={(transfer, index) => (
-            <TransferCard
-              transfer={transfer}
-              index={index}
-              onClick={() => handleClick(transfer.id)}
-              onApprove={() => handleApprove(transfer.id)}
-              onDispatch={() => handleDispatch(transfer.id)}
-              onReceive={() => handleReceive(transfer.id)}
-            />
-          )}
-        />
+        <div className="overflow-x-auto">
+          <VirtualizedTable
+            rows={transfers}
+            rowKey={(transfer) => transfer.id}
+            rowHeight={68}
+            columns={transferColumns}
+            onRowClick={(transfer) => handleClick(transfer.id)}
+            rowClassName="hover:bg-muted/30"
+            className="min-w-[1060px]"
+            headerClassName="bg-muted/50 border-b border-border"
+          />
+        </div>
       ) : (
         <div className="bg-card/50 border rounded-2xl p-12 text-center">
           <ArrowRightLeft className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
