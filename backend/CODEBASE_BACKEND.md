@@ -388,7 +388,7 @@ CI workflow executes:
 
 - Backend Docker image is multi-stage (`/backend/Dockerfile`).
 - Startup uses ASGI (Daphne) for both HTTP and WebSockets.
-- Railway deployment profile currently sets 2 replicas (`/railway.json`).
+- Hetzner staging runs via `ops/hetzner-cx23-staging/compose.yml`.
 
 ## 14. High-Risk Complexity Zones (Current State)
 

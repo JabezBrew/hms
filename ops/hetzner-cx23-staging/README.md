@@ -122,7 +122,8 @@ SERVER_IP
 
 ## 4. Add DNS
 
-Do not delete existing Railway DNS records until the migration is complete.
+Do not delete legacy hosting DNS records until the Hetzner deployment is healthy
+and you are ready to move traffic.
 
 For staging, add one DNS record:
 
