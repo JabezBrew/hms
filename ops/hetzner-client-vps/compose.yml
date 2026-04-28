@@ -1,58 +1,75 @@
-name: hms-cx23-staging
+name: ${COMPOSE_PROJECT_NAME:-hms-client-vps}
 
 x-backend-image: &backend-image
-  image: hms-backend-staging:${VERSION:-latest}
-  env_file:
-    - ${HMS_ENV_FILE:-./.env}
+  image: hms-backend-${CLIENT_SLUG:-client}:${VERSION:-latest}
   environment: &backend-environment
     DEBUG: "False"
     PORT: "8000"
     PROCESS_ROLE: backend
-    SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in ops/hetzner-cx23-staging/.env}
+    CLIENT_SLUG: ${CLIENT_SLUG:?set CLIENT_SLUG in ops/hetzner-client-vps/.env}
+    CLIENT_NAME: ${CLIENT_NAME:?set CLIENT_NAME in ops/hetzner-client-vps/.env}
+    CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/hetzner-client-vps/.env}
+    DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:?set DEPLOYMENT_MODE in ops/hetzner-client-vps/.env}
+    DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:?set DEPLOYMENT_PROFILE in ops/hetzner-client-vps/.env}
+    FEATURE_FLAG_OVERRIDES: ${FEATURE_FLAG_OVERRIDES:-}
+    SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in ops/hetzner-client-vps/.env}
     DB_NAME: ${DB_NAME:-hms}
     DB_USER: ${DB_USER:-hms}
-    DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-cx23-staging/.env}
+    DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-client-vps/.env}
     DB_HOST: db
     DB_PORT: "5432"
     REDIS_URL: redis://redis:6379/0
-    ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set ALLOWED_HOSTS in ops/hetzner-cx23-staging/.env}
-    CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in ops/hetzner-cx23-staging/.env}
-    CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?set CSRF_TRUSTED_ORIGINS in ops/hetzner-cx23-staging/.env}
-    FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in ops/hetzner-cx23-staging/.env}
-    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in ops/hetzner-cx23-staging/.env}
-    DEFAULT_FACILITY_CODE: ${DEFAULT_FACILITY_CODE:?set DEFAULT_FACILITY_CODE in ops/hetzner-cx23-staging/.env}
-    ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in ops/hetzner-cx23-staging/.env}
-    ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in ops/hetzner-cx23-staging/.env}
+    ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set ALLOWED_HOSTS in ops/hetzner-client-vps/.env}
+    CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in ops/hetzner-client-vps/.env}
+    CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?set CSRF_TRUSTED_ORIGINS in ops/hetzner-client-vps/.env}
+    FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in ops/hetzner-client-vps/.env}
+    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in ops/hetzner-client-vps/.env}
+    DEFAULT_FACILITY_CODE: ${DEFAULT_FACILITY_CODE:?set DEFAULT_FACILITY_CODE in ops/hetzner-client-vps/.env}
+    DEFAULT_FACILITY_NAME: ${DEFAULT_FACILITY_NAME:?set DEFAULT_FACILITY_NAME in ops/hetzner-client-vps/.env}
+    DEFAULT_FACILITY_TYPE: ${DEFAULT_FACILITY_TYPE:?set DEFAULT_FACILITY_TYPE in ops/hetzner-client-vps/.env}
+    DEFAULT_FACILITY_ADDRESS: ${DEFAULT_FACILITY_ADDRESS:-}
+    DEFAULT_FACILITY_CITY: ${DEFAULT_FACILITY_CITY:-}
+    DEFAULT_FACILITY_REGION: ${DEFAULT_FACILITY_REGION:-}
+    DEFAULT_FACILITY_COUNTRY: ${DEFAULT_FACILITY_COUNTRY:-}
+    DEFAULT_FACILITY_PHONE: ${DEFAULT_FACILITY_PHONE:-}
+    DEFAULT_FACILITY_EMAIL: ${DEFAULT_FACILITY_EMAIL:-}
+    ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in ops/hetzner-client-vps/.env}
+    ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in ops/hetzner-client-vps/.env}
+    ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Client}
+    ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-Administrator}
     MIGRATE_ON_STARTUP: "False"
     FAIL_ON_PENDING_MIGRATIONS: "True"
-    AI_ENABLED: "False"
-    CELERY_WORKER_CONCURRENCY: "1"
-    CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
-    ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS: "0"
+    AI_ENABLED: ${AI_ENABLED:-False}
+    CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-1}
+    CELERY_WORKER_PREFETCH_MULTIPLIER: ${CELERY_WORKER_PREFETCH_MULTIPLIER:-1}
+    ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS: ${ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS:-0}
+    MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
     LOG_AS_JSON: "True"
     FILE_LOGGING_ENABLED: "False"
     DJANGO_DB_LOG_LEVEL: WARNING
     TRUST_PROXY_HEADERS: "True"
     SECURE_SSL_REDIRECT: "True"
-    SECURE_HSTS_SECONDS: "3600"
-    SECURE_HSTS_INCLUDE_SUBDOMAINS: "False"
-    SECURE_HSTS_PRELOAD: "False"
+    SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-3600}
+    SECURE_HSTS_INCLUDE_SUBDOMAINS: ${SECURE_HSTS_INCLUDE_SUBDOMAINS:-False}
+    SECURE_HSTS_PRELOAD: ${SECURE_HSTS_PRELOAD:-False}
     SESSION_COOKIE_SECURE: "True"
     CSRF_COOKIE_SECURE: "True"
     JWT_AUTH_SECURE: "True"
     JWT_AUTH_SAMESITE: Lax
-    WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?set WEBAUTHN_RP_ID in ops/hetzner-cx23-staging/.env}
-    WEBAUTHN_ALLOWED_ORIGINS: ${WEBAUTHN_ALLOWED_ORIGINS:?set WEBAUTHN_ALLOWED_ORIGINS in ops/hetzner-cx23-staging/.env}
-    MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in ops/hetzner-cx23-staging/.env}
-    RECORD_EXPORT_FERNET_KEY: ${RECORD_EXPORT_FERNET_KEY:?set RECORD_EXPORT_FERNET_KEY in ops/hetzner-cx23-staging/.env}
-    SENDGRID_API_KEY: ${SENDGRID_API_KEY:?set SENDGRID_API_KEY in ops/hetzner-cx23-staging/.env}
-    DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:?set DEFAULT_FROM_EMAIL in ops/hetzner-cx23-staging/.env}
+    WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?set WEBAUTHN_RP_ID in ops/hetzner-client-vps/.env}
+    WEBAUTHN_ALLOWED_ORIGINS: ${WEBAUTHN_ALLOWED_ORIGINS:?set WEBAUTHN_ALLOWED_ORIGINS in ops/hetzner-client-vps/.env}
+    MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in ops/hetzner-client-vps/.env}
+    RECORD_EXPORT_FERNET_KEY: ${RECORD_EXPORT_FERNET_KEY:?set RECORD_EXPORT_FERNET_KEY in ops/hetzner-client-vps/.env}
+    SESSION_HASH_SALT: ${SESSION_HASH_SALT:?set SESSION_HASH_SALT in ops/hetzner-client-vps/.env}
+    MFA_TOTP_ISSUER: ${MFA_TOTP_ISSUER:-HMS}
+    SENDGRID_API_KEY: ${SENDGRID_API_KEY:?set SENDGRID_API_KEY in ops/hetzner-client-vps/.env}
+    DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:?set DEFAULT_FROM_EMAIL in ops/hetzner-client-vps/.env}
     GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}
-    GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-staging-disabled}
-    GOOGLE_HEALTHCARE_DATASET: ${GOOGLE_HEALTHCARE_DATASET:-staging-disabled}
-    GOOGLE_FHIR_STORE: ${GOOGLE_FHIR_STORE:-staging-disabled}
-    GOOGLE_DICOM_STORE: ${GOOGLE_DICOM_STORE:-staging-disabled}
-    GOOGLE_HL7V2_STORE: ${GOOGLE_HL7V2_STORE:-staging-disabled}
+    GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-client-disabled}
+    GOOGLE_HEALTHCARE_DATASET: ${GOOGLE_HEALTHCARE_DATASET:-client-disabled}
+    GOOGLE_FHIR_STORE: ${GOOGLE_FHIR_STORE:-client-disabled}
+    GOOGLE_DICOM_STORE: ${GOOGLE_DICOM_STORE:-client-disabled}
+    GOOGLE_HL7V2_STORE: ${GOOGLE_HL7V2_STORE:-client-disabled}
   depends_on:
     db:
       condition: service_healthy
@@ -73,8 +90,8 @@ services:
   caddy:
     image: caddy:2-alpine
     environment:
-      STAGING_DOMAIN: ${STAGING_DOMAIN:?set STAGING_DOMAIN in ops/hetzner-cx23-staging/.env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/hetzner-cx23-staging/.env}
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/hetzner-client-vps/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/hetzner-client-vps/.env}
     ports:
       - "80:80"
       - "443:443"
@@ -104,11 +121,11 @@ services:
     build:
       context: ../../frontend
       dockerfile: Dockerfile
-    image: hms-frontend-staging:${VERSION:-latest}
+    image: hms-frontend-${CLIENT_SLUG:-client}:${VERSION:-latest}
     environment:
       API_BASE_URL: /api
       WS_URL: ${FRONTEND_WS_URL:-}
-      DEFAULT_FACILITY_CODE: ${DEFAULT_FACILITY_CODE:?set DEFAULT_FACILITY_CODE in ops/hetzner-cx23-staging/.env}
+      DEFAULT_FACILITY_CODE: ${DEFAULT_FACILITY_CODE:?set DEFAULT_FACILITY_CODE in ops/hetzner-client-vps/.env}
       MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
     expose:
       - "80"
@@ -142,7 +159,7 @@ services:
       - edge
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H 'Host: ${STAGING_DOMAIN}' http://127.0.0.1:8000/api/health/ready/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -H 'Host: ${CLIENT_DOMAIN}' http://127.0.0.1:8000/api/health/ready/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -173,7 +190,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-hms}
       POSTGRES_USER: ${DB_USER:-hms}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-cx23-staging/.env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-client-vps/.env}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     command:
       - postgres

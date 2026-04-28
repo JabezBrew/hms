@@ -96,31 +96,37 @@ The Hospital Management System is designed to integrate with Google Cloud Health
    npm run dev
    ```
 
-### Hetzner VPS Deployment
+### Hetzner Client VPS Deployment
 
-The current low-cost staging deployment runs on a Hetzner CX23 VPS with Docker
+The low-cost deployment path runs one HMS client per Hetzner VPS with Docker
 Compose, Caddy, Postgres, Redis, the Django ASGI API, Celery worker/beat, and
 the Nginx-served React frontend.
 
 Use the runbook here:
 
 ```text
-ops/hetzner-cx23-staging/README.md
+ops/hetzner-client-vps/README.md
 ```
 
-The active Compose profile is:
+The reusable Compose profile is:
 
 ```text
-ops/hetzner-cx23-staging/compose.yml
+ops/hetzner-client-vps/compose.yml
 ```
 
-Deploy updates from `/opt/hms` on the VPS:
+Generate a client environment:
+
+```bash
+python3 ops/create-client-deployment.py --slug acme --name "Acme Clinic" --profile clinic --mode production --domain acme.thehms.systems --facility-code ACME --output ops/hetzner-client-vps/.env
+```
+
+Deploy updates from `/opt/hms` on a client VPS:
 
 ```bash
 git pull --ff-only
-docker compose --env-file ops/hetzner-cx23-staging/.env -f ops/hetzner-cx23-staging/compose.yml build
-docker compose --env-file ops/hetzner-cx23-staging/.env -f ops/hetzner-cx23-staging/compose.yml run --rm api python /app/run_migrations.py
-docker compose --env-file ops/hetzner-cx23-staging/.env -f ops/hetzner-cx23-staging/compose.yml up -d
+docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml build
+docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml run --rm api python /app/run_migrations.py
+docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml up -d
 ```
 
 Legacy managed-hosting deployment files have been removed from the repo.

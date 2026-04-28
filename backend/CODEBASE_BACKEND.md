@@ -388,7 +388,7 @@ CI workflow executes:
 
 - Backend Docker image is multi-stage (`/backend/Dockerfile`).
 - Startup uses ASGI (Daphne) for both HTTP and WebSockets.
-- Hetzner staging runs via `ops/hetzner-cx23-staging/compose.yml`.
+- Hetzner client VPS deployments run via `ops/hetzner-client-vps/compose.yml`.
 
 ## 14. High-Risk Complexity Zones (Current State)
 
