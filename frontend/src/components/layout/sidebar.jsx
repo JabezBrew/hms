@@ -20,7 +20,6 @@ import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js'
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
-import Workflow from 'lucide-react/dist/esm/icons/workflow.js'
 import Warehouse from 'lucide-react/dist/esm/icons/warehouse.js'
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js'
 import FileBox from 'lucide-react/dist/esm/icons/file-box.js'
@@ -176,7 +175,6 @@ export function AppSidebar() {
       organization: ROLE_GROUPS.ADMIN_ONLY,
       dutyRoster: DUTY_ROSTER_ROLES,
       auditLogs: ROLE_GROUPS.ADMIN_ONLY,
-      systemJobs: ROLE_GROUPS.ADMIN_ONLY,
     },
   }
 
@@ -203,7 +201,6 @@ export function AppSidebar() {
     menuItems.operations.organization,
     menuItems.operations.dutyRoster,
     menuItems.operations.auditLogs,
-    menuItems.operations.systemJobs,
   ])
 
   return (
@@ -553,14 +550,6 @@ export function AppSidebar() {
                           <SidebarMenuSubButton href="/admin/audit-logs">
                             <FileSearch className="h-4 w-4" />
                             <span>Audit Logs</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.systemJobs) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/admin/system-jobs">
-                            <Workflow className="h-4 w-4" />
-                            <span>Background Jobs</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}

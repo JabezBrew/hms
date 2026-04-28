@@ -3,7 +3,6 @@ import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
 import { ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 
 const AuditLogsPage = lazy(() => import('./pages/AuditLogsPage'))
-const SystemJobsPage = lazy(() => import('./pages/SystemJobsPage'))
 const OrganizationPage = lazy(() => import('./pages/organization/OrganizationPage'))
 const UnitTypesPage = lazy(() => import('./pages/organization/UnitTypesPage'))
 const LeadershipRolesPage = lazy(() => import('./pages/organization/LeadershipRolesPage'))
@@ -22,14 +21,6 @@ export const adminRoutes = [
     layout: ROUTE_LAYOUTS.APP,
     title: 'Audit Logs | Hospital Management System',
     breadcrumbs: [ADMIN_BREADCRUMB, { label: 'Audit Logs', path: '/admin/audit-logs' }],
-  },
-  {
-    path: '/admin/system-jobs',
-    component: SystemJobsPage,
-    roles: ROLE_GROUPS.ADMIN_ONLY,
-    layout: ROUTE_LAYOUTS.APP,
-    title: 'Background Jobs | Hospital Management System',
-    breadcrumbs: [ADMIN_BREADCRUMB, { label: 'Background Jobs', path: '/admin/system-jobs' }],
   },
   {
     path: '/admin/organization',
