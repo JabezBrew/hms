@@ -247,18 +247,12 @@ function MedicationRow({ medication, dateHeaders, onAdminister }) {
   );
 }
 
-export default function TreatmentSheetPage() {
-  const [searchParams] = useSearchParams();
+export function TreatmentSheetContent({
+  admissionId,
+  showHeader = true,
+  onBack = null,
+}) {
   const navigate = useNavigate();
-  const admissionId = searchParams.get('admission');
-
-  const pageMeta = usePageMeta({
-    title: 'Medication Administration Record | HMS',
-    breadcrumbs: [
-      { label: 'Nursing', href: '/dashboards/nurse' },
-      { label: 'Medication Administration Record' },
-    ],
-  });
 
   // Date navigation state - start from today
   const [startDate, setStartDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -314,18 +308,19 @@ export default function TreatmentSheetPage() {
 
   if (!admissionId) {
     return (
-      <PageShell>
-        {pageMeta}
-        <PageHeader
-          title="Medication Administration Record"
-          description="Track medication administration across the current admission."
-        />
+      <>
+        {showHeader && (
+          <PageHeader
+            title="Medication Administration Record"
+            description="Track medication administration across the current admission."
+          />
+        )}
         <PageState
           variant="error"
           title="Admission required"
           description="No admission ID provided. Please access the treatment sheet from a patient's record."
         />
-      </PageShell>
+      </>
     );
   }
 
@@ -334,34 +329,41 @@ export default function TreatmentSheetPage() {
     : 'Track medication administration across the current admission.';
 
   return (
-    <PageShell>
-      {pageMeta}
-      <PageHeader
-        title="Medication Administration Record"
-        description={headerDescription}
-        actions={(
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handlePreviousWeek}>
-                <ChevronLeft className="h-4 w-4" />
-                <span className="hidden sm:inline ml-1">Prev Week</span>
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleToday}>
-                <Calendar className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Today</span>
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleNextWeek}>
-                <span className="hidden sm:inline mr-1">Next Week</span>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+    <>
+      {showHeader && (
+        <PageHeader
+          title="Medication Administration Record"
+          description={headerDescription}
+          actions={(
+            <TreatmentSheetActions
+              onBack={onBack || (() => navigate(-1))}
+              onPreviousWeek={handlePreviousWeek}
+              onToday={handleToday}
+              onNextWeek={handleNextWeek}
+            />
+          )}
+        />
+      )}
+
+      {!showHeader && (
+        <div className="sticky top-0 z-20 border-b border-border bg-background/95 px-6 py-3 backdrop-blur">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                Current admission
+              </p>
+              <p className="text-sm text-muted-foreground">{headerDescription}</p>
             </div>
+            <TreatmentSheetActions
+              compact
+              onBack={null}
+              onPreviousWeek={handlePreviousWeek}
+              onToday={handleToday}
+              onNextWeek={handleNextWeek}
+            />
           </div>
-        )}
-      />
+        </div>
+      )}
 
       <div className="p-6 space-y-4">
 
@@ -476,6 +478,59 @@ export default function TreatmentSheetPage() {
         </p>
       )}
       </div>
+    </>
+  );
+}
+
+function TreatmentSheetActions({
+  compact = false,
+  onBack,
+  onPreviousWeek,
+  onToday,
+  onNextWeek,
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {onBack && (
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+      )}
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onPreviousWeek}>
+          <ChevronLeft className="h-4 w-4" />
+          <span className={compact ? 'sr-only' : 'hidden sm:inline ml-1'}>Prev Week</span>
+        </Button>
+        <Button variant="outline" size="sm" onClick={onToday}>
+          <Calendar className="h-4 w-4 sm:mr-2" />
+          <span className={compact ? 'sr-only' : 'hidden sm:inline'}>Today</span>
+        </Button>
+        <Button variant="outline" size="sm" onClick={onNextWeek}>
+          <span className={compact ? 'sr-only' : 'hidden sm:inline mr-1'}>Next Week</span>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function TreatmentSheetPage() {
+  const [searchParams] = useSearchParams();
+  const admissionId = searchParams.get('admission');
+
+  const pageMeta = usePageMeta({
+    title: 'Medication Administration Record | HMS',
+    breadcrumbs: [
+      { label: 'Nursing', href: '/dashboards/nurse' },
+      { label: 'Medication Administration Record' },
+    ],
+  });
+
+  return (
+    <PageShell>
+      {pageMeta}
+      <TreatmentSheetContent admissionId={admissionId} />
     </PageShell>
   );
 }

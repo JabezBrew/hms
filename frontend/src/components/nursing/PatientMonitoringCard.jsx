@@ -70,7 +70,7 @@ export function PatientMonitoringCard({ patientData }) {
   };
 
   const handleViewDetails = () => {
-    navigate(`/nursing/patient/${patient.id}`);
+    navigate(`/patients/${patient.id}`);
   };
 
   return (

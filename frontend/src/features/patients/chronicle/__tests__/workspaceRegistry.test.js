@@ -22,6 +22,7 @@ describe('chronicle workspace registry', () => {
       'crossFacility',
       'receiveRecord',
       'medicationHistory',
+      'treatmentSheet',
       'fluids',
       'trends',
       'insurance',
@@ -78,6 +79,21 @@ describe('chronicle workspace registry', () => {
     expect(props).toMatchObject({
       open: true,
       patient: { id: 'patient-1' },
+    });
+  });
+
+  it('builds treatment sheet workspace props with the requested admission', () => {
+    const props = buildChronicleWorkspaceProps('treatmentSheet', {
+      patient: {
+        local_data: { current_admission_id: 'admission-current' },
+      },
+      requestedTreatmentSheetAdmissionId: 'admission-requested',
+      onClose: vi.fn(),
+    });
+
+    expect(props).toMatchObject({
+      open: true,
+      admission: { id: 'admission-requested' },
     });
   });
 

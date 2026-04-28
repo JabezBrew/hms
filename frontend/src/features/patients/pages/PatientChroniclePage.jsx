@@ -162,6 +162,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Edit note state - holds note ID and data for editing existing notes
   const [editNoteData, setEditNoteData] = useState(null);
   const [requestedDischargeAdmissionId, setRequestedDischargeAdmissionId] = useState(null);
+  const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
 
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
@@ -245,6 +246,23 @@ const PatientChroniclePage = ({ defaultAction }) => {
     } else if (action === 'add_prescription') {
       openChronicleWorkspace('prescription');
       if (actionParam) clearQueryParams();
+    } else if (action === 'treatment_sheet') {
+      const admissionId = admissionParam
+        || patient?.local_data?.current_admission_id
+        || patient?.current_admission_id;
+
+      if (!admissionId) {
+        if (!patient && !admissionParam) {
+          return;
+        }
+        toast.error('No active admission found for this patient');
+        if (actionParam || admissionParam) clearQueryParams();
+        return;
+      }
+
+      setRequestedTreatmentSheetAdmissionId(String(admissionId));
+      openChronicleWorkspace('treatmentSheet');
+      if (actionParam || admissionParam) clearQueryParams();
     }
   }, [
     actionParam,
@@ -1041,6 +1059,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copyForwardData,
     editNoteData,
     requestedDischargeAdmissionId,
+    requestedTreatmentSheetAdmissionId,
     onClose: handleSlideOverClose,
     onNoteCreated: handleNoteCreated,
     onVitalsRecorded: handleVitalsRecorded,
@@ -1065,6 +1084,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     copyForwardData,
     editNoteData,
     requestedDischargeAdmissionId,
+    requestedTreatmentSheetAdmissionId,
     handleSlideOverClose,
     handleNoteCreated,
     handleVitalsRecorded,
@@ -1091,11 +1111,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
                         patient?.current_admission_id;
 
     if (admissionId) {
-      navigate(`/nursing/treatment-sheet?admission=${admissionId}`);
+      setRequestedTreatmentSheetAdmissionId(String(admissionId));
+      openChronicleWorkspace('treatmentSheet');
     } else {
       toast.error('No active admission found for this patient');
     }
-  }, [navigate, activeEncounter, patient]);
+  }, [activeEncounter, patient, openChronicleWorkspace]);
 
   const userRole = user?.role || user?.user_type;
   const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);

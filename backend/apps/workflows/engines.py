@@ -235,7 +235,7 @@ class ConsultationEngine(BaseWorkflowEngine):
         try:
             patient = PatientProfile.objects.get(id=patient_id)
         except PatientProfile.DoesNotExist:
-            raise ValueError(f"Patient with ID {patient_id} not found")
+            raise ValueError("Patient not found")
 
         # Prepare initial context
         prep_data = ConsultationEngine._load_prep_data(patient)
@@ -283,7 +283,7 @@ class ConsultationEngine(BaseWorkflowEngine):
             appointment_id=appointment_id,
         )
 
-        logger.info(f"Started consultation workflow {workflow.id} for patient {patient.id}")
+        logger.info("Started consultation workflow %s", workflow.id)
 
         return {
             'workflow': workflow,
@@ -626,7 +626,7 @@ class WardRoundEngine(BaseWorkflowEngine):
         # Create type-specific data model
         ward_round_data = WardRoundWorkflow.objects.create(workflow=workflow)
 
-        logger.info(f"Started ward round workflow {workflow.id} for patient {patient_id}")
+        logger.info("Started ward round workflow %s", workflow.id)
 
         return {
             'workflow': workflow,
@@ -950,10 +950,8 @@ class DischargeEngine(BaseWorkflowEngine):
         ).select_related('discharge_data').order_by('-created_at').first()
         if existing_workflow:
             logger.info(
-                "Resuming discharge workflow %s for patient %s and admission %s",
+                "Resuming discharge workflow %s",
                 existing_workflow.id,
-                patient_id,
-                admission_id,
             )
             return {
                 'workflow': existing_workflow,
@@ -988,7 +986,7 @@ class DischargeEngine(BaseWorkflowEngine):
         # Create type-specific data model
         discharge_data = DischargeWorkflow.objects.create(workflow=workflow)
 
-        logger.info(f"Started discharge workflow {workflow.id} for patient {patient_id}")
+        logger.info("Started discharge workflow %s", workflow.id)
 
         return {
             'workflow': workflow,
@@ -1289,7 +1287,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         try:
             patient = PatientProfile.objects.get(id=patient_id)
         except PatientProfile.DoesNotExist:
-            raise ValueError(f"Patient with ID {patient_id} not found")
+            raise ValueError("Patient not found")
 
         # Get step configuration
         step_config = ClinicalNoteEngine.NOTE_TYPE_STEPS[note_type]
@@ -1321,7 +1319,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
             note_type=note_type,
         )
 
-        logger.info(f"Started clinical note workflow {workflow.id} ({note_type}) for patient {patient.id}")
+        logger.info("Started clinical note workflow %s (%s)", workflow.id, note_type)
 
         return {
             'workflow': workflow,

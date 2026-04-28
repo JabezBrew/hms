@@ -1,4 +1,5 @@
 import uuid
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models, transaction
 from django.db.models import F
 from django.contrib.auth import get_user_model
@@ -145,6 +146,9 @@ class LabTestCatalog(models.Model):
             models.Index(fields=['loinc_code']),
             models.Index(fields=['name']),  # Added for search optimization
             models.Index(fields=['category', 'is_active']),
+            GinIndex(fields=['name'], name='lab_test_name_trgm', opclasses=['gin_trgm_ops']),
+            GinIndex(fields=['short_name'], name='lab_test_short_name_trgm', opclasses=['gin_trgm_ops']),
+            GinIndex(fields=['code'], name='lab_test_code_trgm', opclasses=['gin_trgm_ops']),
         ]
 
     def __str__(self):
@@ -382,6 +386,7 @@ class LabOrder(models.Model):
             models.Index(fields=['status', 'priority']),
             models.Index(fields=['ordered_at']),
             models.Index(fields=['facility', 'status', 'ordered_at']),
+            GinIndex(fields=['order_number'], name='lab_order_number_trgm', opclasses=['gin_trgm_ops']),
         ]
 
     def __str__(self):

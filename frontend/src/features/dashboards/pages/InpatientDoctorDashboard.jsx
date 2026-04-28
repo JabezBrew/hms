@@ -133,6 +133,12 @@ export default function InpatientDoctorDashboard() {
   const myPatients = dashboardData?.my_patients || [];
   const plannedDischarges = dashboardData?.planned_discharges || [];
   const pending = dashboardData?.pending || {};
+  const openWardRound = (patientId) => {
+    if (!patientId) {
+      return;
+    }
+    navigate(`/patients/${patientId}?action=ward_round`);
+  };
 
   return (
     <Layout>
@@ -278,10 +284,7 @@ export default function InpatientDoctorDashboard() {
                     {
                       label: 'Start Ward Round',
                       variant: 'default',
-                      onClick: () => {
-                        // Start ward round workflow
-                        console.log('Start ward round:', admission.id);
-                      },
+                      onClick: () => openWardRound(admission.patient_id),
                     },
                     {
                       label: 'View Details',
@@ -369,7 +372,7 @@ export default function InpatientDoctorDashboard() {
                     {
                       label: 'Ward Round',
                       variant: 'default',
-                      onClick: () => console.log('Start ward round:', patient.id),
+                      onClick: () => openWardRound(patient.patient_id),
                     },
                     {
                       label: 'View Chart',

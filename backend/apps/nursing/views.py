@@ -820,6 +820,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Facility context is required.")
         if admission.facility_id != facility.id:
             raise PermissionDenied("Admission does not belong to the active facility.")
+        check_clinical_access(request.user, admission.patient)
 
         # Parse date range
         start_date_str = request.query_params.get('start_date')
@@ -999,6 +1000,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
         return Response({
             'admission_id': str(admission.id),
+            'patient_id': str(admission.patient_id),
             'patient_name': f"{admission.patient.user.first_name} {admission.patient.user.last_name}",
             'patient_mrn': admission.patient.medical_record_number,
             'date_range': {
