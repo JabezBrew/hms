@@ -16,13 +16,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--email',
-            default=os.environ.get('ADMIN_EMAIL', 'admin@hms.com'),
-            help='Admin email (default: ADMIN_EMAIL env var or admin@hms.com)',
+            default=os.environ.get('ADMIN_EMAIL'),
+            help='Admin email (default: ADMIN_EMAIL env var)',
         )
         parser.add_argument(
             '--password',
-            default=os.environ.get('ADMIN_PASSWORD', 'Admin123!'),
-            help='Admin password (default: ADMIN_PASSWORD env var or Admin123!)',
+            default=os.environ.get('ADMIN_PASSWORD'),
+            help='Admin password (default: ADMIN_PASSWORD env var)',
         )
         parser.add_argument(
             '--first-name',
@@ -86,6 +86,11 @@ class Command(BaseCommand):
             return
 
         # Create admin user
+        if not email or not password:
+            raise ValueError(
+                'ADMIN_EMAIL and ADMIN_PASSWORD must be set to create the initial superuser.'
+            )
+
         self.stdout.write('Creating initial admin user.')
 
         # Username is required by AbstractUser - use email prefix
