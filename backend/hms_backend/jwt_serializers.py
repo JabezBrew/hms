@@ -2,6 +2,7 @@ from django.conf import settings
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from hms_backend.deployment import feature_enabled
+from apps.core.security import has_network_facility_access
 
 
 def _normalize_facility_code(code):
@@ -44,12 +45,13 @@ def resolve_user_facility_code(user, requested_code=None):
     allowed_codes = _get_user_facility_codes(user)
     allow_cross_facility = feature_enabled('cross_facility_access')
     is_admin = bool(user and getattr(user, 'user_type', None) == 'admin')
+    has_network_access = has_network_facility_access(user)
     default_facility_code = _normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', ''))
 
     if requested:
         if requested in allowed_codes:
             return requested
-        if allow_cross_facility and is_admin:
+        if allow_cross_facility and is_admin and has_network_access:
             return requested
         if not allowed_codes and default_facility_code and requested == default_facility_code:
             return requested

@@ -38,6 +38,7 @@ from .security import (
     get_accessible_patients_for_clinician,
     get_user_facility,
     get_user_facility_codes,
+    has_network_facility_access,
 )
 from hms_backend.deployment import feature_enabled
 from hms_backend.feature_manifest import FEATURE_MANIFEST
@@ -303,7 +304,7 @@ class FacilityViewSet(viewsets.ReadOnlyModelViewSet):
         if allow_cross is None:
             allow_cross = feature_enabled('cross_facility_access')
 
-        if allow_cross and user.user_type == 'admin':
+        if allow_cross and user.user_type == 'admin' and has_network_facility_access(user):
             scoped = queryset
         else:
             codes = get_user_facility_codes(user)

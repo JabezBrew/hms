@@ -115,6 +115,44 @@ def test_get_client_ip_uses_single_forwarded_hop_when_proxy_headers_are_trusted(
     assert get_client_ip(request) == '203.0.113.10'
 
 
+@pytest.mark.django_db
+def test_facility_context_middleware_denies_cross_facility_for_non_superuser_admin(
+    monkeypatch, settings
+):
+    settings.FACILITY_CONTEXT_REQUIRED = False
+    settings.DEPLOYMENT_FEATURES = {**settings.DEPLOYMENT_FEATURES, 'cross_facility_access': True}
+    settings.DEFAULT_FACILITY_CODE = None
+
+    alpha = DefaultFacilityFactory(code='ALPHA')
+    bravo = DefaultFacilityFactory(code='BRAVO')
+    user = UserFactory(user_type='admin', is_superuser=False, primary_facility=alpha)
+    user.facilities.add(alpha)
+
+    request = RequestFactory().get(
+        '/api/settings/deployment-capabilities/',
+        HTTP_AUTHORIZATION='Bearer valid-token',
+        HTTP_X_FACILITY_CODE=bravo.code,
+    )
+
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    monkeypatch.setattr(JWTAuthentication, 'get_header', lambda self, req: b'Bearer valid-token')
+    monkeypatch.setattr(JWTAuthentication, 'get_raw_token', lambda self, header: b'valid-token')
+    monkeypatch.setattr(
+        JWTAuthentication,
+        'get_validated_token',
+        lambda self, raw: {'user_id': str(user.id), 'facility_code': alpha.code},
+    )
+    monkeypatch.setattr(JWTAuthentication, 'get_user', lambda self, validated_token: user)
+
+    response = middleware.process_request(request)
+
+    assert response is not None
+    assert response.status_code == 403
+    body = json.loads(response.content.decode('utf-8'))
+    assert body.get('code') == 'facility_unavailable'
+
+
 def test_api_path_scrubbing_redacts_identifiers_before_truncating():
     scrubbed = _scrub_path('/api/patients/00000000-0000-0000-0000-000000000000/get_patient/')
 

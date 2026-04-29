@@ -72,7 +72,11 @@ class FacilityContextMiddleware(MiddlewareMixin):
 
     def process_request(self, request):
         from django.conf import settings
-        from apps.core.security import get_user_facility_codes, normalize_facility_code
+        from apps.core.security import (
+            get_user_facility_codes,
+            has_network_facility_access,
+            normalize_facility_code,
+        )
         from apps.core.models import Facility
         from hms_backend.tenancy import (
             clear_current_facility_code,
@@ -139,13 +143,16 @@ class FacilityContextMiddleware(MiddlewareMixin):
 
         if facility_code and user:
             is_admin = bool(user.user_type == 'admin')
+            has_network_access = has_network_facility_access(user)
             if allowed_codes:
                 is_facility_allowed = facility_code in allowed_codes
             else:
                 # Users without explicit assignments are restricted to the deployment default facility.
                 is_facility_allowed = bool(default_facility_code and facility_code == default_facility_code)
 
-            if not is_facility_allowed and not (allow_cross_facility and is_admin):
+            if not is_facility_allowed and not (
+                allow_cross_facility and is_admin and has_network_access
+            ):
                 return JsonResponse(
                     {'detail': 'Facility context is not available.', 'code': 'facility_unavailable'},
                     status=403

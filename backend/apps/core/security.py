@@ -67,6 +67,13 @@ def get_user_facility_codes(user):
     return set(normalized_codes)
 
 
+def has_network_facility_access(user):
+    """Return True when user has explicit network-level facility access."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    return bool(getattr(user, 'is_superuser', False))
+
+
 def _ensure_user_can_reference_patient_facility(user, patient_profile):
     if not user or not getattr(user, 'is_authenticated', False):
         raise PermissionDenied("Authentication required.")
@@ -105,11 +112,13 @@ def get_user_facility(request):
     allow_cross_facility = False
     default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
     is_admin = False
+    has_network_access = False
     primary_facility = None
     primary_code = None
     if user and getattr(user, 'is_authenticated', False):
         allow_cross_facility = feature_enabled('cross_facility_access')
         is_admin = bool(getattr(user, 'user_type', None) == 'admin')
+        has_network_access = has_network_facility_access(user)
         primary_facility = getattr(user, 'primary_facility', None)
         if primary_facility:
             primary_code = normalize_facility_code(primary_facility.code)
@@ -125,7 +134,7 @@ def get_user_facility(request):
             return True
         if not user or not getattr(user, 'is_authenticated', False):
             return True
-        if allow_cross_facility and is_admin:
+        if allow_cross_facility and is_admin and has_network_access:
             return True
         if primary_code and facility_code == primary_code:
             return True

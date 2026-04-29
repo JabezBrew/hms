@@ -76,6 +76,31 @@ def test_facility_list_admin_can_include_inactive(django_user_model):
 
 
 @pytest.mark.django_db
+@override_settings(**_deployment_override('hospital_network'))
+def test_facility_list_network_profile_admin_without_global_entitlement_is_scoped(django_user_model):
+    facility_a = FacilityFactory(code='ALPHA', name='Alpha Facility', is_active=True)
+    FacilityFactory(code='BRAVO', name='Bravo Facility', is_active=True)
+
+    admin = django_user_model.objects.create_user(
+        username='admin-local',
+        email='admin-local@example.com',
+        password='pass1234',
+        user_type='admin',
+        primary_facility=facility_a,
+        is_superuser=False,
+    )
+    admin.facilities.add(facility_a)
+
+    client = APIClient()
+    client.force_authenticate(user=admin)
+
+    response = client.get('/api/facilities/')
+    assert response.status_code == status.HTTP_200_OK
+    codes = {item['code'] for item in response.data['results']}
+    assert codes == {'ALPHA'}
+
+
+@pytest.mark.django_db
 def test_deployment_capabilities_endpoint_returns_defaults(django_user_model):
     facility = FacilityFactory(code='CORE', name='Core Facility')
     user = django_user_model.objects.create_user(

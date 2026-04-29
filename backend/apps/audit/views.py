@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.users.rbac import IsAdmin
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import get_user_facility
+from apps.core.security import get_user_facility, has_network_facility_access
 from hms_backend.deployment import feature_enabled
 from apps.users.models import UserSession
 from apps.users.session_service import get_session_idle_cutoff
@@ -32,7 +32,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         if not facility:
             return AuditLog.objects.none()
 
-        if feature_enabled('cross_facility_access') and self.request.user.user_type == 'admin':
+        if (
+            feature_enabled('cross_facility_access')
+            and self.request.user.user_type == 'admin'
+            and has_network_facility_access(self.request.user)
+        ):
             return AuditLog.objects.select_related('user')
 
         return AuditLog.objects.select_related('user').filter(facility=facility)
@@ -156,7 +160,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             expires_at__gt=now,
             last_seen_at__gt=get_session_idle_cutoff(now),
         )
-        if feature_enabled('cross_facility_access') and request.user.user_type == 'admin':
+        if (
+            feature_enabled('cross_facility_access')
+            and request.user.user_type == 'admin'
+            and has_network_facility_access(request.user)
+        ):
             active_sessions = session_queryset.exclude(facility_code='').values('user_id').distinct().count()
         else:
             facility = get_user_facility(request)
