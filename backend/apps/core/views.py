@@ -329,6 +329,12 @@ class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
             'updated_by',
         ).order_by('scope', 'facility__code', 'feature_key')
 
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(
+                scope=FeatureEntitlementOverride.SCOPE_FACILITY,
+                facility__in=self.request.user.facilities.all(),
+            )
+
         scope = self.request.query_params.get('scope')
         if scope in {
             FeatureEntitlementOverride.SCOPE_GLOBAL,
@@ -343,6 +349,10 @@ class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        self._assert_override_scope_allowed(
+            serializer.validated_data.get('scope'),
+            serializer.validated_data.get('facility'),
+        )
         instance = serializer.save(
             created_by=self.request.user,
             updated_by=self.request.user,
@@ -350,10 +360,24 @@ class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
         self._log_change(instance, action='CREATE')
 
     def perform_update(self, serializer):
+        self._assert_override_scope_allowed(
+            serializer.validated_data.get('scope', serializer.instance.scope),
+            serializer.validated_data.get('facility', serializer.instance.facility),
+        )
         instance = serializer.save(updated_by=self.request.user)
         self._log_change(instance, action='UPDATE')
 
+    def _assert_override_scope_allowed(self, scope, facility):
+        user = self.request.user
+        if scope == FeatureEntitlementOverride.SCOPE_GLOBAL and not user.is_superuser:
+            raise PermissionDenied('Only superusers can manage global feature overrides.')
+
+        if scope == FeatureEntitlementOverride.SCOPE_FACILITY and not user.is_superuser:
+            if facility is None or not user.facilities.filter(id=facility.id).exists():
+                raise PermissionDenied('You can only manage feature overrides for assigned facilities.')
+
     def perform_destroy(self, instance):
+        self._assert_override_scope_allowed(instance.scope, instance.facility)
         feature_key = instance.feature_key
         scope = instance.scope
         facility_code = getattr(instance.facility, 'code', None)
