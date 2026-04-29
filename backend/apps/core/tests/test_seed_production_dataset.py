@@ -109,6 +109,8 @@ def test_seed_facility_uses_employee_id_allocator(tmp_path, monkeypatch):
 
     assert allocated_ids
     assert Staff.objects.filter(employee_id__startswith="EMP-CUSTOM-").count() == len(allocated_ids)
+    assert User.objects.filter(email__startswith="seed.staff.").exclude(is_active=False).count() == 0
+    assert User.objects.filter(email__startswith="seed.staff.").filter(password__startswith="!").count() == len(allocated_ids)
 
 
 @pytest.mark.django_db
@@ -134,6 +136,8 @@ def test_seed_patient_batch_uses_mrn_allocator(tmp_path, monkeypatch):
         user__email=command._patient_seed_email(ctx.facility.code, 1)
     )
     assert patient.medical_record_number == "MRN-CUSTOM-0001"
+    assert patient.user.is_active is False
+    assert patient.user.has_usable_password() is False
 
 
 @pytest.mark.django_db
