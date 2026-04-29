@@ -231,6 +231,8 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['user']['facility_code'] == facility_a.code
+        assert 'admin_access' in response.data['user']
+        assert 'admin.organization.manage' in response.data['user']['admin_access']['capabilities']
 
     def test_login_requires_facility_when_multi_facility_user_has_no_primary(self, api_client, db, settings):
         settings.MULTI_FACILITY_MODE = True

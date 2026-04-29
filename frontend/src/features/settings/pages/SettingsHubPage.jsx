@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { ADMIN_CAPABILITIES } from '@/shared/constants/roles';
+import { userCanAccess } from '@/shared/lib/access';
 
 /**
  * SettingsHubPage - Central hub for user settings with role-based category cards
@@ -22,7 +24,6 @@ import { PageShell } from '@/shared/components/page/PageShell';
 const SettingsHubPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const userRole = user?.role;
 
   const pageMeta = usePageMeta({
     title: 'Settings | HMS',
@@ -78,6 +79,7 @@ const SettingsHubPage = () => {
       color: 'amber',
       route: '/admin/organization',
       roles: ['admin'],
+      capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE],
     },
     {
       id: 'audit',
@@ -87,6 +89,7 @@ const SettingsHubPage = () => {
       color: 'sky',
       route: '/admin/audit-logs',
       roles: ['admin'],
+      capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW],
     },
     {
       id: 'feature-entitlements',
@@ -96,13 +99,17 @@ const SettingsHubPage = () => {
       color: 'emerald',
       route: '/settings/feature-entitlements',
       roles: ['admin'],
+      capabilities: [ADMIN_CAPABILITIES.FEATURE_ENTITLEMENTS_MANAGE],
     },
   ];
 
   // Filter categories based on user role
   const visibleCategories = categories.filter(category => {
-    if (!category.roles) return true; // Visible to all
-    return category.roles.includes(userRole);
+    if (!category.roles && !category.capabilities) return true; // Visible to all
+    return userCanAccess(user, {
+      roles: category.roles,
+      capabilities: category.capabilities,
+    });
   });
 
   const handleCategoryClick = (category) => {

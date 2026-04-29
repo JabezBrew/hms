@@ -55,7 +55,7 @@ RUN echo '#!/bin/sh' > /start.sh && \
     echo 'exec nginx -g "daemon off;"' >> /start.sh && \
     chmod +x /start.sh
 
-# Expose port (Railway sets PORT env var, defaults to 80)
+# Expose port. Runtime can override with PORT, defaults to 80.
 EXPOSE 80
 
 # Start with our script

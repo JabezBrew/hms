@@ -8,6 +8,7 @@ from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility
 from .identifiers import generate_unique_employee_id
 from .tasks import create_practitioner_in_fhir
 from .unit_assignment import auto_assign_staff_to_department_unit
+from .admin_access import build_admin_access_payload
 import random
 import string
 import logging
@@ -52,13 +53,14 @@ class UserWithAccessContextSerializer(serializers.ModelSerializer):
     is_offsite = serializers.SerializerMethodField()
     offsite_mode = serializers.SerializerMethodField()
     readonly_message = serializers.SerializerMethodField()
+    admin_access = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
                   'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined',
                   'must_change_password',
-                  'is_offsite', 'offsite_mode', 'readonly_message']
+                  'is_offsite', 'offsite_mode', 'readonly_message', 'admin_access']
         read_only_fields = ['id', 'date_joined', 'must_change_password']
 
     def get_is_offsite(self, obj):
@@ -84,6 +86,11 @@ class UserWithAccessContextSerializer(serializers.ModelSerializer):
                 settings = OffSiteAccessSettings.get_settings()
                 return settings.readonly_message
         return None
+
+    def get_admin_access(self, obj):
+        request = self.context.get('request')
+        facility_code = getattr(request, 'facility_code', None) if request else None
+        return build_admin_access_payload(obj, facility_code=facility_code)
 
 
 class UserCreateSerializer(serializers.ModelSerializer):

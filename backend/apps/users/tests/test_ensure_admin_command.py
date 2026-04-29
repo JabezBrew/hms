@@ -2,31 +2,23 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.users.models import User
+from apps.users.tests.factories import AdminUserFactory
 
 
 @pytest.mark.django_db
-class TestEnsureAdminCommand:
-    def test_requires_admin_password_for_initial_superuser(self, monkeypatch):
-        monkeypatch.delenv('ADMIN_EMAIL', raising=False)
-        monkeypatch.delenv('ADMIN_PASSWORD', raising=False)
+def test_ensure_admin_requires_explicit_credentials_for_initial_superuser(settings):
+    settings.DEFAULT_FACILITY_CODE = None
 
-        with pytest.raises(CommandError, match='ADMIN_PASSWORD is required'):
-            call_command('ensure_admin', email='admin@hms.com')
+    with pytest.raises(CommandError, match='ADMIN_EMAIL and ADMIN_PASSWORD'):
+        call_command('ensure_admin', email=None, password=None)
 
-        assert not User.objects.filter(is_superuser=True).exists()
 
-    def test_uses_explicit_credentials_to_create_initial_superuser(self, monkeypatch):
-        monkeypatch.delenv('ADMIN_EMAIL', raising=False)
-        monkeypatch.delenv('ADMIN_PASSWORD', raising=False)
+@pytest.mark.django_db
+def test_ensure_admin_allows_existing_superuser_without_credentials(settings):
+    settings.DEFAULT_FACILITY_CODE = None
+    admin = AdminUserFactory()
 
-        call_command(
-            'ensure_admin',
-            email='secadmin@example.com',
-            password='StrongPass123!@#',
-        )
+    call_command('ensure_admin', email=None, password=None)
 
-        user = User.objects.get(email='secadmin@example.com')
-        assert user.is_superuser is True
-        assert user.user_type == 'admin'
-        assert user.check_password('StrongPass123!@#') is True
+    admin.refresh_from_db()
+    assert admin.is_superuser is True

@@ -42,6 +42,9 @@ export function validateRoutes(routes, { source = 'routes' } = {}) {
     if (route.features !== undefined && !Array.isArray(route.features)) {
       throw new Error(`[${source}] Route ${route.path} features must be an array`)
     }
+    if (route.capabilities !== undefined && !Array.isArray(route.capabilities)) {
+      throw new Error(`[${source}] Route ${route.path} capabilities must be an array`)
+    }
     const controlled = TIER_CONTROLLED_ROUTE_PREFIXES.find(([prefix]) => (
       route.path === prefix || route.path.startsWith(`${prefix}/`)
     ))

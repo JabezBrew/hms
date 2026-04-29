@@ -282,20 +282,20 @@ Rationale:
 
 ## 5.4.4 Recommended Deployment Layout
 
-- HMS control plane (existing Railway deployment):
+- HMS control plane (existing container deployment):
   - Django API
   - AI orchestration endpoints (`apps/ai`)
   - Celery orchestration workers
   - Redis broker/cache
   - Postgres metadata/audit store
-- AI inference plane (separate from Railway app runtime):
+- AI inference plane (separate from the core app runtime):
   - Managed LLM endpoints over private networking where possible
   - Dedicated GPU workers/services for ASR + diarization + optional open models
   - Vector index service (Postgres pgvector or dedicated vector DB)
   - Encrypted object storage for scribe audio chunks/transcripts
 
 Important:
-- Do not assume Railway runtime should host heavy GPU inference.
+- Do not assume the core HMS runtime should host heavy GPU inference.
 - Keep model-serving stack isolated from core HMS request-serving processes.
 
 ## 5.4.5 Model Router Design (Backend)

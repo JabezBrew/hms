@@ -98,6 +98,11 @@ class Command(BaseCommand):
             )
 
         # Create admin user
+        if not email or not password:
+            raise CommandError(
+                'ADMIN_EMAIL and ADMIN_PASSWORD (or --email/--password) are required when creating the initial superuser.'
+            )
+
         self.stdout.write('Creating initial admin user.')
 
         # Username is required by AbstractUser - use email prefix
