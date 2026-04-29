@@ -1,6 +1,6 @@
 import { lazy } from 'react'
 import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
-import { ROLE_GROUPS } from '@/shared/constants/roles'
+import { ADMIN_CAPABILITIES, ROLE_GROUPS } from '@/shared/constants/roles'
 
 const SettingsHubPage = lazy(() => import('./pages/SettingsHubPage'))
 const ProfileSettingsPage = lazy(() => import('./pages/ProfileSettingsPage'))
@@ -47,6 +47,7 @@ export const settingsRoutes = [
     path: '/settings/feature-entitlements',
     component: FeatureEntitlementsPage,
     roles: ROLE_GROUPS.ADMIN_ONLY,
+    capabilities: [ADMIN_CAPABILITIES.FEATURE_ENTITLEMENTS_MANAGE],
     layout: ROUTE_LAYOUTS.APP,
     title: 'Feature Entitlements | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Feature Entitlements', path: '/settings/feature-entitlements' }],

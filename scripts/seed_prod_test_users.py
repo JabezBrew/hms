@@ -7,8 +7,8 @@ import requests
 import json
 from datetime import date
 
-# Production API
-BASE_URL = 'https://backend-staging-8afc.up.railway.app/api'
+# Staging API
+BASE_URL = 'https://staging.thehms.systems/api'
 
 # Admin credentials
 ADMIN_EMAIL = 'admin@hms.com'

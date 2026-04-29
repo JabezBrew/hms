@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Optional
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.hashers import make_password
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
@@ -1191,10 +1190,22 @@ class Command(BaseCommand):
                         "user_type": user_type,
                         "gender": gender,
                         "primary_facility": facility,
-                        "password": make_password("HmsStaff!2026"),
-                        "is_active": True,
+                        "is_active": False,
+                        "must_change_password": True,
                     }
                 )
+                updated_fields = []
+                if user.is_active:
+                    user.is_active = False
+                    updated_fields.append("is_active")
+                if not user.must_change_password:
+                    user.must_change_password = True
+                    updated_fields.append("must_change_password")
+                if user.has_usable_password():
+                    user.set_unusable_password()
+                    updated_fields.append("password")
+                if updated_fields:
+                    user.save(update_fields=updated_fields)
                 user.facilities.add(facility)
                 if created:
                     manifest.add("User", user.pk)
@@ -1288,9 +1299,10 @@ class Command(BaseCommand):
                 date_of_birth=dob,
                 phone_number=phone,
                 primary_facility=facility,
-                is_active=True,
-                password=make_password("Patient!2026"),
+                is_active=False,
+                must_change_password=True,
             )
+            user.set_unusable_password()
             user.save()
             user.facilities.add(facility)
             manifest.add("User", user.pk)

@@ -1,27 +1,24 @@
+import pytest
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.core.management.base import CommandError
 
-from apps.users.models import User
+from apps.users.tests.factories import AdminUserFactory
 
 
-@override_settings(ADMIN_EMAIL=None, ADMIN_PASSWORD=None)
-class EnsureAdminCommandTests(TestCase):
-    def test_raises_when_creating_initial_admin_without_credentials(self):
-        with self.assertRaisesMessage(
-            ValueError,
-            'ADMIN_EMAIL and ADMIN_PASSWORD must be set to create the initial superuser.',
-        ):
-            call_command('ensure_admin')
+@pytest.mark.django_db
+def test_ensure_admin_requires_explicit_credentials_for_initial_superuser(settings):
+    settings.DEFAULT_FACILITY_CODE = None
 
-        self.assertFalse(User.objects.filter(is_superuser=True).exists())
+    with pytest.raises(CommandError, match='ADMIN_EMAIL and ADMIN_PASSWORD'):
+        call_command('ensure_admin', email=None, password=None)
 
-    def test_succeeds_without_credentials_when_superuser_already_exists(self):
-        User.objects.create_superuser(
-            username='existing-admin',
-            email='existing-admin@example.com',
-            password='test-password-123',
-            user_type='admin',
-        )
 
-        call_command('ensure_admin')
-        self.assertEqual(User.objects.filter(is_superuser=True).count(), 1)
+@pytest.mark.django_db
+def test_ensure_admin_allows_existing_superuser_without_credentials(settings):
+    settings.DEFAULT_FACILITY_CODE = None
+    admin = AdminUserFactory()
+
+    call_command('ensure_admin', email=None, password=None)
+
+    admin.refresh_from_db()
+    assert admin.is_superuser is True

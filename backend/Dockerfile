@@ -1,4 +1,4 @@
-# Backend Dockerfile for Railway deployment
+# Backend Dockerfile for container deployment
 # Multi-stage build: builds dependencies, then runs Django with ASGI server
 #
 # This Dockerfile is designed to be built from the backend/ directory
@@ -61,7 +61,7 @@ RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Expose port (Railway sets PORT env var)
+# Expose the ASGI port. Runtime can override with PORT.
 EXPOSE 8000
 
 # Health check - disabled temporarily for debugging

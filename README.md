@@ -96,26 +96,37 @@ The Hospital Management System is designed to integrate with Google Cloud Health
    npm run dev
    ```
 
-### Railway Frontend Deployment
+### Hetzner Client VPS Deployment
 
-This repo is a monorepo. Deploy Railway services from the correct service root instead of deploying the repo root and expecting Railpack to infer the right app automatically.
+The low-cost deployment path runs one HMS client per Hetzner VPS with Docker
+Compose, Caddy, Postgres, Redis, the Django ASGI API, Celery worker/beat, and
+the Nginx-served React frontend.
 
-Known service roots:
+Use the runbook here:
 
-- `frontend` service -> `frontend/`
-- backend web/api service -> `backend/`
-- backend worker service -> `backend/`
-- backend beat service -> `backend/`
-
-For the Railway `frontend` service, upload the `frontend/` directory as the deployment root:
-
-```bash
-railway up frontend --path-as-root --service frontend --environment production
+```text
+ops/hetzner-client-vps/README.md
 ```
 
-The same pattern applies to backend-related Railway services: use the `backend/` directory as the deployment root and ensure the Railway service points at the matching config file such as `/backend/railway.toml`, `/backend/railway.worker.toml`, or `/backend/railway.beat.toml`.
+The reusable Compose profile is:
 
-Deploying the repo root with a plain `railway up` can cause Railpack to inspect the monorepo root, miss the intended app entrypoint, and fail build detection.
+```text
+ops/hetzner-client-vps/compose.yml
+```
+
+Generate a client environment:
+
+```bash
+python3 ops/create-client-deployment.py --slug acme --name "Acme Clinic" --profile clinic --mode production --domain acme.thehms.systems --facility-code ACME --output ops/hetzner-client-vps/.env
+```
+
+Deploy updates from `/opt/hms` on a client VPS:
+
+```bash
+ops/hetzner-client-vps/deploy.sh
+```
+
+Legacy managed-hosting deployment files have been removed from the repo.
 
 ## Authentication
 

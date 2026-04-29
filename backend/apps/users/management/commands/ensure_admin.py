@@ -6,6 +6,7 @@ for credentials. This is safe to run on every deployment.
 """
 import os
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from apps.users.models import User
 from apps.core.models import Facility
 
@@ -87,8 +88,8 @@ class Command(BaseCommand):
 
         # Create admin user
         if not email or not password:
-            raise ValueError(
-                'ADMIN_EMAIL and ADMIN_PASSWORD must be set to create the initial superuser.'
+            raise CommandError(
+                'ADMIN_EMAIL and ADMIN_PASSWORD (or --email/--password) are required when creating the initial superuser.'
             )
 
         self.stdout.write('Creating initial admin user.')
