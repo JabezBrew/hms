@@ -133,20 +133,14 @@ favor correctness, least privilege, and predictable performance.
 - Document new dependencies or IAM needs in `docs/`.
 
 ## Deployment Notes
-- HMS is a monorepo. Do not assume a plain repo-root `railway up` is valid for any Railway service.
-- Always deploy each Railway service from the correct service root, or use `railway up <path> --path-as-root ...` so Railway packages the intended subdirectory instead of the monorepo root.
-- Confirmed service roots in this repo:
-  `frontend` service -> `frontend/`
-  backend web/api service -> `backend/`
-  backend worker service -> `backend/`
-  backend beat service -> `backend/`
-- Example frontend production command:
-  `railway up frontend --path-as-root --service frontend --environment production`
-- If you deploy from the repo root without `--path-as-root`, Railway/Railpack can inspect the monorepo root, fail app detection, and return errors like "could not determine how to build the app".
-- Railway dashboard config-as-code must also match the service root:
-  backend web -> `/backend/railway.toml`
-  backend worker -> `/backend/railway.worker.toml`
-  backend beat -> `/backend/railway.beat.toml`
+- HMS deploys one client per Hetzner VPS with Docker Compose. Use the runbook in
+  `ops/hetzner-client-vps/README.md`.
+- The reusable client Compose profile is `ops/hetzner-client-vps/compose.yml`.
+- Generate private client env files with `ops/create-client-deployment.py`.
+- Deploy updates from `/opt/hms` on the VPS with:
+  `ops/hetzner-client-vps/deploy.sh`.
+- Legacy managed-hosting config files have been removed. Do not reintroduce
+  provider-specific service config unless the deployment target changes again.
 
 ## Design System (Frontend)
 - Use Chronicle design system (/Users/jebre/Desktop/hms/frontend/CHRONICLE_DESIGN_SYSTEM.md) patterns and components when building clinical UIs.

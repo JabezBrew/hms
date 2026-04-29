@@ -2,7 +2,7 @@
 Custom throttle classes with load test bypass capability.
 
 Usage:
-1. Set LOAD_TEST_SECRET_KEY environment variable in Railway
+1. Set LOAD_TEST_SECRET_KEY environment variable in the deployment environment.
 2. In k6 test, add header: 'X-Load-Test-Key': '<your-secret-key>'
 3. Requests with valid key bypass throttling
 

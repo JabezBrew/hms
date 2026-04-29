@@ -1,5 +1,5 @@
 #!/bin/bash
-# Railway production entrypoint script
+# Legacy production entrypoint script
 # DO NOT use 'set -e' - we need to see errors
 
 # Force immediate output flushing

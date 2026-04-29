@@ -37,6 +37,7 @@ from .rbac import (
     IsPharmacist, IsBillingOfficer, IsPatient, IsClinicalProvider,
     setup_groups_and_permissions
 )
+from .admin_access import AdminCapabilities, CanViewStaff, get_admin_accessible_unit_ids
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
@@ -253,7 +254,7 @@ class StaffViewSet(viewsets.ModelViewSet):
             permission_classes = [
                 permissions.IsAuthenticated,
                 FacilityScopedPermission,
-                (IsAdmin | IsDoctor | IsNurse | IsReceptionist)
+                (IsAdmin | IsDoctor | IsNurse | IsReceptionist | CanViewStaff)
             ]
         elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             # Admins can edit any staff, others can only view
@@ -261,7 +262,7 @@ class StaffViewSet(viewsets.ModelViewSet):
                 permission_classes = [
                     permissions.IsAuthenticated,
                     FacilityScopedPermission,
-                    (IsAdmin | IsDoctor | IsNurse | IsReceptionist)
+                    (IsAdmin | IsDoctor | IsNurse | IsReceptionist | CanViewStaff)
                 ]
             else:
                 permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
@@ -278,7 +279,12 @@ class StaffViewSet(viewsets.ModelViewSet):
             return Staff.objects.none()
 
         user = self.request.user
-        base_qs = Staff.objects.select_related('user').filter(primary_facility=facility)
+        base_qs = (
+            Staff.objects
+            .select_related('user')
+            .filter(primary_facility=facility)
+            .order_by('user__last_name', 'user__first_name', 'employee_id')
+        )
 
         if self.action == 'list' and self.request.query_params.get('include_inactive') != 'true':
             base_qs = base_qs.filter(user__is_active=True)
@@ -286,7 +292,48 @@ class StaffViewSet(viewsets.ModelViewSet):
         if user.user_type in ['admin', 'doctor', 'nurse', 'receptionist']:
             # These roles can see staff in their facility
             return base_qs
-        return Staff.objects.none()
+
+        unit_ids = get_admin_accessible_unit_ids(
+            user,
+            AdminCapabilities.STAFF_VIEW,
+            facility_code=facility.code,
+        )
+        if unit_ids is None:
+            return base_qs
+        if not unit_ids:
+            return base_qs.none()
+
+        from apps.organization.models import StaffUnitAssignment, UnitMemberAssignment
+
+        today = timezone.now().date()
+        clinical_scope = (
+            StaffUnitAssignment.objects
+            .filter(
+                practitioner__staff_id=OuterRef('pk'),
+                unit_id__in=unit_ids,
+                is_active=True,
+            )
+            .filter(Q(effective_from__isnull=True) | Q(effective_from__lte=today))
+            .filter(Q(effective_until__isnull=True) | Q(effective_until__gte=today))
+        )
+        member_scope = (
+            UnitMemberAssignment.objects
+            .filter(
+                staff_id=OuterRef('pk'),
+                unit_id__in=unit_ids,
+                is_active=True,
+            )
+            .filter(Q(effective_from__isnull=True) | Q(effective_from__lte=today))
+            .filter(Q(effective_until__isnull=True) | Q(effective_until__gte=today))
+        )
+        return (
+            base_qs
+            .annotate(
+                has_clinical_unit_access=Exists(clinical_scope),
+                has_member_unit_access=Exists(member_scope),
+            )
+            .filter(Q(has_clinical_unit_access=True) | Q(has_member_unit_access=True))
+        )
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)

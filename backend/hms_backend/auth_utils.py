@@ -8,6 +8,7 @@ from rest_framework.response import Response
 
 from hms_backend.middleware import get_client_ip
 from .jwt_serializers import get_tokens_for_user, resolve_user_facility_code
+from apps.users.admin_access import build_admin_access_payload
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ def build_auth_response(request, user, facility_code=None):
             pass
 
     access_context = get_access_context(request)
+    admin_access = build_admin_access_payload(user, facility_code=resolved_facility)
 
     response = Response({
         'access': tokens['access'],
@@ -73,6 +75,7 @@ def build_auth_response(request, user, facility_code=None):
             'practitioner_id': practitioner_id,
             'facility_code': resolved_facility or None,
             'must_change_password': password_change_required,
+            'admin_access': admin_access,
         },
         'access_context': access_context,
     })
