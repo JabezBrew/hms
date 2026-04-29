@@ -2091,6 +2091,11 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['unit', 'practitioner', 'assignment_type', 'is_primary', 'is_active']
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdmin(), FacilityScopedPermission()]
+        return super().get_permissions()
+
     def get_serializer_class(self):
         if self.action == 'list':
             return StaffUnitAssignmentListSerializer
