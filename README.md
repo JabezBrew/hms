@@ -123,10 +123,7 @@ python3 ops/create-client-deployment.py --slug acme --name "Acme Clinic" --profi
 Deploy updates from `/opt/hms` on a client VPS:
 
 ```bash
-git pull --ff-only
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml build
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml run --rm api python /app/run_migrations.py
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml up -d
+ops/hetzner-client-vps/deploy.sh
 ```
 
 Legacy managed-hosting deployment files have been removed from the repo.

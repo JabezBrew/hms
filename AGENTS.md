@@ -138,10 +138,7 @@ favor correctness, least privilege, and predictable performance.
 - The reusable client Compose profile is `ops/hetzner-client-vps/compose.yml`.
 - Generate private client env files with `ops/create-client-deployment.py`.
 - Deploy updates from `/opt/hms` on the VPS with:
-  `git pull --ff-only`,
-  `docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml build`,
-  `docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml run --rm api python /app/run_migrations.py`,
-  then `docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml up -d`.
+  `ops/hetzner-client-vps/deploy.sh`.
 - Legacy managed-hosting config files have been removed. Do not reintroduce
   provider-specific service config unless the deployment target changes again.
 

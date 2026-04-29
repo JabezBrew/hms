@@ -166,6 +166,28 @@ before the client is considered ready.
 
 ## 5. Deploy
 
+For normal updates after the client `.env` exists, use the one-command deploy:
+
+```bash
+cd /opt/hms
+ops/hetzner-client-vps/deploy.sh
+```
+
+That script runs `git pull --ff-only`, validates Compose, starts `db` and
+`redis`, runs the production backup gate when `DEPLOYMENT_MODE=production`,
+builds images, runs migrations, starts services, prints `ps`, and checks the
+public readiness endpoint.
+
+For a production first deploy, fill and verify restic settings before running
+the script. If you intentionally need to bypass the production backup gate for
+an empty first launch, use:
+
+```bash
+ops/hetzner-client-vps/deploy.sh --skip-backup
+```
+
+Manual deployment is still available for debugging:
+
 Start Postgres and Redis first:
 
 ```bash
@@ -254,11 +276,7 @@ curl -i https://acme.thehms.systems/api/health/ready/
 From `/opt/hms`:
 
 ```bash
-git pull --ff-only
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml build
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml run --rm api python /app/run_migrations.py
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml up -d
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml ps
+ops/hetzner-client-vps/deploy.sh
 ```
 
 ## 9. Troubleshooting
