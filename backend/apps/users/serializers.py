@@ -481,7 +481,7 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return visit.visit_status in active_visit_statuses
 
         if hasattr(obj, 'active_encounters_list'):
-            return [e for e in obj.active_encounters_list if _matches_operational_active_state(e)]
+            return list(obj.active_encounters_list)
 
         if hasattr(obj, '_prefetched_objects_cache') and 'encounters' in obj._prefetched_objects_cache:
             return [e for e in obj.encounters.all() if _matches_operational_active_state(e)]
@@ -604,6 +604,31 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return latest_completed_outpatient_status
 
         return None
+
+
+class PatientDirectorySearchListSerializer(serializers.ModelSerializer):
+    """
+    Minimal patient directory projection for broad non-clinical search surfaces.
+    Excludes ward, admission, clinic, and registry-state details.
+    """
+    name = serializers.SerializerMethodField()
+    date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
+    gender = serializers.CharField(source='user.gender', read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'id',
+            'medical_record_number',
+            'name',
+            'date_of_birth',
+            'gender',
+            'created_at',
+        ]
+
+    def get_name(self, obj):
+        return obj.user.get_full_name()
 
 
 class PractitionerFHIRMappingListSerializer(serializers.ModelSerializer):

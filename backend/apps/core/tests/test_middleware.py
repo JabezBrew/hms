@@ -5,8 +5,8 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from hms_backend.auth_utils import get_access_context
 from hms_backend.middleware import FacilityContextMiddleware, JWTAuthentication, _scrub_path, get_client_ip
-from apps.core.tests.factories import DefaultFacilityFactory
-from apps.users.tests.factories import UserFactory
+from apps.core.tests.factories import DefaultFacilityFactory, FacilityFactory
+from apps.users.tests.factories import AdminUserFactory, UserFactory
 
 
 @pytest.mark.django_db
@@ -101,6 +101,84 @@ def test_facility_context_middleware_denies_authenticated_user_without_facility_
     assert response.status_code == 403
     body = json.loads(response.content.decode('utf-8'))
     assert body.get('code') == 'facility_unavailable'
+
+
+@pytest.mark.django_db
+def test_facility_context_middleware_denies_facility_admin_cross_facility(
+    monkeypatch, settings
+):
+    settings.FACILITY_CONTEXT_REQUIRED = False
+    settings.DEFAULT_FACILITY_CODE = None
+    settings.ALLOW_CROSS_FACILITY_ACCESS = True
+
+    facility_a = DefaultFacilityFactory(code='FACILITYA')
+    facility_b = FacilityFactory(code='FACILITYB')
+    admin = UserFactory(
+        user_type='admin',
+        is_staff=True,
+        is_superuser=False,
+        primary_facility=facility_a,
+    )
+
+    request = RequestFactory().get(
+        '/api/settings/deployment-capabilities/',
+        HTTP_AUTHORIZATION='Bearer valid-token',
+        HTTP_X_FACILITY_CODE=facility_b.code,
+    )
+
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    monkeypatch.setattr(JWTAuthentication, 'get_header', lambda self, req: b'Bearer valid-token')
+    monkeypatch.setattr(JWTAuthentication, 'get_raw_token', lambda self, header: b'valid-token')
+    monkeypatch.setattr(
+        JWTAuthentication,
+        'get_validated_token',
+        lambda self, raw: {'user_id': str(admin.id), 'facility_code': facility_b.code},
+    )
+    monkeypatch.setattr(JWTAuthentication, 'get_user', lambda self, validated_token: admin)
+
+    response = middleware.process_request(request)
+
+    assert response is not None
+    assert response.status_code == 403
+    body = json.loads(response.content.decode('utf-8'))
+    assert body.get('code') == 'facility_unavailable'
+
+
+@pytest.mark.django_db
+def test_facility_context_middleware_allows_platform_admin_cross_facility(
+    monkeypatch, settings
+):
+    settings.FACILITY_CONTEXT_REQUIRED = False
+    settings.DEFAULT_FACILITY_CODE = None
+    settings.ALLOW_CROSS_FACILITY_ACCESS = True
+
+    facility_a = DefaultFacilityFactory(code='PLATFORMA')
+    facility_b = FacilityFactory(code='PLATFORMB')
+    admin = AdminUserFactory(primary_facility=facility_a)
+
+    request = RequestFactory().get(
+        '/api/settings/deployment-capabilities/',
+        HTTP_AUTHORIZATION='Bearer valid-token',
+        HTTP_X_FACILITY_CODE=facility_b.code,
+    )
+
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    monkeypatch.setattr(JWTAuthentication, 'get_header', lambda self, req: b'Bearer valid-token')
+    monkeypatch.setattr(JWTAuthentication, 'get_raw_token', lambda self, header: b'valid-token')
+    monkeypatch.setattr(
+        JWTAuthentication,
+        'get_validated_token',
+        lambda self, raw: {'user_id': str(admin.id), 'facility_code': facility_b.code},
+    )
+    monkeypatch.setattr(JWTAuthentication, 'get_user', lambda self, validated_token: admin)
+
+    response = middleware.process_request(request)
+
+    assert response is None
+    assert request.facility_code == facility_b.code
+    assert request.allow_cross_facility is True
 
 
 def test_get_client_ip_uses_single_forwarded_hop_when_proxy_headers_are_trusted(settings):

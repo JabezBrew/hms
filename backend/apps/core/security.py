@@ -10,7 +10,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import BasePermission
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 import logging
 from hms_backend.deployment import feature_enabled
@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_ADMISSION_STATUSES = ['admitted', 'pending_discharge']
 ACTIVE_ENCOUNTER_STATUSES = ['planned', 'in-progress']
+CLINICAL_PATIENT_ACCESS_USER_TYPES = frozenset({
+    'doctor',
+    'nurse',
+    'head_nurse',
+    'nurse_practitioner',
+    'physician',
+    'practitioner',
+    'inpatient_doctor',
+})
 
 
 def normalize_facility_code(code):
@@ -67,11 +76,27 @@ def get_user_facility_codes(user):
     return set(normalized_codes)
 
 
+def is_cross_facility_admin(user):
+    try:
+        from apps.users.admin_access import is_platform_admin
+        return is_platform_admin(user)
+    except Exception:
+        return bool(
+            user
+            and getattr(user, 'is_authenticated', False)
+            and getattr(user, 'is_superuser', False)
+        )
+
+
+def can_use_cross_facility_access(user):
+    return bool(feature_enabled('cross_facility_access') and is_cross_facility_admin(user))
+
+
 def _ensure_user_can_reference_patient_facility(user, patient_profile):
     if not user or not getattr(user, 'is_authenticated', False):
         raise PermissionDenied("Authentication required.")
 
-    if getattr(user, 'user_type', None) == 'admin':
+    if is_cross_facility_admin(user):
         return
 
     patient_facility = getattr(patient_profile, 'facility', None)
@@ -104,12 +129,12 @@ def get_user_facility(request):
     allowed_codes = None
     allow_cross_facility = False
     default_facility_code = normalize_facility_code(getattr(settings, 'DEFAULT_FACILITY_CODE', None))
-    is_admin = False
+    has_cross_facility_admin_access = False
     primary_facility = None
     primary_code = None
     if user and getattr(user, 'is_authenticated', False):
         allow_cross_facility = feature_enabled('cross_facility_access')
-        is_admin = bool(getattr(user, 'user_type', None) == 'admin')
+        has_cross_facility_admin_access = is_cross_facility_admin(user)
         primary_facility = getattr(user, 'primary_facility', None)
         if primary_facility:
             primary_code = normalize_facility_code(primary_facility.code)
@@ -125,7 +150,7 @@ def get_user_facility(request):
             return True
         if not user or not getattr(user, 'is_authenticated', False):
             return True
-        if allow_cross_facility and is_admin:
+        if allow_cross_facility and has_cross_facility_admin_access:
             return True
         if primary_code and facility_code == primary_code:
             return True
@@ -442,12 +467,15 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
     4. ClinicalUnit assignment (primary team on encounter)
     5. ClinicalUnit assignment (consulting team on encounter)
     6. Break-glass events
+    7. Explicit personal patient list membership
     """
     from apps.users.models import PatientProfile
 
+    personal_list_access = Q(in_user_lists__user=user)
+
     practitioner = _get_practitioner_profile(user)
     if not practitioner:
-        return PatientProfile.objects.none()
+        return PatientProfile.objects.filter(personal_list_access).distinct()
 
     # Legacy admission access (admitting doctor or ward assignment)
     admission_access = Q(
@@ -492,8 +520,55 @@ def get_accessible_patients_for_clinician(user, scope='clinical'):
     )
 
     return PatientProfile.objects.filter(
-        admission_access | unit_access | encounter_access | break_glass_access
+        admission_access | unit_access | encounter_access | break_glass_access | personal_list_access
     ).distinct()
+
+
+def scope_patient_queryset_for_search_access(queryset, user, facility):
+    """
+    Restrict patient directory/search querysets to the caller's permitted patient set.
+
+    Facility and platform admins plus receptionists can search the active facility
+    directory. Clinical users are constrained to assigned/team-access patients.
+    Support roles are constrained to patients with records in their domain.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return queryset.none()
+
+    user_type = getattr(user, 'user_type', None)
+
+    if is_cross_facility_admin(user) or user_type in {'admin', 'receptionist'}:
+        return queryset
+
+    if user_type == 'patient':
+        return queryset.filter(user=user)
+
+    if user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
+        accessible_patients = get_accessible_patients_for_clinician(user)
+        return queryset.filter(pk__in=accessible_patients.values('pk'))
+
+    if user_type == 'lab_technician':
+        from apps.laboratory.models import LabOrder
+        return queryset.filter(Exists(LabOrder.objects.filter(
+            patient=OuterRef('pk'),
+            facility=facility,
+        )))
+
+    if user_type == 'pharmacist':
+        from apps.clinical_notes.models import Prescription
+        return queryset.filter(Exists(Prescription.objects.filter(
+            patient=OuterRef('pk'),
+            facility=facility,
+        )))
+
+    if user_type == 'billing':
+        from apps.billing.models import Invoice
+        return queryset.filter(Exists(Invoice.objects.filter(
+            patient=OuterRef('pk'),
+            facility=facility,
+        )))
+
+    return queryset.none()
 
 
 def scope_queryset_to_clinical_access(queryset, user, *, patient_lookup='patient', scope='clinical'):
@@ -516,7 +591,7 @@ def scope_queryset_to_clinical_access(queryset, user, *, patient_lookup='patient
     if user_type == 'patient':
         return queryset.filter(**{f'{patient_lookup}__user': user})
 
-    if user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
+    if user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
         if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             return queryset
         accessible_patients = get_accessible_patients_for_clinician(user, scope=scope)
@@ -543,7 +618,7 @@ def check_clinical_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
+    if user.user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
         if not getattr(settings, 'TEAM_ACCESS_STRICT', False):
             return True
 
@@ -576,7 +651,7 @@ def check_lab_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
+    if user.user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'lab_technician':
@@ -616,7 +691,7 @@ def check_prescription_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor']:
+    if user.user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
         return check_clinical_access(user, patient_profile)
 
     if user.user_type == 'pharmacist':
@@ -674,7 +749,7 @@ def check_demographics_access(user, patient_or_id):
             return True
         raise PermissionDenied("You can only access your own data.")
 
-    if user.user_type in ['doctor', 'nurse', 'head_nurse', 'nurse_practitioner', 'physician', 'practitioner', 'inpatient_doctor', 'receptionist']:
+    if user.user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES or user.user_type == 'receptionist':
         return True
 
     # Support staff can see demographics only if they have relevant records

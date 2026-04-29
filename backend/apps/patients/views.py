@@ -30,6 +30,7 @@ from apps.users.models import PatientProfile
 from apps.users.serializers import (
     PatientDemographicsSerializer,
     PatientDemographicsUpdateSerializer,
+    PatientDirectorySearchListSerializer,
     PatientProfileListSerializer,
     PatientProfileSerializer,
     PatientSearchListSerializer,
@@ -45,11 +46,14 @@ from apps.core.metrics import (
 from apps.core.pagination import StandardResultsSetPagination, PatientSearchPagination
 from apps.core.security import (
     ACTIVE_ADMISSION_STATUSES,
+    CLINICAL_PATIENT_ACCESS_USER_TYPES,
     FacilityScopedPermission,
     check_demographics_access,
     check_clinical_access,
     get_access_flags,
     get_user_facility,
+    is_cross_facility_admin,
+    scope_patient_queryset_for_search_access,
 )
 from apps.core.models import BreakGlassEvent
 from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSerializer
@@ -68,6 +72,13 @@ from .tasks import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _patient_search_serializer_class(user):
+    user_type = getattr(user, 'user_type', None)
+    if user_type == 'patient' or user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
+        return PatientSearchListSerializer
+    return PatientDirectorySearchListSerializer
 
 
 def _build_operational_active_encounter_q(start_of_day, end_of_day):
@@ -620,6 +631,17 @@ class PatientViewSet(viewsets.ViewSet):
             age_max_value is not None or my_patients or registry_scope != 'all'
         )
 
+        user_type = request.user.user_type
+        if (
+            not query
+            and not has_other_filters
+            and (user_type in {'admin', 'receptionist'} or is_cross_facility_admin(request.user))
+        ):
+            return Response(
+                {"error": "A query or filter is required for facility-wide patient directory search."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if include_fhir and (not query or has_other_filters):
             return Response(
                 {"error": "FHIR search requires a query and cannot be combined with filters."},
@@ -664,6 +686,8 @@ class PatientViewSet(viewsets.ViewSet):
             "my_patients": my_patients,
             "registry_scope": registry_scope,
             "user_id": str(request.user.id),
+            "access_policy": "patient-search-scoped-v2",
+            "result_shape": _patient_search_serializer_class(request.user).__name__,
         }
         cache_key = facility_cache_key(
             f"patient_search_{hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()}"
@@ -728,9 +752,6 @@ class PatientViewSet(viewsets.ViewSet):
             from apps.wards.models import Admission
             from apps.encounters.models import Encounter
             from apps.users.models import UserPatientList
-            from apps.laboratory.models import LabOrder
-            from apps.clinical_notes.models import Prescription
-            from apps.billing.models import Invoice
             from apps.core.security import ACTIVE_ADMISSION_STATUSES
             facility = get_user_facility(request)
             if not facility:
@@ -757,31 +778,11 @@ class PatientViewSet(viewsets.ViewSet):
                 )
             ).filter(facility=facility)
 
-            user_type = request.user.user_type
-            if user_type in ['admin', 'doctor', 'nurse', 'receptionist']:
-                pass
-            elif user_type == 'lab_technician':
-                lab_order_exists = LabOrder.objects.filter(
-                    patient=OuterRef('pk'),
-                    facility=facility
-                )
-                local_patients_qs = local_patients_qs.filter(Exists(lab_order_exists))
-            elif user_type == 'pharmacist':
-                prescription_exists = Prescription.objects.filter(
-                    patient=OuterRef('pk'),
-                    facility=facility
-                )
-                local_patients_qs = local_patients_qs.filter(Exists(prescription_exists))
-            elif user_type == 'billing':
-                invoice_exists = Invoice.objects.filter(
-                    patient=OuterRef('pk'),
-                    facility=facility
-                )
-                local_patients_qs = local_patients_qs.filter(Exists(invoice_exists))
-            elif user_type == 'patient':
-                local_patients_qs = local_patients_qs.filter(user=request.user)
-            else:
-                raise PermissionDenied("You do not have access to patient search.")
+            local_patients_qs = scope_patient_queryset_for_search_access(
+                local_patients_qs,
+                request.user,
+                facility,
+            )
 
             admission_start_date = parse_date(admission_start) if admission_start else None
             if admission_start and not admission_start_date:
@@ -1031,7 +1032,8 @@ class PatientViewSet(viewsets.ViewSet):
                 ):
                     page = paginator.paginate_queryset(local_patients_qs, request, view=self)
                     patients_list = page if page is not None else list(local_patients_qs)
-                    results = PatientSearchListSerializer(patients_list, many=True).data
+                    serializer_class = _patient_search_serializer_class(request.user)
+                    results = serializer_class(patients_list, many=True).data
 
             total_results = getattr(paginator, 'total_count', len(results))
             total_is_exact = getattr(paginator, 'total_is_exact', True)
