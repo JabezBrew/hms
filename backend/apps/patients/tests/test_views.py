@@ -1303,6 +1303,24 @@ class TestPatientViewSet:
         assert patient.user.first_name == 'Updated'
         assert patient.user.phone_number == '233200000001'
 
+    def test_receptionist_cannot_update_patient_email_via_demographics(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+        original_email = patient.user.email
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {'local_data': {'user': {'email': 'attacker-controlled@example.test'}}},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        patient.user.refresh_from_db()
+        assert patient.user.email == original_email
+        assert 'user' in response.data
+
     def test_billing_can_update_demographics_for_invoiced_patient(self, db):
         facility = DefaultFacilityFactory()
         billing = UserFactory(user_type='billing', primary_facility=facility)
