@@ -8,13 +8,7 @@ import os
 from django.core.management.base import BaseCommand, CommandError
 from apps.users.models import User
 from apps.core.models import Facility
-
-
-DEFAULT_ADMIN_PASSWORD_SENTINELS = {
-    'admin123!',
-    'change_me',
-    'change_me_generate_unique_staging_admin_password',
-}
+from apps.users.password_guards import validate_command_password
 
 
 class Command(BaseCommand):
@@ -48,14 +42,13 @@ class Command(BaseCommand):
         first_name = options['first_name']
         last_name = options['last_name']
 
+        superuser = User.objects.filter(is_superuser=True).order_by('date_joined').first()
 
-        if not password:
-            raise ValueError('ADMIN_PASSWORD (or --password) is required to create an admin user.')
-
-        normalized_password = password.strip().lower()
-        if normalized_password in DEFAULT_ADMIN_PASSWORD_SENTINELS:
-            raise ValueError(
-                'Refusing to use insecure default ADMIN_PASSWORD. Set a unique secret before running ensure_admin.'
+        if password:
+            validate_command_password(password, label='ADMIN_PASSWORD')
+        elif not superuser:
+            raise CommandError(
+                'ADMIN_EMAIL and ADMIN_PASSWORD (or --email/--password) are required when creating the initial superuser.'
             )
 
         default_facility = None
@@ -71,9 +64,7 @@ class Command(BaseCommand):
             if Facility.objects.count() == 1:
                 default_facility = Facility.objects.first()
 
-        # Check if any superuser exists
-        if User.objects.filter(is_superuser=True).exists():
-            superuser = User.objects.filter(is_superuser=True).first()
+        if superuser:
             self.stdout.write(
                 self.style.SUCCESS('Superuser already exists.')
             )
@@ -106,18 +97,6 @@ class Command(BaseCommand):
             raise CommandError(
                 'ADMIN_EMAIL is required when creating the initial admin user. '
                 'Set ADMIN_EMAIL or pass --email.'
-            )
-
-        if not password:
-            raise CommandError(
-                'ADMIN_PASSWORD is required when creating the initial admin user. '
-                'Set ADMIN_PASSWORD or pass --password.'
-            )
-
-        # Create admin user
-        if not email or not password:
-            raise CommandError(
-                'ADMIN_EMAIL and ADMIN_PASSWORD (or --email/--password) are required when creating the initial superuser.'
             )
 
         self.stdout.write('Creating initial admin user.')

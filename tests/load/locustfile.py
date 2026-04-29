@@ -9,10 +9,10 @@ Installation:
 
 Usage:
     # Web UI mode
-    locust -f tests/load/locustfile.py --host=http://localhost:8000
+    HMS_LOAD_TEST_PASSWORD='...' locust -f tests/load/locustfile.py --host=http://localhost:8000
 
     # Headless mode (CI/CD)
-    locust -f tests/load/locustfile.py --host=http://localhost:8000 \
+    HMS_LOAD_TEST_PASSWORD='...' locust -f tests/load/locustfile.py --host=http://localhost:8000 \
         --headless -u 1000 -r 50 -t 5m \
         --csv=results/load_test
 
@@ -30,12 +30,34 @@ Target metrics:
 """
 
 import json
+import os
 import random
 import uuid
 from datetime import datetime, timedelta
 
 from locust import HttpUser, TaskSet, task, between, events
 from locust.runners import MasterRunner
+
+
+DEFAULT_LOAD_TEST_EMAILS = {
+    "admin": "admin@hms.com",
+    "doctor": "doctor@hms.com",
+    "lab": "lab_tech@hms.com",
+    "nurse": "nurse@hms.com",
+    "reception": "receptionist@hms.com",
+}
+
+
+def load_test_credentials(role):
+    """Read load-test credentials from environment without committed defaults."""
+    env_role = role.upper()
+    email = os.environ.get(f"HMS_LOAD_{env_role}_EMAIL", DEFAULT_LOAD_TEST_EMAILS[role])
+    password = os.environ.get(f"HMS_LOAD_{env_role}_PASSWORD") or os.environ.get("HMS_LOAD_TEST_PASSWORD")
+    if not password:
+        raise RuntimeError(
+            f"Missing password for {role}. Set HMS_LOAD_{env_role}_PASSWORD or HMS_LOAD_TEST_PASSWORD."
+        )
+    return email, password
 
 
 # Test data generators
@@ -111,7 +133,7 @@ class NurseDashboardTasks(TaskSet, AuthMixin):
 
     def on_start(self):
         """Login as nurse user."""
-        self.login("nurse@hms.com", "Admin123!")
+        self.login(*load_test_credentials("nurse"))
         self.patient_ids = []
         self.ward_id = None
 
@@ -221,7 +243,7 @@ class PrescribingDoctorTasks(TaskSet, AuthMixin):
     
     def on_start(self):
         """Login as doctor user."""
-        self.login("doctor@hms.com", "Admin123!")
+        self.login(*load_test_credentials("doctor"))
         self.patient_ids = []
         self.lab_tests = []
         # Get list of patients first
@@ -390,7 +412,7 @@ class LabTechnicianTasks(TaskSet, AuthMixin):
     
     def on_start(self):
         # Use admin user who has permissions for lab ops in test env
-        self.login("lab_tech@hms.com", "Admin123!") 
+        self.login(*load_test_credentials("lab"))
         
     @task(5)
     def process_lab_orders(self):
@@ -518,7 +540,7 @@ class ReceptionistTasks(TaskSet, AuthMixin):
     """
     
     def on_start(self):
-        self.login("receptionist@hms.com", "Admin123!")
+        self.login(*load_test_credentials("reception"))
         self.patient_ids = []
         self.practitioner_ids = []
         self.appointment_type_ids = []
@@ -603,7 +625,7 @@ class AdmissionsClerkTasks(TaskSet, AuthMixin):
     """
     
     def on_start(self):
-        self.login("admin@hms.com", "Admin123!") # Use admin for now
+        self.login(*load_test_credentials("admin"))
         self.patient_ids = []
         self.ward_ids = []
         self.practitioner_ids = []
@@ -694,7 +716,7 @@ class DoctorDashboardTasks(TaskSet, AuthMixin):
 
     def on_start(self):
         """Login as doctor user."""
-        self.login("doctor@hms.com", "Admin123!")
+        self.login(*load_test_credentials("doctor"))
         self.patient_ids = []
 
     @task(8)
@@ -765,7 +787,7 @@ class WardManagementTasks(TaskSet, AuthMixin):
 
     def on_start(self):
         """Login as admin user."""
-        self.login("admin@hms.com", "Admin123!")
+        self.login(*load_test_credentials("admin"))
         self.ward_ids = []
 
     @task(5)
