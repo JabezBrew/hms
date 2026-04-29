@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """
-Script to create test users in production via API.
-Run: python scripts/seed_prod_test_users.py
+Script to create test users via API.
+Run: BASE_URL='https://your-backend/api' ADMIN_EMAIL='...' ADMIN_PASSWORD='...' python scripts/seed_prod_test_users.py
 """
+import os
 import requests
-import json
-from datetime import date
 
-# Staging API
-BASE_URL = 'https://staging.thehms.systems/api'
-
-# Admin credentials
-ADMIN_EMAIL = 'admin@hms.com'
-ADMIN_PASSWORD = 'Admin123!'
+BASE_URL = os.environ.get('BASE_URL')
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 
 # Test users to create
 TEST_USERS = [
@@ -116,6 +112,10 @@ def create_staff(token, staff_data):
 
 
 def main():
+    if not BASE_URL or not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        print('Missing required environment variables: BASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD')
+        return
+
     # Login
     token = login()
     if not token:
