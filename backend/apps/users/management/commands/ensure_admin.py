@@ -5,7 +5,7 @@ Creates an admin superuser if none exists, using environment variables
 for credentials. This is safe to run on every deployment.
 """
 import os
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from apps.users.models import User
 from apps.core.models import Facility
 
@@ -23,8 +23,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--email',
-            default=os.environ.get('ADMIN_EMAIL', 'admin@hms.com'),
-            help='Admin email (default: ADMIN_EMAIL env var or admin@hms.com)',
+            default=os.environ.get('ADMIN_EMAIL'),
+            help='Admin email (default: ADMIN_EMAIL env var)',
         )
         parser.add_argument(
             '--password',
@@ -102,7 +102,24 @@ class Command(BaseCommand):
                 superuser.facilities.add(default_facility)
             return
 
+        if not email:
+            raise CommandError(
+                'ADMIN_EMAIL is required when creating the initial admin user. '
+                'Set ADMIN_EMAIL or pass --email.'
+            )
+
+        if not password:
+            raise CommandError(
+                'ADMIN_PASSWORD is required when creating the initial admin user. '
+                'Set ADMIN_PASSWORD or pass --password.'
+            )
+
         # Create admin user
+        if not email or not password:
+            raise CommandError(
+                'ADMIN_EMAIL and ADMIN_PASSWORD (or --email/--password) are required when creating the initial superuser.'
+            )
+
         self.stdout.write('Creating initial admin user.')
 
         # Username is required by AbstractUser - use email prefix

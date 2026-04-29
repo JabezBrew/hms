@@ -238,6 +238,7 @@ export function AuthProvider({ children }) {
       staffId: response.user.staff_id || null,
       practitionerId: response.user.practitioner_id || null,
       facilityCode: response.user.facility_code || defaultFacilityCode,
+      adminAccess: response.user.admin_access || null,
       accessContext: response.access_context || null,
       passwordChangeRequired,
     }

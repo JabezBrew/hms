@@ -20,7 +20,6 @@ import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js'
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
-import Workflow from 'lucide-react/dist/esm/icons/workflow.js'
 import Warehouse from 'lucide-react/dist/esm/icons/warehouse.js'
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js'
 import FileBox from 'lucide-react/dist/esm/icons/file-box.js'
@@ -46,17 +45,16 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useAuth } from "@/lib/auth"
 import { useInboxCount } from "@/features/inbox/hooks"
 import { useSystemCapabilities } from '@/hooks/useSystemQueries'
-import { ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
+import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
+import { userCanAccess } from '@/shared/lib/access'
 import { useSidebarState } from "@/hooks/useSidebarState"
 
 // Helper function to check if a user has access to a menu item
-const hasAccess = (userRole, allowedRoles) => {
-  if (!userRole || !allowedRoles || allowedRoles.length === 0) return false
-  return allowedRoles.includes(userRole)
-}
+const hasAccess = (user, allowedRoles, allowedCapabilities) =>
+  userCanAccess(user, { roles: allowedRoles, capabilities: allowedCapabilities })
 
-const hasAnyAccess = (userRole, roleGroups) =>
-  roleGroups.some((roleGroup) => hasAccess(userRole, roleGroup))
+const hasAnyAccess = (user, accessRules) =>
+  accessRules.some(({ roles, capabilities }) => hasAccess(user, roles, capabilities))
 
 const DASHBOARD_ROLES = [
   ROLES.ADMIN,
@@ -172,38 +170,48 @@ export function AppSidebar() {
       inventory: ROLE_GROUPS.INVENTORY,
       noteTemplates: NOTE_TEMPLATE_ROLES,
       chartTemplates: CHART_TEMPLATE_ROLES,
-      staff: ROLE_GROUPS.ADMIN_ONLY,
-      organization: ROLE_GROUPS.ADMIN_ONLY,
-      dutyRoster: DUTY_ROSTER_ROLES,
-      auditLogs: ROLE_GROUPS.ADMIN_ONLY,
-      systemJobs: ROLE_GROUPS.ADMIN_ONLY,
+      staff: {
+        roles: ROLE_GROUPS.ADMIN_ONLY,
+        capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW],
+      },
+      organization: {
+        roles: ROLE_GROUPS.ADMIN_ONLY,
+        capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE],
+      },
+      dutyRoster: {
+        roles: DUTY_ROSTER_ROLES,
+        capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW],
+      },
+      auditLogs: {
+        roles: ROLE_GROUPS.ADMIN_ONLY,
+        capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW],
+      },
     },
   }
 
-  const showAppointments = hasFeature('appointments') && hasAnyAccess(userRole, [
-    menuItems.primary.schedule,
-    menuItems.primary.availability,
+  const showAppointments = hasFeature('appointments') && hasAnyAccess(user, [
+    { roles: menuItems.primary.schedule },
+    { roles: menuItems.primary.availability },
   ])
 
-  const showLaboratory = hasFeature('laboratory') && hasAnyAccess(userRole, [
-    menuItems.operations.labCatalog,
-    menuItems.operations.labWorklist,
-    menuItems.operations.labCollection,
-    menuItems.operations.labOrders,
-    menuItems.operations.labResults,
+  const showLaboratory = hasFeature('laboratory') && hasAnyAccess(user, [
+    { roles: menuItems.operations.labCatalog },
+    { roles: menuItems.operations.labWorklist },
+    { roles: menuItems.operations.labCollection },
+    { roles: menuItems.operations.labOrders },
+    { roles: menuItems.operations.labResults },
   ])
 
-  const showClinicalContent = hasFeature('clinical_notes') && hasAnyAccess(userRole, [
-    menuItems.operations.noteTemplates,
-    menuItems.operations.chartTemplates,
+  const showClinicalContent = hasFeature('clinical_notes') && hasAnyAccess(user, [
+    { roles: menuItems.operations.noteTemplates },
+    { roles: menuItems.operations.chartTemplates },
   ])
 
-  const showAdministration = hasAnyAccess(userRole, [
+  const showAdministration = hasAnyAccess(user, [
     menuItems.operations.staff,
     menuItems.operations.organization,
     menuItems.operations.dutyRoster,
     menuItems.operations.auditLogs,
-    menuItems.operations.systemJobs,
   ])
 
   return (
@@ -212,7 +220,7 @@ export function AppSidebar() {
         <SidebarGroupLabel>Menu</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {hasAccess(userRole, menuItems.primary.dashboard) && (
+            {hasAccess(user, menuItems.primary.dashboard) && (
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip="Dashboard"
@@ -225,7 +233,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.primary.inbox) && (
+            {hasAccess(user, menuItems.primary.inbox) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Inbox" href="/inbox">
                   <Inbox />
@@ -237,7 +245,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {hasAccess(userRole, menuItems.primary.patients) && (
+            {hasAccess(user, menuItems.primary.patients) && (
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip="Patient Registry"
@@ -262,7 +270,7 @@ export function AppSidebar() {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.primary.schedule) && (
+                      {hasAccess(user, menuItems.primary.schedule) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/appointments">
                             <Calendar className="h-4 w-4" />
@@ -270,7 +278,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.primary.availability) && (
+                      {hasAccess(user, menuItems.primary.availability) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/practitioner-availability">
                             <Clock className="h-4 w-4" />
@@ -293,7 +301,7 @@ export function AppSidebar() {
         <SidebarGroupLabel>Operations</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {hasFeature('wards') && hasAccess(userRole, menuItems.operations.wards) && (
+            {hasFeature('wards') && hasAccess(user, menuItems.operations.wards) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Wards" href="/wards">
                   <Activity />
@@ -302,7 +310,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {hasFeature('nursing_workflows') && hasAccess(userRole, menuItems.operations.shiftHandoff) && (
+            {hasFeature('nursing_workflows') && hasAccess(user, menuItems.operations.shiftHandoff) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Shift Handoff" href="/nursing/shift-handoff">
                   <ArrowLeftRight />
@@ -323,7 +331,7 @@ export function AppSidebar() {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.operations.labCatalog) && (
+                      {hasAccess(user, menuItems.operations.labCatalog) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/laboratory/catalog">
                             <FlaskConical className="h-4 w-4" />
@@ -331,7 +339,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.labWorklist) && (
+                      {hasAccess(user, menuItems.operations.labWorklist) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/laboratory/dashboard">
                             <ClipboardList className="h-4 w-4" />
@@ -339,7 +347,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.labCollection) && (
+                      {hasAccess(user, menuItems.operations.labCollection) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/laboratory/collection">
                             <Droplet className="h-4 w-4" />
@@ -347,7 +355,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.labOrders) && (
+                      {hasAccess(user, menuItems.operations.labOrders) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/laboratory/orders">
                             <TestTube2 className="h-4 w-4" />
@@ -355,7 +363,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.labResults) && (
+                      {hasAccess(user, menuItems.operations.labResults) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/laboratory/results">
                             <FileText className="h-4 w-4" />
@@ -369,7 +377,7 @@ export function AppSidebar() {
               </Collapsible>
             )}
 
-            {hasFeature('pharmacy') && hasAccess(userRole, menuItems.operations.pharmacy) && (
+            {hasFeature('pharmacy') && hasAccess(user, menuItems.operations.pharmacy) && (
               <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('pharmacy')}>
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
@@ -399,7 +407,7 @@ export function AppSidebar() {
               </Collapsible>
             )}
 
-            {hasFeature('billing') && hasAccess(userRole, menuItems.operations.billing) && (
+            {hasFeature('billing') && hasAccess(user, menuItems.operations.billing) && (
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Billing" href="/billing">
                   <CreditCard />
@@ -408,7 +416,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {hasFeature('inventory') && hasAccess(userRole, menuItems.operations.inventory) && (
+            {hasFeature('inventory') && hasAccess(user, menuItems.operations.inventory) && (
               <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('inventory')}>
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
@@ -495,7 +503,7 @@ export function AppSidebar() {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.operations.noteTemplates) && (
+                      {hasAccess(user, menuItems.operations.noteTemplates) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton
                             href="/clinical-notes/templates"
@@ -524,7 +532,7 @@ export function AppSidebar() {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.operations.staff) && (
+                      {hasAccess(user, menuItems.operations.staff.roles, menuItems.operations.staff.capabilities) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/staff">
                             <Shield className="h-4 w-4" />
@@ -532,7 +540,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.organization) && (
+                      {hasAccess(user, menuItems.operations.organization.roles, menuItems.operations.organization.capabilities) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/admin/organization">
                             <FolderTree className="h-4 w-4" />
@@ -540,7 +548,7 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasFeature('department_rosters') && hasAccess(userRole, menuItems.operations.dutyRoster) && (
+                      {hasFeature('department_rosters') && hasAccess(user, menuItems.operations.dutyRoster.roles, menuItems.operations.dutyRoster.capabilities) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/admin/organization/duty-roster">
                             <CalendarClock className="h-4 w-4" />
@@ -548,19 +556,11 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}
-                      {hasAccess(userRole, menuItems.operations.auditLogs) && (
+                      {hasAccess(user, menuItems.operations.auditLogs.roles, menuItems.operations.auditLogs.capabilities) && (
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton href="/admin/audit-logs">
                             <FileSearch className="h-4 w-4" />
                             <span>Audit Logs</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.systemJobs) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/admin/system-jobs">
-                            <Workflow className="h-4 w-4" />
-                            <span>Background Jobs</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )}

@@ -16,6 +16,17 @@ export const ROLES = Object.freeze({
   STORE_KEEPER: 'store_keeper',
 })
 
+export const ADMIN_CAPABILITIES = Object.freeze({
+  ORGANIZATION_VIEW: 'admin.organization.view',
+  ORGANIZATION_MANAGE: 'admin.organization.manage',
+  STAFF_VIEW: 'admin.staff.view',
+  STAFF_MANAGE: 'admin.staff.manage',
+  ROSTER_VIEW: 'admin.roster.view',
+  ROSTER_MANAGE: 'admin.roster.manage',
+  AUDIT_VIEW: 'admin.audit.view',
+  FEATURE_ENTITLEMENTS_MANAGE: 'admin.feature_entitlements.manage',
+})
+
 export const combineRoles = (...groups) =>
   Array.from(new Set(groups.flat().filter(Boolean)))
 

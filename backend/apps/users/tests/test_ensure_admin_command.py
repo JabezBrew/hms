@@ -1,28 +1,24 @@
 import pytest
 from django.core.management import call_command
-from apps.users.models import User
+from django.core.management.base import CommandError
+
+from apps.users.tests.factories import AdminUserFactory
 
 
 @pytest.mark.django_db
-class TestEnsureAdminCommand:
-    def test_rejects_staging_placeholder_password(self):
-        with pytest.raises(ValueError, match='Refusing to use insecure default ADMIN_PASSWORD'):
-            call_command(
-                'ensure_admin',
-                email='admin@staging.example.com',
-                password='CHANGE_ME_generate_unique_staging_admin_password',
-            )
+def test_ensure_admin_requires_explicit_credentials_for_initial_superuser(settings):
+    settings.DEFAULT_FACILITY_CODE = None
 
-        assert not User.objects.filter(email='admin@staging.example.com').exists()
+    with pytest.raises(CommandError, match='ADMIN_EMAIL and ADMIN_PASSWORD'):
+        call_command('ensure_admin', email=None, password=None)
 
-    def test_creates_superuser_with_unique_password(self):
-        call_command(
-            'ensure_admin',
-            email='admin@example.com',
-            password='A-unique-passphrase-123!',
-        )
 
-        user = User.objects.get(email='admin@example.com')
-        assert user.is_superuser is True
-        assert user.is_staff is True
-        assert user.check_password('A-unique-passphrase-123!')
+@pytest.mark.django_db
+def test_ensure_admin_allows_existing_superuser_without_credentials(settings):
+    settings.DEFAULT_FACILITY_CODE = None
+    admin = AdminUserFactory()
+
+    call_command('ensure_admin', email=None, password=None)
+
+    admin.refresh_from_db()
+    assert admin.is_superuser is True

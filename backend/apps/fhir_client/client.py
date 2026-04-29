@@ -59,7 +59,7 @@ class FHIRClient:
                 except Exception as e:
                     logger.warning(f"Failed to load credentials from file: {str(e)}")
 
-            # Option 2: It's JSON content (common in Railway/Heroku)
+            # Option 2: It's JSON content from an environment variable
             elif creds_value.strip().startswith('{'):
                 try:
                     creds_info = json.loads(creds_value)

@@ -340,10 +340,7 @@ class Command(BaseCommand):
                 "Refusing to run with DEBUG=False without --confirm-staging."
             )
 
-        env_hint = (
-            str(getattr(settings, "RAILWAY_ENVIRONMENT", "") or "")
-            or str(getattr(settings, "ENVIRONMENT", "") or "")
-        ).strip().lower()
+        env_hint = str(getattr(settings, "ENVIRONMENT", "") or "").strip().lower()
         if "prod" in env_hint and not options["allow_production"]:
             raise CommandError(
                 "Environment appears production. Use --allow-production to run explicitly."

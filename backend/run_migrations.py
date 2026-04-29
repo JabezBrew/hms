@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Dedicated migration runner for Railway pre-deploy jobs.
+Dedicated migration runner for container deploy jobs.
 Runs strict preflight checks, migrations, and ensure_admin with advisory locking.
 """
 import os
@@ -132,11 +132,11 @@ def get_pending_migrations(db_connection):
 
 
 def main():
-    service_name = os.environ.get("RAILWAY_SERVICE_NAME")
+    service_name = os.environ.get("PROCESS_ROLE")
     if should_skip_for_service(service_name):
         log(
-            f"Skipping migrations for service '{service_name}'. "
-            "Migrations should run from the backend web deployment only."
+            f"Skipping migrations for process role '{service_name}'. "
+            "Migrations should run from the dedicated migrator or API container only."
         )
         return 0
 
