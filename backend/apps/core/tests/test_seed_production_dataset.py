@@ -112,6 +112,21 @@ def test_seed_facility_uses_employee_id_allocator(tmp_path, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_seeded_staff_accounts_are_non_login_and_require_password_reset(tmp_path):
+    _, _, _, ctx = _seed_facility(tmp_path, "TSPD6")
+
+    staff_user = User.objects.filter(
+        primary_facility=ctx.facility,
+        email__startswith="seed.staff.",
+    ).order_by("id").first()
+
+    assert staff_user is not None
+    assert staff_user.is_active is False
+    assert staff_user.must_change_password is True
+    assert staff_user.has_usable_password() is False
+
+
+@pytest.mark.django_db
 def test_seed_patient_batch_uses_mrn_allocator(tmp_path, monkeypatch):
     command, manifest, seed_user, ctx = _seed_facility(tmp_path, "TSPD3")
 
