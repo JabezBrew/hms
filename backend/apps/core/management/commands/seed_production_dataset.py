@@ -1191,10 +1191,13 @@ class Command(BaseCommand):
                         "user_type": user_type,
                         "gender": gender,
                         "primary_facility": facility,
-                        "password": make_password("HmsStaff!2026"),
-                        "is_active": True,
+                        "is_active": False,
+                        "must_change_password": True,
                     }
                 )
+                if user.has_usable_password():
+                    user.set_unusable_password()
+                    user.save(update_fields=["password"])
                 user.facilities.add(facility)
                 if created:
                     manifest.add("User", user.pk)
