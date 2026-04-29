@@ -21,25 +21,17 @@ This will automatically start:
 
 Press `Ctrl+C` to stop all services at once.
 
-### Railway Deployment Pattern
+### Container Deployment Pattern
 
-For production Railway deployments, split migration and web startup:
+For container deployments, split migration and web startup:
 
 1. **Dedicated migrator path**: use `python /app/run_migrations.py` as the only schema-mutating command.
 2. **Web service**: run `python /app/startup_and_run.py`.
-3. **Worker/beat services**: use explicit Celery start commands, but keep the same pre-deploy migration command so isolated service deploys stay schema-safe.
+3. **Worker/beat services**: use `PROCESS_ROLE=worker` and `PROCESS_ROLE=beat`.
 4. **Startup flow**: the web process performs dependency checks and fails fast if pending migrations remain, but it does not mutate schema.
 5. **Replica safety**: `run_migrations.py` holds a PostgreSQL advisory lock, so duplicate pre-deploy runs collapse safely to a single migration owner.
 
-Recommended Railway service config files:
-
-- Web API: `/backend/railway.toml`
-- Celery worker: `/backend/railway.worker.toml`
-- Celery beat: `/backend/railway.beat.toml`
-
-Railway config-as-code is service-scoped. In practice, that means each Railway service should point at its own config file path in the dashboard. The web, worker, and beat services can all safely use the same `preDeployCommand` because the migration runner is lock-protected and exits cleanly when the schema is already current.
-
-Recommended Railway environment variables:
+Recommended container environment variables:
 
 ```bash
 MIGRATE_ON_STARTUP=False

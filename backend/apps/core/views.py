@@ -265,20 +265,6 @@ def metrics_view(_request):
     return response
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated, IsAdminUser])
-def celery_operability(request):
-    facility = get_user_facility(request)
-    snapshot = _dependency_snapshot()
-    operability = _collect_celery_operability()
-    return Response({
-        'service': 'hms-backend',
-        'facility_scope': getattr(facility, 'code', None),
-        'health': snapshot['dependencies'],
-        'celery': operability,
-    })
-
-
 class FacilityScopedViewSet(FacilityScopedQuerysetMixin, FacilityScopedCreateMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
