@@ -368,18 +368,10 @@ class PatientDemographicsUpdateSerializer(serializers.ModelSerializer):
     def validate_user(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Expected an object.")
-        allowed = {'first_name', 'last_name', 'email', 'phone_number', 'date_of_birth'}
+        allowed = {'first_name', 'last_name', 'phone_number', 'date_of_birth'}
         unknown = set(value) - allowed
         if unknown:
             raise serializers.ValidationError(f"Unsupported user field(s): {', '.join(sorted(unknown))}.")
-        email = value.get('email')
-        if email:
-            current_user = self.instance.user if self.instance else None
-            qs = User.objects.filter(email=str(email).lower())
-            if current_user:
-                qs = qs.exclude(id=current_user.id)
-            if qs.exists():
-                raise serializers.ValidationError({"email": "This email is already in use."})
         return value
 
     def update(self, instance, validated_data):
@@ -393,11 +385,9 @@ class PatientDemographicsUpdateSerializer(serializers.ModelSerializer):
         if user_data and instance.user:
             user = instance.user
             user_update_fields = []
-            for field in ['first_name', 'last_name', 'email', 'phone_number', 'date_of_birth']:
+            for field in ['first_name', 'last_name', 'phone_number', 'date_of_birth']:
                 if field in user_data:
                     value = user_data[field]
-                    if field == 'email' and value:
-                        value = str(value).lower()
                     if field == 'date_of_birth' and isinstance(value, str):
                         value = parse_date(value)
                     setattr(user, field, value)
