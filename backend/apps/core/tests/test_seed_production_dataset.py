@@ -149,6 +149,9 @@ def test_seed_patient_batch_uses_mrn_allocator(tmp_path, monkeypatch):
         user__email=command._patient_seed_email(ctx.facility.code, 1)
     )
     assert patient.medical_record_number == "MRN-CUSTOM-0001"
+    assert patient.user.is_active is False
+    assert patient.user.must_change_password is True
+    assert patient.user.has_usable_password() is False
 
 
 @pytest.mark.django_db
