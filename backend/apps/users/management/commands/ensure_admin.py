@@ -10,6 +10,13 @@ from apps.users.models import User
 from apps.core.models import Facility
 
 
+DEFAULT_ADMIN_PASSWORD_SENTINELS = {
+    'admin123!',
+    'change_me',
+    'change_me_generate_unique_staging_admin_password',
+}
+
+
 class Command(BaseCommand):
     help = 'Ensure an admin superuser exists (creates one if needed)'
 
@@ -22,7 +29,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--password',
             default=os.environ.get('ADMIN_PASSWORD'),
-            help='Admin password (default: ADMIN_PASSWORD env var)',
+            help='Admin password (required: ADMIN_PASSWORD env var or --password)',
         )
         parser.add_argument(
             '--first-name',
@@ -40,6 +47,16 @@ class Command(BaseCommand):
         password = options['password']
         first_name = options['first_name']
         last_name = options['last_name']
+
+
+        if not password:
+            raise ValueError('ADMIN_PASSWORD (or --password) is required to create an admin user.')
+
+        normalized_password = password.strip().lower()
+        if normalized_password in DEFAULT_ADMIN_PASSWORD_SENTINELS:
+            raise ValueError(
+                'Refusing to use insecure default ADMIN_PASSWORD. Set a unique secret before running ensure_admin.'
+            )
 
         default_facility = None
         try:
