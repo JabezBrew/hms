@@ -1,4 +1,3 @@
-import Search from 'lucide-react/dist/esm/icons/search.js';
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
@@ -9,13 +8,20 @@ import { useEffect, useMemo, useState } from "react";
 import format from 'date-fns/format';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import {
+  LabEmptyState,
+  LabMetricGrid,
+  LabSearchField,
+  LabTableSkeleton,
+  LabToolbar,
+  labTableClassName,
+  labTableHeaderClassName,
+} from '@/features/laboratory/components';
 import {
   Select,
   SelectContent,
@@ -23,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { StatCard } from "@/components/dashboard";
 import { LabOrderDetailSlideOver } from "@/components/laboratory";
 
 import { useAuth } from "@/lib/auth";
@@ -149,6 +154,13 @@ export default function LabOrdersPage() {
       critical: critical.length,
     };
   }, [orders, totalCount]);
+
+  const metrics = useMemo(() => ([
+    { title: "Total Orders", label: "Total Orders", value: stats.total, icon: TestTube2, color: "sky" },
+    { title: "Visible", label: "Visible", value: stats.visible, icon: UserRound, color: "sky" },
+    { title: "Pending Page", label: "Pending Page", value: stats.pending, icon: Clock, color: "amber" },
+    { title: "Completed Page", label: "Completed Page", value: stats.completed, icon: CheckCircle2, color: "emerald" },
+  ]), [stats]);
 
   // Event handlers
   const handleClearFilters = () => {
@@ -350,56 +362,22 @@ export default function LabOrdersPage() {
           </Button>
         )}
       >
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6">
-          <StatCard
-            title="Total Orders"
-            value={stats.total}
-            icon={TestTube2}
-            color="sky"
-          />
-          <StatCard
-            title="Visible"
-            value={stats.visible}
-            icon={UserRound}
-            color="sky"
-          />
-          <StatCard
-            title="Pending Page"
-            value={stats.pending}
-            icon={Clock}
-            color="amber"
-          />
-          <StatCard
-            title="Completed Page"
-            value={stats.completed}
-            icon={CheckCircle2}
-            color="emerald"
-          />
-        </div>
+        <LabMetricGrid metrics={metrics} className="mt-4 sm:mt-6" />
       </PageHeader>
 
-      {/* Filter Bar */}
-      <div className="bg-card/50 border-b border-border px-4 sm:px-6 py-3">
+      <LabToolbar>
         <div className="flex flex-col gap-3">
-          {/* Search row */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search by order number, patient name, or MRN..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 font-mono text-sm"
-            />
-          </div>
+          <LabSearchField
+            id="lab-orders-search"
+            placeholder="Search by order number, patient name, or MRN..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
 
-          {/* Filters row */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* Ordering Doctor filter (for lab staff/admins only) */}
             {isLabStaff && (
               <Select value={selectedDoctorFilter} onValueChange={setSelectedDoctorFilter}>
-                <SelectTrigger className="w-[180px] sm:w-[200px] text-sm">
+                <SelectTrigger className="w-full font-mono text-sm sm:w-[200px]">
                   <div className="flex items-center gap-2">
                     <UserRound className="h-4 w-4 text-muted-foreground" />
                     <SelectValue placeholder="Ordering Doctor" />
@@ -416,9 +394,8 @@ export default function LabOrdersPage() {
               </Select>
             )}
 
-            {/* Status filter */}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px] sm:w-[160px] text-sm">
+              <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -430,9 +407,8 @@ export default function LabOrdersPage() {
               </SelectContent>
             </Select>
 
-            {/* Priority filter */}
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-[140px] sm:w-[160px] text-sm">
+              <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
                 <SelectValue placeholder="Priority" />
               </SelectTrigger>
               <SelectContent>
@@ -444,13 +420,12 @@ export default function LabOrdersPage() {
               </SelectContent>
             </Select>
 
-            {/* Clear filters */}
             {hasActiveFilters && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleClearFilters}
-                className="text-muted-foreground"
+                className="font-mono text-xs text-muted-foreground"
               >
                 <X className="h-4 w-4 mr-1" />
                 Clear
@@ -458,42 +433,34 @@ export default function LabOrdersPage() {
             )}
           </div>
         </div>
-      </div>
+      </LabToolbar>
 
       {/* Content */}
       <main className="p-4 sm:p-6">
         {isLoading ? (
-          <div className="space-y-3 rounded-xl border border-border/60 bg-card/40 p-4">
-            <Skeleton className="h-10 w-full rounded-lg" />
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full rounded-lg" />
-            ))}
-          </div>
+          <LabTableSkeleton rows={6} />
         ) : orders.length === 0 ? (
-          // Empty state
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <TestTube2 className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <h3 className="font-display text-lg text-foreground mb-2">
-              No orders found
-            </h3>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              {hasActiveFilters
+          <LabEmptyState
+            icon={TestTube2}
+            title="No orders found"
+            description={
+              hasActiveFilters
                 ? "Try adjusting your filters to see more orders."
                 : isDoctor
-                ? "You haven't placed any lab orders yet."
-                : "No lab orders have been placed yet."}
-            </p>
-            {hasActiveFilters && (
+                  ? "You haven't placed any lab orders yet."
+                  : "No lab orders have been placed yet."
+            }
+            action={hasActiveFilters ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleClearFilters}
-                className="mt-4"
+                className="font-mono text-xs"
               >
                 Clear Filters
               </Button>
-            )}
-          </div>
+            ) : null}
+          />
         ) : (
           <div className="overflow-x-auto">
             <VirtualizedTable
@@ -503,8 +470,8 @@ export default function LabOrdersPage() {
               columns={orderColumns}
               onRowClick={(order) => handleOrderClick(order)}
               rowClassName="hover:bg-muted/30"
-              className="min-w-[1180px]"
-              headerClassName="bg-muted/50 border-b border-border"
+              className={cn(labTableClassName, "min-w-[1180px]")}
+              headerClassName={labTableHeaderClassName}
             />
           </div>
         )}
