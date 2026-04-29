@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ADMIN_CAPABILITIES, ROLE_GROUPS } from '@/shared/constants/roles'
 
 const SettingsHubPage = lazy(() => import('./pages/SettingsHubPage'))
@@ -16,6 +16,7 @@ export const settingsRoutes = [
     component: SettingsHubPage,
     roles: null,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.SETTINGS,
     title: 'Settings | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB],
   },
@@ -24,6 +25,7 @@ export const settingsRoutes = [
     component: ProfileSettingsPage,
     roles: null,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.SETTINGS,
     title: 'Profile Settings | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Profile', path: '/settings/profile' }],
   },
@@ -32,6 +34,7 @@ export const settingsRoutes = [
     component: SecuritySettingsPage,
     roles: null,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.SETTINGS,
     title: 'Security Settings | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Security', path: '/settings/security' }],
   },
@@ -40,6 +43,7 @@ export const settingsRoutes = [
     component: PreferencesSettingsPage,
     roles: null,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.SETTINGS,
     title: 'Preferences | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Preferences', path: '/settings/preferences' }],
   },
@@ -49,6 +53,7 @@ export const settingsRoutes = [
     roles: ROLE_GROUPS.ADMIN_ONLY,
     capabilities: [ADMIN_CAPABILITIES.FEATURE_ENTITLEMENTS_MANAGE],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.SETTINGS,
     title: 'Feature Entitlements | Hospital Management System',
     breadcrumbs: [SETTINGS_BREADCRUMB, { label: 'Feature Entitlements', path: '/settings/feature-entitlements' }],
   },

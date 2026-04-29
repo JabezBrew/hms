@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS } from '@/shared/constants/roles'
 
 const BillingDashboardPage = lazy(() => import('./pages/BillingDashboardPage'))
@@ -24,6 +24,7 @@ export const billingRoutes = [
     component: BillingDashboardPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Billing Dashboard | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB],
   },
@@ -32,6 +33,7 @@ export const billingRoutes = [
     component: InvoicesPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Invoices | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Invoices', path: '/billing/invoices' }],
   },
@@ -40,6 +42,7 @@ export const billingRoutes = [
     component: InvoiceCreatePage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'New Invoice | Hospital Management System',
     breadcrumbs: [
       BILLING_BREADCRUMB,
@@ -52,6 +55,7 @@ export const billingRoutes = [
     component: InvoiceDetailPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Invoice Details | Hospital Management System',
     breadcrumbs: [
       BILLING_BREADCRUMB,
@@ -64,6 +68,7 @@ export const billingRoutes = [
     component: PaymentsPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Payments | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Payments', path: '/billing/payments' }],
   },
@@ -72,6 +77,7 @@ export const billingRoutes = [
     component: ServiceCatalogPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Service Catalog | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Catalog', path: '/billing/catalog' }],
   },
@@ -80,6 +86,7 @@ export const billingRoutes = [
     component: PspReconciliationPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'PSP Collections | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'PSP', path: '/billing/psp' }],
   },
@@ -88,6 +95,7 @@ export const billingRoutes = [
     component: CashSessionsPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Cash Sessions | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Cash Sessions', path: '/billing/cash-sessions' }],
   },
@@ -96,6 +104,7 @@ export const billingRoutes = [
     component: ClaimsPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Claims | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Claims', path: '/billing/claims' }],
   },
@@ -104,6 +113,7 @@ export const billingRoutes = [
     component: NhisClaimsArPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'NHIS Claims + AR | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'NHIS', path: '/billing/nhis' }],
   },
@@ -112,6 +122,7 @@ export const billingRoutes = [
     component: NhisServiceMappingsPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'NHIS Service Mappings | Hospital Management System',
     breadcrumbs: [
       BILLING_BREADCRUMB,
@@ -124,6 +135,7 @@ export const billingRoutes = [
     component: InsuranceManagementPage,
     roles: ROLE_GROUPS.BILLING,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Insurance Management | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Insurance', path: '/billing/insurance' }],
   },
@@ -133,6 +145,7 @@ export const billingRoutes = [
     roles: ROLE_GROUPS.BILLING,
     features: ['discharge_workflows'],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.BILLING,
     title: 'Billing Discharges | Hospital Management System',
     breadcrumbs: [BILLING_BREADCRUMB, { label: 'Discharges', path: '/billing/discharges' }],
   },

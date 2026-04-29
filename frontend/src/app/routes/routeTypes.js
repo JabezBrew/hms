@@ -3,6 +3,18 @@ export const ROUTE_LAYOUTS = Object.freeze({
   BARE: 'bare',
 })
 
+export const SIDEBARS = Object.freeze({
+  GLOBAL: 'global',
+  PATIENTS: 'patients',
+  PATIENT_WORKSPACE: 'patient-workspace',
+  BILLING: 'billing',
+  INVENTORY: 'inventory',
+  LABORATORY: 'laboratory',
+  PHARMACY: 'pharmacy',
+  ADMIN: 'admin',
+  SETTINGS: 'settings',
+})
+
 const TIER_CONTROLLED_ROUTE_PREFIXES = [
   ['/appointments', 'appointments'],
   ['/practitioner-availability', 'appointments'],
@@ -44,6 +56,9 @@ export function validateRoutes(routes, { source = 'routes' } = {}) {
     }
     if (route.capabilities !== undefined && !Array.isArray(route.capabilities)) {
       throw new Error(`[${source}] Route ${route.path} capabilities must be an array`)
+    }
+    if (route.sidebar !== undefined && !Object.values(SIDEBARS).includes(route.sidebar)) {
+      throw new Error(`[${source}] Route ${route.path} has invalid sidebar`)
     }
     const controlled = TIER_CONTROLLED_ROUTE_PREFIXES.find(([prefix]) => (
       route.path === prefix || route.path.startsWith(`${prefix}/`)

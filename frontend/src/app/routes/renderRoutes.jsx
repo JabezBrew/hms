@@ -5,9 +5,11 @@ import { Layout } from '@/components/layout/layout'
 import { PageMeta } from '@/shared/hooks/usePageMeta'
 import { ROUTE_LAYOUTS } from './routeTypes'
 
-function wrapWithLayout(layout, content) {
+function wrapWithLayout(route, content) {
+  const { layout, sidebar } = route
+
   if (layout === ROUTE_LAYOUTS.APP) {
-    return <Layout>{content}</Layout>
+    return <Layout sidebar={sidebar}>{content}</Layout>
   }
   return content
 }
@@ -24,7 +26,7 @@ export function renderRoutes(routes) {
       </>
     )
 
-    const withLayout = wrapWithLayout(route.layout, withMeta)
+    const withLayout = wrapWithLayout(route, withMeta)
 
     return (
       <Route

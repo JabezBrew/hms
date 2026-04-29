@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ADMIN_CAPABILITIES, ROLE_GROUPS } from '@/shared/constants/roles'
 
 const StaffListPage = lazy(() => import('./pages/StaffListPage'))
@@ -15,6 +15,7 @@ export const staffRoutes = [
     roles: ROLE_GROUPS.ADMIN_ONLY,
     capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.ADMIN,
     title: 'Staff Directory | Hospital Management System',
     breadcrumbs: [STAFF_BREADCRUMB],
   },
@@ -24,6 +25,7 @@ export const staffRoutes = [
     roles: ROLE_GROUPS.ADMIN_ONLY,
     capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.ADMIN,
     title: 'Add Staff | Hospital Management System',
     breadcrumbs: [STAFF_BREADCRUMB, { label: 'New Staff', path: '/staff/create' }],
   },
@@ -33,6 +35,7 @@ export const staffRoutes = [
     roles: ROLE_GROUPS.ADMIN_ONLY,
     capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.ADMIN,
     title: 'Staff Profile | Hospital Management System',
     breadcrumbs: [STAFF_BREADCRUMB, { label: 'Staff Profile', path: '/staff/:id' }],
   },

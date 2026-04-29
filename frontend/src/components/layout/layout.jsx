@@ -17,7 +17,7 @@ function getSidebarDefaultOpen() {
   return true
 }
 
-export function Layout({ children }) {
+export function Layout({ children, sidebar }) {
   return (
     <SidebarProvider defaultOpen={getSidebarDefaultOpen()}>
       <div className="relative min-h-screen bg-background w-full">
@@ -31,7 +31,7 @@ export function Layout({ children }) {
         <OmniBar />
         <div className="flex pt-14 w-full">
           <Sidebar>
-            <AppSidebar />
+            <AppSidebar sidebar={sidebar} />
           </Sidebar>
           <SidebarInset className="p-4 flex-1 min-w-0 flex flex-col">
             <main id="main-content" className="w-full flex-1">
