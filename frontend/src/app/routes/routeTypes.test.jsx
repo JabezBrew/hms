@@ -27,4 +27,16 @@ describe('featureRoutes', () => {
       },
     ])).toThrow(/must declare feature laboratory/)
   })
+
+  it('validates capabilities metadata when present', () => {
+    expect(() => validateRoutes([
+      {
+        path: '/admin/example',
+        component: () => null,
+        roles: [],
+        capabilities: 'admin.roster.manage',
+        layout: ROUTE_LAYOUTS.APP,
+      },
+    ])).toThrow(/capabilities must be an array/)
+  })
 })

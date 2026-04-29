@@ -26,8 +26,16 @@ from rest_framework.response import Response
 
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import FacilityScopedPermission, get_user_facility
-from apps.users.rbac import IsAdmin
 from apps.users.permissions import IsAdminOrReadOnly
+from apps.users.admin_access import (
+    AdminCapabilities,
+    CanManageOrganization,
+    CanManageRosters,
+    CanManageStaff,
+    CanViewOrganization,
+    get_admin_accessible_unit_ids,
+    user_has_unit_admin_capability,
+)
 from apps.audit.services import AuditService
 from apps.audit.models import AuditAction, AuditCategory
 
@@ -210,6 +218,31 @@ def _use_shared_cache():
     return backend != 'django.core.cache.backends.locmem.LocMemCache'
 
 
+def _is_write_request(request):
+    return request.method not in ('GET', 'HEAD', 'OPTIONS')
+
+
+def _filter_admin_unit_scope(request, queryset, unit_id_field, capability, facility):
+    unit_ids = get_admin_accessible_unit_ids(
+        request.user,
+        capability,
+        facility_code=facility.code,
+    )
+    if unit_ids is None:
+        return queryset
+    return queryset.filter(**{f'{unit_id_field}__in': unit_ids})
+
+
+def _require_admin_unit_scope(request, capability, unit, facility, message):
+    if unit and not user_has_unit_admin_capability(
+        request.user,
+        capability,
+        unit,
+        facility_code=facility.code,
+    ):
+        raise PermissionDenied(message)
+
+
 def _etag_matches(if_none_match, etag):
     if not if_none_match:
         return False
@@ -349,7 +382,9 @@ class ClinicalUnitViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'tree':
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanViewOrganization(), FacilityScopedPermission()]
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), CanManageOrganization(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -805,7 +840,7 @@ class ClinicViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageOrganization(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -887,7 +922,7 @@ class ClinicScheduleViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageRosters(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -907,6 +942,14 @@ class ClinicScheduleViewSet(viewsets.ModelViewSet):
             'clinic__department',
         )
         queryset = queryset.filter(facility=facility)
+        if _is_write_request(self.request):
+            queryset = _filter_admin_unit_scope(
+                self.request,
+                queryset,
+                'department_id',
+                AdminCapabilities.ROSTER_MANAGE,
+                facility,
+            )
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
         return queryset
@@ -921,6 +964,13 @@ class ClinicScheduleViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Department does not belong to the active facility.")
         if clinic and clinic.facility_id != facility.id:
             raise PermissionDenied("Clinic does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility,
+            "You do not have roster administration access for this department.",
+        )
         instance = serializer.save(
             facility=facility,
             created_by=self.request.user,
@@ -946,6 +996,13 @@ class ClinicScheduleViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Department does not belong to the active facility.")
         if clinic and clinic.facility_id != facility.id:
             raise PermissionDenied("Clinic does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility,
+            "You do not have roster administration access for this department.",
+        )
         instance = serializer.save(updated_by=self.request.user)
         AuditService.log(
             request=self.request,
@@ -985,7 +1042,7 @@ class UnitLeadershipViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageOrganization(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -1040,7 +1097,7 @@ class UnitMemberAssignmentViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageStaff(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -1060,6 +1117,14 @@ class UnitMemberAssignmentViewSet(viewsets.ModelViewSet):
             'assignment_type'
         )
         queryset = queryset.filter(unit__root_unit__code=facility.code)
+        if _is_write_request(self.request):
+            queryset = _filter_admin_unit_scope(
+                self.request,
+                queryset,
+                'unit_id',
+                AdminCapabilities.STAFF_MANAGE,
+                facility,
+            )
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
         if self.request.query_params.get('current') == 'true':
@@ -1080,7 +1145,43 @@ class UnitMemberAssignmentViewSet(viewsets.ModelViewSet):
         unit = serializer.validated_data.get('unit')
         if unit and unit.root_unit and unit.root_unit.code != facility.code:
             raise PermissionDenied("Unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.STAFF_MANAGE,
+            unit,
+            facility,
+            "You do not have staff administration access for this unit.",
+        )
         serializer.save()
+
+    def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit') or serializer.instance.unit
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.STAFF_MANAGE,
+            unit,
+            facility,
+            "You do not have staff administration access for this unit.",
+        )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.STAFF_MANAGE,
+            instance.unit,
+            facility,
+            "You do not have staff administration access for this unit.",
+        )
+        instance.delete()
 
 
 # =============================================================================
@@ -1097,7 +1198,7 @@ class CrossCoverageScheduleViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageRosters(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -1119,6 +1220,14 @@ class CrossCoverageScheduleViewSet(viewsets.ModelViewSet):
             'covering_practitioner__staff__user'
         )
         queryset = queryset.filter(covered_unit__root_unit__code=facility.code)
+        if _is_write_request(self.request):
+            queryset = _filter_admin_unit_scope(
+                self.request,
+                queryset,
+                'covered_unit_id',
+                AdminCapabilities.ROSTER_MANAGE,
+                facility,
+            )
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
         if self.request.query_params.get('current') == 'true':
@@ -1136,7 +1245,46 @@ class CrossCoverageScheduleViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Covered unit does not belong to the active facility.")
         if covering_unit and covering_unit.root_unit and covering_unit.root_unit.code != facility.code:
             raise PermissionDenied("Covering unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            covered_unit,
+            facility,
+            "You do not have roster administration access for this unit.",
+        )
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        covered_unit = serializer.validated_data.get('covered_unit') or serializer.instance.covered_unit
+        covering_unit = serializer.validated_data.get('covering_unit') or serializer.instance.covering_unit
+        if covered_unit and covered_unit.root_unit and covered_unit.root_unit.code != facility.code:
+            raise PermissionDenied("Covered unit does not belong to the active facility.")
+        if covering_unit and covering_unit.root_unit and covering_unit.root_unit.code != facility.code:
+            raise PermissionDenied("Covering unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            covered_unit,
+            facility,
+            "You do not have roster administration access for this unit.",
+        )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            instance.covered_unit,
+            facility,
+            "You do not have roster administration access for this unit.",
+        )
+        instance.delete()
 
 
 # =============================================================================
@@ -1153,7 +1301,7 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageRosters(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -1171,6 +1319,14 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
             'ward'
         )
         queryset = queryset.filter(unit__root_unit__code=facility.code)
+        if _is_write_request(self.request):
+            queryset = _filter_admin_unit_scope(
+                self.request,
+                queryset,
+                'unit_id',
+                AdminCapabilities.ROSTER_MANAGE,
+                facility,
+            )
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
         return queryset.order_by('-created_at')
@@ -1182,7 +1338,43 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
         unit = serializer.validated_data.get('unit')
         if unit and unit.root_unit and unit.root_unit.code != facility.code:
             raise PermissionDenied("Unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            unit,
+            facility,
+            "You do not have roster administration access for this unit.",
+        )
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit') or serializer.instance.unit
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            unit,
+            facility,
+            "You do not have roster administration access for this unit.",
+        )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            instance.unit,
+            facility,
+            "You do not have roster administration access for this unit.",
+        )
+        instance.delete()
 
 
 
@@ -1193,7 +1385,7 @@ class UnitWardAllocationViewSet(viewsets.ModelViewSet):
 
 class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
     queryset = DepartmentDutyType.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
+    permission_classes = [IsAuthenticated, CanManageRosters, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['department', 'is_active']
 
@@ -1208,6 +1400,13 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
             return DepartmentDutyType.objects.none()
         queryset = super().get_queryset().select_related('department', 'department__unit_type', 'clinic')
         queryset = queryset.filter(department__root_unit__code=facility.code)
+        unit_ids = get_admin_accessible_unit_ids(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            facility_code=facility.code,
+        )
+        if unit_ids is not None:
+            queryset = queryset.filter(department_id__in=unit_ids)
         if self.request.query_params.get('include_inactive') != 'true':
             queryset = queryset.filter(is_active=True)
         return queryset.order_by('display_order', 'name')
@@ -1219,6 +1418,13 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
         department = serializer.validated_data.get('department')
         if department and department.root_unit and department.root_unit.code != facility.code:
             raise PermissionDenied("Department does not belong to the active facility.")
+        if department and not user_has_unit_admin_capability(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility_code=facility.code,
+        ):
+            raise PermissionDenied("You do not have roster administration access for this department.")
         instance = serializer.save()
         AuditService.log(
             request=self.request,
@@ -1231,6 +1437,19 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        department = serializer.validated_data.get('department') or serializer.instance.department
+        if department and department.root_unit and department.root_unit.code != facility.code:
+            raise PermissionDenied("Department does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility,
+            "You do not have roster administration access for this department.",
+        )
         instance = serializer.save()
         AuditService.log(
             request=self.request,
@@ -1257,7 +1476,7 @@ class DepartmentDutyTypeViewSet(viewsets.ModelViewSet):
 
 class RotationRuleViewSet(viewsets.ModelViewSet):
     queryset = RotationRule.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
+    permission_classes = [IsAuthenticated, CanManageRosters, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['department', 'duty_type', 'is_active']
 
@@ -1272,6 +1491,13 @@ class RotationRuleViewSet(viewsets.ModelViewSet):
             return RotationRule.objects.none()
         queryset = super().get_queryset().select_related('department', 'duty_type')
         queryset = queryset.filter(department__root_unit__code=facility.code)
+        unit_ids = get_admin_accessible_unit_ids(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            facility_code=facility.code,
+        )
+        if unit_ids is not None:
+            queryset = queryset.filter(department_id__in=unit_ids)
 
         # Filter by department_id from URL if present
         department_id = self.kwargs.get('department_id')
@@ -1289,6 +1515,13 @@ class RotationRuleViewSet(viewsets.ModelViewSet):
         department = serializer.validated_data.get('department')
         if department and department.root_unit and department.root_unit.code != facility.code:
             raise PermissionDenied("Department does not belong to the active facility.")
+        if department and not user_has_unit_admin_capability(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility_code=facility.code,
+        ):
+            raise PermissionDenied("You do not have roster administration access for this department.")
         instance = serializer.save(created_by=self.request.user, updated_by=self.request.user)
         AuditService.log(
             request=self.request,
@@ -1301,6 +1534,19 @@ class RotationRuleViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        department = serializer.validated_data.get('department') or serializer.instance.department
+        if department and department.root_unit and department.root_unit.code != facility.code:
+            raise PermissionDenied("Department does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility,
+            "You do not have roster administration access for this department.",
+        )
         instance = serializer.save(updated_by=self.request.user)
         AuditService.log(
             request=self.request,
@@ -1334,7 +1580,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['list', 'retrieve', 'on_duty', 'on_duty_department', 'print_roster']:
             return [IsAuthenticated(), FacilityScopedPermission()]
-        return [IsAuthenticated(), IsAdmin(), FacilityScopedPermission()]
+        return [IsAuthenticated(), CanManageRosters(), FacilityScopedPermission()]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -1370,6 +1616,13 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if department.root_unit and department.root_unit.code != facility.code:
             raise PermissionDenied("Department does not belong to the active facility.")
+        if self.request.method not in ('GET', 'HEAD', 'OPTIONS') and not user_has_unit_admin_capability(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility_code=facility.code,
+        ):
+            raise PermissionDenied("You do not have roster administration access for this department.")
         return department
 
     def get_queryset(self):
@@ -1378,6 +1631,14 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             return RosterEntry.objects.none()
         queryset = super().get_queryset().select_related('department', 'duty_type', 'team')
         queryset = queryset.filter(department__root_unit__code=facility.code)
+        if self.action not in ['on_duty', 'on_duty_department']:
+            unit_ids = get_admin_accessible_unit_ids(
+                self.request.user,
+                AdminCapabilities.ROSTER_VIEW,
+                facility_code=facility.code,
+            )
+            if unit_ids is not None:
+                queryset = queryset.filter(department_id__in=unit_ids)
         department = self._get_department()
         if department:
             queryset = queryset.filter(department=department)
@@ -2093,7 +2354,7 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdmin(), FacilityScopedPermission()]
+            return [IsAuthenticated(), CanManageStaff(), FacilityScopedPermission()]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -2109,6 +2370,14 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
         if not facility:
             return queryset.none()
         queryset = queryset.filter(unit__root_unit__code=facility.code)
+        if _is_write_request(self.request):
+            queryset = _filter_admin_unit_scope(
+                self.request,
+                queryset,
+                'unit_id',
+                AdminCapabilities.STAFF_MANAGE,
+                facility,
+            )
 
         # Filter by currently effective
         if self.request.query_params.get('current') == 'true':
@@ -2130,7 +2399,43 @@ class StaffUnitAssignmentViewSet(viewsets.ModelViewSet):
         unit = serializer.validated_data.get('unit')
         if unit and unit.root_unit and unit.root_unit.code != facility.code:
             raise PermissionDenied("Unit does not belong to the active facility.")
+        if unit and not user_has_unit_admin_capability(
+            self.request.user,
+            AdminCapabilities.STAFF_MANAGE,
+            unit,
+            facility_code=facility.code,
+        ):
+            raise PermissionDenied("You do not have staff administration access for this unit.")
         serializer.save()
+
+    def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        unit = serializer.validated_data.get('unit') or serializer.instance.unit
+        if unit and unit.root_unit and unit.root_unit.code != facility.code:
+            raise PermissionDenied("Unit does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.STAFF_MANAGE,
+            unit,
+            facility,
+            "You do not have staff administration access for this unit.",
+        )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.STAFF_MANAGE,
+            instance.unit,
+            facility,
+            "You do not have staff administration access for this unit.",
+        )
+        instance.delete()
 
 
 # =============================================================================
@@ -2146,7 +2451,7 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
     Rules can warn on draft or block on publish depending on severity.
     """
     queryset = RosterValidationRule.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin, FacilityScopedPermission]
+    permission_classes = [IsAuthenticated, CanManageRosters, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['department', 'duty_type', 'rule_type', 'severity', 'is_active']
 
@@ -2162,6 +2467,13 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
 
         queryset = super().get_queryset().select_related('department', 'duty_type')
         queryset = queryset.filter(department__root_unit__code=facility.code)
+        unit_ids = get_admin_accessible_unit_ids(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            facility_code=facility.code,
+        )
+        if unit_ids is not None:
+            queryset = queryset.filter(department_id__in=unit_ids)
 
         # Filter by department_id from URL if present
         department_id = self.kwargs.get('department_id')
@@ -2181,10 +2493,30 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
         department = serializer.validated_data.get('department')
         if department and department.root_unit and department.root_unit.code != facility.code:
             raise PermissionDenied("Department does not belong to the active facility.")
+        if department and not user_has_unit_admin_capability(
+            self.request.user,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility_code=facility.code,
+        ):
+            raise PermissionDenied("You do not have roster administration access for this department.")
 
         serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
+        facility = get_user_facility(self.request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        department = serializer.validated_data.get('department') or serializer.instance.department
+        if department and department.root_unit and department.root_unit.code != facility.code:
+            raise PermissionDenied("Department does not belong to the active facility.")
+        _require_admin_unit_scope(
+            self.request,
+            AdminCapabilities.ROSTER_MANAGE,
+            department,
+            facility,
+            "You do not have roster administration access for this department.",
+        )
         serializer.save()
 
     @action(detail=False, methods=['get'])

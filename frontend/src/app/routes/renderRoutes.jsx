@@ -32,7 +32,7 @@ export function renderRoutes(routes) {
         path={route.path}
         element={
           <FeatureBasedRoute features={route.features}>
-            <RoleBasedRoute allowedRoles={route.roles ?? []}>
+            <RoleBasedRoute allowedRoles={route.roles} allowedCapabilities={route.capabilities}>
               {withLayout}
             </RoleBasedRoute>
           </FeatureBasedRoute>
