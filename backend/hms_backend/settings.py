@@ -930,11 +930,16 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'apps.users.tasks.cleanup_user_sessions',
         'schedule': timedelta(days=1),  # Run once a day
     },
-    'cleanup-encounters-daily': {
+}
+
+if (
+    DEPLOYMENT_FEATURES.get('outpatient_encounters', False)
+    or DEPLOYMENT_FEATURES.get('emergency_encounters', False)
+):
+    CELERY_BEAT_SCHEDULE['cleanup-encounters-daily'] = {
         'task': 'apps.encounters.tasks.cleanup_encounters_daily',
         'schedule': timedelta(days=1),
-    },
-}
+    }
 
 if DEPLOYMENT_FEATURES.get('appointments', False):
     CELERY_BEAT_SCHEDULE['generate-slots-weekly'] = {
@@ -960,7 +965,10 @@ ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS = env.int(
     'ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS',
     default=0,
 )
-if ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS > 0:
+if (
+    DEPLOYMENT_FEATURES.get('appointments', False)
+    and ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS > 0
+):
     CELERY_BEAT_SCHEDULE['refresh-admin-dashboard-appointments'] = {
         'task': 'apps.dashboards.tasks.refresh_admin_dashboard_appointments_for_all_facilities',
         'schedule': float(ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS),

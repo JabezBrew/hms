@@ -30,7 +30,12 @@ from .serializers import (
     WardStaffAssignmentCreateSerializer, StaffRoleSerializer
 )
 from ..users.permissions import IsAdminOrOwner
-from ..core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from ..core.security import (
+    FacilityScopedPermission,
+    FeatureRequiredPermission,
+    check_clinical_access,
+    get_user_facility,
+)
 from apps.admissions.serializers import AdmissionCaseDetailSerializer
 from apps.admissions.services import submit_legacy_admission_request
 from apps.discharge.services import submit_legacy_discharge
@@ -1107,8 +1112,8 @@ class BedAmenityViewSet(viewsets.ModelViewSet):
         Only admins can create/update/delete amenities.
         """
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+            return [FeatureRequiredPermission(), permissions.IsAdminUser()]
+        return [FeatureRequiredPermission(), permissions.IsAuthenticated()]
 
 
 class StaffRoleViewSet(viewsets.ModelViewSet):
@@ -1147,8 +1152,8 @@ class StaffRoleViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Only admins can create/update/delete roles."""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser()]
-        return [permissions.IsAuthenticated()]
+            return [FeatureRequiredPermission(), permissions.IsAdminUser()]
+        return [FeatureRequiredPermission(), permissions.IsAuthenticated()]
 
 
 class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
@@ -1168,8 +1173,16 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Only admins can create/update/delete assignments."""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser(), FacilityScopedPermission()]
-        return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+            return [
+                FeatureRequiredPermission(),
+                permissions.IsAdminUser(),
+                FacilityScopedPermission(),
+            ]
+        return [
+            FeatureRequiredPermission(),
+            permissions.IsAuthenticated(),
+            FacilityScopedPermission(),
+        ]
 
     def get_serializer_class(self):
         if self.action == 'create':
