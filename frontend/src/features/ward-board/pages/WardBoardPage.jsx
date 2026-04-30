@@ -25,7 +25,7 @@ import {
   getPatientUrgency,
   getWatchlist,
 } from '@/features/ward-board/components';
-import { useWardBoard, useWardBoardTaskAction } from '@/features/ward-board/hooks';
+import { useWardBoard, useWardBoardLiveUpdates, useWardBoardTaskAction } from '@/features/ward-board/hooks';
 
 const VIEW_VALUES = new Set(BOARD_VIEWS.map((view) => view.value));
 const URGENCY_ORDER = {
@@ -143,6 +143,10 @@ export default function WardBoardPage() {
   const totalCount = boardData?.count ?? patients.length;
   const viewLabel = getViewLabel(view);
   const taskMutation = useWardBoardTaskAction();
+  const { isConnected: isLiveConnected } = useWardBoardLiveUpdates({
+    enabled: !isLoading,
+    wardScope: effectiveWard || 'all',
+  });
 
   const handleTaskAction = useCallback(({ taskId, action, patientId }) => {
     setPendingAction({ taskId, action });
@@ -201,7 +205,7 @@ export default function WardBoardPage() {
         actions={(
           <div className="flex items-center gap-2 rounded-md border border-border bg-background/70 px-3 py-2 font-mono text-[11px] text-muted-foreground">
             <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{isFetching ? 'Refreshing' : 'Live board'}</span>
+            <span>{isFetching ? 'Refreshing' : isLiveConnected ? 'Live board' : 'Refresh fallback'}</span>
           </div>
         )}
       >

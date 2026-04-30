@@ -49,6 +49,25 @@ def test_task_list_is_scoped_to_active_facility(default_facility, monkeypatch, s
 
 
 @pytest.mark.django_db
+def test_task_list_requires_ward_board_feature(default_facility, monkeypatch, settings):
+    settings.TEAM_ACCESS_STRICT = False
+    required_features = []
+    monkeypatch.setattr(
+        'apps.ward_board.views.require_feature',
+        lambda feature_key, **_kwargs: required_features.append(feature_key),
+    )
+    nurse = NurseUserFactory(primary_facility=default_facility)
+
+    factory = APIRequestFactory()
+    request = factory.get('/api/ward-board/tasks/', HTTP_X_FACILITY_CODE=default_facility.code)
+    force_authenticate(request, user=nurse)
+    response = WardBoardTaskViewSet.as_view({'get': 'list'})(request)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert required_features[:3] == ['ward_task_board', 'wards', 'inpatient_admissions']
+
+
+@pytest.mark.django_db
 def test_board_projection_url_returns_active_admissions(default_facility, monkeypatch, settings):
     settings.TEAM_ACCESS_STRICT = False
     monkeypatch.setattr('apps.ward_board.views.require_feature', lambda *_args, **_kwargs: None)
@@ -68,6 +87,48 @@ def test_board_projection_url_returns_active_admissions(default_facility, monkey
     assert response.status_code == status.HTTP_200_OK
     patient_ids = {row['patient_id'] for row in response.data['results']}
     assert patient_ids == {str(patient.id)}
+
+
+@pytest.mark.django_db
+def test_board_projection_applies_my_work_filter_before_pagination(default_facility, monkeypatch, settings):
+    settings.TEAM_ACCESS_STRICT = False
+    monkeypatch.setattr('apps.ward_board.views.require_feature', lambda *_args, **_kwargs: None)
+    nurse = NurseUserFactory(primary_facility=default_facility)
+    owned_patient = PatientProfileFactory(facility=default_facility)
+    unowned_patient = PatientProfileFactory(facility=default_facility)
+    owned_admission = AdmissionFactory(
+        patient=owned_patient,
+        facility=default_facility,
+        bed__ward__department__facility=default_facility,
+        status='admitted',
+    )
+    AdmissionFactory(
+        patient=unowned_patient,
+        facility=default_facility,
+        bed__ward__department__facility=default_facility,
+        status='admitted',
+    )
+    WardBoardTask.objects.create(
+        facility=default_facility,
+        patient=owned_patient,
+        admission=owned_admission,
+        owner_role='nurse',
+        action_text='Owned ward-board task.',
+        created_by=nurse,
+        updated_by=nurse,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=nurse)
+    response = client.get(
+        '/api/ward-board/',
+        {'view': 'my-work'},
+        HTTP_X_FACILITY_CODE=default_facility.code,
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    patient_ids = {row['patient_id'] for row in response.data['results']}
+    assert patient_ids == {str(owned_patient.id)}
 
 
 @pytest.mark.django_db

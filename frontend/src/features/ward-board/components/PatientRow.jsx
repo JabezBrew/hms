@@ -13,11 +13,11 @@ import {
   URGENCY_STYLES,
   formatTimestamp,
   getPatientBed,
-  getPatientDischargeItems,
+  getPatientDischargeCount,
   getPatientMrn,
   getPatientName,
-  getPatientResults,
-  getPatientTasks,
+  getPatientResultCount,
+  getPatientTaskCount,
   getPatientUrgency,
   getWardLabel,
   patientChronicleHref,
@@ -45,9 +45,9 @@ export function PatientRow({
   const bed = getPatientBed(patient);
   const ward = getWardLabel(patient);
   const urgency = getPatientUrgency(patient);
-  const tasks = getPatientTasks(patient);
-  const results = getPatientResults(patient);
-  const dischargeItems = getPatientDischargeItems(patient);
+  const taskCount = getPatientTaskCount(patient);
+  const resultCount = getPatientResultCount(patient);
+  const dischargeCount = getPatientDischargeCount(patient);
   const urgencyClassName = URGENCY_STYLES[urgency] ?? URGENCY_STYLES.stable;
   const lastEvent = patient?.last_event_at ?? patient?.updated_at ?? patient?.last_updated;
 
@@ -75,9 +75,9 @@ export function PatientRow({
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
-          <CountPill icon={ClipboardList} label="tasks" value={tasks.length} tone="border-amber-200 bg-amber-50 text-amber-700" />
-          <CountPill icon={TestTube2} label="results" value={results.length} tone="border-sky-200 bg-sky-50 text-sky-700" />
-          <CountPill icon={FileCheck2} label="discharge" value={dischargeItems.length} tone="border-emerald-200 bg-emerald-50 text-emerald-700" />
+          <CountPill icon={ClipboardList} label="tasks" value={taskCount} tone="border-amber-200 bg-amber-50 text-amber-700" />
+          <CountPill icon={TestTube2} label="results" value={resultCount} tone="border-sky-200 bg-sky-50 text-sky-700" />
+          <CountPill icon={FileCheck2} label="discharge" value={dischargeCount} tone="border-emerald-200 bg-emerald-50 text-emerald-700" />
         </div>
 
         <div className="flex items-center gap-2 lg:justify-end">

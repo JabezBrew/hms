@@ -35,6 +35,7 @@ from apps.ward_board.services import (
     complete_task,
     create_task,
     escalate_task,
+    filter_active_admissions_for_board,
     update_task,
 )
 from apps.wards.models import Ward
@@ -42,6 +43,7 @@ from apps.wards.models import Ward
 
 def _require_ward_board_features(request):
     facility = get_user_facility(request)
+    require_feature('ward_task_board', facility=facility, request=request)
     require_feature('wards', facility=facility, request=request)
     require_feature('inpatient_admissions', facility=facility, request=request)
 
@@ -253,6 +255,13 @@ class WardBoardAPIView(GenericAPIView):
                 raise PermissionDenied('Ward does not belong to the active facility.')
 
         admissions = active_admission_queryset(facility, request.user, ward_id=ward_id)
+        admissions = filter_active_admissions_for_board(
+            admissions,
+            facility,
+            request.user,
+            view=request.query_params.get('view'),
+            search=request.query_params.get('search'),
+        )
         page = self.paginate_queryset(admissions)
         rows = build_board_patient_rows(page if page is not None else admissions, facility)
         serializer = self.get_serializer(rows, many=True)

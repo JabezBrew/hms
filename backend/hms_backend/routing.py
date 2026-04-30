@@ -17,6 +17,7 @@ from apps.dashboards.consumers import (
     InpatientDashboardConsumer,
     NurseDashboardConsumer,
     ReceptionDashboardConsumer,
+    WardTaskBoardConsumer,
 )
 from apps.referrals.consumers import ReferralNotificationConsumer
 
@@ -39,6 +40,9 @@ websocket_urlpatterns = [
 
     # Nurse dashboard live invalidation stream (optional ward filter via query param)
     re_path(r'^ws/dashboards/nurse/$', NurseDashboardConsumer.as_asgi()),
+
+    # Ward task board live invalidation stream (optional ward filter via query param)
+    re_path(r'^ws/ward-board/$', WardTaskBoardConsumer.as_asgi()),
 
     # Inpatient dashboard live invalidation stream (practitioner-scoped)
     re_path(r'^ws/dashboards/inpatient/$', InpatientDashboardConsumer.as_asgi()),

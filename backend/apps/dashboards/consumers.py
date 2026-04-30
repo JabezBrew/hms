@@ -16,7 +16,11 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 
-from apps.core.security import get_user_facility_codes, normalize_facility_code
+from apps.core.security import (
+    CLINICAL_PATIENT_ACCESS_USER_TYPES,
+    get_user_facility_codes,
+    normalize_facility_code,
+)
 from hms_backend.deployment import feature_enabled
 from apps.users.models import PractitionerProfile
 from apps.wards.models import WardStaffAssignment
@@ -26,6 +30,7 @@ from .realtime import (
     inpatient_dashboard_group_name,
     nurse_dashboard_group_name,
     reception_dashboard_group_name,
+    ward_task_board_group_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +72,12 @@ def _is_inpatient_actor(user) -> bool:
     if not user or not getattr(user, "is_authenticated", False):
         return False
     return _user_role(user) in {"doctor", "physician", "practitioner", "admin"}
+
+
+def _is_ward_board_actor(user) -> bool:
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    return _user_role(user) in (set(CLINICAL_PATIENT_ACCESS_USER_TYPES) | {"admin"})
 
 
 def _preferred_subprotocol(scope) -> Optional[str]:
@@ -268,6 +279,85 @@ class NurseDashboardConsumer(AsyncJsonWebsocketConsumer):
                 "facility_code": event.get("facility_code"),
                 "reason": event.get("reason"),
                 "ward_scope": event.get("ward_scope"),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+
+
+class WardTaskBoardConsumer(AsyncJsonWebsocketConsumer):
+    """
+    WebSocket consumer for ward clinical task board invalidations.
+
+    Payloads are facility/ward-scoped and PHI-free. Board data is always
+    refetched through normal HTTPS endpoints.
+    """
+
+    async def connect(self):
+        self.user = self.scope.get("user", AnonymousUser())
+        if not getattr(self.user, "is_authenticated", False):
+            await self.close(code=4001)
+            return
+
+        if not _is_ward_board_actor(self.user):
+            await self.close(code=4003)
+            return
+
+        facility_code = normalize_facility_code(self.scope.get("facility_code"))
+        if not facility_code:
+            await self.close(code=4000)
+            return
+
+        if not await _can_access_facility(self.user, facility_code):
+            await self.close(code=4003)
+            return
+
+        ward_scope = _parse_ward_scope(self.scope)
+        if ward_scope != "all" and not await _has_ward_assignment(self.user, ward_scope):
+            await self.close(code=4003)
+            return
+
+        self.facility_code = facility_code
+        self.ward_scope = ward_scope
+        self.group_name = ward_task_board_group_name(facility_code, ward_scope)
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+        subprotocol = _preferred_subprotocol(self.scope)
+        if subprotocol:
+            await self.accept(subprotocol=subprotocol)
+        else:
+            await self.accept()
+
+        await self.send_json(
+            {
+                "type": "connection.established",
+                "board": "ward_task_board",
+                "facility_code": facility_code,
+                "ward_scope": ward_scope,
+                "group": self.group_name,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+
+    async def disconnect(self, close_code):
+        if hasattr(self, "group_name"):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content):
+        if content.get("type") == "ping":
+            await self.send_json(
+                {
+                    "type": "pong",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+
+    async def ward_board_invalidate(self, event):
+        await self.send_json(
+            {
+                "type": "ward_board.invalidate",
+                "facility_code": event.get("facility_code"),
+                "ward_scope": event.get("ward_scope"),
+                "reason": event.get("reason"),
                 "timestamp": datetime.utcnow().isoformat(),
             }
         )

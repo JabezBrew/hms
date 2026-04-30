@@ -365,6 +365,18 @@ export class NurseDashboardWebSocket extends BaseWebSocket {
 }
 
 /**
+ * WebSocket client for ward task board invalidations.
+ */
+export class WardBoardWebSocket extends BaseWebSocket {
+  constructor(token, options = {}) {
+    const wardScope = options.wardScope && options.wardScope !== 'all'
+      ? `?ward=${encodeURIComponent(options.wardScope)}`
+      : ''
+    super(`/ws/ward-board/${wardScope}`, token, options);
+  }
+}
+
+/**
  * WebSocket client for inpatient dashboard invalidations.
  */
 export class InpatientDashboardWebSocket extends BaseWebSocket {
@@ -390,6 +402,7 @@ export default {
   DoctorDashboardWebSocket,
   ClinicDashboardWebSocket,
   NurseDashboardWebSocket,
+  WardBoardWebSocket,
   InpatientDashboardWebSocket,
   ReceptionDashboardWebSocket,
 };

@@ -265,6 +265,10 @@ class WardBoardPatientRowSerializer(serializers.Serializer):
 
 class WardBoardPatientDetailSerializer(WardBoardPatientRowSerializer):
     tasks = serializers.SerializerMethodField()
+    events = serializers.SerializerMethodField()
 
     def get_tasks(self, obj):
         return WardBoardTaskListSerializer(obj.get('tasks', []), many=True).data
+
+    def get_events(self, obj):
+        return WardBoardTaskEventListSerializer(obj.get('events', []), many=True).data

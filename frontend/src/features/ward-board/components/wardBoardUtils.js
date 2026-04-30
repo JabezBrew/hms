@@ -44,6 +44,11 @@ export function asArray(value) {
   return [];
 }
 
+function asCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
 export function compactParams(params) {
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -64,13 +69,12 @@ export function getBoardSummary(boardData, patients) {
   let dischargeReady = 0;
 
   patients.forEach((patient) => {
-    const tasks = getPatientTasks(patient);
-    openTasks += tasks.filter((task) => !isTerminalTask(task)).length;
+    openTasks += getPatientTaskCount(patient);
     if (['critical', 'urgent', 'high'].includes(getPatientUrgency(patient))) {
       critical += 1;
     }
-    pendingResults += getPatientResults(patient).length;
-    if (getPatientDischargeItems(patient).length > 0 || patient?.discharge_ready) {
+    pendingResults += getPatientResultCount(patient);
+    if (getPatientDischargeCount(patient) > 0 || patient?.discharge_ready) {
       dischargeReady += 1;
     }
   });
@@ -108,15 +112,45 @@ export function getWardLabel(patient) {
 }
 
 export function getPatientUrgency(patient) {
-  return String(patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.status ?? 'stable').toLowerCase();
+  const supplied = patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.status;
+  if (supplied) {
+    return String(supplied).toLowerCase();
+  }
+  if (asCount(patient?.active_alert_count) > 0 || asCount(patient?.urgent_task_count) > 0) {
+    return 'urgent';
+  }
+  if (asCount(patient?.overdue_task_count) > 0) {
+    return 'high';
+  }
+  if (getPatientTaskCount(patient) > 0 || getPatientResultCount(patient) > 0) {
+    return 'pending';
+  }
+  return 'stable';
 }
 
 export function getPatientTasks(patient) {
   return asArray(patient?.tasks ?? patient?.open_tasks ?? patient?.clinical_tasks);
 }
 
+export function getPatientTaskCount(patient) {
+  const tasks = getPatientTasks(patient);
+  if (tasks.length > 0) {
+    return tasks.filter((task) => !isTerminalTask(task)).length;
+  }
+  return (
+    asCount(patient?.open_task_count)
+    + asCount(patient?.nursing_task_count)
+    + asCount(patient?.active_alert_count)
+  );
+}
+
 export function getPatientResults(patient) {
   return asArray(patient?.results ?? patient?.pending_results ?? patient?.lab_results);
+}
+
+export function getPatientResultCount(patient) {
+  const results = getPatientResults(patient);
+  return results.length > 0 ? results.length : asCount(patient?.open_lab_order_count);
 }
 
 export function getPatientDischargeItems(patient) {
@@ -128,6 +162,11 @@ export function getPatientDischargeItems(patient) {
     return value.items;
   }
   return value && typeof value === 'object' ? [value] : [];
+}
+
+export function getPatientDischargeCount(patient) {
+  const items = getPatientDischargeItems(patient);
+  return items.length > 0 ? items.length : asCount(patient?.discharge_task_count);
 }
 
 export function getPatientEvents(patient) {
@@ -147,7 +186,7 @@ export function getTaskId(task) {
 }
 
 export function getTaskTitle(task) {
-  return task?.title ?? task?.label ?? task?.summary ?? task?.type_display ?? task?.task_type ?? 'Clinical task';
+  return task?.title ?? task?.label ?? task?.summary ?? task?.action_text ?? task?.type_display ?? task?.task_type ?? 'Clinical task';
 }
 
 export function getTaskStatus(task) {

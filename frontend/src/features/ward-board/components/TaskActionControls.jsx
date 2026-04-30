@@ -1,7 +1,6 @@
 import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
-import X from 'lucide-react/dist/esm/icons/x.js';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getTaskId, getTaskStatus, isTerminalTask } from './wardBoardUtils';
@@ -10,7 +9,6 @@ const ACTIONS = [
   { action: 'acknowledge', label: 'Ack', icon: Check },
   { action: 'complete', label: 'Done', icon: CheckCircle2 },
   { action: 'escalate', label: 'Escalate', icon: ArrowUpRight },
-  { action: 'cancel', label: 'Cancel', icon: X },
 ];
 
 export function TaskActionControls({

@@ -9,7 +9,7 @@ import {
   getPatientId,
   getPatientMrn,
   getPatientName,
-  getPatientTasks,
+  getPatientTaskCount,
   getPatientUrgency,
   patientChronicleHref,
 } from './wardBoardUtils';
@@ -54,7 +54,7 @@ export function WatchlistPanel({ patients, className }) {
                     {urgency}
                   </Badge>
                   <span className="font-mono text-[11px] text-muted-foreground">
-                    {getPatientTasks(patient).length} tasks
+                    {getPatientTaskCount(patient)} tasks
                   </span>
                 </div>
               </Link>

@@ -2,10 +2,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import WardBoardPage from '../WardBoardPage';
-import { useWardBoard, useWardBoardTaskAction, useWardBoardPatient } from '@/features/ward-board/hooks';
+import {
+  useWardBoard,
+  useWardBoardLiveUpdates,
+  useWardBoardTaskAction,
+  useWardBoardPatient,
+} from '@/features/ward-board/hooks';
 
 vi.mock('@/features/ward-board/hooks', () => ({
   useWardBoard: vi.fn(),
+  useWardBoardLiveUpdates: vi.fn(),
   useWardBoardTaskAction: vi.fn(),
   useWardBoardPatient: vi.fn(),
 }));
@@ -26,6 +32,7 @@ vi.mock('sonner', () => ({
 }));
 
 const mockUseWardBoard = vi.mocked(useWardBoard);
+const mockUseWardBoardLiveUpdates = vi.mocked(useWardBoardLiveUpdates);
 const mockUseWardBoardTaskAction = vi.mocked(useWardBoardTaskAction);
 const mockUseWardBoardPatient = vi.mocked(useWardBoardPatient);
 
@@ -83,6 +90,10 @@ describe('WardBoardPage', () => {
       refetch: vi.fn(),
     });
     mockUseWardBoardTaskAction.mockReturnValue({ mutate: vi.fn() });
+    mockUseWardBoardLiveUpdates.mockReturnValue({
+      isConnected: true,
+      connectionError: null,
+    });
     mockUseWardBoardPatient.mockReturnValue({
       data: null,
       isLoading: false,
@@ -136,5 +147,40 @@ describe('WardBoardPage', () => {
       page: 1,
       page_size: 20,
     });
+  });
+
+  it('renders lightweight backend count fields when rows do not include nested arrays', () => {
+    mockUseWardBoard.mockReturnValue({
+      data: boardResponse({
+        summary: undefined,
+        results: [
+          {
+            patient_id: 'patient-counts',
+            patient_name: 'Kofi Owusu',
+            medical_record_number: 'MRN-002',
+            bed_number: 'B-04',
+            ward_name: 'Ward B',
+            open_task_count: 2,
+            nursing_task_count: 1,
+            active_alert_count: 1,
+            urgent_task_count: 1,
+            open_lab_order_count: 3,
+            discharge_task_count: 2,
+          },
+        ],
+      }),
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/ward-board');
+
+    expect(screen.getAllByText('Kofi Owusu')).not.toHaveLength(0);
+    expect(screen.getAllByText('urgent')).not.toHaveLength(0);
+    expect(screen.getByText('Open Tasks')).toBeInTheDocument();
+    expect(screen.getAllByText('4')).not.toHaveLength(0);
   });
 });

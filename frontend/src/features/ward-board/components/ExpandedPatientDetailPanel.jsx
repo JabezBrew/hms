@@ -12,10 +12,13 @@ import {
   TASK_STATUS_STYLES,
   URGENCY_STYLES,
   formatTimestamp,
+  getPatientDischargeCount,
   getPatientDischargeItems,
   getPatientEvents,
   getPatientId,
+  getPatientResultCount,
   getPatientResults,
+  getPatientTaskCount,
   getPatientTasks,
   getTaskStatus,
   getTaskTitle,
@@ -43,9 +46,13 @@ function EmptyLine({ children }) {
   );
 }
 
-function TaskList({ tasks, patientId, onTaskAction, pendingAction }) {
+function TaskList({ tasks, taskCount, patientId, onTaskAction, pendingAction }) {
   if (tasks.length === 0) {
-    return <EmptyLine>No active operational tasks</EmptyLine>;
+    return (
+      <EmptyLine>
+        {taskCount > 0 ? `${taskCount} operational items are tracked in source workflows.` : 'No active operational tasks'}
+      </EmptyLine>
+    );
   }
 
   return (
@@ -65,7 +72,9 @@ function TaskList({ tasks, patientId, onTaskAction, pendingAction }) {
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 font-mono text-[11px] text-muted-foreground">
                   <span>{formatTimestamp(task?.due_at ?? task?.due_time ?? task?.target_time)}</span>
-                  {task?.assignee_name || task?.assigned_to ? <span>{task.assignee_name ?? task.assigned_to}</span> : null}
+                  {task?.assignee_name || task?.assigned_to || task?.owner_role ? (
+                    <span>{task.assignee_name ?? task.assigned_to ?? task.owner_role}</span>
+                  ) : null}
                 </div>
               </div>
               <TaskActionControls
@@ -83,9 +92,13 @@ function TaskList({ tasks, patientId, onTaskAction, pendingAction }) {
   );
 }
 
-function ResultList({ results }) {
+function ResultList({ results, resultCount }) {
   if (results.length === 0) {
-    return <EmptyLine>No pending result summaries</EmptyLine>;
+    return (
+      <EmptyLine>
+        {resultCount > 0 ? `${resultCount} pending result summaries are tracked in source workflows.` : 'No pending result summaries'}
+      </EmptyLine>
+    );
   }
 
   return (
@@ -113,9 +126,13 @@ function ResultList({ results }) {
   );
 }
 
-function DischargeList({ items }) {
+function DischargeList({ items, dischargeCount }) {
   if (items.length === 0) {
-    return <EmptyLine>No discharge blockers listed</EmptyLine>;
+    return (
+      <EmptyLine>
+        {dischargeCount > 0 ? `${dischargeCount} discharge items are tracked in source workflows.` : 'No discharge blockers listed'}
+      </EmptyLine>
+    );
   }
 
   return (
@@ -149,6 +166,9 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
   const results = getPatientResults(detail);
   const dischargeItems = getPatientDischargeItems(detail);
   const events = getPatientEvents(detail);
+  const taskCount = getPatientTaskCount(detail);
+  const resultCount = getPatientResultCount(detail);
+  const dischargeCount = getPatientDischargeCount(detail);
 
   return (
     <div className="border-t border-border bg-muted/20 px-4 py-4 sm:px-5">
@@ -182,19 +202,20 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
           </div>
 
           <div className="grid gap-5 xl:grid-cols-3">
-            <DetailSection title="Tasks" count={tasks.length}>
+            <DetailSection title="Tasks" count={taskCount}>
               <TaskList
                 tasks={tasks}
+                taskCount={taskCount}
                 patientId={patientId}
                 onTaskAction={onTaskAction}
                 pendingAction={pendingAction}
               />
             </DetailSection>
-            <DetailSection title="Results" count={results.length}>
-              <ResultList results={results} />
+            <DetailSection title="Results" count={resultCount}>
+              <ResultList results={results} resultCount={resultCount} />
             </DetailSection>
-            <DetailSection title="Discharge" count={dischargeItems.length}>
-              <DischargeList items={dischargeItems} />
+            <DetailSection title="Discharge" count={dischargeCount}>
+              <DischargeList items={dischargeItems} dischargeCount={dischargeCount} />
             </DetailSection>
           </div>
 

@@ -4,10 +4,11 @@ from datetime import datetime
 from uuid import UUID
 
 from django.db import transaction
-from django.db.models import Count, Min, Q
+from django.db.models import Case, Count, Exists, IntegerField, Min, OuterRef, Q, Value, When
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
+from apps.core.features import feature_enabled
 from apps.core.security import (
     ACTIVE_ADMISSION_STATUSES,
     CLINICAL_PATIENT_ACCESS_USER_TYPES,
@@ -473,6 +474,122 @@ def active_admission_queryset(facility, user, *, ward_id=None):
     return queryset
 
 
+def filter_active_admissions_for_board(queryset, facility, user, *, view='', search=''):
+    """
+    Apply interactive ward-board filters before pagination.
+
+    Search uses the indexed patient search projection instead of ad-hoc name
+    filters on the wider patient/user join graph.
+    """
+    search = str(search or '').strip()
+    if search:
+        from apps.patients.models import PatientSearchIndex
+
+        patient_search = PatientSearchIndex.objects.filter(
+            facility=facility,
+            patient_profile_id=OuterRef('patient_id'),
+        ).filter(
+            Q(search_document__icontains=search)
+            | Q(full_name__icontains=search)
+            | Q(medical_record_number__icontains=search)
+            | Q(nhis_id__icontains=search)
+        )
+        queryset = queryset.alias(
+            patient_search_match=Exists(patient_search),
+        ).filter(
+            Q(patient_search_match=True)
+            | Q(bed__bed_number__iexact=search)
+        )
+
+    view = str(view or '').strip().lower()
+    if view == 'results':
+        if not feature_enabled('laboratory', facility=facility):
+            return queryset.none()
+        from apps.laboratory.models import LabOrder, LabOrderStatus
+
+        pending_labs = LabOrder.objects.filter(
+            facility=facility,
+            patient_id=OuterRef('patient_id'),
+            status__in=[
+                LabOrderStatus.ORDERED,
+                LabOrderStatus.COLLECTED,
+                LabOrderStatus.RECEIVED,
+                LabOrderStatus.PROCESSING,
+            ],
+        )
+        return queryset.alias(has_pending_labs=Exists(pending_labs)).filter(has_pending_labs=True)
+
+    if view == 'discharge':
+        if not feature_enabled('discharge_workflows', facility=facility):
+            return queryset.none()
+        from apps.discharge.models import DischargeCase, DischargeTask
+
+        discharge_work = DischargeTask.objects.filter(
+            case__facility=facility,
+            case__admission_id=OuterRef('pk'),
+            status=DischargeTask.Status.PENDING,
+        ).exclude(
+            case__status__in=[DischargeCase.Status.FINALIZED, DischargeCase.Status.CANCELLED],
+        )
+        return queryset.alias(has_discharge_work=Exists(discharge_work)).filter(has_discharge_work=True)
+
+    if view == 'my-work':
+        owner_filter = Q(owner_user=user)
+        user_type = getattr(user, 'user_type', None)
+        if user_type:
+            owner_filter |= Q(owner_role=user_type)
+        assigned_tasks = (
+            WardBoardTask.objects.filter(
+                facility=facility,
+                admission_id=OuterRef('pk'),
+            )
+            .exclude(status__in=WardBoardTask.TERMINAL_STATUSES)
+            .filter(owner_filter)
+        )
+        return queryset.alias(has_my_work=Exists(assigned_tasks)).filter(has_my_work=True)
+
+    if view == 'by-urgency':
+        now = timezone.now()
+        urgent_tasks = (
+            WardBoardTask.objects.filter(
+                facility=facility,
+                admission_id=OuterRef('pk'),
+                priority__in=[WardBoardTask.Priority.URGENT, WardBoardTask.Priority.STAT],
+            )
+            .exclude(status__in=WardBoardTask.TERMINAL_STATUSES)
+        )
+        overdue_tasks = (
+            WardBoardTask.objects.filter(
+                facility=facility,
+                admission_id=OuterRef('pk'),
+                due_at__lt=now,
+            )
+            .exclude(status__in=WardBoardTask.TERMINAL_STATUSES)
+        )
+
+        from apps.nursing.models import NursingAlert
+
+        active_alerts = NursingAlert.objects.filter(
+            facility=facility,
+            patient_id=OuterRef('patient_id'),
+            is_acknowledged=False,
+        )
+        return queryset.annotate(
+            has_active_alert=Exists(active_alerts),
+            has_urgent_task=Exists(urgent_tasks),
+            has_overdue_task=Exists(overdue_tasks),
+            urgency_rank=Case(
+                When(has_active_alert=True, then=Value(0)),
+                When(has_urgent_task=True, then=Value(1)),
+                When(has_overdue_task=True, then=Value(2)),
+                default=Value(9),
+                output_field=IntegerField(),
+            ),
+        ).order_by('urgency_rank', 'bed__ward__name', 'bed__bed_number', '-admission_date')
+
+    return queryset
+
+
 def _admission_model():
     from apps.wards.models import Admission
 
@@ -533,32 +650,36 @@ def build_board_patient_rows(admissions, facility):
         'patient_id',
     )
 
-    from apps.discharge.models import DischargeCase, DischargeTask
+    discharge_task_counts = {}
+    if feature_enabled('discharge_workflows', facility=facility):
+        from apps.discharge.models import DischargeCase, DischargeTask
 
-    discharge_task_counts = _map_counts(
-        DischargeTask.objects.filter(
-            case__facility=facility,
-            case__admission_id__in=admission_ids,
-            status=DischargeTask.Status.PENDING,
-        ).exclude(case__status__in=[DischargeCase.Status.FINALIZED, DischargeCase.Status.CANCELLED]),
-        'case__admission_id',
-    )
+        discharge_task_counts = _map_counts(
+            DischargeTask.objects.filter(
+                case__facility=facility,
+                case__admission_id__in=admission_ids,
+                status=DischargeTask.Status.PENDING,
+            ).exclude(case__status__in=[DischargeCase.Status.FINALIZED, DischargeCase.Status.CANCELLED]),
+            'case__admission_id',
+        )
 
-    from apps.laboratory.models import LabOrder, LabOrderStatus
+    lab_counts = {}
+    if feature_enabled('laboratory', facility=facility):
+        from apps.laboratory.models import LabOrder, LabOrderStatus
 
-    lab_counts = _map_counts(
-        LabOrder.objects.filter(
-            facility=facility,
-            patient_id__in=patient_ids,
-            status__in=[
-                LabOrderStatus.ORDERED,
-                LabOrderStatus.COLLECTED,
-                LabOrderStatus.RECEIVED,
-                LabOrderStatus.PROCESSING,
-            ],
-        ),
-        'patient_id',
-    )
+        lab_counts = _map_counts(
+            LabOrder.objects.filter(
+                facility=facility,
+                patient_id__in=patient_ids,
+                status__in=[
+                    LabOrderStatus.ORDERED,
+                    LabOrderStatus.COLLECTED,
+                    LabOrderStatus.RECEIVED,
+                    LabOrderStatus.PROCESSING,
+                ],
+            ),
+            'patient_id',
+        )
 
     rows = []
     for admission in admissions:
@@ -609,6 +730,11 @@ def build_patient_snapshot(patient, facility, user):
         .select_related('patient__user', 'ward__department', 'owner_user')
         .order_by('due_at', '-priority', '-created_at')[:25]
     )
+    events = (
+        WardBoardTaskEvent.objects.filter(facility=facility, task__patient=patient)
+        .select_related('actor')
+        .order_by('-created_at')[:25]
+    )
 
     rows = build_board_patient_rows([admission], facility) if admission else []
     summary = rows[0] if rows else {
@@ -632,4 +758,5 @@ def build_patient_snapshot(patient, facility, user):
     return {
         **summary,
         'tasks': list(tasks),
+        'events': list(events),
     }
