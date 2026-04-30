@@ -18,18 +18,6 @@ User = get_user_model()
 # Set up logger
 logger = logging.getLogger(__name__)
 
-def _apply_admin_flags(user: User) -> None:
-    """
-    Keep Django admin flags consistent with our RBAC user_type.
-
-    Admin users should always be staff so permissions that rely on is_staff work.
-    We intentionally do not auto-escalate is_superuser here.
-    """
-    if not user:
-        return
-    if getattr(user, 'user_type', None) == 'admin' and not getattr(user, 'is_staff', False):
-        user.is_staff = True
-
 
 class UserSerializer(serializers.ModelSerializer):
     """
@@ -122,9 +110,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
             date_of_birth=validated_data.get('date_of_birth', None),
             user_type=validated_data.get('user_type', 'patient')
         )
-        _apply_admin_flags(user)
-        if user.user_type == 'admin':
-            user.save(update_fields=['is_staff'])
         return user
 
 
@@ -771,15 +756,13 @@ class StaffInviteSerializer(serializers.Serializer):
             user.date_of_birth = validated_data.get('date_of_birth', user.date_of_birth)
             user.user_type = user_type
             user.is_active = True
-            _apply_admin_flags(user)
             user.save(update_fields=[
-                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active', 'is_staff'
+                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active'
             ])
         else:
             # Ensure no known password exists for invited accounts.
             user.set_unusable_password()
-            _apply_admin_flags(user)
-            user.save(update_fields=['password', 'is_staff'])
+            user.save(update_fields=['password'])
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")
@@ -945,7 +928,6 @@ class StaffRegistrationSerializer(serializers.Serializer):
             user.date_of_birth = validated_data['date_of_birth']
             user.user_type = validated_data['user_type']
             user.is_active = True
-            _apply_admin_flags(user)
             user.save()
         else:
             # Create new User
@@ -959,8 +941,6 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 date_of_birth=validated_data['date_of_birth'],
                 user_type=validated_data['user_type']
             )
-            _apply_admin_flags(user)
-            user.save(update_fields=['is_staff'])
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")
