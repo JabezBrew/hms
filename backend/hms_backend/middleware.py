@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import time
 import json
@@ -15,6 +16,18 @@ from hms_backend.deployment import api_path_enabled, feature_enabled
 logger = logging.getLogger('django.request')
 
 
+def _normalize_ip(value):
+    if not value:
+        return None
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
 def get_client_ip(request):
     """
     Get the client's real IP address from the request.
@@ -25,11 +38,17 @@ def get_client_ip(request):
         if x_forwarded_for:
             hops = [part.strip() for part in x_forwarded_for.split(',') if part.strip()]
             trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
+            selected_ip = None
             if len(hops) > trusted_hops:
-                return hops[-(trusted_hops + 1)]
-            if hops:
-                return hops[0]
-    return request.META.get('REMOTE_ADDR')
+                selected_ip = hops[-(trusted_hops + 1)]
+            elif hops:
+                selected_ip = hops[0]
+
+            normalized_ip = _normalize_ip(selected_ip)
+            if normalized_ip:
+                return normalized_ip
+
+    return _normalize_ip(request.META.get('REMOTE_ADDR'))
 
 
 def _scrub_path_segment(segment):

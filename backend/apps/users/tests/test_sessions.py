@@ -141,6 +141,23 @@ class TestUserSessions:
         assert session.id == old_session_id
         assert session.refresh_jti != old_jti
 
+    def test_login_with_invalid_forwarded_ip_still_creates_session(self, api_client, db, settings):
+        settings.TRUST_PROXY_HEADERS = True
+        settings.TRUSTED_PROXY_HOPS = 1
+        user = UserFactory(email='invalid-ip@test.com', password='testpass123')
+
+        response = api_client.post(
+            '/api/auth/login/',
+            {'email': 'invalid-ip@test.com', 'password': 'testpass123'},
+            format='json',
+            HTTP_X_FORWARDED_FOR='not-an-ip, 10.0.0.10',
+            REMOTE_ADDR='127.0.0.1',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        session = UserSession.objects.get(user=user)
+        assert session.ip_address == '127.0.0.1'
+
     def test_list_sessions_excludes_idle_sessions(self, api_client, db, settings):
         settings.USER_SESSION_IDLE_TIMEOUT_MINUTES = 30
         user = UserFactory(email='idle@test.com', password='testpass123')
