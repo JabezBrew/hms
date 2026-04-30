@@ -28,6 +28,55 @@ describe('featureRoutes', () => {
     ])).toThrow(/must declare feature laboratory/)
   })
 
+  it('fails closed for cross-feature routes missing supplemental feature metadata', () => {
+    expect(() => validateRoutes([
+      {
+        path: '/billing/discharges',
+        component: () => null,
+        roles: null,
+        features: ['billing'],
+        layout: ROUTE_LAYOUTS.APP,
+      },
+    ])).toThrow(/must declare feature discharge_workflows/)
+  })
+
+  it('fails closed for non-prefix tier-controlled routes without feature metadata', () => {
+    expect(() => validateRoutes([
+      {
+        path: '/dashboards/nurse',
+        component: () => null,
+        roles: null,
+        layout: ROUTE_LAYOUTS.BARE,
+      },
+    ])).toThrow(/must declare feature nursing_workflows/)
+  })
+
+  it('declares expected features for cross-feature and subfeature routes', () => {
+    const routesByPath = new Map(featureRoutes.map((route) => [route.path, route]))
+
+    expect(routesByPath.get('/billing/admissions')?.features).toEqual(
+      expect.arrayContaining(['billing', 'inpatient_admissions'])
+    )
+    expect(routesByPath.get('/billing/discharges')?.features).toEqual(
+      expect.arrayContaining(['billing', 'discharge_workflows'])
+    )
+    expect(routesByPath.get('/billing/claims')?.features).toEqual(
+      expect.arrayContaining(['billing', 'insurance_claims'])
+    )
+    expect(routesByPath.get('/nursing/admissions')?.features).toEqual(
+      expect.arrayContaining(['nursing_workflows', 'inpatient_admissions'])
+    )
+    expect(routesByPath.get('/nursing/discharges')?.features).toEqual(
+      expect.arrayContaining(['nursing_workflows', 'discharge_workflows'])
+    )
+    expect(routesByPath.get('/admin/audit-logs')?.features).toEqual(
+      expect.arrayContaining(['audit'])
+    )
+    expect(routesByPath.get('/charts/templates')?.features).toEqual(
+      expect.arrayContaining(['clinical_notes'])
+    )
+  })
+
   it('validates capabilities metadata when present', () => {
     expect(() => validateRoutes([
       {

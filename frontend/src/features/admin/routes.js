@@ -19,6 +19,7 @@ export const adminRoutes = [
     component: AuditLogsPage,
     roles: ROLE_GROUPS.ADMIN_ONLY,
     capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW],
+    features: ['audit'],
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.ADMIN,
     title: 'Audit Logs | Hospital Management System',
