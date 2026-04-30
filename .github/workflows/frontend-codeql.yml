@@ -1,18 +1,7 @@
 name: Frontend CodeQL
 
 on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-codeql.yml'
-  pull_request:
-    branches: [ main, develop ]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-codeql.yml'
-  schedule:
-    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 jobs:
   analyze:

@@ -1,18 +1,7 @@
 name: Backend CodeQL
 
 on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-codeql.yml'
-  pull_request:
-    branches: [ main, develop ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-codeql.yml'
-  schedule:
-    - cron: '0 5 * * 1'
+  workflow_dispatch:
 
 jobs:
   analyze:

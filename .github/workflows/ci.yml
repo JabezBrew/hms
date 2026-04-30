@@ -262,7 +262,6 @@ jobs:
       GOOGLE_DICOM_STORE: test-dicom-store
       GOOGLE_HL7V2_STORE: test-hl7v2-store
       E2E_ADMIN_EMAIL: admin@hms.com
-      E2E_ADMIN_PASSWORD: Admin123!
       E2E_SMOKE_PATIENT_NAME: Smoke Patient
       VITE_API_BASE_URL: http://127.0.0.1:8000/api
       VITE_WS_URL: ws://127.0.0.1:8001
@@ -297,6 +296,12 @@ jobs:
         cd frontend
         npm ci
         npx playwright install --with-deps chromium
+
+    - name: Generate E2E admin password
+      run: |
+        password="$(python -c 'import secrets; print("HmsE2E-" + secrets.token_urlsafe(24) + "-Aa1!")')"
+        echo "::add-mask::$password"
+        echo "E2E_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
 
     - name: Prepare smoke-test data
       run: |
