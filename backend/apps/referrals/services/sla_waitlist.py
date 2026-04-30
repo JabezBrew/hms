@@ -6,6 +6,10 @@ from django.utils import timezone
 
 from apps.appointments.models import Appointment
 from apps.appointments.services import ClinicBookingService, ConflictPreventionService
+from apps.core.security import (
+    CLINICAL_PATIENT_ACCESS_USER_TYPES,
+    get_accessible_patients_for_clinician,
+)
 from apps.referrals.models import (
     ClinicWaitlistEntry,
     ClinicWaitlistEntryStatus,
@@ -301,11 +305,23 @@ class ClinicWaitlistService:
         )
 
     @classmethod
-    def offer_next(cls, clinic, start_time=None, end_time=None, expires_minutes=30, actor=None):
+    def offer_next(
+        cls,
+        clinic,
+        start_time=None,
+        end_time=None,
+        expires_minutes=30,
+        actor=None,
+        accessible_patients=None,
+    ):
         queryset = ClinicWaitlistEntry.objects.filter(
             clinic=clinic,
             status=ClinicWaitlistEntryStatus.WAITING,
-        ).select_related('referral')
+        ).select_related('patient__user', 'referral')
+        if accessible_patients is not None:
+            queryset = queryset.filter(patient__in=accessible_patients)
+        elif getattr(actor, 'user_type', None) in CLINICAL_PATIENT_ACCESS_USER_TYPES:
+            queryset = queryset.filter(patient__in=get_accessible_patients_for_clinician(actor))
         if start_time and end_time:
             queryset = queryset.filter(
                 requested_start_time__lt=end_time,

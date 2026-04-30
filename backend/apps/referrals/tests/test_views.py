@@ -10,7 +10,12 @@ from django.utils import timezone
 from datetime import timedelta
 from rest_framework_simplejwt.tokens import AccessToken
 
-from apps.referrals.models import Referral, ClinicWaitlistEntry
+from apps.referrals.models import (
+    ClinicWaitlistEntry,
+    ClinicWaitlistEntryStatus,
+    Referral,
+    ReferralUrgency,
+)
 from apps.referrals.views import ClinicWaitlistEntryViewSet
 from .factories import ReferralFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
@@ -552,3 +557,53 @@ class TestReferralSLAAndWaitlist:
 
         entry = ClinicWaitlistEntry.objects.get(id=entry_id)
         assert entry.status == 'promoted'
+
+    def test_offer_next_scopes_doctor_to_accessible_patients(self, api_client, db, settings):
+        settings.TEAM_ACCESS_STRICT = True
+        practitioner, facility = self._authenticate_as_practitioner(api_client)
+        accessible_patient = PatientProfileFactory(facility=facility)
+        inaccessible_patient = PatientProfileFactory(facility=facility)
+        EncounterFactory(
+            patient=accessible_patient,
+            practitioner=practitioner,
+            facility=facility,
+            status='in-progress',
+        )
+        clinic = create_clinic(facility)
+
+        start = timezone.now() + timedelta(days=1, hours=1)
+        end = start + timedelta(minutes=30)
+        inaccessible_entry = ClinicWaitlistEntry.objects.create(
+            facility=facility,
+            clinic=clinic,
+            patient=inaccessible_patient,
+            requested_start_time=start,
+            requested_end_time=end,
+            urgency=ReferralUrgency.EMERGENCY,
+            vulnerability_flag=True,
+            status=ClinicWaitlistEntryStatus.WAITING,
+            notes='Restricted waitlist note',
+        )
+        accessible_entry = ClinicWaitlistEntry.objects.create(
+            facility=facility,
+            clinic=clinic,
+            patient=accessible_patient,
+            requested_start_time=start,
+            requested_end_time=end,
+            urgency=ReferralUrgency.ROUTINE,
+            status=ClinicWaitlistEntryStatus.WAITING,
+        )
+
+        response = api_client.post(
+            get_url('clinic-waitlist/offer-next/'),
+            {'clinic_id': str(clinic.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['id'] == str(accessible_entry.id)
+
+        accessible_entry.refresh_from_db()
+        inaccessible_entry.refresh_from_db()
+        assert accessible_entry.status == ClinicWaitlistEntryStatus.OFFERED
+        assert inaccessible_entry.status == ClinicWaitlistEntryStatus.WAITING

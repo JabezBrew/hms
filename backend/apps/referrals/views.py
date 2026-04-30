@@ -931,12 +931,17 @@ class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
         parsed_start = parse_datetime(start_time) if start_time else None
         parsed_end = parse_datetime(end_time) if end_time else None
 
+        accessible_patients = None
+        if getattr(request.user, 'user_type', None) != 'admin':
+            accessible_patients = get_accessible_patients_for_clinician(request.user)
+
         entry = ClinicWaitlistService.offer_next(
             clinic=clinic,
             start_time=parsed_start,
             end_time=parsed_end,
             expires_minutes=expires_minutes,
             actor=request.user,
+            accessible_patients=accessible_patients,
         )
         if not entry:
             return Response({'offered': None}, status=status.HTTP_200_OK)
