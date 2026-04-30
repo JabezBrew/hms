@@ -30,6 +30,7 @@ CLINICAL_PATIENT_ACCESS_USER_TYPES = frozenset({
     'practitioner',
     'inpatient_doctor',
 })
+TRIAGE_QUEUE_USER_TYPES = CLINICAL_PATIENT_ACCESS_USER_TYPES
 
 
 def normalize_facility_code(code):
@@ -369,6 +370,31 @@ def _get_patient_profile(patient_or_id):
         except PatientProfile.DoesNotExist:
             raise PermissionDenied("Patient not found.")
     return patient_or_id
+
+
+def can_access_triage_queue(user):
+    """
+    Return whether a user can access and mutate the triage queue.
+
+    Triage is the first clinical routing step for walk-in patients, so this
+    intentionally does not require existing care-team access to the patient.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    return (
+        getattr(user, 'user_type', None) == 'admin' or
+        getattr(user, 'user_type', None) in TRIAGE_QUEUE_USER_TYPES
+    )
+
+
+class TriageQueuePermission(BasePermission):
+    """
+    Require a clinical triage-capable role without requiring patient-team access.
+    """
+    message = "You do not have access to the triage queue."
+
+    def has_permission(self, request, view):
+        return can_access_triage_queue(getattr(request, 'user', None))
 
 
 def _get_practitioner_profile(user):

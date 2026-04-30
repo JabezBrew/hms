@@ -34,6 +34,7 @@ from apps.core.features import feature_enabled as effective_feature_enabled
 from apps.core.security import (
     FacilityScopedPermission,
     FeatureRequiredPermission,
+    TriageQueuePermission,
     check_clinical_access,
     feature_disabled_payload,
     get_accessible_patients_for_clinician,
@@ -678,6 +679,7 @@ class TriageQueueViewSet(viewsets.ModelViewSet):
         FeatureRequiredPermission,
         permissions.IsAuthenticated,
         FacilityScopedPermission,
+        TriageQueuePermission,
     ]
     pagination_class = StandardResultsSetPagination
 
@@ -705,7 +707,6 @@ class TriageQueueViewSet(viewsets.ModelViewSet):
         patient = serializer.validated_data['patient']
         if not facility or patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
-        check_clinical_access(request.user, patient)
 
         entry = TriageService.add_to_queue(
             patient=patient,
@@ -765,7 +766,11 @@ class TriageQueueViewSet(viewsets.ModelViewSet):
         practitioner = None
         if practitioner_id:
             from apps.users.models import PractitionerProfile
-            practitioner = PractitionerProfile.objects.filter(id=practitioner_id).first()
+            practitioner = PractitionerProfile.objects.filter(
+                Q(staff__primary_facility=facility) |
+                Q(staff__primary_facility__isnull=True, staff__user__primary_facility=facility),
+                id=practitioner_id,
+            ).first()
             if not practitioner:
                 return Response({"error": "Practitioner not found"}, status=status.HTTP_404_NOT_FOUND)
 

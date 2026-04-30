@@ -11,7 +11,7 @@ from apps.users.tests.factories import PatientProfileFactory, PractitionerProfil
 from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
 from apps.appointments.tests.factories import AppointmentTypeFactory, RecurringScheduleFactory
 from apps.appointments.models import Appointment
-from apps.encounters.models import Encounter, OutpatientVisit
+from apps.encounters.models import Encounter, OutpatientVisit, TriageQueue
 
 
 BASE_URL = '/api/encounters'
@@ -296,3 +296,92 @@ class TestTriageQueueFlow:
         )
         assert response.status_code == status.HTTP_200_OK
         assert Appointment.objects.filter(id=response.data['appointment_id']).exists()
+
+    def test_nurse_can_triage_walk_in_without_existing_team_access(
+        self,
+        settings,
+        nurse_client,
+        default_facility,
+    ):
+        settings.TEAM_ACCESS_STRICT = True
+        patient = PatientProfileFactory(facility=default_facility)
+
+        create_response = nurse_client.post(
+            f'{BASE_URL}/triage/',
+            {
+                'patient': str(patient.id),
+                'priority': 'routine',
+                'chief_complaint': 'Walk-in checkup',
+            },
+            format='json',
+        )
+        assert create_response.status_code == status.HTTP_201_CREATED
+
+        list_response = nurse_client.get(f'{BASE_URL}/triage/')
+        assert list_response.status_code == status.HTTP_200_OK
+        assert any(
+            str(item['patient']) == str(patient.id) and
+            item['chief_complaint'] == 'Walk-in checkup'
+            for item in list_response.data['results']
+        )
+
+        triage_response = nurse_client.post(
+            f'{BASE_URL}/triage/{create_response.data["id"]}/triage/',
+            {'priority': 'urgent', 'notes': 'Technical assessment complete'},
+            format='json',
+        )
+        assert triage_response.status_code == status.HTTP_200_OK
+
+        entry = TriageQueue.objects.get(id=create_response.data['id'])
+        assert entry.status == TriageQueue.Status.TRIAGED
+        assert entry.priority == TriageQueue.Priority.URGENT
+        assert entry.triage_notes == 'Technical assessment complete'
+
+    @pytest.mark.parametrize(
+        'blocked_user_type',
+        ['receptionist', 'lab_technician', 'pharmacist', 'billing', 'patient'],
+    )
+    def test_non_triage_roles_cannot_list_create_or_mutate_triage_queue(
+        self,
+        api_client,
+        user_factory,
+        default_facility,
+        blocked_user_type,
+    ):
+        user = user_factory(user_type=blocked_user_type, primary_facility=default_facility)
+        patient = PatientProfileFactory(facility=default_facility)
+        entry = TriageQueue.objects.create(
+            facility=default_facility,
+            patient=patient,
+            priority=TriageQueue.Priority.ROUTINE,
+            chief_complaint='Severe chest pain',
+            status=TriageQueue.Status.WAITING,
+        )
+        api_client.force_authenticate(user=user)
+        api_client.credentials(HTTP_X_FACILITY_CODE=default_facility.code)
+
+        list_response = api_client.get(f'{BASE_URL}/triage/')
+        assert list_response.status_code == status.HTTP_403_FORBIDDEN
+
+        create_response = api_client.post(
+            f'{BASE_URL}/triage/',
+            {
+                'patient': str(patient.id),
+                'priority': 'urgent',
+                'chief_complaint': 'Unauthorized intake',
+            },
+            format='json',
+        )
+        assert create_response.status_code == status.HTTP_403_FORBIDDEN
+
+        triage_response = api_client.post(
+            f'{BASE_URL}/triage/{entry.id}/triage/',
+            {'priority': 'urgent', 'notes': 'unauthorized'},
+            format='json',
+        )
+        assert triage_response.status_code == status.HTTP_403_FORBIDDEN
+
+        cancel_response = api_client.post(f'{BASE_URL}/triage/{entry.id}/cancel/')
+        assert cancel_response.status_code == status.HTTP_403_FORBIDDEN
+        entry.refresh_from_db()
+        assert entry.status == TriageQueue.Status.WAITING
