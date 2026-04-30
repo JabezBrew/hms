@@ -193,6 +193,224 @@ FEATURE_MANIFEST = {
 }
 
 
+COMMERCIAL_CONTRACTS = {
+    'core': 'Included in every deployment; not separately sellable.',
+    'platform': 'Platform capability or guardrail; controlled by deployment tier.',
+    'sellable_module': 'Commercial module that can be sold and entitled.',
+    'sellable_add_on': 'Commercial add-on that depends on another module.',
+    'integration_add_on': 'External-system integration add-on.',
+    'ai_add_on': 'AI add-on that depends on clinical module entitlement.',
+}
+
+
+FEATURE_CONTRACT = {
+    # Core product baseline
+    'patient_registration': {
+        'contract': 'core',
+        'sellable': False,
+        'toggleable': False,
+    },
+    'patient_chronicle': {
+        'contract': 'core',
+        'sellable': False,
+        'toggleable': False,
+    },
+    'audit': {
+        'contract': 'core',
+        'sellable': False,
+        'toggleable': False,
+    },
+
+    # Platform tier controls
+    'facility_context_required': {
+        'contract': 'platform',
+        'sellable': False,
+        'toggleable': True,
+    },
+    'multi_facility': {
+        'contract': 'platform',
+        'sellable': False,
+        'toggleable': True,
+    },
+    'facility_switcher': {
+        'contract': 'platform',
+        'sellable': False,
+        'toggleable': True,
+    },
+    'cross_facility_access': {
+        'contract': 'platform',
+        'sellable': False,
+        'toggleable': True,
+    },
+
+    # Sellable care and operations modules
+    'outpatient_encounters': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'inpatient_admissions': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'wards': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'emergency_encounters': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'nursing_workflows': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'appointments': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'billing': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'inventory': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'laboratory': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'pharmacy': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'referrals': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'clinical_notes': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
+
+    # Sellable add-ons
+    'outpatient_active_clinic_required': {
+        'contract': 'platform',
+        'sellable': False,
+        'toggleable': True,
+    },
+    'department_rosters': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'bed_management': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'discharge_workflows': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'insurance_claims': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'cross_facility_referrals': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'cross_facility_record_exchange': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+
+    # Integrations and AI
+    'fhir_claims': {
+        'contract': 'integration_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'ai_omni_nl': {
+        'contract': 'ai_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+    'ai_chronicle_copilot': {
+        'contract': 'ai_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
+}
+
+
+FEATURE_DEPENDENCIES = {
+    'facility_switcher': ('multi_facility',),
+    'cross_facility_referrals': ('cross_facility_access', 'referrals'),
+    'cross_facility_record_exchange': ('cross_facility_access',),
+    'outpatient_encounters': ('patient_registration', 'patient_chronicle'),
+    'outpatient_active_clinic_required': ('outpatient_encounters',),
+    'department_rosters': ('outpatient_encounters',),
+    'inpatient_admissions': ('patient_registration', 'patient_chronicle', 'wards'),
+    'wards': ('patient_chronicle',),
+    'bed_management': ('wards',),
+    'nursing_workflows': ('patient_chronicle', 'wards'),
+    'discharge_workflows': (
+        'inpatient_admissions',
+        'wards',
+        'clinical_notes',
+    ),
+    'appointments': ('patient_registration',),
+    'billing': ('patient_registration',),
+    'insurance_claims': ('billing',),
+    'fhir_claims': ('billing', 'insurance_claims'),
+    'laboratory': ('patient_chronicle',),
+    'pharmacy': ('patient_chronicle',),
+    'referrals': ('patient_registration',),
+    'clinical_notes': ('patient_chronicle',),
+    'ai_omni_nl': ('patient_chronicle',),
+    'ai_chronicle_copilot': ('patient_chronicle', 'clinical_notes'),
+}
+
+
+NON_TOGGLEABLE_FEATURES = tuple(
+    feature_key
+    for feature_key, contract in FEATURE_CONTRACT.items()
+    if not contract['toggleable']
+)
+
+
+SELLABLE_MODULES = tuple(
+    feature_key
+    for feature_key, contract in FEATURE_CONTRACT.items()
+    if contract['sellable']
+)
+
+
+for _feature_key, _contract in FEATURE_CONTRACT.items():
+    FEATURE_MANIFEST[_feature_key].update(_contract)
+
+for _feature_key, _dependencies in FEATURE_DEPENDENCIES.items():
+    FEATURE_MANIFEST[_feature_key]['depends_on'] = _dependencies
+
+
 CLINIC_DISABLED_FEATURES = (
     'department_rosters',
     'inpatient_admissions',
@@ -255,6 +473,22 @@ def base_feature_defaults():
         key: bool(config.get('profile_default', False))
         for key, config in FEATURE_MANIFEST.items()
     }
+
+
+def feature_dependency_map():
+    return {
+        key: tuple(config.get('depends_on', ()))
+        for key, config in FEATURE_MANIFEST.items()
+        if config.get('depends_on')
+    }
+
+
+def non_toggleable_feature_keys():
+    return NON_TOGGLEABLE_FEATURES
+
+
+def sellable_module_keys():
+    return SELLABLE_MODULES
 
 
 def api_feature_prefixes():

@@ -13,6 +13,8 @@ from hms_backend.feature_manifest import (
     PRODUCT_TIER_PROFILES,
     api_feature_prefixes,
     base_feature_defaults,
+    feature_dependency_map,
+    non_toggleable_feature_keys,
 )
 
 
@@ -33,6 +35,12 @@ DEPLOYMENT_PROFILES = deepcopy(PRODUCT_TIER_PROFILES)
 
 
 API_FEATURE_PREFIXES = api_feature_prefixes()
+
+
+FEATURE_DEPENDENCIES = feature_dependency_map()
+
+
+NON_TOGGLEABLE_FEATURES = non_toggleable_feature_keys()
 
 
 TRUE_VALUES = {'1', 'true', 'yes', 'on'}
@@ -57,6 +65,52 @@ def coerce_feature_value(value):
     return None
 
 
+def normalize_feature_set(feature_values):
+    """
+    Return a fail-closed feature matrix.
+
+    Non-toggleable core features stay enabled. Dependent features are disabled
+    unless every declared dependency is enabled.
+    """
+    normalized = {
+        feature_key: bool(feature_values.get(feature_key, False))
+        for feature_key in FEATURE_MANIFEST
+    }
+
+    for feature_key in NON_TOGGLEABLE_FEATURES:
+        normalized[feature_key] = True
+
+    changed = True
+    while changed:
+        changed = False
+        for feature_key, dependencies in FEATURE_DEPENDENCIES.items():
+            if not normalized.get(feature_key, False):
+                continue
+            if all(
+                normalized.get(dependency_key, False)
+                for dependency_key in dependencies
+            ):
+                continue
+            normalized[feature_key] = False
+            changed = True
+
+    return normalized
+
+
+def feature_dependency_violations(feature_values):
+    normalized = {
+        feature_key: bool(feature_values.get(feature_key, False))
+        for feature_key in FEATURE_MANIFEST
+    }
+    return tuple(
+        (feature_key, dependency_key)
+        for feature_key, dependencies in FEATURE_DEPENDENCIES.items()
+        if normalized.get(feature_key, False)
+        for dependency_key in dependencies
+        if not normalized.get(dependency_key, False)
+    )
+
+
 def build_deployment_config(profile, feature_overrides=None):
     canonical_profile = normalize_deployment_profile(profile)
     profile_config = DEPLOYMENT_PROFILES[canonical_profile]
@@ -70,6 +124,7 @@ def build_deployment_config(profile, feature_overrides=None):
         if coerced is not None:
             features[key] = coerced
 
+    features = normalize_feature_set(features)
     practitioner_scheduling_mode = 'roster' if features['department_rosters'] else 'simple'
 
     return {
@@ -97,6 +152,39 @@ def build_deployment_config(profile, feature_overrides=None):
     }
 
 
+def _legacy_setting_feature_values(django_settings, default):
+    features = {
+        feature_key: bool(
+            getattr(django_settings, 'DEPLOYMENT_FEATURES', {}).get(
+                feature_key,
+                default,
+            )
+        )
+        for feature_key in FEATURE_MANIFEST
+    }
+
+    if hasattr(django_settings, 'FACILITY_CONTEXT_REQUIRED'):
+        features['facility_context_required'] = bool(
+            django_settings.FACILITY_CONTEXT_REQUIRED
+        )
+    if hasattr(django_settings, 'MULTI_FACILITY_MODE'):
+        features['multi_facility'] = bool(django_settings.MULTI_FACILITY_MODE)
+    if hasattr(django_settings, 'ALLOW_CROSS_FACILITY_ACCESS'):
+        features['cross_facility_access'] = bool(
+            django_settings.ALLOW_CROSS_FACILITY_ACCESS
+        )
+    if hasattr(django_settings, 'PRACTITIONER_SCHEDULING_MODE'):
+        features['department_rosters'] = (
+            getattr(django_settings, 'PRACTITIONER_SCHEDULING_MODE') == 'roster'
+        )
+    if hasattr(django_settings, 'REQUIRE_OUTPATIENT_ACTIVE_CLINIC'):
+        features['outpatient_active_clinic_required'] = bool(
+            django_settings.REQUIRE_OUTPATIENT_ACTIVE_CLINIC
+        )
+
+    return normalize_feature_set(features)
+
+
 def setting_feature_default(feature_key, django_settings=None, default=False):
     """
     Return the settings/profile default for a feature.
@@ -107,31 +195,11 @@ def setting_feature_default(feature_key, django_settings=None, default=False):
     if django_settings is None:
         from django.conf import settings as django_settings
 
-    if feature_key == 'facility_context_required' and hasattr(
-        django_settings, 'FACILITY_CONTEXT_REQUIRED'
-    ):
-        return bool(django_settings.FACILITY_CONTEXT_REQUIRED)
-    if feature_key == 'multi_facility' and hasattr(
-        django_settings, 'MULTI_FACILITY_MODE'
-    ):
-        return bool(django_settings.MULTI_FACILITY_MODE)
-    if feature_key in {
-        'cross_facility_access',
-        'cross_facility_referrals',
-        'cross_facility_record_exchange',
-    } and hasattr(django_settings, 'ALLOW_CROSS_FACILITY_ACCESS'):
-        if feature_key == 'cross_facility_access':
-            return bool(django_settings.ALLOW_CROSS_FACILITY_ACCESS)
-    if feature_key == 'department_rosters' and hasattr(
-        django_settings, 'PRACTITIONER_SCHEDULING_MODE'
-    ):
-        return getattr(django_settings, 'PRACTITIONER_SCHEDULING_MODE') == 'roster'
-    if feature_key == 'outpatient_active_clinic_required' and hasattr(
-        django_settings, 'REQUIRE_OUTPATIENT_ACTIVE_CLINIC'
-    ):
-        return bool(django_settings.REQUIRE_OUTPATIENT_ACTIVE_CLINIC)
+    if feature_key not in FEATURE_MANIFEST:
+        return bool(default)
 
-    return bool(getattr(django_settings, 'DEPLOYMENT_FEATURES', {}).get(feature_key, default))
+    features = _legacy_setting_feature_values(django_settings, default)
+    return bool(features.get(feature_key, default))
 
 
 def feature_enabled(

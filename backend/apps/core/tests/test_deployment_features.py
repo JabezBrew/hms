@@ -6,14 +6,26 @@ from hms_backend.deployment import (
     api_path_enabled,
     build_deployment_config,
     coerce_feature_value,
+    feature_dependency_violations,
     feature_enabled,
     feature_for_api_path,
+    normalize_feature_set,
     normalize_deployment_profile,
+    setting_feature_default,
 )
 from hms_backend.feature_manifest import (
     CLINIC_DISABLED_FEATURES,
+    COMMERCIAL_CONTRACTS,
+    FEATURE_CONTRACT,
+    FEATURE_DEPENDENCIES,
+    FEATURE_MANIFEST,
     HOSPITAL_NETWORK_ENABLED_FEATURES,
+    NON_TOGGLEABLE_FEATURES,
     PRODUCT_TIER_PROFILES,
+    SELLABLE_MODULES,
+    feature_dependency_map,
+    non_toggleable_feature_keys,
+    sellable_module_keys,
 )
 from hms_backend import settings as hms_settings
 from apps.core.security import FeatureRequiredPermission
@@ -41,6 +53,40 @@ def clear_feature_cache():
 def test_deployment_profiles_are_loaded_from_feature_manifest():
     assert DEPLOYMENT_PROFILES == PRODUCT_TIER_PROFILES
     assert set(DEPLOYMENT_PROFILES) == {'clinic', 'hospital', 'hospital_network'}
+
+
+def test_feature_manifest_declares_complete_commercial_contract():
+    assert set(FEATURE_CONTRACT) == set(FEATURE_MANIFEST)
+    assert set(COMMERCIAL_CONTRACTS) == {
+        'core',
+        'platform',
+        'sellable_module',
+        'sellable_add_on',
+        'integration_add_on',
+        'ai_add_on',
+    }
+    assert non_toggleable_feature_keys() == NON_TOGGLEABLE_FEATURES
+    assert sellable_module_keys() == SELLABLE_MODULES
+    assert feature_dependency_map() == FEATURE_DEPENDENCIES
+
+    for feature_key, config in FEATURE_MANIFEST.items():
+        assert config['contract'] in COMMERCIAL_CONTRACTS
+        assert isinstance(config['sellable'], bool)
+        assert isinstance(config['toggleable'], bool)
+        assert isinstance(config.get('depends_on', ()), tuple)
+        assert feature_key not in config.get('depends_on', ())
+        for dependency_key in config.get('depends_on', ()):
+            assert dependency_key in FEATURE_MANIFEST
+
+    for feature_key in NON_TOGGLEABLE_FEATURES:
+        assert FEATURE_MANIFEST[feature_key]['toggleable'] is False
+        assert FEATURE_MANIFEST[feature_key]['sellable'] is False
+
+    assert set(SELLABLE_MODULES) == {
+        feature_key
+        for feature_key, config in FEATURE_MANIFEST.items()
+        if config['sellable']
+    }
 
 
 @pytest.mark.parametrize(
@@ -160,6 +206,96 @@ def test_feature_overrides_can_customize_profile_and_ignore_unknowns():
     assert config['features']['wards'] is True
     assert config['capabilities']['practitioner_scheduling_mode'] == 'simple'
     assert 'unknown_feature' not in config['features']
+
+
+def test_core_features_are_not_toggleable_by_profile_overrides():
+    config = build_deployment_config(
+        'hospital',
+        feature_overrides={
+            'patient_registration': False,
+            'patient_chronicle': False,
+            'audit': False,
+        },
+    )
+
+    for feature_key in NON_TOGGLEABLE_FEATURES:
+        assert config['features'][feature_key] is True
+
+
+def test_feature_dependencies_are_normalized_fail_closed():
+    config = build_deployment_config(
+        'hospital_network',
+        feature_overrides={
+            'multi_facility': False,
+            'facility_switcher': True,
+            'cross_facility_access': False,
+            'cross_facility_referrals': True,
+            'cross_facility_record_exchange': True,
+            'wards': False,
+            'bed_management': True,
+            'inpatient_admissions': True,
+            'nursing_workflows': True,
+            'discharge_workflows': True,
+            'billing': False,
+            'insurance_claims': True,
+            'fhir_claims': True,
+        },
+    )
+
+    assert config['features']['multi_facility'] is False
+    assert config['features']['facility_switcher'] is False
+    assert config['features']['cross_facility_access'] is False
+    assert config['features']['cross_facility_referrals'] is False
+    assert config['features']['cross_facility_record_exchange'] is False
+    assert config['features']['wards'] is False
+    assert config['features']['bed_management'] is False
+    assert config['features']['inpatient_admissions'] is False
+    assert config['features']['nursing_workflows'] is False
+    assert config['features']['discharge_workflows'] is False
+    assert config['features']['billing'] is False
+    assert config['features']['insurance_claims'] is False
+    assert config['features']['fhir_claims'] is False
+
+
+def test_feature_dependency_violation_helper_reports_impossible_combinations():
+    features = normalize_feature_set({
+        **{feature_key: False for feature_key in FEATURE_MANIFEST},
+        'billing': False,
+        'insurance_claims': True,
+        'fhir_claims': True,
+        'wards': False,
+        'bed_management': True,
+    })
+    assert features['insurance_claims'] is False
+    assert features['fhir_claims'] is False
+    assert features['bed_management'] is False
+
+    violations = feature_dependency_violations({
+        'billing': False,
+        'insurance_claims': True,
+        'fhir_claims': True,
+        'wards': False,
+        'bed_management': True,
+    })
+
+    assert ('insurance_claims', 'billing') in violations
+    assert ('fhir_claims', 'billing') in violations
+    assert ('fhir_claims', 'insurance_claims') not in violations
+    assert ('bed_management', 'wards') in violations
+
+
+def test_setting_feature_default_normalizes_partial_deployment_features(settings):
+    settings.DEPLOYMENT_FEATURES = {
+        'billing': False,
+        'insurance_claims': True,
+        'multi_facility': False,
+        'facility_switcher': True,
+    }
+
+    assert setting_feature_default('billing', settings) is False
+    assert setting_feature_default('insurance_claims', settings) is False
+    assert setting_feature_default('facility_switcher', settings) is False
+    assert setting_feature_default('patient_chronicle', settings) is True
 
 
 @pytest.mark.django_db
