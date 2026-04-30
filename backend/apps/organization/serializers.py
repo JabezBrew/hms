@@ -1035,6 +1035,17 @@ class RosterValidationRuleSerializer(serializers.ModelSerializer):
                         raise serializers.ValidationError({
                             'params': f'{param_name} must be an integer'
                         })
+                    if param_type == 'int' and isinstance(value, int):
+                        min_value = param_schema.get('min')
+                        max_value = param_schema.get('max')
+                        if min_value is not None and value < min_value:
+                            raise serializers.ValidationError({
+                                'params': f'{param_name} must be at least {min_value}'
+                            })
+                        if max_value is not None and value > max_value:
+                            raise serializers.ValidationError({
+                                'params': f'{param_name} must be at most {max_value}'
+                            })
                     if param_type == 'day_pairs' and not isinstance(value, list):
                         raise serializers.ValidationError({
                             'params': f'{param_name} must be a list of day pairs'
