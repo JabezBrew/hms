@@ -20,12 +20,18 @@ import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js'
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
-import Workflow from 'lucide-react/dist/esm/icons/workflow.js'
 import Warehouse from 'lucide-react/dist/esm/icons/warehouse.js'
 import ShoppingCart from 'lucide-react/dist/esm/icons/shopping-cart.js'
 import FileBox from 'lucide-react/dist/esm/icons/file-box.js'
 import Truck from 'lucide-react/dist/esm/icons/truck.js'
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js'
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js'
+import UserRound from 'lucide-react/dist/esm/icons/user-round.js'
+import Users from 'lucide-react/dist/esm/icons/users.js'
+import Lock from 'lucide-react/dist/esm/icons/lock.js'
+import SlidersHorizontal from 'lucide-react/dist/esm/icons/sliders-horizontal.js'
+import KeyRound from 'lucide-react/dist/esm/icons/key-round.js'
+import IdCard from 'lucide-react/dist/esm/icons/id-card.js'
 import {
   SidebarContent,
   SidebarGroup,
@@ -41,22 +47,16 @@ import {
   SidebarFooter,
   SidebarSeparator,
 } from '@/components/ui/sidebar'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-
-import { useAuth } from "@/lib/auth"
-import { useInboxCount } from "@/features/inbox/hooks"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { useAuth } from '@/lib/auth'
+import { useInboxCount } from '@/features/inbox/hooks'
 import { useSystemCapabilities } from '@/hooks/useSystemQueries'
-import { ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
-import { useSidebarState } from "@/hooks/useSidebarState"
-
-// Helper function to check if a user has access to a menu item
-const hasAccess = (userRole, allowedRoles) => {
-  if (!userRole || !allowedRoles || allowedRoles.length === 0) return false
-  return allowedRoles.includes(userRole)
-}
-
-const hasAnyAccess = (userRole, roleGroups) =>
-  roleGroups.some((roleGroup) => hasAccess(userRole, roleGroup))
+import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
+import { userCanAccess } from '@/shared/lib/access'
+import { areFeaturesEnabled } from '@/shared/lib/features'
+import { useSidebarState } from '@/hooks/useSidebarState'
+import { SIDEBARS } from '@/app/routes/routeTypes'
+import { useLocation, useParams } from 'react-router-dom'
 
 const DASHBOARD_ROLES = [
   ROLES.ADMIN,
@@ -71,6 +71,7 @@ const DASHBOARD_ROLES = [
   ROLES.PHARMACIST,
   ROLES.LAB_TECHNICIAN,
   ROLES.BILLING,
+  ROLES.STORE_KEEPER,
   'front_desk',
 ]
 
@@ -98,7 +99,6 @@ const LAB_RESULTS_ROLES = [
   ROLES.PHYSICIAN,
   ROLES.PRACTITIONER,
 ]
-
 const NOTE_TEMPLATE_ROLES = [ROLES.ADMIN, ROLES.DOCTOR, ROLES.NURSE]
 const CHART_TEMPLATE_ROLES = [
   ROLES.ADMIN,
@@ -109,484 +109,717 @@ const CHART_TEMPLATE_ROLES = [
   ROLES.PHYSICIAN,
   ROLES.PRACTITIONER,
 ]
-
 const DUTY_ROSTER_ROLES = [ROLES.ADMIN, ROLES.HEAD_NURSE]
 
-export function AppSidebar() {
-  const { user } = useAuth()
-  const userRole = user?.role || ''
-  const { count: inboxCount } = useInboxCount()
+// eslint-disable-next-line react-refresh/only-export-components
+export function getDashboardUrl(role) {
+  if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
+    return '/dashboards/nurse'
+  }
+  if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
+    return '/dashboards/inpatient'
+  }
+  if ([ROLES.RECEPTIONIST, 'front_desk'].includes(role)) {
+    return '/dashboards/reception'
+  }
+  if (role === ROLES.ADMIN) {
+    return '/dashboards/admin'
+  }
+  if ([ROLES.PHARMACIST, ROLES.PHARMACY_TECH].includes(role)) {
+    return '/pharmacy/dispensing'
+  }
+  if (role === ROLES.LAB_TECHNICIAN) {
+    return '/laboratory/dashboard'
+  }
+  if (role === ROLES.BILLING) {
+    return '/billing'
+  }
+  if (role === ROLES.STORE_KEEPER) {
+    return '/inventory'
+  }
+  return '/dashboard/provider'
+}
+
+const item = ({
+  key,
+  label,
+  href,
+  icon,
+  roles,
+  capabilities,
+  features,
+  children,
+  exact,
+  badge,
+  props,
+}) => ({
+  key,
+  label,
+  href,
+  icon,
+  roles,
+  capabilities,
+  features,
+  children,
+  exact,
+  badge,
+  props,
+})
+
+const section = (key, label, items) => ({ key, label, items })
+
+const dashboardItem = item({
+  key: 'dashboard',
+  label: 'Dashboard',
+  href: ({ user }) => getDashboardUrl(user?.role || user?.user_type || ''),
+  icon: LayoutDashboard,
+  roles: DASHBOARD_ROLES,
+  exact: true,
+  props: { 'data-onboarding': 'nav-dashboard' },
+})
+
+const inboxItem = item({
+  key: 'inbox',
+  label: 'Inbox',
+  href: '/inbox',
+  icon: Inbox,
+  roles: INBOX_ROLES,
+  exact: true,
+  badge: 'inbox',
+})
+
+const patientRegistryItem = item({
+  key: 'patients',
+  label: 'Patient Registry',
+  href: '/patients',
+  icon: BookOpen,
+  roles: ROLE_GROUPS.PATIENT_REGISTRY,
+  exact: true,
+  props: { 'data-onboarding': 'nav-patients' },
+})
+
+const shortcutItems = [dashboardItem, inboxItem, patientRegistryItem]
+
+const globalSections = [
+  section('menu', 'Menu', [
+    dashboardItem,
+    inboxItem,
+    patientRegistryItem,
+    item({
+      key: 'appointments',
+      label: 'Appointments',
+      icon: Calendar,
+      features: ['appointments'],
+      children: [
+        item({
+          key: 'schedule',
+          label: 'Schedule',
+          href: '/appointments',
+          icon: Calendar,
+          roles: ROLE_GROUPS.APPOINTMENTS,
+          exact: true,
+        }),
+        item({
+          key: 'availability',
+          label: 'Availability',
+          href: '/practitioner-availability',
+          icon: Clock,
+          roles: ROLE_GROUPS.PRACTITIONER_AVAILABILITY,
+          exact: true,
+        }),
+      ],
+    }),
+  ]),
+  section('operations', 'Operations', [
+    item({
+      key: 'wards',
+      label: 'Wards',
+      href: '/wards',
+      icon: Activity,
+      roles: ROLE_GROUPS.WARDS,
+      features: ['wards'],
+      exact: true,
+    }),
+    item({
+      key: 'shift-handoff',
+      label: 'Shift Handoff',
+      href: '/nursing/shift-handoff',
+      icon: ArrowLeftRight,
+      roles: ROLE_GROUPS.NURSING_DASHBOARD,
+      features: ['nursing_workflows'],
+      exact: true,
+    }),
+    item({
+      key: 'laboratory',
+      label: 'Laboratory',
+      icon: FlaskConical,
+      features: ['laboratory'],
+      children: [
+        item({
+          key: 'lab-catalog',
+          label: 'Catalog',
+          href: '/laboratory/catalog',
+          icon: FlaskConical,
+          roles: LAB_CATALOG_ROLES,
+          exact: true,
+        }),
+        item({
+          key: 'lab-worklist',
+          label: 'Worklist',
+          href: '/laboratory/dashboard',
+          icon: ClipboardList,
+          roles: ROLE_GROUPS.LAB_TECHS,
+          exact: true,
+        }),
+        item({
+          key: 'lab-collection',
+          label: 'Collection Queue',
+          href: '/laboratory/collection',
+          icon: Droplet,
+          roles: LAB_COLLECTION_ROLES,
+          exact: true,
+        }),
+        item({
+          key: 'lab-orders',
+          label: 'Orders',
+          href: '/laboratory/orders',
+          icon: TestTube2,
+          roles: ROLE_GROUPS.LAB_ACCESS,
+          exact: true,
+        }),
+        item({
+          key: 'lab-results',
+          label: 'Results',
+          href: '/laboratory/results',
+          icon: FileText,
+          roles: LAB_RESULTS_ROLES,
+          exact: true,
+        }),
+      ],
+    }),
+    item({
+      key: 'pharmacy',
+      label: 'Pharmacy',
+      icon: Pill,
+      roles: ROLE_GROUPS.PHARMACY,
+      features: ['pharmacy'],
+      children: [
+        item({
+          key: 'pharmacy-dispensing',
+          label: 'Dispensing',
+          href: '/pharmacy/dispensing',
+          icon: Pill,
+          exact: true,
+        }),
+        item({
+          key: 'pharmacy-supply-queue',
+          label: 'Supply Queue',
+          href: '/pharmacy/supply-queue',
+          icon: ClipboardList,
+          exact: true,
+        }),
+      ],
+    }),
+    item({
+      key: 'billing',
+      label: 'Billing',
+      href: '/billing',
+      icon: CreditCard,
+      roles: ROLE_GROUPS.BILLING,
+      features: ['billing'],
+      exact: true,
+    }),
+    item({
+      key: 'inventory',
+      label: 'Inventory',
+      icon: Package,
+      roles: ROLE_GROUPS.INVENTORY,
+      features: ['inventory'],
+      children: [
+        item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, exact: true }),
+        item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, exact: false }),
+        item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, exact: true }),
+        item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, exact: false }),
+        item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, exact: false }),
+        item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, exact: false }),
+        item({ key: 'inventory-transfers', label: 'Transfers', href: '/inventory/transfers', icon: Truck, exact: true }),
+        item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, exact: false }),
+        item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, exact: true }),
+      ],
+    }),
+    item({
+      key: 'clinical-content',
+      label: 'Clinical Content',
+      icon: FileText,
+      features: ['clinical_notes'],
+      props: { 'data-onboarding': 'nav-clinical-content-toggle' },
+      children: [
+        item({
+          key: 'note-templates',
+          label: 'Note Templates',
+          href: '/clinical-notes/templates',
+          icon: ClipboardList,
+          roles: NOTE_TEMPLATE_ROLES,
+          exact: true,
+          props: { 'data-onboarding': 'nav-note-templates' },
+        }),
+      ],
+    }),
+    item({
+      key: 'administration',
+      label: 'Administration',
+      icon: Shield,
+      children: [
+        item({
+          key: 'staff',
+          label: 'Staff',
+          href: '/staff',
+          icon: Shield,
+          roles: ROLE_GROUPS.ADMIN_ONLY,
+          capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW],
+          exact: false,
+        }),
+        item({
+          key: 'organization',
+          label: 'Organization',
+          href: '/admin/organization',
+          icon: FolderTree,
+          roles: ROLE_GROUPS.ADMIN_ONLY,
+          capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE],
+          exact: false,
+        }),
+        item({
+          key: 'duty-roster',
+          label: 'Duty Roster',
+          href: '/admin/organization/duty-roster',
+          icon: CalendarClock,
+          roles: DUTY_ROSTER_ROLES,
+          capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW],
+          features: ['department_rosters'],
+          exact: true,
+        }),
+        item({
+          key: 'audit-logs',
+          label: 'Audit Logs',
+          href: '/admin/audit-logs',
+          icon: FileSearch,
+          roles: ROLE_GROUPS.ADMIN_ONLY,
+          capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW],
+          exact: true,
+        }),
+      ],
+    }),
+  ]),
+]
+
+const patientSections = [
+  section('patients', 'Patients', [
+    patientRegistryItem,
+    item({
+      key: 'my-patients',
+      label: 'My Patients',
+      href: '/patients/my-patients',
+      icon: Users,
+      roles: ROLE_GROUPS.MY_PATIENTS,
+      exact: true,
+    }),
+    item({
+      key: 'register-patient',
+      label: 'Register Patient',
+      href: '/patients/create',
+      icon: UserPlus,
+      roles: [ROLES.ADMIN, ROLES.RECEPTIONIST],
+      exact: true,
+    }),
+  ]),
+]
+
+const patientWorkspaceSections = [
+  section('patient-workspace', 'Patient Workspace', [
+    patientRegistryItem,
+    item({
+      key: 'patient-chronicle',
+      label: 'Chronicle',
+      href: ({ params }) => params.id ? `/patients/${params.id}` : null,
+      icon: BookOpen,
+      roles: ROLE_GROUPS.PATIENT_DETAIL,
+      exact: true,
+    }),
+    item({
+      key: 'edit-demographics',
+      label: 'Edit Demographics',
+      href: ({ params }) => params.id ? `/patients/${params.id}/edit` : null,
+      icon: IdCard,
+      roles: [ROLES.ADMIN, ROLES.DOCTOR, ROLES.NURSE],
+      exact: true,
+    }),
+    item({
+      key: 'ward-round',
+      label: 'Ward Round',
+      href: ({ params }) => params.id ? `/patients/${params.id}/ward-round` : null,
+      icon: ClipboardList,
+      roles: ROLE_GROUPS.CLINICAL,
+      features: ['wards'],
+      exact: true,
+    }),
+  ]),
+]
+
+const billingSections = [
+  section('billing', 'Billing', [
+    item({ key: 'billing-dashboard', label: 'Dashboard', href: '/billing', icon: LayoutDashboard, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
+    item({ key: 'invoices', label: 'Invoices', href: '/billing/invoices', icon: FileText, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: false }),
+    item({ key: 'payments', label: 'Payments', href: '/billing/payments', icon: CreditCard, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
+    item({ key: 'cash-sessions', label: 'Cash Sessions', href: '/billing/cash-sessions', icon: Clock, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
+    item({ key: 'claims', label: 'Claims', href: '/billing/claims', icon: ClipboardList, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
+    item({ key: 'nhis', label: 'NHIS', href: '/billing/nhis', icon: Shield, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: false }),
+    item({ key: 'insurance', label: 'Insurance', href: '/billing/insurance', icon: IdCard, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
+    item({ key: 'billing-discharges', label: 'Discharges', href: '/billing/discharges', icon: ArrowLeftRight, roles: ROLE_GROUPS.BILLING, features: ['billing', 'discharge_workflows'], exact: true }),
+    item({ key: 'catalog', label: 'Catalog', href: '/billing/catalog', icon: BookOpen, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
+  ]),
+]
+
+const inventorySections = [
+  section('inventory', 'Inventory', [
+    item({ key: 'inventory-dashboard', label: 'Dashboard', href: '/inventory', icon: LayoutDashboard, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+    item({ key: 'inventory-items', label: 'Items', href: '/inventory/items', icon: Package, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+    item({ key: 'inventory-locations', label: 'Locations', href: '/inventory/locations', icon: Warehouse, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+    item({ key: 'inventory-requisitions', label: 'Requisitions', href: '/inventory/requisitions', icon: ClipboardList, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+    item({ key: 'inventory-purchase-orders', label: 'Purchase Orders', href: '/inventory/purchase-orders', icon: ShoppingCart, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+    item({ key: 'inventory-grns', label: 'GRNs', href: '/inventory/grns', icon: FileBox, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+    item({ key: 'inventory-transfers', label: 'Transfers', href: '/inventory/transfers', icon: Truck, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+    item({ key: 'inventory-controlled', label: 'Controlled', href: '/inventory/controlled', icon: AlertTriangle, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: false }),
+    item({ key: 'inventory-analytics', label: 'Analytics', href: '/inventory/analytics', icon: BarChart3, roles: ROLE_GROUPS.INVENTORY, features: ['inventory'], exact: true }),
+  ]),
+]
+
+const laboratorySections = [
+  section('laboratory', 'Laboratory', [
+    item({ key: 'lab-dashboard', label: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutDashboard, roles: ROLE_GROUPS.LAB_TECHS, features: ['laboratory'], exact: true }),
+    item({ key: 'lab-catalog', label: 'Catalog', href: '/laboratory/catalog', icon: FlaskConical, roles: LAB_CATALOG_ROLES, features: ['laboratory'], exact: true }),
+    item({ key: 'lab-collection', label: 'Collection Queue', href: '/laboratory/collection', icon: Droplet, roles: LAB_COLLECTION_ROLES, features: ['laboratory'], exact: true }),
+    item({ key: 'lab-orders', label: 'Orders', href: '/laboratory/orders', icon: TestTube2, roles: ROLE_GROUPS.LAB_ACCESS, features: ['laboratory'], exact: true }),
+    item({ key: 'lab-results', label: 'Results', href: '/laboratory/results', icon: FileText, roles: LAB_RESULTS_ROLES, features: ['laboratory'], exact: true }),
+  ]),
+]
+
+const pharmacySections = [
+  section('pharmacy', 'Pharmacy', [
+    item({ key: 'pharmacy-dispensing', label: 'Dispensing', href: '/pharmacy/dispensing', icon: Pill, roles: ROLE_GROUPS.PHARMACY, features: ['pharmacy'], exact: true }),
+    item({ key: 'pharmacy-supply-queue', label: 'Supply Queue', href: '/pharmacy/supply-queue', icon: ClipboardList, roles: ROLE_GROUPS.PHARMACY, features: ['pharmacy'], exact: true }),
+  ]),
+]
+
+const adminSections = [
+  section('administration', 'Administration', [
+    item({ key: 'staff', label: 'Staff', href: '/staff', icon: Shield, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW], exact: false }),
+    item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE], exact: false }),
+    item({ key: 'duty-roster', label: 'Duty Roster', href: '/admin/organization/duty-roster', icon: CalendarClock, roles: DUTY_ROSTER_ROLES, capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW], features: ['department_rosters'], exact: true }),
+    item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], exact: true }),
+  ]),
+]
+
+const settingsSections = [
+  section('settings', 'Settings', [
+    item({ key: 'settings-hub', label: 'Settings', href: '/settings', icon: Settings, exact: true }),
+    item({ key: 'profile-settings', label: 'Profile', href: '/settings/profile', icon: UserRound, exact: true }),
+    item({ key: 'security-settings', label: 'Security', href: '/settings/security', icon: Lock, exact: true }),
+    item({ key: 'preferences-settings', label: 'Preferences', href: '/settings/preferences', icon: SlidersHorizontal, exact: true }),
+    item({
+      key: 'feature-entitlements',
+      label: 'Feature Entitlements',
+      href: '/settings/feature-entitlements',
+      icon: KeyRound,
+      roles: ROLE_GROUPS.ADMIN_ONLY,
+      capabilities: [ADMIN_CAPABILITIES.FEATURE_ENTITLEMENTS_MANAGE],
+      exact: true,
+    }),
+  ]),
+]
+
+const SIDEBAR_SECTIONS = {
+  [SIDEBARS.GLOBAL]: globalSections,
+  [SIDEBARS.PATIENTS]: patientSections,
+  [SIDEBARS.PATIENT_WORKSPACE]: patientWorkspaceSections,
+  [SIDEBARS.BILLING]: billingSections,
+  [SIDEBARS.INVENTORY]: inventorySections,
+  [SIDEBARS.LABORATORY]: laboratorySections,
+  [SIDEBARS.PHARMACY]: pharmacySections,
+  [SIDEBARS.ADMIN]: adminSections,
+  [SIDEBARS.SETTINGS]: settingsSections,
+}
+
+function resolveHref(href, context) {
+  if (typeof href === 'function') {
+    return href(context)
+  }
+  return href
+}
+
+function hasFeatureAccess(features, enabledFeatures) {
+  return areFeaturesEnabled(features, enabledFeatures)
+}
+
+function hasAccess(user, entry) {
+  return userCanAccess(user, { roles: entry.roles, capabilities: entry.capabilities })
+}
+
+function normalizePath(path) {
+  if (!path || path === '/') {
+    return path || ''
+  }
+  return path.replace(/\/+$/, '')
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function sidebarItemIsActive(entry, href, pathname) {
+  const currentPath = normalizePath(pathname)
+  const itemPath = normalizePath(href)
+
+  if (!itemPath) {
+    return false
+  }
+  if (entry.exact) {
+    return currentPath === itemPath
+  }
+  return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)
+}
+
+function formatBadge(value) {
+  if (!value || Number(value) <= 0) {
+    return null
+  }
+  return value > 99 ? '99+' : String(value)
+}
+
+function resolveItem(entry, context) {
+  if (!hasFeatureAccess(entry.features, context.enabledFeatures) || !hasAccess(context.user, entry)) {
+    return null
+  }
+
+  const href = resolveHref(entry.href, context)
+  const children = Array.isArray(entry.children)
+    ? entry.children.map((child) => resolveItem(child, context)).filter(Boolean)
+    : null
+
+  if (entry.children && children.length === 0) {
+    return null
+  }
+  if (!entry.children && !href) {
+    return null
+  }
+
+  const active = Boolean(href) && sidebarItemIsActive(entry, href, context.location.pathname)
+  const childActive = children?.some((child) => child.active || child.childActive) || false
+
+  return {
+    ...entry,
+    href,
+    children,
+    active,
+    childActive,
+  }
+}
+
+function dedupeSections(sections) {
+  const seenHrefs = new Set()
+
+  return sections
+    .map((currentSection) => {
+      const items = currentSection.items.filter((currentItem) => {
+        if (!currentItem.href) {
+          return true
+        }
+        if (seenHrefs.has(currentItem.href)) {
+          return false
+        }
+        seenHrefs.add(currentItem.href)
+        return true
+      })
+      return { ...currentSection, items }
+    })
+    .filter((currentSection) => currentSection.items.length > 0)
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolveSidebarSections({ sidebar, user, enabledFeatures, inboxCount, location, params }) {
+  const sidebarKey = SIDEBAR_SECTIONS[sidebar] ? sidebar : SIDEBARS.GLOBAL
+  const baseSections = SIDEBAR_SECTIONS[sidebarKey]
+  const context = {
+    user,
+    enabledFeatures,
+    location,
+    params,
+    badges: {
+      inbox: inboxCount,
+    },
+  }
+  const resolvedSections = baseSections
+    .map((currentSection) => ({
+      ...currentSection,
+      items: currentSection.items.map((currentItem) => resolveItem(currentItem, context)).filter(Boolean),
+    }))
+    .filter((currentSection) => currentSection.items.length > 0)
+
+  if (sidebarKey === SIDEBARS.GLOBAL) {
+    return resolvedSections
+  }
+
+  const shortcutSection = {
+    key: 'shortcuts',
+    label: 'Shortcuts',
+    items: shortcutItems.map((currentItem) => resolveItem(currentItem, context)).filter(Boolean),
+  }
+
+  return dedupeSections([...resolvedSections, shortcutSection])
+}
+
+function SidebarLeafItem({ entry, badgeValue, nested = false }) {
+  const Icon = entry.icon
+  const content = (
+    <>
+      {Icon ? <Icon className={nested ? 'h-4 w-4' : undefined} /> : null}
+      <span>{entry.label}</span>
+      {!nested && badgeValue ? <SidebarMenuBadge>{badgeValue}</SidebarMenuBadge> : null}
+    </>
+  )
+
+  if (nested) {
+    return (
+      <SidebarMenuSubItem>
+        <SidebarMenuSubButton href={entry.href} isActive={entry.active} {...(entry.props || {})}>
+          {content}
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
+    )
+  }
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        tooltip={entry.label}
+        href={entry.href}
+        isActive={entry.active}
+        {...(entry.props || {})}
+      >
+        {content}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
+function SidebarGroupItem({ entry, getCollapsibleProps }) {
+  const Icon = entry.icon
+  const openState = getCollapsibleProps(entry.key)
+  const forcedOpen = entry.childActive
+
+  return (
+    <Collapsible
+      asChild
+      className="group/collapsible"
+      open={forcedOpen || openState.open}
+      onOpenChange={openState.onOpenChange}
+    >
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton tooltip={entry.label} isActive={entry.active || entry.childActive} {...(entry.props || {})}>
+            {Icon ? <Icon /> : null}
+            <span>{entry.label}</span>
+            <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {entry.children.map((child) => (
+              <SidebarLeafItem key={child.key} entry={child} nested />
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  )
+}
+
+export function SidebarRenderer({ sections, badges = {} }) {
   const { getCollapsibleProps } = useSidebarState()
+
+  return (
+    <>
+      {sections.map((currentSection, index) => (
+        <div key={currentSection.key}>
+          {index > 0 ? <SidebarSeparator /> : null}
+          <SidebarGroup>
+            <SidebarGroupLabel>{currentSection.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {currentSection.items.map((currentItem) => {
+                  if (currentItem.children) {
+                    return (
+                      <SidebarGroupItem
+                        key={currentItem.key}
+                        entry={currentItem}
+                        getCollapsibleProps={getCollapsibleProps}
+                      />
+                    )
+                  }
+                  return (
+                    <SidebarLeafItem
+                      key={currentItem.key}
+                      entry={currentItem}
+                      badgeValue={formatBadge(badges[currentItem.badge])}
+                    />
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </div>
+      ))}
+    </>
+  )
+}
+
+export function AppSidebar({ sidebar = SIDEBARS.GLOBAL }) {
+  const { user } = useAuth()
+  const { count: inboxCount } = useInboxCount()
   const { data: deploymentCapabilities } = useSystemCapabilities()
-  const enabledFeatures = deploymentCapabilities?.features || {}
-  const hasFeature = (feature) => enabledFeatures?.[feature] !== false
-
-  // Get role-specific dashboard URL
-  // Support staff are redirected to their workflow pages instead of a generic dashboard
-  const getDashboardUrl = (role) => {
-    if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
-      return '/dashboards/nurse'
-    }
-    if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
-      return '/dashboards/inpatient'
-    }
-    if ([ROLES.RECEPTIONIST, 'front_desk'].includes(role)) {
-      return '/dashboards/reception'
-    }
-    if (role === ROLES.ADMIN) {
-      return '/dashboards/admin'
-    }
-    if ([ROLES.PHARMACIST, ROLES.PHARMACY_TECH].includes(role)) {
-      return '/pharmacy/dispensing'
-    }
-    if (role === ROLES.LAB_TECHNICIAN) {
-      return '/laboratory/dashboard'
-    }
-    if (role === ROLES.BILLING) {
-      return '/billing'
-    }
-    if (role === ROLES.STORE_KEEPER) {
-      return '/inventory'
-    }
-    return '/dashboard/provider'
-  }
-
-  const menuItems = {
-    primary: {
-      dashboard: DASHBOARD_ROLES,
-      inbox: INBOX_ROLES,
-      patients: ROLE_GROUPS.PATIENT_REGISTRY,
-      schedule: ROLE_GROUPS.APPOINTMENTS,
-      availability: ROLE_GROUPS.PRACTITIONER_AVAILABILITY,
-    },
-    operations: {
-      wards: ROLE_GROUPS.WARDS,
-      shiftHandoff: ROLE_GROUPS.NURSING_DASHBOARD,
-      labCatalog: LAB_CATALOG_ROLES,
-      labWorklist: ROLE_GROUPS.LAB_TECHS,
-      labCollection: LAB_COLLECTION_ROLES,
-      labOrders: ROLE_GROUPS.LAB_ACCESS,
-      labResults: LAB_RESULTS_ROLES,
-      pharmacy: ROLE_GROUPS.PHARMACY,
-      billing: ROLE_GROUPS.BILLING,
-      inventory: ROLE_GROUPS.INVENTORY,
-      noteTemplates: NOTE_TEMPLATE_ROLES,
-      chartTemplates: CHART_TEMPLATE_ROLES,
-      staff: ROLE_GROUPS.ADMIN_ONLY,
-      organization: ROLE_GROUPS.ADMIN_ONLY,
-      dutyRoster: DUTY_ROSTER_ROLES,
-      auditLogs: ROLE_GROUPS.ADMIN_ONLY,
-      systemJobs: ROLE_GROUPS.ADMIN_ONLY,
-    },
-  }
-
-  const showAppointments = hasFeature('appointments') && hasAnyAccess(userRole, [
-    menuItems.primary.schedule,
-    menuItems.primary.availability,
-  ])
-
-  const showLaboratory = hasFeature('laboratory') && hasAnyAccess(userRole, [
-    menuItems.operations.labCatalog,
-    menuItems.operations.labWorklist,
-    menuItems.operations.labCollection,
-    menuItems.operations.labOrders,
-    menuItems.operations.labResults,
-  ])
-
-  const showClinicalContent = hasFeature('clinical_notes') && hasAnyAccess(userRole, [
-    menuItems.operations.noteTemplates,
-    menuItems.operations.chartTemplates,
-  ])
-
-  const showAdministration = hasAnyAccess(userRole, [
-    menuItems.operations.staff,
-    menuItems.operations.organization,
-    menuItems.operations.dutyRoster,
-    menuItems.operations.auditLogs,
-    menuItems.operations.systemJobs,
-  ])
+  const enabledFeatures = deploymentCapabilities?.features
+  const location = useLocation()
+  const params = useParams()
+  const sections = resolveSidebarSections({
+    sidebar,
+    user,
+    enabledFeatures,
+    inboxCount,
+    location,
+    params,
+  })
 
   return (
     <SidebarContent>
-      <SidebarGroup>
-        <SidebarGroupLabel>Menu</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            {hasAccess(userRole, menuItems.primary.dashboard) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Dashboard"
-                  href={getDashboardUrl(userRole)}
-                  data-onboarding="nav-dashboard"
-                >
-                  <LayoutDashboard />
-                  <span>Dashboard</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
+      <SidebarRenderer sections={sections} badges={{ inbox: inboxCount }} />
 
-            {hasAccess(userRole, menuItems.primary.inbox) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Inbox" href="/inbox">
-                  <Inbox />
-                  <span>Inbox</span>
-                  {inboxCount > 0 && (
-                    <SidebarMenuBadge>{inboxCount > 99 ? '99+' : inboxCount}</SidebarMenuBadge>
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {hasAccess(userRole, menuItems.primary.patients) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Patient Registry"
-                  href="/patients"
-                  data-onboarding="nav-patients"
-                >
-                  <BookOpen />
-                  <span>Patient Registry</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {showAppointments && (
-              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('appointments')}>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Appointments">
-                      <Calendar />
-                      <span>Appointments</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.primary.schedule) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/appointments">
-                            <Calendar className="h-4 w-4" />
-                            <span>Schedule</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.primary.availability) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/practitioner-availability">
-                            <Clock className="h-4 w-4" />
-                            <span>Availability</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-
-      <SidebarSeparator />
-
-      <SidebarGroup>
-        <SidebarGroupLabel>Operations</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            {hasFeature('wards') && hasAccess(userRole, menuItems.operations.wards) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Wards" href="/wards">
-                  <Activity />
-                  <span>Wards</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {hasFeature('nursing_workflows') && hasAccess(userRole, menuItems.operations.shiftHandoff) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Shift Handoff" href="/nursing/shift-handoff">
-                  <ArrowLeftRight />
-                  <span>Shift Handoff</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {showLaboratory && (
-              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('laboratory')}>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Laboratory">
-                      <FlaskConical />
-                      <span>Laboratory</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.operations.labCatalog) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/laboratory/catalog">
-                            <FlaskConical className="h-4 w-4" />
-                            <span>Catalog</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.labWorklist) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/laboratory/dashboard">
-                            <ClipboardList className="h-4 w-4" />
-                            <span>Worklist</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.labCollection) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/laboratory/collection">
-                            <Droplet className="h-4 w-4" />
-                            <span>Collection Queue</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.labOrders) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/laboratory/orders">
-                            <TestTube2 className="h-4 w-4" />
-                            <span>Orders</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.labResults) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/laboratory/results">
-                            <FileText className="h-4 w-4" />
-                            <span>Results</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )}
-
-            {hasFeature('pharmacy') && hasAccess(userRole, menuItems.operations.pharmacy) && (
-              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('pharmacy')}>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Pharmacy">
-                      <Pill />
-                      <span>Pharmacy</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/pharmacy/dispensing">
-                          <Pill className="h-4 w-4" />
-                          <span>Dispensing</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/pharmacy/supply-queue">
-                          <ClipboardList className="h-4 w-4" />
-                          <span>Supply Queue</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )}
-
-            {hasFeature('billing') && hasAccess(userRole, menuItems.operations.billing) && (
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Billing" href="/billing">
-                  <CreditCard />
-                  <span>Billing</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
-
-            {hasFeature('inventory') && hasAccess(userRole, menuItems.operations.inventory) && (
-              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('inventory')}>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Inventory">
-                      <Package />
-                      <span>Inventory</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory">
-                          <LayoutDashboard className="h-4 w-4" />
-                          <span>Dashboard</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/items">
-                          <Package className="h-4 w-4" />
-                          <span>Items</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/locations">
-                          <Warehouse className="h-4 w-4" />
-                          <span>Locations</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/requisitions">
-                          <ClipboardList className="h-4 w-4" />
-                          <span>Requisitions</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/purchase-orders">
-                          <ShoppingCart className="h-4 w-4" />
-                          <span>Purchase Orders</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/grns">
-                          <FileBox className="h-4 w-4" />
-                          <span>GRNs</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/transfers">
-                          <Truck className="h-4 w-4" />
-                          <span>Transfers</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/controlled">
-                          <AlertTriangle className="h-4 w-4" />
-                          <span>Controlled</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton href="/inventory/analytics">
-                          <BarChart3 className="h-4 w-4" />
-                          <span>Analytics</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )}
-
-            {showClinicalContent && (
-              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('clinical-content')}>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      tooltip="Clinical Content"
-                      data-onboarding="nav-clinical-content-toggle"
-                    >
-                      <FileText />
-                      <span>Clinical Content</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.operations.noteTemplates) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton
-                            href="/clinical-notes/templates"
-                            data-onboarding="nav-note-templates"
-                          >
-                            <ClipboardList className="h-4 w-4" />
-                            <span>Note Templates</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )}
-
-            {showAdministration && (
-              <Collapsible asChild className="group/collapsible" {...getCollapsibleProps('administration')}>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Administration">
-                      <Shield />
-                      <span>Administration</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {hasAccess(userRole, menuItems.operations.staff) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/staff">
-                            <Shield className="h-4 w-4" />
-                            <span>Staff</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.organization) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/admin/organization">
-                            <FolderTree className="h-4 w-4" />
-                            <span>Organization</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasFeature('department_rosters') && hasAccess(userRole, menuItems.operations.dutyRoster) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/admin/organization/duty-roster">
-                            <CalendarClock className="h-4 w-4" />
-                            <span>Duty Roster</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.auditLogs) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/admin/audit-logs">
-                            <FileSearch className="h-4 w-4" />
-                            <span>Audit Logs</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                      {hasAccess(userRole, menuItems.operations.systemJobs) && (
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton href="/admin/system-jobs">
-                            <Workflow className="h-4 w-4" />
-                            <span>Background Jobs</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      )}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-
-      <div className="mt-auto">
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Settings" href="/settings">
-                  <Settings />
-                  <span>Settings</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </div>
+      {sidebar !== SIDEBARS.SETTINGS ? (
+        <div className="mt-auto">
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarLeafItem
+                  entry={{
+                    key: 'settings-footer',
+                    label: 'Settings',
+                    href: '/settings',
+                    icon: Settings,
+                    active: sidebarItemIsActive({ exact: false }, '/settings', location.pathname),
+                  }}
+                />
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </div>
+      ) : (
+        <div className="mt-auto" />
+      )}
 
       <SidebarFooter>
         <div className="px-2 text-xs text-muted-foreground">

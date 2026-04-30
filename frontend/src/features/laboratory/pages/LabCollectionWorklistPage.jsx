@@ -1,20 +1,25 @@
-import Search from 'lucide-react/dist/esm/icons/search.js';
 import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import {
+  LabEmptyState,
+  LabMetricGrid,
+  LabSearchField,
+  LabTableSkeleton,
+  LabToolbar,
+  labTableClassName,
+  labTableHeaderClassName,
+} from '@/features/laboratory/components';
 import {
   Select,
   SelectContent,
@@ -104,6 +109,13 @@ export default function LabCollectionWorklistPage() {
       routine: orders.filter((o) => o.priority === "routine").length,
     };
   }, [orders, totalCount]);
+
+  const metrics = useMemo(() => ([
+    { label: "Total", value: stats.total, icon: Droplet, color: "amber" },
+    { label: "Visible", value: stats.visible, icon: MapPin, color: "sky" },
+    { label: "STAT", value: stats.stat, icon: AlertTriangle, color: "rose", accentValue: true },
+    { label: "Urgent", value: stats.urgent, icon: Clock, color: "amber", accentValue: true },
+  ]), [stats]);
 
   // Priority config
   const getPriorityConfig = (priority) => {
@@ -268,57 +280,20 @@ export default function LabCollectionWorklistPage() {
           </Button>
         )}
       >
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 sm:mt-6">
-          <div className="bg-background rounded-lg border p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Droplet className="h-4 w-4 text-amber-500" />
-              <span className="text-xs text-muted-foreground">Total</span>
-            </div>
-            <p className="font-display text-2xl">{stats.total}</p>
-          </div>
-          <div className="bg-background rounded-lg border p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <MapPin className="h-4 w-4 text-sky-600" />
-              <span className="text-xs text-muted-foreground">Visible</span>
-            </div>
-            <p className="font-display text-2xl">{stats.visible}</p>
-          </div>
-          <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800 p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <AlertTriangle className="h-4 w-4 text-rose-600" />
-              <span className="text-xs text-rose-600 font-medium">STAT</span>
-            </div>
-            <p className="font-display text-2xl text-rose-700">{stats.stat}</p>
-          </div>
-          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800 p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="h-4 w-4 text-amber-600" />
-              <span className="text-xs text-amber-600 font-medium">Urgent</span>
-            </div>
-            <p className="font-display text-2xl text-amber-700">{stats.urgent}</p>
-          </div>
-        </div>
+        <LabMetricGrid metrics={metrics} className="mt-4 sm:mt-6" />
       </PageHeader>
 
-      {/* Filter Bar */}
-      <div className="bg-card/50 border-b border-border px-4 sm:px-6 py-3">
+      <LabToolbar>
         <div className="flex flex-col sm:flex-row gap-3">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search by patient name, MRN, or order number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 font-mono text-sm"
-            />
-          </div>
+          <LabSearchField
+            id="lab-collection-search"
+            placeholder="Search by patient name, MRN, or order number..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
 
-          {/* Priority filter */}
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[160px] text-sm">
+            <SelectTrigger className="w-full font-mono text-sm sm:w-[180px]">
               <SelectValue placeholder="Priority" />
             </SelectTrigger>
             <SelectContent>
@@ -329,40 +304,22 @@ export default function LabCollectionWorklistPage() {
             </SelectContent>
           </Select>
         </div>
-      </div>
+      </LabToolbar>
 
       {/* Content */}
       <main className="p-4 sm:p-6">
         {isLoading ? (
-          // Loading skeletons
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-card rounded-lg border border-border p-4"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <Skeleton className="h-5 w-32" />
-                  <Skeleton className="h-5 w-16" />
-                </div>
-                <Skeleton className="h-4 w-48 mb-2" />
-                <Skeleton className="h-3 w-24" />
-              </div>
-            ))}
-          </div>
+          <LabTableSkeleton rows={5} />
         ) : orders.length === 0 ? (
-          // Empty state
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <Droplet className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <h3 className="font-display text-lg text-foreground mb-2">
-              No collections pending
-            </h3>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              {searchQuery || priorityFilter !== "all"
+          <LabEmptyState
+            icon={Droplet}
+            title="No collections pending"
+            description={
+              searchQuery || priorityFilter !== "all"
                 ? "Try adjusting your filters to see more orders."
-                : "All specimens have been collected. Great work!"}
-            </p>
-          </div>
+                : "All specimens have been collected."
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <VirtualizedTable
@@ -372,8 +329,8 @@ export default function LabCollectionWorklistPage() {
               columns={collectionColumns}
               onRowClick={(order) => handleOrderClick(order)}
               rowClassName="hover:bg-muted/30"
-              className="min-w-[1120px]"
-              headerClassName="bg-muted/50 border-b border-border"
+              className={cn(labTableClassName, "min-w-[1120px]")}
+              headerClassName={labTableHeaderClassName}
             />
           </div>
         )}

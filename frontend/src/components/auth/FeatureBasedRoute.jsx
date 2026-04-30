@@ -1,16 +1,26 @@
 import { Navigate } from 'react-router-dom'
 import { useSystemCapabilities } from '@/hooks/useSystemQueries'
-import { areFeaturesEnabled } from '@/shared/lib/features'
+import { PageLoader } from '@/shared/components/page/PageState'
+import { areFeaturesEnabled, featureList } from '@/shared/lib/features'
 
 export function FeatureBasedRoute({ children, features, redirectTo = '/feature-unavailable' }) {
-  const { data: deploymentCapabilities } = useSystemCapabilities()
-  const enabledFeatures = deploymentCapabilities?.features
+  const requiredFeatures = featureList(features)
+  const hasFeatureRequirements = requiredFeatures.length > 0
+  const {
+    data: deploymentCapabilities,
+    isLoading,
+    isPending,
+  } = useSystemCapabilities({ enabled: hasFeatureRequirements })
 
-  if (!features || !enabledFeatures) {
+  if (!hasFeatureRequirements) {
     return children
   }
 
-  if (areFeaturesEnabled(features, enabledFeatures)) {
+  if (!deploymentCapabilities && (isLoading || isPending)) {
+    return <PageLoader rows={3} />
+  }
+
+  if (areFeaturesEnabled(requiredFeatures, deploymentCapabilities?.features)) {
     return children
   }
 

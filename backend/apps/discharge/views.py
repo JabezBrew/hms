@@ -88,7 +88,9 @@ class DischargeCaseViewSet(viewsets.ReadOnlyModelViewSet):
 
         user_type = getattr(self.request.user, 'user_type', None)
         if user_type in BILLING_ROLES:
-            return queryset.order_by('-medical_ready_at')
+            return queryset.filter(
+                tasks__task_type=DischargeTask.TaskType.BILLING_CLEARANCE,
+            ).order_by('-medical_ready_at')
         if user_type in {'pharmacist', 'lab_technician'}:
             return queryset.filter(
                 tasks__assigned_role=user_type,
@@ -202,7 +204,7 @@ class DischargeTaskViewSet(viewsets.ReadOnlyModelViewSet):
 
         user_type = getattr(self.request.user, 'user_type', None)
         if user_type in BILLING_ROLES:
-            return queryset
+            return queryset.filter(task_type=DischargeTask.TaskType.BILLING_CLEARANCE)
         if user_type in {'pharmacist', 'lab_technician'}:
             return queryset.filter(assigned_role=user_type)
         if user_type in CLINICAL_SUBMITTER_ROLES | NURSING_FINALIZER_ROLES:

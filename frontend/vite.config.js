@@ -21,11 +21,9 @@ export default defineConfig(({ mode }) => {
   const buildInfo = {
     version: packageJson.version,
     commit:
-      process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ||
       process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
       readGitValue("git rev-parse --short HEAD"),
     branch:
-      process.env.RAILWAY_GIT_BRANCH ||
       process.env.VERCEL_GIT_COMMIT_REF ||
       readGitValue("git rev-parse --abbrev-ref HEAD"),
     builtAt: new Date().toISOString(),

@@ -1,4 +1,8 @@
+import secrets
+
+from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.contrib.auth import get_user_model
 from apps.users.models import Staff, PractitionerProfile, PractitionerFHIRMapping
 from apps.users.identifiers import generate_unique_employee_id
@@ -8,13 +12,32 @@ from apps.fhir_client.utils import (
     create_human_name, create_identifier, create_contact_point,
     create_address, generate_fhir_id
 )
+from apps.users.password_guards import validate_command_password
 
 User = get_user_model()
 
 class Command(BaseCommand):
-    help = 'Seeds production test users directly via ORM'
+    help = 'Seeds production test users directly via ORM without reusable default credentials'
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--confirm-production-test-users',
+            action='store_true',
+            help='Required when DEBUG is false.',
+        )
+        parser.add_argument(
+            '--generate-temporary-passwords',
+            action='store_true',
+            help='Generate unique temporary passwords for created users and print them once.',
+        )
 
     def handle(self, *args, **options):
+        if not settings.DEBUG and not options['confirm_production_test_users']:
+            raise CommandError(
+                'Refusing to seed production test users with DEBUG=False without --confirm-production-test-users.'
+            )
+
+        generated_passwords = {}
         test_users = [
             {
                 'email': 'doctor@hms.com',
@@ -102,19 +125,27 @@ class Command(BaseCommand):
 
             self.stdout.write(f'Creating {email}...')
 
-            # Create User
+            temporary_password = self._temporary_password(email, options)
+
             user = User.objects.create_user(
                 email=email,
                 username=email,
-                password='Admin123!', # Set explicit password
+                password=temporary_password,
                 first_name=user_data['first_name'],
                 last_name=user_data['last_name'],
                 phone_number=user_data['phone_number'],
                 date_of_birth=user_data['date_of_birth'],
                 user_type=user_data['user_type'],
                 is_active=True,
+                must_change_password=True,
+                password_changed_at=None,
                 primary_facility=facility,
             )
+            if temporary_password is None:
+                user.set_unusable_password()
+                user.save(update_fields=['password'])
+            else:
+                generated_passwords[email] = temporary_password
             user.facilities.add(facility)
 
             # Generate unique employee ID
@@ -199,3 +230,17 @@ class Command(BaseCommand):
             
             else:
                 self.stdout.write(self.style.SUCCESS(f'Successfully created {email}'))
+
+        if generated_passwords:
+            self.stdout.write('')
+            self.stdout.write(self.style.WARNING('Generated temporary passwords. Store them securely; they are shown once.'))
+            for email, password in sorted(generated_passwords.items()):
+                self.stdout.write(f'{email}: {password}')
+
+    def _temporary_password(self, email, options):
+        if not options['generate_temporary_passwords']:
+            return None
+
+        password = secrets.token_urlsafe(24)
+        validate_command_password(password, label=f'temporary password for {email}')
+        return password

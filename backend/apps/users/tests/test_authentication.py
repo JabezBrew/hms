@@ -20,7 +20,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.audit.models import AuditAction
-from apps.core.tests.factories import DefaultFacilityFactory
+from apps.core.tests.factories import DefaultFacilityFactory, FacilityFactory
 from apps.users.models import PasswordResetToken
 from .factories import (
     UserFactory, AdminUserFactory, DoctorUserFactory,
@@ -231,6 +231,51 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['user']['facility_code'] == facility_a.code
+        assert 'admin_access' in response.data['user']
+        assert 'admin.organization.manage' in response.data['user']['admin_access']['capabilities']
+
+    def test_login_rejects_unassigned_facility_for_facility_admin(self, api_client, db, settings):
+        settings.ALLOW_CROSS_FACILITY_ACCESS = True
+        facility_a = DefaultFacilityFactory(code='FACADMINA')
+        facility_b = FacilityFactory(code='FACADMINB')
+        user = UserFactory(
+            user_type='admin',
+            is_staff=True,
+            is_superuser=False,
+            email='facility-admin@test.com',
+            password='testpass',
+            primary_facility=facility_a,
+        )
+        user.facilities.add(facility_a)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass',
+            'facility_code': facility_b.code,
+        }, format='json')
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data['code'] == 'facility_forbidden'
+
+    def test_login_allows_unassigned_facility_for_platform_admin(self, api_client, db, settings):
+        settings.ALLOW_CROSS_FACILITY_ACCESS = True
+        facility_a = DefaultFacilityFactory(code='PLATLOGA')
+        facility_b = FacilityFactory(code='PLATLOGB')
+        user = AdminUserFactory(
+            email='platform-admin@test.com',
+            password='testpass',
+            primary_facility=facility_a,
+        )
+        user.facilities.add(facility_a)
+
+        response = api_client.post('/api/auth/login/', {
+            'email': user.email,
+            'password': 'testpass',
+            'facility_code': facility_b.code,
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['facility_code'] == facility_b.code
 
     def test_login_requires_facility_when_multi_facility_user_has_no_primary(self, api_client, db, settings):
         settings.MULTI_FACILITY_MODE = True

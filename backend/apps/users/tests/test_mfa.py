@@ -121,8 +121,8 @@ def _create_admin_with_mfa_session():
 @pytest.mark.django_db
 @override_settings(
     WEBAUTHN_RP_ID='localhost',
-    WEBAUTHN_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
-    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    WEBAUTHN_ALLOWED_ORIGINS=['https://staging.thehms.systems'],
+    CORS_ALLOWED_ORIGINS=['https://staging.thehms.systems'],
 )
 def test_webauthn_registration_uses_request_origin_rp_id_when_configured_rp_id_is_incompatible(monkeypatch):
     client, session_token = _create_admin_with_mfa_session()
@@ -153,19 +153,19 @@ def test_webauthn_registration_uses_request_origin_rp_id_when_configured_rp_id_i
         '/api/auth/mfa/webauthn/registration/options/',
         {'mfa_session': session_token},
         format='json',
-        HTTP_ORIGIN='https://hms-frontend-staging.up.railway.app',
+        HTTP_ORIGIN='https://staging.thehms.systems',
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert captured['rp_id'] == 'hms-frontend-staging.up.railway.app'
-    assert response.data['rp']['id'] == 'hms-frontend-staging.up.railway.app'
+    assert captured['rp_id'] == 'staging.thehms.systems'
+    assert response.data['rp']['id'] == 'staging.thehms.systems'
 
 
 @pytest.mark.django_db
 @override_settings(
     WEBAUTHN_RP_ID='localhost',
-    WEBAUTHN_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
-    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    WEBAUTHN_ALLOWED_ORIGINS=['https://staging.thehms.systems'],
+    CORS_ALLOWED_ORIGINS=['https://staging.thehms.systems'],
 )
 def test_webauthn_registration_rejects_untrusted_origin(monkeypatch):
     client, session_token = _create_admin_with_mfa_session()
@@ -259,7 +259,7 @@ def test_webauthn_registration_rejects_origin_outside_tenant_regex(monkeypatch):
 
 
 @override_settings(
-    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    CORS_ALLOWED_ORIGINS=['https://staging.thehms.systems'],
     CORS_ALLOW_HEADERS=[
         'accept',
         'accept-encoding',
@@ -279,7 +279,7 @@ def test_mfa_status_preflight_allows_mfa_session_header():
     client = APIClient()
     response = client.options(
         '/api/auth/mfa/status/',
-        HTTP_ORIGIN='https://hms-frontend-staging.up.railway.app',
+        HTTP_ORIGIN='https://staging.thehms.systems',
         HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET',
         HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-mfa-session',
     )
@@ -290,7 +290,7 @@ def test_mfa_status_preflight_allows_mfa_session_header():
 
 
 @override_settings(
-    CORS_ALLOWED_ORIGINS=['https://hms-frontend-staging.up.railway.app'],
+    CORS_ALLOWED_ORIGINS=['https://staging.thehms.systems'],
     CORS_ALLOW_HEADERS=[
         'accept',
         'accept-encoding',
@@ -310,7 +310,7 @@ def test_login_preflight_allows_device_label_header():
     client = APIClient()
     response = client.options(
         '/api/auth/login/',
-        HTTP_ORIGIN='https://hms-frontend-staging.up.railway.app',
+        HTTP_ORIGIN='https://staging.thehms.systems',
         HTTP_ACCESS_CONTROL_REQUEST_METHOD='POST',
         HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-device-label,x-facility-code,content-type',
     )

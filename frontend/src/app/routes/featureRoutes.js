@@ -18,6 +18,7 @@ import { inboxRoutes } from '@/features/inbox/routes'
 import { staffRoutes } from '@/features/staff/routes'
 import { workflowRoutes } from '@/features/workflows/routes'
 import { clinicalNotesRoutes } from '@/features/clinical-notes/routes'
+import { chartRoutes } from '@/features/charts/routes'
 import { validateRoutes } from './routeTypes'
 import { withFeature } from '@/shared/lib/features'
 
@@ -42,6 +43,7 @@ export const featureRoutes = [
   ...staffRoutes,
   ...workflowRoutes,
   ...withFeature(clinicalNotesRoutes, 'clinical_notes'),
+  ...chartRoutes,
 ]
 
 if (import.meta.env.DEV) {

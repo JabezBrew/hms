@@ -8,6 +8,7 @@ from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility
 from .identifiers import generate_unique_employee_id
 from .tasks import create_practitioner_in_fhir
 from .unit_assignment import auto_assign_staff_to_department_unit
+from .admin_access import build_admin_access_payload
 import random
 import string
 import logging
@@ -16,18 +17,6 @@ User = get_user_model()
 
 # Set up logger
 logger = logging.getLogger(__name__)
-
-def _apply_admin_flags(user: User) -> None:
-    """
-    Keep Django admin flags consistent with our RBAC user_type.
-
-    Admin users should always be staff so permissions that rely on is_staff work.
-    We intentionally do not auto-escalate is_superuser here.
-    """
-    if not user:
-        return
-    if getattr(user, 'user_type', None) == 'admin' and not getattr(user, 'is_staff', False):
-        user.is_staff = True
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -52,13 +41,14 @@ class UserWithAccessContextSerializer(serializers.ModelSerializer):
     is_offsite = serializers.SerializerMethodField()
     offsite_mode = serializers.SerializerMethodField()
     readonly_message = serializers.SerializerMethodField()
+    admin_access = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'phone_number',
                   'date_of_birth', 'gender', 'user_type', 'is_active', 'date_joined',
                   'must_change_password',
-                  'is_offsite', 'offsite_mode', 'readonly_message']
+                  'is_offsite', 'offsite_mode', 'readonly_message', 'admin_access']
         read_only_fields = ['id', 'date_joined', 'must_change_password']
 
     def get_is_offsite(self, obj):
@@ -84,6 +74,11 @@ class UserWithAccessContextSerializer(serializers.ModelSerializer):
                 settings = OffSiteAccessSettings.get_settings()
                 return settings.readonly_message
         return None
+
+    def get_admin_access(self, obj):
+        request = self.context.get('request')
+        facility_code = getattr(request, 'facility_code', None) if request else None
+        return build_admin_access_payload(obj, facility_code=facility_code)
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -115,9 +110,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
             date_of_birth=validated_data.get('date_of_birth', None),
             user_type=validated_data.get('user_type', 'patient')
         )
-        _apply_admin_flags(user)
-        if user.user_type == 'admin':
-            user.save(update_fields=['is_staff'])
         return user
 
 
@@ -368,18 +360,10 @@ class PatientDemographicsUpdateSerializer(serializers.ModelSerializer):
     def validate_user(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Expected an object.")
-        allowed = {'first_name', 'last_name', 'email', 'phone_number', 'date_of_birth'}
+        allowed = {'first_name', 'last_name', 'phone_number', 'date_of_birth'}
         unknown = set(value) - allowed
         if unknown:
             raise serializers.ValidationError(f"Unsupported user field(s): {', '.join(sorted(unknown))}.")
-        email = value.get('email')
-        if email:
-            current_user = self.instance.user if self.instance else None
-            qs = User.objects.filter(email=str(email).lower())
-            if current_user:
-                qs = qs.exclude(id=current_user.id)
-            if qs.exists():
-                raise serializers.ValidationError({"email": "This email is already in use."})
         return value
 
     def update(self, instance, validated_data):
@@ -393,11 +377,9 @@ class PatientDemographicsUpdateSerializer(serializers.ModelSerializer):
         if user_data and instance.user:
             user = instance.user
             user_update_fields = []
-            for field in ['first_name', 'last_name', 'email', 'phone_number', 'date_of_birth']:
+            for field in ['first_name', 'last_name', 'phone_number', 'date_of_birth']:
                 if field in user_data:
                     value = user_data[field]
-                    if field == 'email' and value:
-                        value = str(value).lower()
                     if field == 'date_of_birth' and isinstance(value, str):
                         value = parse_date(value)
                     setattr(user, field, value)
@@ -484,7 +466,7 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return visit.visit_status in active_visit_statuses
 
         if hasattr(obj, 'active_encounters_list'):
-            return [e for e in obj.active_encounters_list if _matches_operational_active_state(e)]
+            return list(obj.active_encounters_list)
 
         if hasattr(obj, '_prefetched_objects_cache') and 'encounters' in obj._prefetched_objects_cache:
             return [e for e in obj.encounters.all() if _matches_operational_active_state(e)]
@@ -607,6 +589,31 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             return latest_completed_outpatient_status
 
         return None
+
+
+class PatientDirectorySearchListSerializer(serializers.ModelSerializer):
+    """
+    Minimal patient directory projection for broad non-clinical search surfaces.
+    Excludes ward, admission, clinic, and registry-state details.
+    """
+    name = serializers.SerializerMethodField()
+    date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
+    gender = serializers.CharField(source='user.gender', read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'id',
+            'medical_record_number',
+            'name',
+            'date_of_birth',
+            'gender',
+            'created_at',
+        ]
+
+    def get_name(self, obj):
+        return obj.user.get_full_name()
 
 
 class PractitionerFHIRMappingListSerializer(serializers.ModelSerializer):
@@ -749,15 +756,13 @@ class StaffInviteSerializer(serializers.Serializer):
             user.date_of_birth = validated_data.get('date_of_birth', user.date_of_birth)
             user.user_type = user_type
             user.is_active = True
-            _apply_admin_flags(user)
             user.save(update_fields=[
-                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active', 'is_staff'
+                'first_name', 'last_name', 'phone_number', 'date_of_birth', 'user_type', 'is_active'
             ])
         else:
             # Ensure no known password exists for invited accounts.
             user.set_unusable_password()
-            _apply_admin_flags(user)
-            user.save(update_fields=['password', 'is_staff'])
+            user.save(update_fields=['password'])
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")
@@ -923,7 +928,6 @@ class StaffRegistrationSerializer(serializers.Serializer):
             user.date_of_birth = validated_data['date_of_birth']
             user.user_type = validated_data['user_type']
             user.is_active = True
-            _apply_admin_flags(user)
             user.save()
         else:
             # Create new User
@@ -937,8 +941,6 @@ class StaffRegistrationSerializer(serializers.Serializer):
                 date_of_birth=validated_data['date_of_birth'],
                 user_type=validated_data['user_type']
             )
-            _apply_admin_flags(user)
-            user.save(update_fields=['is_staff'])
 
         if user.primary_facility_id and user.primary_facility_id != facility.id:
             raise serializers.ValidationError("User belongs to a different facility.")

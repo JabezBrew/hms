@@ -1,22 +1,45 @@
+import os
+
+from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
 from django.contrib.auth import get_user_model
+
+from apps.users.password_guards import validate_command_password
 
 User = get_user_model()
 
 class Command(BaseCommand):
-    help = 'Resets passwords for test users to a specific value'
+    help = 'Resets passwords for test users to an explicitly supplied value'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--password',
             type=str,
-            default='Admin123!',
-            help='The password to set for all test users'
+            default=os.environ.get('HMS_TEST_USER_PASSWORD'),
+            help='The password to set for all test users (default: HMS_TEST_USER_PASSWORD env var)'
+        )
+        parser.add_argument(
+            '--confirm-production-test-reset',
+            action='store_true',
+            help='Required when DEBUG is false.',
         )
 
     def handle(self, *args, **options):
         password = options['password']
-        
+
+        if not settings.DEBUG and not options['confirm_production_test_reset']:
+            raise CommandError(
+                'Refusing to reset test-user passwords with DEBUG=False without --confirm-production-test-reset.'
+            )
+
+        if not password:
+            raise CommandError(
+                'Pass --password or set HMS_TEST_USER_PASSWORD. This command has no default test password.'
+            )
+
+        validate_command_password(password, label='test user reset password')
+
         test_emails = [
             'admin@hms.com',
             'doctor@hms.com',

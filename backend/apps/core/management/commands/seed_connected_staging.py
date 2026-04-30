@@ -10,6 +10,7 @@ have create endpoints (Facility + core Department).
 from __future__ import annotations
 
 import json
+import os
 import random
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -261,8 +262,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--admin-password",
             type=str,
-            default="Admin123!ChangeMe",
-            help="Seeder admin password.",
+            default=os.environ.get("STAGING_ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD"),
+            help="Seeder admin password (default: STAGING_ADMIN_PASSWORD or ADMIN_PASSWORD).",
         )
         parser.add_argument(
             "--admin-first-name",
@@ -340,10 +341,7 @@ class Command(BaseCommand):
                 "Refusing to run with DEBUG=False without --confirm-staging."
             )
 
-        env_hint = (
-            str(getattr(settings, "RAILWAY_ENVIRONMENT", "") or "")
-            or str(getattr(settings, "ENVIRONMENT", "") or "")
-        ).strip().lower()
+        env_hint = str(getattr(settings, "ENVIRONMENT", "") or "").strip().lower()
         if "prod" in env_hint and not options["allow_production"]:
             raise CommandError(
                 "Environment appears production. Use --allow-production to run explicitly."
@@ -362,7 +360,7 @@ class Command(BaseCommand):
         call_command("seed_organization")
         call_command("seed_bed_amenities")
 
-    def _ensure_admin(self, *, email: str, password: str, first_name: str, last_name: str) -> User:
+    def _ensure_admin(self, *, email: str, password: str | None, first_name: str, last_name: str) -> User:
         call_command(
             "ensure_admin",
             email=email,

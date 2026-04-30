@@ -52,7 +52,12 @@ from .serializers import (
 from ..users.permissions import IsBillingStaff
 from apps.core.idempotency import idempotent
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, get_user_facility, check_billing_access
+from apps.core.security import (
+    FacilityScopedPermission,
+    FeatureRequiredPermission,
+    check_billing_access,
+    get_user_facility,
+)
 from apps.audit.models import AuditAction, AuditCategory
 from apps.audit.services import AuditService
 from apps.interop.crypto import encrypt_payload
@@ -241,7 +246,11 @@ class InsuranceProviderViewSet(viewsets.ModelViewSet):
         # Allow read-only access for receptionists (needed for patient registration)
         if self.action in ['list', 'retrieve', 'plans']:
             if self.request.user.is_authenticated and self.request.user.user_type == 'receptionist':
-                return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+                return [
+                    FeatureRequiredPermission(),
+                    permissions.IsAuthenticated(),
+                    FacilityScopedPermission(),
+                ]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -296,7 +305,11 @@ class InsurancePlanViewSet(viewsets.ModelViewSet):
         # Allow read-only access for receptionists (needed for patient registration)
         if self.action in ['list', 'retrieve']:
             if self.request.user.is_authenticated and self.request.user.user_type == 'receptionist':
-                return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+                return [
+                    FeatureRequiredPermission(),
+                    permissions.IsAuthenticated(),
+                    FacilityScopedPermission(),
+                ]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -333,7 +346,11 @@ class PatientInsuranceViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'for_patient':
-            return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+            return [
+                FeatureRequiredPermission(),
+                permissions.IsAuthenticated(),
+                FacilityScopedPermission(),
+            ]
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -403,7 +420,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'for_patient':
-            return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+            return [
+                FeatureRequiredPermission(),
+                permissions.IsAuthenticated(),
+                FacilityScopedPermission(),
+            ]
         return super().get_permissions()
 
     def get_serializer_class(self):

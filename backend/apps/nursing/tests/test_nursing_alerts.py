@@ -9,15 +9,50 @@ Tests for:
 - Alert history
 """
 import pytest
+from asgiref.sync import async_to_sync
 from django.utils import timezone
 
 from apps.nursing.models import NursingAlert, VitalSigns, NursingTask
-from apps.core.tests.factories import DefaultFacilityFactory
-from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
+from apps.nursing.consumers import _has_ward_access
+from apps.core.tests.factories import DefaultFacilityFactory, FacilityFactory
+from apps.users.tests.factories import (
+    AdminUserFactory,
+    PatientProfileFactory,
+    PractitionerProfileFactory,
+    UserFactory,
+)
 from .factories import (
     NursingAlertFactory, CriticalAlertFactory,
-    AcknowledgedAlertFactory, VitalSignsFactory
+    AcknowledgedAlertFactory, VitalSignsFactory,
+    WardFactory,
 )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ward_alert_access_denies_facility_admin_cross_facility(settings):
+    settings.ALLOW_CROSS_FACILITY_ACCESS = True
+    facility_a = DefaultFacilityFactory(code='NURSEA')
+    facility_b = FacilityFactory(code='NURSEB')
+    admin = UserFactory(
+        user_type='admin',
+        is_staff=True,
+        is_superuser=False,
+        primary_facility=facility_a,
+    )
+    ward = WardFactory(department__facility=facility_b)
+
+    assert async_to_sync(_has_ward_access)(admin, ward.id) is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ward_alert_access_allows_platform_admin_cross_facility(settings):
+    settings.ALLOW_CROSS_FACILITY_ACCESS = True
+    facility_a = DefaultFacilityFactory(code='NPLATA')
+    facility_b = FacilityFactory(code='NPLATB')
+    admin = AdminUserFactory(primary_facility=facility_a)
+    ward = WardFactory(department__facility=facility_b)
+
+    assert async_to_sync(_has_ward_access)(admin, ward.id) is True
 
 
 @pytest.mark.tier1

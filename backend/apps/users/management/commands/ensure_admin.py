@@ -5,9 +5,10 @@ Creates an admin superuser if none exists, using environment variables
 for credentials. This is safe to run on every deployment.
 """
 import os
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from apps.users.models import User
 from apps.core.models import Facility
+from apps.users.password_guards import validate_command_password
 
 
 class Command(BaseCommand):
@@ -16,13 +17,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--email',
-            default=os.environ.get('ADMIN_EMAIL', 'admin@hms.com'),
-            help='Admin email (default: ADMIN_EMAIL env var or admin@hms.com)',
+            default=os.environ.get('ADMIN_EMAIL'),
+            help='Admin email (default: ADMIN_EMAIL env var)',
         )
         parser.add_argument(
             '--password',
-            default=os.environ.get('ADMIN_PASSWORD', 'Admin123!'),
-            help='Admin password (default: ADMIN_PASSWORD env var or Admin123!)',
+            default=os.environ.get('ADMIN_PASSWORD'),
+            help='Admin password (required: ADMIN_PASSWORD env var or --password)',
         )
         parser.add_argument(
             '--first-name',
@@ -41,6 +42,15 @@ class Command(BaseCommand):
         first_name = options['first_name']
         last_name = options['last_name']
 
+        superuser = User.objects.filter(is_superuser=True).order_by('date_joined').first()
+
+        if password:
+            validate_command_password(password, label='ADMIN_PASSWORD')
+        elif not superuser:
+            raise CommandError(
+                'ADMIN_EMAIL and ADMIN_PASSWORD (or --email/--password) are required when creating the initial superuser.'
+            )
+
         default_facility = None
         try:
             from django.conf import settings
@@ -54,9 +64,7 @@ class Command(BaseCommand):
             if Facility.objects.count() == 1:
                 default_facility = Facility.objects.first()
 
-        # Check if any superuser exists
-        if User.objects.filter(is_superuser=True).exists():
-            superuser = User.objects.filter(is_superuser=True).first()
+        if superuser:
             self.stdout.write(
                 self.style.SUCCESS('Superuser already exists.')
             )
@@ -85,7 +93,12 @@ class Command(BaseCommand):
                 superuser.facilities.add(default_facility)
             return
 
-        # Create admin user
+        if not email:
+            raise CommandError(
+                'ADMIN_EMAIL is required when creating the initial admin user. '
+                'Set ADMIN_EMAIL or pass --email.'
+            )
+
         self.stdout.write('Creating initial admin user.')
 
         # Username is required by AbstractUser - use email prefix

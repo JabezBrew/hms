@@ -84,6 +84,7 @@ def test_deployment_capabilities_endpoint_returns_defaults(django_user_model):
         password='pass1234',
         user_type='nurse',
         primary_facility=facility,
+        is_superuser=True,
     )
     user.facilities.add(facility)
 
@@ -96,6 +97,9 @@ def test_deployment_capabilities_endpoint_returns_defaults(django_user_model):
     assert response.data['capabilities']['practitioner_scheduling_mode'] == 'roster'
     assert response.data['capabilities']['supports_department_rosters'] is True
     assert response.data['capabilities']['outpatient_requires_active_clinic_schedule'] is True
+    assert response.data['capabilities']['inpatient_admissions'] is True
+    assert response.data['capabilities']['wards'] is True
+    assert response.data['capabilities']['bed_management'] is True
     assert 'feature_sources' in response.data
     assert 'feature_manifest' in response.data
     assert response.data['facility_code'] == 'CORE'
@@ -126,6 +130,9 @@ def test_deployment_capabilities_endpoint_reflects_profile_overrides(django_user
     assert response.data['capabilities']['practitioner_scheduling_mode'] == 'simple'
     assert response.data['capabilities']['supports_department_rosters'] is False
     assert response.data['capabilities']['outpatient_requires_active_clinic_schedule'] is False
+    assert response.data['capabilities']['inpatient_admissions'] is False
+    assert response.data['capabilities']['wards'] is False
+    assert response.data['capabilities']['bed_management'] is False
 
 
 @pytest.mark.django_db
@@ -152,10 +159,52 @@ def test_deployment_capabilities_endpoint_reflects_network_profile(django_user_m
     assert response.data['features']['facility_switcher'] is True
     assert response.data['features']['cross_facility_referrals'] is True
     assert response.data['features']['cross_facility_record_exchange'] is True
+    assert response.data['capabilities']['multi_facility_mode'] is True
+    assert response.data['capabilities']['facility_switcher'] is True
+    assert response.data['capabilities']['cross_facility_access'] is True
+    assert response.data['capabilities']['cross_facility_referrals'] is True
+    assert response.data['capabilities']['cross_facility_record_exchange'] is True
 
 
 @pytest.mark.django_db
-def test_feature_entitlements_admin_api_crud(django_user_model):
+def test_deployment_capabilities_endpoint_uses_active_facility_entitlement_overrides(
+    django_user_model,
+):
+    facility_a = FacilityFactory(code='ROSTA', name='Roster A')
+    facility_b = FacilityFactory(code='ROSTB', name='Roster B')
+    user = django_user_model.objects.create_user(
+        username='roster-user',
+        email='roster-user@example.com',
+        password='pass1234',
+        user_type='admin',
+        primary_facility=facility_a,
+    )
+    user.facilities.add(facility_a, facility_b)
+    FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_FACILITY,
+        facility=facility_b,
+        feature_key='department_rosters',
+        is_enabled=False,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.get(
+        '/api/settings/deployment-capabilities/',
+        HTTP_X_FACILITY_CODE=facility_b.code,
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['facility_code'] == 'ROSTB'
+    assert response.data['features']['department_rosters'] is False
+    assert response.data['feature_sources']['department_rosters'] == 'facility_override'
+    assert response.data['capabilities']['practitioner_scheduling_mode'] == 'simple'
+    assert response.data['capabilities']['supports_department_rosters'] is False
+
+
+@pytest.mark.django_db
+def test_feature_entitlements_superuser_api_crud(django_user_model):
     facility = FacilityFactory(code='ENT', name='Entitlement Facility')
     admin = django_user_model.objects.create_user(
         username='ent-admin',
@@ -163,6 +212,7 @@ def test_feature_entitlements_admin_api_crud(django_user_model):
         password='pass1234',
         user_type='admin',
         primary_facility=facility,
+        is_superuser=True,
     )
     admin.facilities.add(facility)
 
@@ -199,6 +249,78 @@ def test_feature_entitlements_admin_api_crud(django_user_model):
     )
     assert delete_response.status_code == status.HTTP_204_NO_CONTENT
     assert not FeatureEntitlementOverride.objects.filter(feature_key='laboratory').exists()
+
+
+@pytest.mark.django_db
+def test_feature_entitlements_non_superuser_admin_cannot_create_global_override(django_user_model):
+    facility = FacilityFactory(code='LOC', name='Local Facility')
+    admin = django_user_model.objects.create_user(
+        username='local-admin',
+        email='local-admin@example.com',
+        password='pass1234',
+        user_type='admin',
+        primary_facility=facility,
+    )
+    admin.facilities.add(facility)
+
+    client = APIClient()
+    client.force_authenticate(user=admin)
+
+    response = client.post(
+        '/api/settings/feature-entitlements/',
+        {
+            'scope': 'global',
+            'facility': None,
+            'feature_key': 'cross_facility_access',
+            'is_enabled': True,
+        },
+        format='json',
+        HTTP_X_FACILITY_CODE=facility.code,
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert not FeatureEntitlementOverride.objects.filter(feature_key='cross_facility_access').exists()
+
+
+@pytest.mark.django_db
+def test_feature_entitlements_non_superuser_admin_is_facility_scoped(django_user_model):
+    facility = FacilityFactory(code='LOC2', name='Local Facility 2')
+    other_facility = FacilityFactory(code='OTH2', name='Other Facility 2')
+    admin = django_user_model.objects.create_user(
+        username='scoped-admin',
+        email='scoped-admin@example.com',
+        password='pass1234',
+        user_type='admin',
+        primary_facility=facility,
+    )
+    admin.facilities.add(facility)
+
+    local_override = FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_FACILITY,
+        facility=facility,
+        feature_key='laboratory',
+        is_enabled=True,
+    )
+    FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_FACILITY,
+        facility=other_facility,
+        feature_key='laboratory',
+        is_enabled=False,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=admin)
+
+    list_response = client.get('/api/settings/feature-entitlements/', HTTP_X_FACILITY_CODE=facility.code)
+    assert list_response.status_code == status.HTTP_200_OK
+    assert len(list_response.data['results']) == 1
+    assert list_response.data['results'][0]['id'] == str(local_override.id)
+
+    delete_response = client.delete(
+        f'/api/settings/feature-entitlements/{local_override.id}/',
+        HTTP_X_FACILITY_CODE=facility.code,
+    )
+    assert delete_response.status_code == status.HTTP_204_NO_CONTENT
 
 
 @pytest.mark.django_db

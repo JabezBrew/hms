@@ -12,7 +12,7 @@ Provides ViewSets for inventory management including:
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
 from django.db.models import Sum, F, Q, Prefetch, Case, When, IntegerField, Count
 from django.utils import timezone
@@ -79,7 +79,14 @@ from .services import (
 from .analytics import InventoryAnalyticsService
 from ..users.permissions import IsAdminOrOwner
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_prescription_access,
+    get_user_facility,
+    get_user_facility_codes,
+    is_cross_facility_admin,
+    normalize_facility_code,
+)
 
 
 # =============================================================================
@@ -1875,6 +1882,55 @@ class ControlledSubstanceEntryViewSet(viewsets.ReadOnlyModelViewSet):
         return ControlledSubstanceEntrySerializer
 
 
+CONTROLLED_SUBSTANCE_OPERATOR_USER_TYPES = frozenset({'admin', 'pharmacist'})
+CONTROLLED_SUBSTANCE_OPERATION_PERMISSIONS = {
+    'dispense': 'inventory.add_controlledsubstanceentry',
+    'wastage': 'inventory.add_controlledsubstanceentry',
+    'count': 'inventory.change_controlledsubstanceregister',
+}
+
+
+def _has_controlled_substance_privilege(user, action=None):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if not getattr(user, 'is_active', False):
+        return False
+    if getattr(user, 'is_superuser', False):
+        return True
+
+    if action:
+        required_permission = CONTROLLED_SUBSTANCE_OPERATION_PERMISSIONS.get(action)
+        if required_permission and user.has_perm(required_permission):
+            return True
+    elif any(
+        user.has_perm(perm)
+        for perm in CONTROLLED_SUBSTANCE_OPERATION_PERMISSIONS.values()
+    ):
+        return True
+
+    return getattr(user, 'user_type', None) in CONTROLLED_SUBSTANCE_OPERATOR_USER_TYPES
+
+
+def _user_has_facility_privilege(user, facility):
+    if is_cross_facility_admin(user):
+        return True
+    facility_code = normalize_facility_code(getattr(facility, 'code', None))
+    return bool(facility_code and facility_code in get_user_facility_codes(user))
+
+
+class CanPerformControlledSubstanceOperation(permissions.BasePermission):
+    """
+    Restrict controlled-substance register mutations to pharmacy/control roles.
+    """
+    message = "Controlled substance operations require pharmacy privileges."
+
+    def has_permission(self, request, view):
+        return _has_controlled_substance_privilege(
+            getattr(request, 'user', None),
+            getattr(view, 'action', None),
+        )
+
+
 class ControlledSubstanceOperationsViewSet(viewsets.ViewSet):
     """
     API endpoint for controlled substance operations.
@@ -1883,7 +1939,85 @@ class ControlledSubstanceOperationsViewSet(viewsets.ViewSet):
     POST /controlled/wastage/ - Record wastage
     POST /controlled/count/ - Perform physical count
     """
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        FacilityScopedPermission,
+        CanPerformControlledSubstanceOperation,
+    ]
+
+    def _get_facility(self, request):
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        return facility
+
+    def _get_inventory_objects(self, data, facility, *, require_dispensing_location=False):
+        location = get_object_or_404(
+            StorageLocation,
+            id=data['location'],
+            facility=facility,
+            is_active=True,
+            allows_controlled_substances=True,
+        )
+        if require_dispensing_location and not location.can_dispense_to_patients:
+            raise PermissionDenied("Location is not authorized to dispense to patients.")
+
+        item = get_object_or_404(
+            InventoryItem,
+            id=data['item'],
+            facility=facility,
+            is_active=True,
+            is_controlled_substance=True,
+        )
+        return location, item
+
+    def _get_witness(self, witness_id, facility):
+        witness = get_object_or_404(get_user_model(), id=witness_id, is_active=True)
+        if not _has_controlled_substance_privilege(witness):
+            raise PermissionDenied("Witness must have controlled substance privileges.")
+        if not _user_has_facility_privilege(witness, facility):
+            raise PermissionDenied("Witness is not authorized for the active facility.")
+        return witness
+
+    def _get_batch(self, batch_id, item, location, quantity):
+        if not batch_id:
+            return None
+
+        batch = get_object_or_404(
+            ExpiryTracker,
+            id=batch_id,
+            item=item,
+            location=location,
+            status='active',
+        )
+        if batch.remaining_quantity < quantity:
+            raise ValidationError({
+                "batch_id": "Batch does not have enough remaining quantity."
+            })
+        return batch
+
+    def _get_dispense_patient(self, patient_id, facility, user):
+        from apps.users.models import PatientProfile
+
+        patient = get_object_or_404(PatientProfile, id=patient_id)
+        if patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_prescription_access(user, patient)
+        return patient
+
+    def _get_prescription(self, prescription_id, patient, facility):
+        if not prescription_id:
+            return None
+
+        from apps.clinical_notes.models import Prescription
+
+        return get_object_or_404(
+            Prescription,
+            id=prescription_id,
+            patient=patient,
+            facility=facility,
+            status='active',
+        )
 
     @action(detail=False, methods=['post'])
     def dispense(self, request):
@@ -1892,34 +2026,16 @@ class ControlledSubstanceOperationsViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         data = serializer.validated_data
-        facility = get_user_facility(request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-
-        try:
-            location = StorageLocation.objects.get(id=data['location'], facility=facility)
-            item = InventoryItem.objects.get(id=data['item'], facility=facility)
-            witness = get_object_or_404(
-                get_user_model(), id=data['witness']
-            )
-            from apps.users.models import PatientProfile
-            patient = get_object_or_404(PatientProfile, id=data['patient'])
-        except (StorageLocation.DoesNotExist, InventoryItem.DoesNotExist):
-            return Response(
-                {'error': 'Location or item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Get optional batch
-        batch = None
-        if data.get('batch_id'):
-            batch = ExpiryTracker.objects.filter(id=data['batch_id']).first()
-
-        # Get optional prescription
-        prescription = None
-        if data.get('prescription'):
-            from apps.clinical_notes.models import Prescription
-            prescription = Prescription.objects.filter(id=data['prescription']).first()
+        facility = self._get_facility(request)
+        location, item = self._get_inventory_objects(
+            data,
+            facility,
+            require_dispensing_location=True,
+        )
+        witness = self._get_witness(data['witness'], facility)
+        patient = self._get_dispense_patient(data['patient'], facility, request.user)
+        batch = self._get_batch(data.get('batch_id'), item, location, data['quantity'])
+        prescription = self._get_prescription(data.get('prescription'), patient, facility)
 
         try:
             entry = ControlledSubstanceService.dispense_controlled(
@@ -1955,26 +2071,10 @@ class ControlledSubstanceOperationsViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         data = serializer.validated_data
-        facility = get_user_facility(request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-
-        try:
-            location = StorageLocation.objects.get(id=data['location'], facility=facility)
-            item = InventoryItem.objects.get(id=data['item'], facility=facility)
-            witness = get_object_or_404(
-                get_user_model(), id=data['witness']
-            )
-        except (StorageLocation.DoesNotExist, InventoryItem.DoesNotExist):
-            return Response(
-                {'error': 'Location or item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Get optional batch
-        batch = None
-        if data.get('batch_id'):
-            batch = ExpiryTracker.objects.filter(id=data['batch_id']).first()
+        facility = self._get_facility(request)
+        location, item = self._get_inventory_objects(data, facility)
+        witness = self._get_witness(data['witness'], facility)
+        batch = self._get_batch(data.get('batch_id'), item, location, data['quantity'])
 
         try:
             entry = ControlledSubstanceService.record_wastage(
@@ -2007,21 +2107,9 @@ class ControlledSubstanceOperationsViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         data = serializer.validated_data
-        facility = get_user_facility(request)
-        if not facility:
-            raise PermissionDenied("Facility context is required.")
-
-        try:
-            location = StorageLocation.objects.get(id=data['location'], facility=facility)
-            item = InventoryItem.objects.get(id=data['item'], facility=facility)
-            witness = get_object_or_404(
-                get_user_model(), id=data['witness']
-            )
-        except (StorageLocation.DoesNotExist, InventoryItem.DoesNotExist):
-            return Response(
-                {'error': 'Location or item not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        facility = self._get_facility(request)
+        location, item = self._get_inventory_objects(data, facility)
+        witness = self._get_witness(data['witness'], facility)
 
         try:
             result = ControlledSubstanceService.perform_count(

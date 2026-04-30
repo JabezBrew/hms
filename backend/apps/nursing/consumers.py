@@ -17,10 +17,14 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.security import get_user_facility_codes, check_clinical_access, normalize_facility_code
-from hms_backend.deployment import feature_enabled
+from apps.core.security import (
+    can_use_cross_facility_access,
+    get_user_facility_codes,
+    check_clinical_access,
+    normalize_facility_code,
+)
 from apps.users.models import PatientProfile, PractitionerProfile
-from apps.wards.models import WardStaffAssignment
+from apps.wards.models import Ward, WardStaffAssignment
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +37,9 @@ def _can_access_patient(user, patient_id):
     if not patient:
         return False
     allowed_codes = get_user_facility_codes(user)
-    allow_cross_facility = feature_enabled('cross_facility_access')
+    allow_cross_facility = can_use_cross_facility_access(user)
     if allowed_codes and patient.facility:
-        if patient.facility.code not in allowed_codes and not (allow_cross_facility and user.user_type == 'admin'):
+        if patient.facility.code not in allowed_codes and not allow_cross_facility:
             return False
     try:
         check_clinical_access(user, patient)
@@ -48,6 +52,16 @@ def _can_access_patient(user, patient_id):
 def _has_ward_access(user, ward_id):
     if not user or not getattr(user, 'is_authenticated', False):
         return False
+    ward = Ward.objects.select_related('department', 'department__facility').filter(id=ward_id).first()
+    if not ward:
+        return False
+
+    ward_facility_code = normalize_facility_code(getattr(getattr(ward, 'facility', None), 'code', None))
+    allowed_codes = get_user_facility_codes(user)
+    if ward_facility_code and allowed_codes and ward_facility_code not in allowed_codes:
+        if not can_use_cross_facility_access(user):
+            return False
+
     if user.user_type == 'admin':
         return True
     practitioner = PractitionerProfile.objects.filter(staff__user=user).first()

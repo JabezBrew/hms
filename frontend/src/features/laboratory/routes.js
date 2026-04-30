@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLES } from '@/shared/constants/roles'
 
 const LabCatalogPage = lazy(() => import('./pages/LabCatalogPage'))
@@ -16,6 +16,7 @@ export const laboratoryRoutes = [
     component: LabCatalogPage,
     roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.DOCTOR],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.LABORATORY,
     title: 'Lab Catalog | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB, { label: 'Catalog', path: '/laboratory/catalog' }],
   },
@@ -24,6 +25,7 @@ export const laboratoryRoutes = [
     component: LabDashboardPage,
     roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.LABORATORY,
     title: 'Lab Dashboard | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB],
   },
@@ -32,6 +34,7 @@ export const laboratoryRoutes = [
     component: LabOrdersPage,
     roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.DOCTOR, ROLES.NURSE, ROLES.PHYSICIAN, ROLES.PRACTITIONER],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.LABORATORY,
     title: 'Lab Orders | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB, { label: 'Orders', path: '/laboratory/orders' }],
   },
@@ -40,6 +43,7 @@ export const laboratoryRoutes = [
     component: LabResultsPage,
     roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.DOCTOR, ROLES.PHYSICIAN, ROLES.PRACTITIONER],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.LABORATORY,
     title: 'Lab Results | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB, { label: 'Results', path: '/laboratory/results' }],
   },
@@ -48,6 +52,7 @@ export const laboratoryRoutes = [
     component: LabCollectionWorklistPage,
     roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.LABORATORY,
     title: 'Lab Collection | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB, { label: 'Collection', path: '/laboratory/collection' }],
   },

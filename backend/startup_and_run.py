@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Combined startup and ASGI launcher.
-Bypasses bash to ensure we see all output in Railway logs.
+Bypasses bash to ensure startup errors are visible in container logs.
 """
 import os
 import sys
@@ -53,7 +53,7 @@ def parse_positive_int(raw_value, default, env_name):
 
 
 def determine_process_role():
-    raw_role = os.environ.get("PROCESS_ROLE") or os.environ.get("RAILWAY_SERVICE_NAME") or "backend"
+    raw_role = os.environ.get("PROCESS_ROLE") or "backend"
     normalized = str(raw_role).strip().lower()
     if normalized in WORKER_ROLE_ALIASES:
         return "worker"
@@ -244,8 +244,7 @@ process_role = determine_process_role()
 log(
     "Process role resolved to "
     f"{process_role!r} "
-    f"(PROCESS_ROLE={os.environ.get('PROCESS_ROLE')!r}, "
-    f"RAILWAY_SERVICE_NAME={os.environ.get('RAILWAY_SERVICE_NAME')!r})."
+    f"(PROCESS_ROLE={os.environ.get('PROCESS_ROLE')!r})."
 )
 
 run_migrations_only = parse_bool(os.environ.get("RUN_MIGRATIONS_ONLY"), default=False)

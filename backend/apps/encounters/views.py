@@ -489,6 +489,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
     lookup_field = 'encounter_id'
+    lifecycle_update_user_types = {'admin', 'doctor', 'nurse', 'receptionist'}
 
     def get_queryset(self):
         facility = get_user_facility(self.request)
@@ -522,8 +523,13 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
         check_clinical_access(self.request.user, visit.encounter.patient)
         return visit
 
+    def _ensure_lifecycle_update_access(self):
+        if self.request.user.user_type not in self.lifecycle_update_user_types:
+            raise PermissionDenied("You do not have permission to update visit lifecycle state.")
+
     @action(detail=True, methods=['post'])
     def add_to_waiting(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         try:
             visit = VisitService.add_to_waiting(visit)
@@ -533,6 +539,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def call(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         try:
             visit = VisitService.call_patient(visit)
@@ -542,6 +549,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def start_consultation(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         try:
             visit = VisitService.start_consultation(visit)
@@ -551,6 +559,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def hold(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         try:
             visit = VisitService.put_on_hold(visit)
@@ -560,6 +569,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def end_consultation(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         try:
             visit = VisitService.end_consultation(visit)
@@ -569,6 +579,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def checkout(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         force = bool(request.data.get('force', False))
         try:
@@ -579,6 +590,7 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def no_show(self, request, encounter_id=None):
+        self._ensure_lifecycle_update_access()
         visit = self._get_visit()
         try:
             visit = VisitService.mark_no_show(visit)

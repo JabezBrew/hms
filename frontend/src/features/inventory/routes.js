@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS } from '@/shared/constants/roles'
 
 const InventoryDashboardPage = lazy(() => import('./pages/InventoryDashboardPage'))
@@ -27,6 +27,7 @@ export const inventoryRoutes = [
     component: InventoryDashboardPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Dashboard | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB],
   },
@@ -35,6 +36,7 @@ export const inventoryRoutes = [
     component: ItemsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Items | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Items', path: '/inventory/items' }],
   },
@@ -43,6 +45,7 @@ export const inventoryRoutes = [
     component: ItemDetailPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Item | Hospital Management System',
     breadcrumbs: [
       INVENTORY_BREADCRUMB,
@@ -55,6 +58,7 @@ export const inventoryRoutes = [
     component: LocationsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Locations | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Locations', path: '/inventory/locations' }],
   },
@@ -63,6 +67,7 @@ export const inventoryRoutes = [
     component: RequisitionsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Requisitions | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Requisitions', path: '/inventory/requisitions' }],
   },
@@ -71,6 +76,7 @@ export const inventoryRoutes = [
     component: RequisitionDetailPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Requisition Details | Hospital Management System',
     breadcrumbs: [
       INVENTORY_BREADCRUMB,
@@ -83,6 +89,7 @@ export const inventoryRoutes = [
     component: PurchaseOrdersPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Purchase Orders | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Purchase Orders', path: '/inventory/purchase-orders' }],
   },
@@ -91,6 +98,7 @@ export const inventoryRoutes = [
     component: PurchaseOrderDetailPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Purchase Order Details | Hospital Management System',
     breadcrumbs: [
       INVENTORY_BREADCRUMB,
@@ -103,6 +111,7 @@ export const inventoryRoutes = [
     component: GRNsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Goods Received Notes | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'GRNs', path: '/inventory/grns' }],
   },
@@ -111,6 +120,7 @@ export const inventoryRoutes = [
     component: GRNDetailPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'GRN Details | Hospital Management System',
     breadcrumbs: [
       INVENTORY_BREADCRUMB,
@@ -123,6 +133,7 @@ export const inventoryRoutes = [
     component: InternalRequisitionsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Internal Requisitions | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Internal Requisitions', path: '/inventory/internal-requisitions' }],
   },
@@ -131,6 +142,7 @@ export const inventoryRoutes = [
     component: StandingOrdersPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Standing Orders | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Standing Orders', path: '/inventory/standing-orders' }],
   },
@@ -139,6 +151,7 @@ export const inventoryRoutes = [
     component: TransferRequestsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Transfer Requests | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Transfers', path: '/inventory/transfers' }],
   },
@@ -147,6 +160,7 @@ export const inventoryRoutes = [
     component: ControlledSubstancesPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Controlled Substances | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Controlled Substances', path: '/inventory/controlled' }],
   },
@@ -155,6 +169,7 @@ export const inventoryRoutes = [
     component: ControlledRegisterDetailPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Controlled Register | Hospital Management System',
     breadcrumbs: [
       INVENTORY_BREADCRUMB,
@@ -167,6 +182,7 @@ export const inventoryRoutes = [
     component: AnalyticsPage,
     roles: ROLE_GROUPS.INVENTORY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.INVENTORY,
     title: 'Inventory Analytics | Hospital Management System',
     breadcrumbs: [INVENTORY_BREADCRUMB, { label: 'Analytics', path: '/inventory/analytics' }],
   },

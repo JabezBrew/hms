@@ -152,6 +152,51 @@ describe('RoleBasedRoute', () => {
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
     })
 
+    it('renders children when user has an allowed admin capability', () => {
+      useAuth.mockReturnValue({
+        user: {
+          id: '1',
+          email: 'hod@test.com',
+          role: 'doctor',
+          adminAccess: {
+            capabilities: ['admin.roster.manage'],
+          },
+        },
+        isAuthenticated: true,
+      })
+
+      renderWithRouter(
+        <RoleBasedRoute allowedRoles={['admin']} allowedCapabilities={['admin.roster.manage']}>
+          <div>Roster Admin Content</div>
+        </RoleBasedRoute>
+      )
+
+      expect(screen.getByText('Roster Admin Content')).toBeInTheDocument()
+    })
+
+    it('redirects to unauthorized when neither role nor capability is allowed', () => {
+      useAuth.mockReturnValue({
+        user: {
+          id: '1',
+          email: 'doctor@test.com',
+          role: 'doctor',
+          adminAccess: {
+            capabilities: ['admin.staff.view'],
+          },
+        },
+        isAuthenticated: true,
+      })
+
+      renderWithRouter(
+        <RoleBasedRoute allowedRoles={['admin']} allowedCapabilities={['admin.roster.manage']}>
+          <div>Roster Admin Content</div>
+        </RoleBasedRoute>
+      )
+
+      expect(screen.getByText('Unauthorized Page')).toBeInTheDocument()
+      expect(screen.queryByText('Roster Admin Content')).not.toBeInTheDocument()
+    })
+
     it('supports custom redirect path for unauthorized access', () => {
       useAuth.mockReturnValue({
         user: { id: '1', email: 'patient@test.com', role: 'patient' },

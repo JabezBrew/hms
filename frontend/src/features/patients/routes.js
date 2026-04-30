@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { ROUTE_LAYOUTS } from '@/app/routes/routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLE_GROUPS, ROLES } from '@/shared/constants/roles'
 
 const PatientChronicleListPage = lazy(() => import('./pages/PatientChronicleListPage'))
@@ -14,6 +14,7 @@ export const patientRoutes = [
     component: PatientChronicleListPage,
     roles: ROLE_GROUPS.PATIENT_REGISTRY,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENTS,
     title: 'Patients | Hospital Management System',
     breadcrumbs: [{ label: 'Patients', path: '/patients' }],
   },
@@ -22,6 +23,7 @@ export const patientRoutes = [
     component: PatientCreatePage,
     roles: [ROLES.ADMIN, ROLES.RECEPTIONIST],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENTS,
     title: 'Register Patient | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
@@ -33,6 +35,7 @@ export const patientRoutes = [
     component: MyPatientsPage,
     roles: ROLE_GROUPS.MY_PATIENTS,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENTS,
     title: 'My Patients | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
@@ -44,6 +47,7 @@ export const patientRoutes = [
     component: PatientPage,
     roles: ROLE_GROUPS.PATIENT_DETAIL,
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENT_WORKSPACE,
     title: 'Patient | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
@@ -56,6 +60,7 @@ export const patientRoutes = [
     roles: ROLE_GROUPS.CLINICAL,
     features: ['wards'],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENT_WORKSPACE,
     title: 'Ward Round | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
@@ -68,6 +73,7 @@ export const patientRoutes = [
     component: PatientEditPage,
     roles: [ROLES.ADMIN, ROLES.DOCTOR, ROLES.NURSE],
     layout: ROUTE_LAYOUTS.APP,
+    sidebar: SIDEBARS.PATIENT_WORKSPACE,
     title: 'Edit Patient | Hospital Management System',
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },

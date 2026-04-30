@@ -23,7 +23,7 @@
  *   k6 run --vus 25 --duration 5m --no-vu-connection-reuse=false tests/load/k6-test.js
  *
  *   # With environment variables
- *   k6 run -e BASE_URL=http://localhost:8000 tests/load/k6-test.js
+ *   k6 run -e BASE_URL=http://localhost:8000 -e HMS_LOAD_TEST_PASSWORD='...' tests/load/k6-test.js
  *
  *   # With load test key (bypasses rate limiting - key must match LOAD_TEST_SECRET_KEY in backend)
  *   k6 run -e BASE_URL=https://your-api.com -e LOAD_TEST_KEY=your-secret-key tests/load/k6-test.js
@@ -50,6 +50,33 @@ import { randomIntBetween, randomItem } from 'https://jslib.k6.io/k6-utils/1.2.0
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 const LOAD_TEST_KEY = __ENV.LOAD_TEST_KEY || ''; // Secret key to bypass rate limiting
 const TOKEN_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // Refresh tokens every 10 minutes (before 15 min expiry)
+
+function loadCredential(role, defaultEmail) {
+  const envRole = role.toUpperCase();
+  const email = __ENV[`HMS_LOAD_${envRole}_EMAIL`] || defaultEmail;
+  const password = __ENV[`HMS_LOAD_${envRole}_PASSWORD`] || __ENV.HMS_LOAD_TEST_PASSWORD;
+
+  if (!password) {
+    throw new Error(
+      `Missing password for ${role}. Set HMS_LOAD_${envRole}_PASSWORD or HMS_LOAD_TEST_PASSWORD.`
+    );
+  }
+
+  return { email, password };
+}
+
+function sanitizedSummary(data) {
+  return JSON.stringify(data, (key, value) => {
+    const normalizedKey = String(key).toLowerCase();
+    if (normalizedKey === 'credentials' || normalizedKey === 'initialtokens') {
+      return '[redacted]';
+    }
+    if (normalizedKey === 'password' || normalizedKey === 'access' || normalizedKey === 'refresh') {
+      return '[redacted]';
+    }
+    return value;
+  }, 2);
+}
 
 // Per-VU token state (each VU maintains its own tokens)
 let vuTokens = {
@@ -208,7 +235,7 @@ function getValidToken(userType, credentials) {
     }
 
     // No refresh token or refresh failed - do fresh login
-    const cred = credentials[userType] || credentials.admin; // Fallback to admin
+    const cred = credentials[userType];
     if (cred) {
       const tokens = login(cred.email, cred.password);
       if (tokens) {
@@ -231,14 +258,12 @@ function getValidToken(userType, credentials) {
 export function setup() {
   console.log('Setting up test - logging in test users...');
 
-  // Use admin account for all workflows (has access to all endpoints)
-  // In production, test users were created via registration API with auto-generated passwords
   const credentials = {
-    nurse: { email: 'nurse@hms.com', password: 'Admin123!' },
-    doctor: { email: 'doctor@hms.com', password: 'Admin123!' },
-    admin: { email: 'admin@hms.com', password: 'Admin123!' },
-    lab: { email: 'lab_tech@hms.com', password: 'Admin123!' },
-    reception: { email: 'receptionist@hms.com', password: 'Admin123!' },
+    nurse: loadCredential('nurse', 'nurse@hms.com'),
+    doctor: loadCredential('doctor', 'doctor@hms.com'),
+    admin: loadCredential('admin', 'admin@hms.com'),
+    lab: loadCredential('lab', 'lab_tech@hms.com'),
+    reception: loadCredential('reception', 'receptionist@hms.com'),
   };
 
   // Obtain tokens for each role
@@ -703,10 +728,15 @@ export function teardown(data) {
 
 // Handle summary
 export function handleSummary(data) {
-  return {
-    'summary.json': JSON.stringify(data, null, 2),
+  const outputs = {
     stdout: textSummary(data, { indent: '  ', enableColors: true }),
   };
+
+  if (__ENV.K6_SUMMARY_PATH) {
+    outputs[__ENV.K6_SUMMARY_PATH] = sanitizedSummary(data);
+  }
+
+  return outputs;
 }
 
 // Text summary helper

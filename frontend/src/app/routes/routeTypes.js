@@ -3,23 +3,68 @@ export const ROUTE_LAYOUTS = Object.freeze({
   BARE: 'bare',
 })
 
-const TIER_CONTROLLED_ROUTE_PREFIXES = [
-  ['/appointments', 'appointments'],
-  ['/practitioner-availability', 'appointments'],
-  ['/schedules', 'appointments'],
-  ['/wards', 'wards'],
-  ['/admissions', 'inpatient_admissions'],
-  ['/billing', 'billing'],
-  ['/inventory', 'inventory'],
-  ['/laboratory', 'laboratory'],
-  ['/pharmacy', 'pharmacy'],
-  ['/nursing', 'nursing_workflows'],
-  ['/clinics', 'outpatient_encounters'],
-  ['/clinical-notes', 'clinical_notes'],
-  ['/encounters/:id/clinical-notes', 'clinical_notes'],
-  ['/triage', 'emergency_encounters'],
-  ['/referrals', 'referrals'],
+export const SIDEBARS = Object.freeze({
+  GLOBAL: 'global',
+  PATIENTS: 'patients',
+  PATIENT_WORKSPACE: 'patient-workspace',
+  BILLING: 'billing',
+  INVENTORY: 'inventory',
+  LABORATORY: 'laboratory',
+  PHARMACY: 'pharmacy',
+  ADMIN: 'admin',
+  SETTINGS: 'settings',
+})
+
+const TIER_CONTROLLED_ROUTE_REQUIREMENTS = [
+  { prefix: '/appointments', features: ['appointments'] },
+  { prefix: '/practitioner-availability', features: ['appointments'] },
+  { prefix: '/schedules', features: ['appointments'] },
+  { prefix: '/wards', features: ['wards'] },
+  { prefix: '/admissions', features: ['inpatient_admissions'] },
+  { path: '/billing/admissions', features: ['billing', 'inpatient_admissions'] },
+  { path: '/billing/discharges', features: ['billing', 'discharge_workflows'] },
+  { path: '/billing/claims', features: ['billing', 'insurance_claims'] },
+  { prefix: '/billing/nhis', features: ['billing', 'insurance_claims'] },
+  { prefix: '/billing', features: ['billing'] },
+  { prefix: '/inventory', features: ['inventory'] },
+  { prefix: '/laboratory', features: ['laboratory'] },
+  { prefix: '/pharmacy', features: ['pharmacy'] },
+  { path: '/nursing/admissions', features: ['nursing_workflows', 'inpatient_admissions'] },
+  { path: '/nursing/discharges', features: ['nursing_workflows', 'discharge_workflows'] },
+  { prefix: '/nursing', features: ['nursing_workflows'] },
+  { path: '/dashboards/nurse', features: ['nursing_workflows'] },
+  { path: '/dashboards/inpatient', features: ['inpatient_admissions'] },
+  { path: '/workflows/ward-round', features: ['wards'] },
+  { path: '/workflows/discharge', features: ['discharge_workflows'] },
+  { path: '/patients/:id/ward-round', features: ['wards'] },
+  { prefix: '/clinics', features: ['outpatient_encounters'] },
+  { prefix: '/clinical-notes', features: ['clinical_notes'] },
+  { prefix: '/charts', features: ['clinical_notes'] },
+  { path: '/encounters/:id/clinical-notes', features: ['clinical_notes'] },
+  { prefix: '/triage', features: ['emergency_encounters'] },
+  { prefix: '/referrals', features: ['referrals'] },
+  { path: '/admin/audit-logs', features: ['audit'] },
+  { path: '/admin/organization/duty-roster', features: ['department_rosters'] },
+  { path: '/admin/organization/roster-setup', features: ['department_rosters'] },
+  { path: '/admin/organization/roster-builder', features: ['department_rosters'] },
 ]
+
+function routeMatchesRequirement(routePath, requirement) {
+  if (requirement.path) {
+    return routePath === requirement.path
+  }
+  return routePath === requirement.prefix || routePath.startsWith(`${requirement.prefix}/`)
+}
+
+function requiredFeaturesForRoute(routePath) {
+  const features = new Set()
+  TIER_CONTROLLED_ROUTE_REQUIREMENTS.forEach((requirement) => {
+    if (routeMatchesRequirement(routePath, requirement)) {
+      requirement.features.forEach((feature) => features.add(feature))
+    }
+  })
+  return [...features]
+}
 
 export function validateRoutes(routes, { source = 'routes' } = {}) {
   if (!Array.isArray(routes)) {
@@ -42,12 +87,18 @@ export function validateRoutes(routes, { source = 'routes' } = {}) {
     if (route.features !== undefined && !Array.isArray(route.features)) {
       throw new Error(`[${source}] Route ${route.path} features must be an array`)
     }
-    const controlled = TIER_CONTROLLED_ROUTE_PREFIXES.find(([prefix]) => (
-      route.path === prefix || route.path.startsWith(`${prefix}/`)
-    ))
-    if (controlled && !route.features?.includes(controlled[1])) {
+    if (route.capabilities !== undefined && !Array.isArray(route.capabilities)) {
+      throw new Error(`[${source}] Route ${route.path} capabilities must be an array`)
+    }
+    if (route.sidebar !== undefined && !Object.values(SIDEBARS).includes(route.sidebar)) {
+      throw new Error(`[${source}] Route ${route.path} has invalid sidebar`)
+    }
+    const missingFeatures = requiredFeaturesForRoute(route.path)
+      .filter((feature) => !route.features?.includes(feature))
+    if (missingFeatures.length > 0) {
+      const featureLabel = missingFeatures.length === 1 ? 'feature' : 'features'
       throw new Error(
-        `[${source}] Route ${route.path} must declare feature ${controlled[1]}`
+        `[${source}] Route ${route.path} must declare ${featureLabel} ${missingFeatures.join(', ')}`
       )
     }
   })

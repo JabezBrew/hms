@@ -1,8 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'admin@hms.com';
-const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'Admin123!';
+const adminPassword = process.env.E2E_ADMIN_PASSWORD;
 const smokePatientName = process.env.E2E_SMOKE_PATIENT_NAME || 'Smoke Patient';
+
+if (!adminPassword) {
+  throw new Error('E2E_ADMIN_PASSWORD is required; no default admin password is provided.');
+}
 
 test('admin can sign in, open the patient registry, and load a patient chronicle', async ({ page }) => {
   await page.goto('/login');

@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
-import { AdmissionForm } from '@/components/wards/AdmissionForm';
+import { AdmissionForm } from '@/features/admissions/components/AdmissionForm';
 import { Button } from '@/components/ui/button';
 
 import { useWard } from '@/features/wards/hooks/useWardQueries';

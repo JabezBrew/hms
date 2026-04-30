@@ -37,6 +37,7 @@ from ..users.rbac import IsAdmin, IsLabTechnician
 from ..users.models import PatientProfile
 from ..core.security import (
     FacilityScopedPermission,
+    FeatureRequiredPermission,
     check_lab_access,
     get_accessible_patients_for_clinician,
     get_user_facility,
@@ -53,6 +54,13 @@ LAB_TECH_VISIBLE_ORDER_STATUSES = [
     LabOrderStatus.PROCESSING,
     LabOrderStatus.COMPLETED,
 ]
+
+
+def _feature_permissions(*permission_classes):
+    return [
+        permission()
+        for permission in (FeatureRequiredPermission, *permission_classes)
+    ]
 
 
 def _build_name_search_query(first_name_lookup, last_name_lookup, raw_search):
@@ -178,8 +186,12 @@ class LabTestCatalogViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Admin-only for create/update/delete/customize."""
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'customize', 'reset_to_defaults']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser(), FacilityScopedPermission()]
-        return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+            return _feature_permissions(
+                permissions.IsAuthenticated,
+                permissions.IsAdminUser,
+                FacilityScopedPermission,
+            )
+        return _feature_permissions(permissions.IsAuthenticated, FacilityScopedPermission)
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
@@ -335,8 +347,12 @@ class LabPanelViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Admin-only for create/update/delete/customize."""
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'customize', 'reset_to_defaults']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser(), FacilityScopedPermission()]
-        return [permissions.IsAuthenticated(), FacilityScopedPermission()]
+            return _feature_permissions(
+                permissions.IsAuthenticated,
+                permissions.IsAdminUser,
+                FacilityScopedPermission,
+            )
+        return _feature_permissions(permissions.IsAuthenticated, FacilityScopedPermission)
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
@@ -451,7 +467,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsLabTechnician]
         else:
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
-        return [permission() for permission in permission_classes]
+        return _feature_permissions(*permission_classes)
 
     def get_serializer_context(self):
         """
@@ -883,7 +899,7 @@ class LabSpecimenViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsLabTechnician]
         else:
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
-        return [permission() for permission in permission_classes]
+        return _feature_permissions(*permission_classes)
 
     def get_queryset(self):
         """Filter specimens with optimized queries."""
@@ -1054,7 +1070,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrDoctor | IsLabTechnician]
         else:
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
-        return [permission() for permission in permission_classes]
+        return _feature_permissions(*permission_classes)
 
     def get_queryset(self):
         """Filter results with optimized queries."""

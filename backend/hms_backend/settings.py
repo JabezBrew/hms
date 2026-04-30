@@ -131,15 +131,6 @@ DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
 
-# Auto-add Railway domains to ALLOWED_HOSTS
-_railway_hosts = [
-    'backend-staging-8afc.up.railway.app',
-    'backend-production-40e0.up.railway.app',
-]
-for host in _railway_hosts:
-    if host not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(host)
-
 # Application definition
 INSTALLED_APPS = [
     'daphne',  # ASGI server - must be first for static files handling
@@ -254,7 +245,7 @@ else:
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 #
 # Supports two configuration methods:
-# 1. DATABASE_URL (Railway, Heroku, Render, etc.)
+# 1. DATABASE_URL
 # 2. Individual DB_* variables (Docker, traditional hosting)
 
 if IS_BUILD:
@@ -613,10 +604,6 @@ REST_FRAMEWORK = {
 # CORS settings
 # Filter out invalid origins (e.g., empty or just "https://")
 _cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
-_railway_origins = env.list('RAILWAY_FRONTEND_ORIGINS', default=[])
-for origin in _railway_origins:
-    if origin not in _cors_origins:
-        _cors_origins.append(origin)
 
 CORS_ALLOWED_ORIGINS = [origin for origin in _cors_origins if origin and '://' in origin and len(origin) > 8]
 if not CORS_ALLOWED_ORIGINS:
@@ -651,10 +638,6 @@ CORS_ALLOW_HEADERS = [
 # CSRF settings
 _csrf_origins = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])
 
-for origin in _railway_origins:
-    if origin not in _csrf_origins:
-        _csrf_origins.append(origin)
-
 CSRF_TRUSTED_ORIGINS = [origin for origin in _csrf_origins if origin and '://' in origin and len(origin) > 8]
 if not CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173']
@@ -663,7 +646,7 @@ if not CSRF_TRUSTED_ORIGINS:
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-# Trust X-Forwarded-Proto header from Railway/Heroku/etc load balancers
+# Trust X-Forwarded-Proto from TLS-terminating reverse proxies.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 TRUST_PROXY_HEADERS = env.bool('TRUST_PROXY_HEADERS', default=False)
 TRUSTED_PROXY_HOPS = env.int('TRUSTED_PROXY_HOPS', default=1)
@@ -947,11 +930,16 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'apps.users.tasks.cleanup_user_sessions',
         'schedule': timedelta(days=1),  # Run once a day
     },
-    'cleanup-encounters-daily': {
+}
+
+if (
+    DEPLOYMENT_FEATURES.get('outpatient_encounters', False)
+    or DEPLOYMENT_FEATURES.get('emergency_encounters', False)
+):
+    CELERY_BEAT_SCHEDULE['cleanup-encounters-daily'] = {
         'task': 'apps.encounters.tasks.cleanup_encounters_daily',
         'schedule': timedelta(days=1),
-    },
-}
+    }
 
 if DEPLOYMENT_FEATURES.get('appointments', False):
     CELERY_BEAT_SCHEDULE['generate-slots-weekly'] = {
@@ -977,7 +965,10 @@ ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS = env.int(
     'ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS',
     default=0,
 )
-if ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS > 0:
+if (
+    DEPLOYMENT_FEATURES.get('appointments', False)
+    and ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS > 0
+):
     CELERY_BEAT_SCHEDULE['refresh-admin-dashboard-appointments'] = {
         'task': 'apps.dashboards.tasks.refresh_admin_dashboard_appointments_for_all_facilities',
         'schedule': float(ADMIN_DASHBOARD_PREWARM_INTERVAL_SECONDS),

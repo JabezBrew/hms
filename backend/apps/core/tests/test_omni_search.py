@@ -145,12 +145,25 @@ def test_extended_clinical_roles_can_search_patients_and_encounters(default_faci
         user__last_name="Patient",
         user__primary_facility=default_facility,
     )
+    physician_staff = StaffFactory(
+        user=physician,
+        primary_facility=default_facility,
+    )
+    physician_profile = PractitionerProfileFactory(
+        staff=physician_staff,
+    )
     practitioner_staff = StaffFactory(
         user=practitioner,
         primary_facility=default_facility,
     )
     practitioner_profile = PractitionerProfileFactory(
         staff=practitioner_staff,
+    )
+    EncounterFactory(
+        patient=patient,
+        facility=default_facility,
+        practitioner=physician_profile,
+        reason="Alpha",
     )
     EncounterFactory(
         patient=patient,
@@ -177,6 +190,67 @@ def test_extended_clinical_roles_can_search_patients_and_encounters(default_faci
     )
     assert practitioner_response.status_code == status.HTTP_200_OK
     assert len(practitioner_response.data["groups"]["encounters"]) >= 1
+
+
+@pytest.mark.django_db
+def test_omni_patient_search_hides_unassigned_patients_for_clinicians(default_facility):
+    doctor = UserFactory(user_type="doctor", primary_facility=default_facility)
+    practitioner = PractitionerProfileFactory(
+        staff__user=doctor,
+        staff__primary_facility=default_facility,
+    )
+    assigned_patient = PatientProfileFactory(
+        facility=default_facility,
+        user__first_name="Alpha",
+        user__last_name="Assigned",
+        user__primary_facility=default_facility,
+    )
+    unassigned_patient = PatientProfileFactory(
+        facility=default_facility,
+        user__first_name="Alpha",
+        user__last_name="Unassigned",
+        user__primary_facility=default_facility,
+    )
+    EncounterFactory(
+        patient=assigned_patient,
+        facility=default_facility,
+        practitioner=practitioner,
+        reason="Alpha",
+    )
+
+    client = _auth_client(doctor, facility=default_facility)
+    response = client.get("/api/search/omni/", {"q": "Alpha", "types": "patients"})
+
+    assert response.status_code == status.HTTP_200_OK
+    ids = {item["id"] for item in response.data["groups"]["patients"]}
+    assert str(assigned_patient.id) in ids
+    assert str(unassigned_patient.id) not in ids
+
+
+@pytest.mark.django_db
+def test_omni_facility_admin_patient_results_use_directory_projection(default_facility):
+    admin = UserFactory(
+        user_type="admin",
+        is_staff=True,
+        is_superuser=False,
+        primary_facility=default_facility,
+    )
+    patient = PatientProfileFactory(
+        facility=default_facility,
+        user__first_name="Alpha",
+        user__last_name="Directory",
+        user__primary_facility=default_facility,
+    )
+    AdmissionFactory(patient=patient, facility=default_facility)
+
+    client = _auth_client(admin, facility=default_facility)
+    response = client.get("/api/search/omni/", {"q": "Alpha", "types": "patients"})
+
+    assert response.status_code == status.HTTP_200_OK
+    result = response.data["groups"]["patients"][0]
+    assert result["id"] == str(patient.id)
+    assert "current_ward" not in result
+    assert "admission_status" not in result
 
 
 @pytest.mark.django_db

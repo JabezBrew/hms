@@ -16,7 +16,7 @@ from rest_framework.exceptions import PermissionDenied
 from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
-from django.db.models import Q, Exists, OuterRef, Prefetch
+from django.db.models import Q, Prefetch
 from django.http import HttpResponse
 
 from redis import Redis
@@ -33,11 +33,14 @@ from .serializers import (
 )
 from .mixins import FacilityScopedCreateMixin
 from .security import (
+    CLINICAL_PATIENT_ACCESS_USER_TYPES,
     FacilityScopedPermission,
     FacilityScopedQuerysetMixin,
     get_accessible_patients_for_clinician,
     get_user_facility,
     get_user_facility_codes,
+    is_cross_facility_admin,
+    scope_patient_queryset_for_search_access,
 )
 from hms_backend.deployment import feature_enabled
 from hms_backend.feature_manifest import FEATURE_MANIFEST
@@ -265,20 +268,6 @@ def metrics_view(_request):
     return response
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated, IsAdminUser])
-def celery_operability(request):
-    facility = get_user_facility(request)
-    snapshot = _dependency_snapshot()
-    operability = _collect_celery_operability()
-    return Response({
-        'service': 'hms-backend',
-        'facility_scope': getattr(facility, 'code', None),
-        'health': snapshot['dependencies'],
-        'celery': operability,
-    })
-
-
 class FacilityScopedViewSet(FacilityScopedQuerysetMixin, FacilityScopedCreateMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
@@ -303,7 +292,7 @@ class FacilityViewSet(viewsets.ReadOnlyModelViewSet):
         if allow_cross is None:
             allow_cross = feature_enabled('cross_facility_access')
 
-        if allow_cross and user.user_type == 'admin':
+        if allow_cross and is_cross_facility_admin(user):
             scoped = queryset
         else:
             codes = get_user_facility_codes(user)
@@ -311,7 +300,7 @@ class FacilityViewSet(viewsets.ReadOnlyModelViewSet):
                 return queryset.none()
             scoped = queryset.filter(code__in=codes)
 
-        if not include_inactive or user.user_type != 'admin':
+        if not include_inactive or (user.user_type != 'admin' and not is_cross_facility_admin(user)):
             scoped = scoped.filter(is_active=True)
 
         return scoped
@@ -329,6 +318,12 @@ class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
             'updated_by',
         ).order_by('scope', 'facility__code', 'feature_key')
 
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(
+                scope=FeatureEntitlementOverride.SCOPE_FACILITY,
+                facility__in=self.request.user.facilities.all(),
+            )
+
         scope = self.request.query_params.get('scope')
         if scope in {
             FeatureEntitlementOverride.SCOPE_GLOBAL,
@@ -343,6 +338,10 @@ class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        self._assert_override_scope_allowed(
+            serializer.validated_data.get('scope'),
+            serializer.validated_data.get('facility'),
+        )
         instance = serializer.save(
             created_by=self.request.user,
             updated_by=self.request.user,
@@ -350,10 +349,24 @@ class FeatureEntitlementOverrideViewSet(viewsets.ModelViewSet):
         self._log_change(instance, action='CREATE')
 
     def perform_update(self, serializer):
+        self._assert_override_scope_allowed(
+            serializer.validated_data.get('scope', serializer.instance.scope),
+            serializer.validated_data.get('facility', serializer.instance.facility),
+        )
         instance = serializer.save(updated_by=self.request.user)
         self._log_change(instance, action='UPDATE')
 
+    def _assert_override_scope_allowed(self, scope, facility):
+        user = self.request.user
+        if scope == FeatureEntitlementOverride.SCOPE_GLOBAL and not user.is_superuser:
+            raise PermissionDenied('Only superusers can manage global feature overrides.')
+
+        if scope == FeatureEntitlementOverride.SCOPE_FACILITY and not user.is_superuser:
+            if facility is None or not user.facilities.filter(id=facility.id).exists():
+                raise PermissionDenied('You can only manage feature overrides for assigned facilities.')
+
     def perform_destroy(self, instance):
+        self._assert_override_scope_allowed(instance.scope, instance.facility)
         feature_key = instance.feature_key
         scope = instance.scope
         facility_code = getattr(instance.facility, 'code', None)
@@ -514,6 +527,16 @@ OMNI_CLINICAL_USER_TYPES = frozenset({
 })
 
 
+def _patient_result_serializer_class(user):
+    user_type = getattr(user, 'user_type', None)
+    if user_type == 'patient' or user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
+        from apps.users.serializers import PatientSearchListSerializer
+        return PatientSearchListSerializer
+
+    from apps.users.serializers import PatientDirectorySearchListSerializer
+    return PatientDirectorySearchListSerializer
+
+
 def _parse_int(value, *, default, min_value=None, max_value=None):
     try:
         parsed = int(value)
@@ -533,9 +556,10 @@ def _normalize_types_param(types_param):
     return {t for t in raw if t}
 
 
-def _allowed_omni_types_for_user(user_type):
+def _allowed_omni_types_for_user(user):
+    user_type = getattr(user, 'user_type', None)
     # Keep in sync with the frontend's navigable routes.
-    if user_type == 'admin':
+    if user_type == 'admin' or is_cross_facility_admin(user):
         return set(OMNI_SUPPORTED_TYPES)
 
     # Clinical staff and providers.
@@ -564,21 +588,7 @@ def _get_patient_base_queryset(user, facility):
 
     qs = PatientProfile.objects.select_related('user').filter(facility=facility)
 
-    user_type = getattr(user, 'user_type', None)
-    if user_type == 'billing':
-        from apps.billing.models import Invoice
-
-        invoice_exists = Invoice.objects.filter(
-            patient=OuterRef('pk'),
-            facility=facility,
-        )
-        qs = qs.filter(Exists(invoice_exists))
-    elif user_type == 'patient':
-        qs = qs.filter(user=user)
-    elif user_type in {'admin', 'receptionist'} or user_type in OMNI_CLINICAL_USER_TYPES:
-        pass
-    else:
-        return PatientProfile.objects.none()
+    qs = scope_patient_queryset_for_search_access(qs, user, facility)
 
     # Used by PatientSearchListSerializer without per-row lookups.
     return qs.prefetch_related(
@@ -643,7 +653,7 @@ def omni_search(request):
     if requested_types:
         requested_types &= set(OMNI_SUPPORTED_TYPES)
 
-    allowed_types = _allowed_omni_types_for_user(user_type)
+    allowed_types = _allowed_omni_types_for_user(user)
     if requested_types:
         effective_types = sorted(requested_types & allowed_types)
     else:
@@ -717,8 +727,18 @@ def omni_search(request):
                     return admission.admission_date.isoformat()
                 return None
 
-        recent_qs = _get_recent_patients_queryset(user, facility, limit=recent_limit)
-        groups['recent_patients'] = OmniRecentPatientSerializer(recent_qs, many=True).data
+        recent_qs = list(_get_recent_patients_queryset(user, facility, limit=recent_limit))
+        if user_type == 'patient' or user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
+            groups['recent_patients'] = OmniRecentPatientSerializer(recent_qs, many=True).data
+        else:
+            serializer_class = _patient_result_serializer_class(user)
+            patient_rows = serializer_class(
+                [recent.patient_profile for recent in recent_qs],
+                many=True,
+            ).data
+            for row, recent in zip(patient_rows, recent_qs):
+                row['last_accessed_at'] = recent.access_date.isoformat() if recent.access_date else None
+            groups['recent_patients'] = patient_rows
 
     # Treat empty or too-short queries as "recents only" for predictable perf and PHI hygiene.
     if len(query) < 2:
@@ -733,8 +753,6 @@ def omni_search(request):
     effective_types_set = set(effective_types)
 
     if 'patients' in effective_types_set:
-        from apps.users.serializers import PatientSearchListSerializer
-
         patients_qs = _get_patient_base_queryset(user, facility)
         patients_qs = patients_qs.filter(
             Q(user__first_name__icontains=query)
@@ -742,7 +760,8 @@ def omni_search(request):
             | Q(medical_record_number__icontains=query)
             | Q(nhis_id__icontains=query)
         ).order_by('user__last_name', 'user__first_name', 'id')[:limit]
-        groups['patients'] = PatientSearchListSerializer(patients_qs, many=True).data
+        serializer_class = _patient_result_serializer_class(user)
+        groups['patients'] = serializer_class(patients_qs, many=True).data
 
     if 'wards' in effective_types_set:
         from apps.wards.models import Ward
@@ -775,10 +794,9 @@ def omni_search(request):
         if user_type == 'patient':
             encounters_qs = encounters_qs.filter(patient__user=user)
         elif user_type in OMNI_CLINICAL_USER_TYPES:
-            if getattr(settings, 'TEAM_ACCESS_STRICT', False):
-                accessible_patients = get_accessible_patients_for_clinician(user)
-                encounters_qs = encounters_qs.filter(patient__in=accessible_patients)
-        elif user_type == 'admin':
+            accessible_patients = get_accessible_patients_for_clinician(user)
+            encounters_qs = encounters_qs.filter(patient__in=accessible_patients)
+        elif user_type == 'admin' or is_cross_facility_admin(user):
             pass
         elif user_type == 'receptionist':
             pass
@@ -810,7 +828,7 @@ def omni_search(request):
         # Match LocalAppointmentViewSet: clinicians see only their own schedule.
         if user_type in OMNI_CLINICAL_USER_TYPES:
             appointments_qs = appointments_qs.filter(practitioner__staff__user=user)
-        elif user_type not in {'admin', 'receptionist'}:
+        elif user_type not in {'admin', 'receptionist'} and not is_cross_facility_admin(user):
             appointments_qs = Appointment.objects.none()
 
         appointments_qs = appointments_qs.filter(
@@ -835,10 +853,9 @@ def omni_search(request):
         ).filter(facility=facility)
 
         if user_type in OMNI_CLINICAL_USER_TYPES:
-            if getattr(settings, 'TEAM_ACCESS_STRICT', False):
-                accessible_patients = get_accessible_patients_for_clinician(user)
-                admissions_qs = admissions_qs.filter(patient__in=accessible_patients)
-        elif user_type not in {'admin', 'receptionist'}:
+            accessible_patients = get_accessible_patients_for_clinician(user)
+            admissions_qs = admissions_qs.filter(patient__in=accessible_patients)
+        elif user_type not in {'admin', 'receptionist'} and not is_cross_facility_admin(user):
             admissions_qs = Admission.objects.none()
 
         admissions_qs = admissions_qs.filter(
@@ -850,7 +867,7 @@ def omni_search(request):
         ).order_by('-admission_date')[:limit]
         groups['admissions'] = AdmissionListSerializer(admissions_qs, many=True).data
 
-    if 'staff' in effective_types_set and user_type == 'admin':
+    if 'staff' in effective_types_set and (user_type == 'admin' or is_cross_facility_admin(user)):
         from apps.users.models import Staff
         from apps.users.serializers import StaffSearchSerializer
 

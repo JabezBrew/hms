@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
-import AppointmentDetail from '@/components/appointments/AppointmentDetail';
+import AppointmentDetail from '@/features/appointments/components/AppointmentDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 

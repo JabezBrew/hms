@@ -69,6 +69,11 @@ frontend/.lighthouseci/
 frontend/playwright-report/
 frontend/test-results/
 
+# Load-test artifacts
+summary.json
+tests/load/summary*.json
+.load-test-output/
+
 # Logs
 logs/
 *.log

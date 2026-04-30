@@ -611,32 +611,20 @@ class TestPatientViewSet:
         ids = [item['id'] for item in response.data.get('results', [])]
         assert ids == [str(patient_b.id), str(patient_c.id), str(patient_a.id)]
 
-    def test_search_without_query_returns_most_recently_registered_first(self, db):
+    def test_facility_admin_search_without_query_requires_query_or_filter(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility
 
-        older = PatientProfileFactory(
+        PatientProfileFactory(
             facility=facility,
             user=PatientUserFactory(first_name='Older', last_name='Patient', primary_facility=facility),
         )
-        newer = PatientProfileFactory(
-            facility=facility,
-            user=PatientUserFactory(first_name='Newer', last_name='Patient', primary_facility=facility),
-        )
-
-        older.created_at = timezone.now() - timedelta(days=1)
-        older.save(update_fields=['created_at'])
-
-        newer.created_at = timezone.now()
-        newer.save(update_fields=['created_at'])
 
         client = get_authenticated_client(admin, facility=facility)
         response = client.get('/api/patients/search/', {'page_size': 10})
 
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data.get('ordering') == '-created_at'
-        ids = [item['id'] for item in response.data.get('results', [])]
-        assert ids.index(str(newer.id)) < ids.index(str(older.id))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'query or filter is required' in response.data['error'].lower()
 
     def test_search_supports_pagination_metadata(self, db):
         admin = AdminUserFactory()
@@ -668,7 +656,7 @@ class TestPatientViewSet:
         assert first_page.data.get('page_size') == 2
         assert len(first_page.data.get('results', [])) == 2
         assert first_page.data.get('next') is not None
-        assert 'admission_status' in first_page.data['results'][0]
+        assert 'admission_status' not in first_page.data['results'][0]
 
         second_page = client.get('/api/patients/search/', {
             'query': 'Paged',
@@ -1122,20 +1110,74 @@ class TestPatientViewSet:
         billing_ids = {item['id'] for item in billing_response.data.get('results', [])}
         assert str(patient_billing.id) in billing_ids
         assert str(patient_lab.id) not in billing_ids
+
+    def test_clinical_patient_search_requires_team_access(self, db):
+        facility = DefaultFacilityFactory()
+        doctor = DoctorUserFactory(primary_facility=facility)
+        practitioner = PractitionerProfileFactory(
+            staff__user=doctor,
+            staff__primary_facility=facility,
+        )
+        assigned_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Assigned', primary_facility=facility)
+        )
+        unassigned_patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Unassigned', primary_facility=facility)
+        )
+        EncounterFactory(patient=assigned_patient, facility=facility, practitioner=practitioner)
+
+        client = get_authenticated_client(doctor, facility=facility)
+        response = client.get('/api/patients/search/', {'query': 'Alpha'})
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(assigned_patient.id) in ids
+        assert str(unassigned_patient.id) not in ids
+
+    def test_facility_admin_patient_search_uses_directory_projection(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Alpha', last_name='Directory', primary_facility=facility)
+        )
+        AdmissionFactory(patient=patient, facility=facility)
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {'query': 'Alpha'})
+
+        assert response.status_code == status.HTTP_200_OK
+        result = response.data['results'][0]
+        assert result['id'] == str(patient.id)
+        assert 'current_ward' not in result
+        assert 'patient_location' not in result
+        assert 'active_clinic_names' not in result
+        assert 'admission_status' not in result
+
     @patch('apps.patients.tasks.log_patient_search.delay')
     def test_search_query_count(self, mock_log_task, db):
         """Search should be O(1) queries per page."""
         admin = AdminUserFactory()
         facility = admin.primary_facility
-        PatientProfileFactory.create_batch(5, facility=facility)
+        for idx in range(5):
+            PatientProfileFactory(
+                facility=facility,
+                user=PatientUserFactory(
+                    first_name='Pat',
+                    last_name=f'Query{idx}',
+                    primary_facility=facility,
+                ),
+            )
 
         client = get_authenticated_client(admin, facility=facility)
         with CaptureQueriesContext(connection) as ctx:
             response = client.get('/api/patients/search/', {'query': 'Pat'})
 
         assert response.status_code == status.HTTP_200_OK
-        # One additional prefetch query is expected for active encounter context.
-        assert len(ctx) <= 9
+        # Includes fixed auth, facility, and feature-scope middleware overhead.
+        assert len(ctx) <= 12
 
     @patch('apps.patients.tasks.enqueue_patient_search_index_rebuild.delay')
     def test_admin_can_queue_patient_search_reindex(self, mock_reindex_task, db):
@@ -1302,6 +1344,24 @@ class TestPatientViewSet:
         assert patient.emergency_contact_name == 'New Contact'
         assert patient.user.first_name == 'Updated'
         assert patient.user.phone_number == '233200000001'
+
+    def test_receptionist_cannot_update_patient_email_via_demographics(self, db):
+        facility = DefaultFacilityFactory()
+        receptionist = UserFactory(user_type='receptionist', primary_facility=facility)
+        patient = PatientProfileFactory(facility=facility)
+        original_email = patient.user.email
+
+        client = get_authenticated_client(receptionist, facility=facility)
+        response = client.put(
+            f'/api/patients/{patient.id}/update_patient/',
+            {'local_data': {'user': {'email': 'attacker-controlled@example.test'}}},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        patient.user.refresh_from_db()
+        assert patient.user.email == original_email
+        assert 'user' in response.data
 
     def test_billing_can_update_demographics_for_invoiced_patient(self, db):
         facility = DefaultFacilityFactory()

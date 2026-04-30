@@ -1,4 +1,3 @@
-import Search from 'lucide-react/dist/esm/icons/search.js';
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js';
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
@@ -18,13 +17,21 @@ import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import {
+  LabEmptyState,
+  LabMetricGrid,
+  LabSearchField,
+  LabTableSkeleton,
+  LabToolbar,
+  labTableClassName,
+  labTableHeaderClassName,
+} from '@/features/laboratory/components';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Select,
@@ -54,7 +61,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { StatCard } from "@/components/dashboard";
 
 import format from "date-fns/format";
 import { useAuth } from "@/lib/auth";
@@ -230,6 +236,13 @@ export default function LabResultsPage() {
 
     return { total, visible, verified, pending, critical, orders };
   }, [results, groupedResults, totalCount]);
+
+  const metrics = useMemo(() => ([
+    { label: "Total Results", value: stats.total, icon: TestTube2, color: "sky" },
+    { label: "Visible", value: stats.visible, icon: CheckCircle2, color: "emerald" },
+    { label: "Pending Page", value: stats.pending, icon: Clock, color: "amber", accentValue: stats.pending > 0 },
+    { label: "Critical Page", value: stats.critical, icon: AlertTriangle, color: "rose", accentValue: stats.critical > 0 },
+  ]), [stats]);
 
   const activeInterpretation =
     interpretAudience === "patient" ? patientInterpretation : clinicianInterpretation;
@@ -627,48 +640,21 @@ export default function LabResultsPage() {
           </Button>
         )}
       >
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6">
-          <StatCard
-            title="Total Results"
-            value={stats.total}
-            icon={TestTube2}
-            color="sky"
-          />
-          <StatCard
-            title="Visible"
-            value={stats.visible}
-            icon={CheckCircle2}
-            color="emerald"
-          />
-          <StatCard
-            title="Pending Page"
-            value={stats.pending}
-            icon={Clock}
-            color="amber"
-          />
-          <StatCard
-            title="Critical Page"
-            value={stats.critical}
-            icon={AlertTriangle}
-            color="rose"
-          />
-        </div>
+        <LabMetricGrid metrics={metrics} className="mt-4 sm:mt-6" />
       </PageHeader>
 
-      {/* Tabs */}
-      <div className="bg-card/50 border-b border-border px-4 sm:px-6">
+      <LabToolbar className="py-3">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-transparent border-none h-auto p-0 gap-0">
+          <TabsList className="h-auto bg-muted/50 p-1">
             <TabsTrigger
               value="all"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-sky-500 data-[state=active]:bg-transparent px-4 py-3"
+              className="font-mono text-xs"
             >
               All Results
             </TabsTrigger>
             <TabsTrigger
               value="critical"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-rose-500 data-[state=active]:bg-transparent px-4 py-3"
+              className="font-mono text-xs"
             >
               <AlertTriangle className="h-4 w-4 mr-2" />
               Critical / Needs Review
@@ -680,31 +666,23 @@ export default function LabResultsPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-      </div>
+      </LabToolbar>
 
-      {/* Filter Bar */}
-      <div className="bg-card/50 border-b border-border px-4 sm:px-6 py-3">
+      <LabToolbar>
         <div className="flex flex-col gap-3">
-          {/* Search row */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search by patient name, MRN, order number, or test..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 font-mono text-sm"
-            />
-          </div>
+          <LabSearchField
+            id="lab-results-search"
+            placeholder="Search by patient name, MRN, order number, or test..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
 
-          {/* Filters row */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* Verification filter */}
             <Select
               value={verificationFilter}
               onValueChange={setVerificationFilter}
             >
-              <SelectTrigger className="w-[160px] sm:w-[180px] text-sm">
+              <SelectTrigger className="w-full font-mono text-sm sm:w-[180px]">
                 <SelectValue placeholder="Verification" />
               </SelectTrigger>
               <SelectContent>
@@ -716,13 +694,12 @@ export default function LabResultsPage() {
               </SelectContent>
             </Select>
 
-            {/* Clear filters */}
             {hasActiveFilters && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleClearFilters}
-                className="text-muted-foreground ml-auto"
+                className="ml-auto font-mono text-xs text-muted-foreground"
               >
                 <X className="h-4 w-4 mr-1" />
                 Clear
@@ -730,57 +707,34 @@ export default function LabResultsPage() {
             )}
           </div>
         </div>
-      </div>
+      </LabToolbar>
 
       {/* Content */}
       <main className="p-4 sm:p-6 space-y-4">
         {isLoading ? (
-          // Loading skeleton
-          <div className="space-y-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-4">
-                    <Skeleton className="h-5 w-32" />
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-4 w-20 ml-auto" />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {Array.from({ length: 3 }).map((_, j) => (
-                      <Skeleton key={j} className="h-10 w-full" />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <LabTableSkeleton rows={6} />
         ) : filteredGroups.length === 0 ? (
-          // Empty state
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <TestTube2 className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <h3 className="font-display text-lg text-foreground mb-2">
-              No results found
-            </h3>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              {searchQuery || verificationFilter !== "all"
+          <LabEmptyState
+            icon={TestTube2}
+            title="No results found"
+            description={
+              searchQuery || verificationFilter !== "all"
                 ? "Try adjusting your filters to see more results."
                 : activeTab === "critical"
-                ? "No critical results require attention."
-                : "No lab results have been entered yet."}
-            </p>
-            {hasActiveFilters && (
+                  ? "No critical results require attention."
+                  : "No lab results have been entered yet."
+            }
+            action={hasActiveFilters ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleClearFilters}
-                className="mt-4"
+                className="font-mono text-xs"
               >
                 Clear Filters
               </Button>
-            )}
-          </div>
+            ) : null}
+          />
         ) : (
           <div className="space-y-4">
             <div className="overflow-x-auto">
@@ -791,8 +745,8 @@ export default function LabResultsPage() {
                 columns={resultGroupColumns}
                 onRowClick={(group) => toggleOrderExpansion(group._key)}
                 rowClassName="hover:bg-muted/30"
-                className="min-w-[1480px]"
-                headerClassName="bg-muted/50 border-b border-border"
+                className={cn(labTableClassName, "min-w-[1480px]")}
+                headerClassName={labTableHeaderClassName}
               />
             </div>
 

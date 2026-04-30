@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
-import AppointmentForm from '@/components/appointments/AppointmentForm';
+import AppointmentForm from '@/features/appointments/components/AppointmentForm';
 import { Button } from '@/components/ui/button';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

@@ -3,6 +3,8 @@ import datetime
 import pytest
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
@@ -52,6 +54,16 @@ def create_clinic(facility):
 
 @pytest.mark.django_db
 class TestOutpatientVisitFlow:
+    @staticmethod
+    def _patient_client(user, facility):
+        token = AccessToken.for_user(user)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=facility.code,
+        )
+        return client
+
     def test_start_visit_creates_outpatient_visit(self, admin_client):
         facility = DefaultFacilityFactory()
         clinic = create_clinic(facility)
@@ -174,6 +186,62 @@ class TestOutpatientVisitFlow:
         assert visit.visit_status == OutpatientVisit.VisitStatus.READY_CHECKOUT
         assert encounter.status == 'finished'
         assert encounter.end_time is not None
+
+    def test_patient_cannot_start_consultation(self, admin_client):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        appointment_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + datetime.timedelta(minutes=15)
+        end_time = start_time + datetime.timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=appointment_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        response = admin_client.post(f'/api/appointments/appointments/{appointment.id}/start_visit/')
+        encounter_id = response.data['encounter_id']
+
+        patient_client = self._patient_client(patient.user, facility)
+        response = patient_client.post(f'{BASE_URL}/visits/{encounter_id}/start_consultation/')
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_patient_cannot_end_consultation_or_mark_no_show(self, admin_client):
+        facility = DefaultFacilityFactory()
+        clinic = create_clinic(facility)
+        patient = PatientProfileFactory(facility=facility)
+        practitioner = PractitionerProfileFactory()
+        appointment_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + datetime.timedelta(minutes=15)
+        end_time = start_time + datetime.timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=appointment_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        response = admin_client.post(f'/api/appointments/appointments/{appointment.id}/start_visit/')
+        encounter_id = response.data['encounter_id']
+
+        patient_client = self._patient_client(patient.user, facility)
+        end_response = patient_client.post(f'{BASE_URL}/visits/{encounter_id}/end_consultation/')
+        no_show_response = patient_client.post(f'{BASE_URL}/visits/{encounter_id}/no_show/')
+        assert end_response.status_code == status.HTTP_403_FORBIDDEN
+        assert no_show_response.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.django_db

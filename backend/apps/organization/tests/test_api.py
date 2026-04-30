@@ -767,6 +767,17 @@ class TestStaffAssignmentAPI:
         })
         assert response.status_code == status.HTTP_201_CREATED
 
+
+    def test_non_admin_cannot_create_staff_assignment(self, staff_authenticated_client, assignment_types, department, practitioner):
+        """Test non-admin users cannot create staff assignments."""
+        response = staff_authenticated_client.post('/api/organization/staff-assignments/', {
+            'unit': str(department.id),
+            'practitioner': str(practitioner.id),
+            'assignment_type': assignment_types['single'].id,
+            'is_primary': True,
+        })
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_list_staff_assignments(self, authenticated_client, assignment_types, department, practitioner):
         """Test listing staff assignments."""
         StaffUnitAssignment.objects.create(
