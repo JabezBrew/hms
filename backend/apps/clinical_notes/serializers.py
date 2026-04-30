@@ -12,6 +12,66 @@ from .template_utils import (
 from ..users.models import PractitionerProfile, PatientProfile
 
 
+def _normalize_note_section_key(value):
+    return ''.join(ch for ch in str(value or '').strip().lower() if ch.isalnum())
+
+
+def _has_note_section_value(value):
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def validate_note_data_against_template(entry_data, template_structure):
+    if not isinstance(entry_data, dict):
+        raise serializers.ValidationError({'data': 'Note data must be an object keyed by template section.'})
+
+    sections = get_structure_sections(template_structure)
+    if not sections:
+        return
+
+    valid_normalized = {}
+    required_names = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        section_name = section.get('name') or section.get('section') or ''
+        if not section_name:
+            continue
+        normalized = _normalize_note_section_key(section_name)
+        if normalized:
+            valid_normalized[normalized] = section_name
+        if section.get('required', False):
+            required_names.append(section_name)
+
+    unknown_keys = [
+        key for key in entry_data.keys()
+        if not str(key).startswith('_') and _normalize_note_section_key(key) not in valid_normalized
+    ]
+    if unknown_keys:
+        raise serializers.ValidationError({
+            'data': f"Unknown template section(s): {', '.join(sorted(map(str, unknown_keys)))}"
+        })
+
+    present_normalized = {
+        _normalize_note_section_key(key)
+        for key, value in entry_data.items()
+        if _has_note_section_value(value)
+    }
+    missing_required = [
+        name for name in required_names
+        if _normalize_note_section_key(name) not in present_normalized
+    ]
+    if missing_required:
+        raise serializers.ValidationError({
+            'data': f"Missing data for required sections: {', '.join(missing_required)}"
+        })
+
+
 class NoteTemplateSerializer(serializers.ModelSerializer):
     """
     Serializer for NoteTemplate model.
@@ -390,37 +450,14 @@ class NoteEntrySerializer(serializers.ModelSerializer):
                 'template_revision': 'Template revision does not belong to the selected template.'
             })
 
-        # Validate that the data structure matches the template structure
-        template_structure = template.structure if template else {}
-        entry_data = data.get('data') or {}
-
-        # Handle both list and dict structure formats
-        if isinstance(template_structure, dict):
-            sections_list = template_structure.get('sections', [])
-        elif isinstance(template_structure, list):
-            sections_list = template_structure
-        else:
-            sections_list = []
-
-        # Extract section names - handle both 'name' and 'section' keys
-        template_sections = []
-        for section in sections_list:
-            section_name = section.get('name') or section.get('section', '')
-            if section_name:
-                template_sections.append(section_name)
-
-        entry_sections = entry_data.keys()
-
-        # Only validate required sections
-        required_sections = []
-        for section in sections_list:
-            section_name = section.get('name') or section.get('section', '')
-            if section_name and section.get('required', False):
-                required_sections.append(section_name)
-
-        missing_sections = set(required_sections) - set(entry_sections)
-        if missing_sections:
-            raise serializers.ValidationError(f"Missing data for required sections: {', '.join(missing_sections)}")
+        template_revision = data.get('template_revision') or getattr(self.instance, 'template_revision', None)
+        template_structure = (
+            template_revision.content
+            if template_revision is not None
+            else (template.structure if template else {})
+        )
+        entry_data = data.get('data') if 'data' in data else getattr(self.instance, 'data', {})
+        validate_note_data_against_template(entry_data or {}, template_structure)
 
         return data
 

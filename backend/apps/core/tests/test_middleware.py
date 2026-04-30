@@ -289,6 +289,7 @@ def test_facility_context_middleware_allows_platform_admin_cross_facility(
 def test_get_client_ip_uses_single_forwarded_hop_when_proxy_headers_are_trusted(settings):
     settings.TRUST_PROXY_HEADERS = True
     settings.TRUSTED_PROXY_HOPS = 1
+    settings.TRUSTED_PROXY_CIDRS = ['10.0.0.0/8']
     request = RequestFactory().get(
         '/api/health/',
         HTTP_X_FORWARDED_FOR='203.0.113.10',
@@ -296,6 +297,32 @@ def test_get_client_ip_uses_single_forwarded_hop_when_proxy_headers_are_trusted(
     )
 
     assert get_client_ip(request) == '203.0.113.10'
+
+
+def test_get_client_ip_ignores_forwarded_hop_from_untrusted_source(settings):
+    settings.TRUST_PROXY_HEADERS = True
+    settings.TRUSTED_PROXY_HOPS = 1
+    settings.TRUSTED_PROXY_CIDRS = ['10.0.0.0/8']
+    request = RequestFactory().get(
+        '/api/health/',
+        HTTP_X_FORWARDED_FOR='10.1.2.3',
+        REMOTE_ADDR='198.51.100.50',
+    )
+
+    assert get_client_ip(request) == '198.51.100.50'
+
+
+def test_get_client_ip_ignores_malformed_forwarded_chain(settings):
+    settings.TRUST_PROXY_HEADERS = True
+    settings.TRUSTED_PROXY_HOPS = 1
+    settings.TRUSTED_PROXY_CIDRS = ['10.0.0.0/8']
+    request = RequestFactory().get(
+        '/api/health/',
+        HTTP_X_FORWARDED_FOR='203.0.113.10, not-an-ip',
+        REMOTE_ADDR='10.0.0.5',
+    )
+
+    assert get_client_ip(request) == '10.0.0.5'
 
 
 def test_api_path_scrubbing_redacts_identifiers_before_truncating():
@@ -308,6 +335,7 @@ def test_api_path_scrubbing_redacts_identifiers_before_truncating():
 def test_get_access_context_uses_trusted_forwarded_client_ip(monkeypatch, settings):
     settings.TRUST_PROXY_HEADERS = True
     settings.TRUSTED_PROXY_HOPS = 1
+    settings.TRUSTED_PROXY_CIDRS = ['10.0.0.0/8']
     request = RequestFactory().get(
         '/api/auth/login/',
         HTTP_X_FORWARDED_FOR='203.0.113.10',

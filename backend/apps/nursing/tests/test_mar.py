@@ -9,12 +9,14 @@ Tests for:
 - Dispensing workflow
 """
 import pytest
-from datetime import timedelta
+from datetime import timedelta, time
 from django.utils import timezone
 
 from apps.nursing.models import MedicationAdministration, NursingAlert
+from apps.clinical_notes.tests.factories import PrescriptionFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
 from .factories import (
+    EncounterFactory,
     MedicationAdministrationFactory, AdministeredMedicationFactory,
     OverdueMedicationFactory
 )
@@ -173,6 +175,57 @@ class TestMARAdministration:
         )
 
         assert mar.administration_notes == 'Given with food as directed'
+
+    def test_create_and_administer_rejects_duplicate_dose_slot(
+        self,
+        nurse_client,
+        nurse_user,
+        nurse_practitioner,
+        patient_profile_factory,
+        default_facility,
+    ):
+        """Repeated clicks for the same prescription/date/dose do not create extra administered doses."""
+        patient = patient_profile_factory(facility=default_facility)
+        prescription = PrescriptionFactory(
+            patient=patient,
+            facility=default_facility,
+            frequency='bid',
+            duration_days=1,
+        )
+        EncounterFactory(
+            patient=patient,
+            facility=default_facility,
+            practitioner=nurse_practitioner,
+            status='in-progress',
+            created_by=nurse_user,
+        )
+        scheduled_time = timezone.make_aware(
+            timezone.datetime.combine(timezone.localdate(), time(12, 0))
+        ).isoformat()
+
+        payload = {
+            'prescription_id': str(prescription.id),
+            'scheduled_time': scheduled_time,
+            'dose_number': 1,
+        }
+
+        first_response = nurse_client.post(
+            '/api/nursing/medications/create-and-administer/',
+            payload,
+            format='json',
+        )
+        second_response = nurse_client.post(
+            '/api/nursing/medications/create-and-administer/',
+            payload,
+            format='json',
+        )
+
+        assert first_response.status_code == 201, first_response.data
+        assert second_response.status_code == 409, second_response.data
+        assert MedicationAdministration.objects.filter(
+            prescription=prescription,
+            status='administered',
+        ).count() == 1
 
 
 @pytest.mark.tier1

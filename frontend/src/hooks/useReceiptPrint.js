@@ -2,6 +2,68 @@ import { useState, useCallback } from 'react';
 import { billingApi } from '@/features/billing/api';
 import { toast } from 'sonner';
 
+const HTML_ESCAPE_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+export function escapePrintHtml(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  return String(value).replace(/[&<>"']/g, (char) => HTML_ESCAPE_MAP[char]);
+}
+
+function printText(value, fallback = '') {
+  if (value === null || value === undefined || value === '') {
+    return escapePrintHtml(fallback);
+  }
+
+  return escapePrintHtml(value);
+}
+
+function formatPrintDate(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'N/A';
+  }
+
+  return escapePrintHtml(date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+}
+
+function formatPrintDateTime(value = new Date()) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'N/A';
+  }
+
+  return escapePrintHtml(date.toLocaleString());
+}
+
+function writePrintDocument(printWindow, html) {
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  const print = () => {
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  if (printWindow.document.readyState === 'complete') {
+    print();
+    return;
+  }
+
+  printWindow.addEventListener('load', print, { once: true });
+}
+
 /**
  * Format payment method for display
  */
@@ -17,13 +79,13 @@ function formatPaymentMethod(method) {
     cheque: 'Cheque',
     other: 'Other',
   };
-  return methods[method] || method;
+  return methods[method] || method || 'N/A';
 }
 
 /**
  * Generate receipt HTML content
  */
-function generateReceiptHtml(receiptData, payment) {
+export function generateReceiptHtml(receiptData, payment) {
   // Generate items HTML
   const itemsHtml = receiptData.invoice_items && receiptData.invoice_items.length > 0
     ? `
@@ -40,8 +102,8 @@ function generateReceiptHtml(receiptData, payment) {
           <tbody>
             ${receiptData.invoice_items.map(item => `
               <tr>
-                <td class="item-name">${item.service_name}${item.description ? `<br><span class="item-desc">${item.description}</span>` : ''}</td>
-                <td class="item-qty">${item.quantity}</td>
+                <td class="item-name">${printText(item.service_name, 'Service')}${item.description ? `<br><span class="item-desc">${printText(item.description)}</span>` : ''}</td>
+                <td class="item-qty">${printText(item.quantity)}</td>
                 <td class="item-price">GH₵${parseFloat(item.total_price).toFixed(2)}</td>
               </tr>
             `).join('')}
@@ -63,7 +125,8 @@ function generateReceiptHtml(receiptData, payment) {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Receipt ${receiptData.receipt_number}</title>
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline';">
+      <title>Receipt ${printText(receiptData.receipt_number)}</title>
       <style>
         * { box-sizing: border-box; }
         body { font-family: 'IBM Plex Mono', 'Courier New', monospace; padding: 20px; max-width: 400px; margin: 0 auto; font-size: 12px; }
@@ -97,31 +160,31 @@ function generateReceiptHtml(receiptData, payment) {
     <body>
       <div class="header">
         <h1>Payment Receipt</h1>
-        <p>${receiptData.facility_name || 'Hospital Management System'}</p>
+        <p>${printText(receiptData.facility_name, 'Hospital Management System')}</p>
       </div>
-      <div class="receipt-number">Receipt #${receiptData.receipt_number}</div>
+      <div class="receipt-number">Receipt #${printText(receiptData.receipt_number)}</div>
       <div class="details">
         <div class="row">
           <span class="label">Date</span>
-          <span class="value">${new Date(receiptData.receipt_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+          <span class="value">${formatPrintDate(receiptData.receipt_date)}</span>
         </div>
         <div class="row">
           <span class="label">Invoice</span>
-          <span class="value">${receiptData.invoice_number}</span>
+          <span class="value">${printText(receiptData.invoice_number)}</span>
         </div>
         <div class="row">
           <span class="label">Patient</span>
-          <span class="value">${receiptData.patient_name || 'N/A'}</span>
+          <span class="value">${printText(receiptData.patient_name, 'N/A')}</span>
         </div>
         <div class="row">
           <span class="label">MRN</span>
-          <span class="value">${receiptData.patient_mrn || 'N/A'}</span>
+          <span class="value">${printText(receiptData.patient_mrn, 'N/A')}</span>
         </div>
         <div class="row">
           <span class="label">Payment Method</span>
-          <span class="value">${formatPaymentMethod(receiptData.payment_details?.payment_method || payment?.payment_method)}</span>
+          <span class="value">${printText(formatPaymentMethod(receiptData.payment_details?.payment_method || payment?.payment_method))}</span>
         </div>
-        ${receiptData.payment_details?.reference_number ? `<div class="row"><span class="label">Reference</span><span class="value">${receiptData.payment_details.reference_number}</span></div>` : ''}
+        ${receiptData.payment_details?.reference_number ? `<div class="row"><span class="label">Reference</span><span class="value">${printText(receiptData.payment_details.reference_number)}</span></div>` : ''}
       </div>
 
       ${itemsHtml}
@@ -158,9 +221,8 @@ function generateReceiptHtml(receiptData, payment) {
 
       <div class="footer">
         <p>Thank you for your payment</p>
-        <p>Generated: ${new Date().toLocaleString()}</p>
+        <p>Generated: ${formatPrintDateTime()}</p>
       </div>
-      <script>window.onload = function() { window.print(); }</script>
     </body>
     </html>
   `;
@@ -169,7 +231,7 @@ function generateReceiptHtml(receiptData, payment) {
 /**
  * Generate invoice HTML content for printing
  */
-function generateInvoiceHtml(invoiceData) {
+export function generateInvoiceHtml(invoiceData) {
   // Generate items HTML
   const itemsHtml = invoiceData.items && invoiceData.items.length > 0
     ? `
@@ -187,8 +249,8 @@ function generateInvoiceHtml(invoiceData) {
           <tbody>
             ${invoiceData.items.map(item => `
               <tr>
-                <td class="item-name">${item.service_name || item.service?.name || 'Service'}${item.description ? `<br><span class="item-desc">${item.description}</span>` : ''}</td>
-                <td class="item-qty">${item.quantity}</td>
+                <td class="item-name">${printText(item.service_name || item.service?.name, 'Service')}${item.description ? `<br><span class="item-desc">${printText(item.description)}</span>` : ''}</td>
+                <td class="item-qty">${printText(item.quantity)}</td>
                 <td class="item-unit">GH₵${parseFloat(item.unit_price).toFixed(2)}</td>
                 <td class="item-price">GH₵${parseFloat(item.total_price).toFixed(2)}</td>
               </tr>
@@ -219,12 +281,16 @@ function generateInvoiceHtml(invoiceData) {
     voided: '#9e9e9e',
   };
   const statusColor = statusColors[invoiceData.status] || '#666';
+  const statusText = typeof invoiceData.status === 'string' && invoiceData.status
+    ? invoiceData.status.replace(/_/g, ' ')
+    : 'Pending';
 
   return `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Invoice ${invoiceData.invoice_number}</title>
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline';">
+      <title>Invoice ${printText(invoiceData.invoice_number)}</title>
       <style>
         * { box-sizing: border-box; }
         body { font-family: 'IBM Plex Mono', 'Courier New', monospace; padding: 30px; max-width: 800px; margin: 0 auto; font-size: 12px; }
@@ -269,25 +335,25 @@ function generateInvoiceHtml(invoiceData) {
       <div class="header">
         <div class="header-left">
           <h1>INVOICE</h1>
-          <p>${invoiceData.facility_name || 'Hospital Management System'}</p>
+          <p>${printText(invoiceData.facility_name, 'Hospital Management System')}</p>
         </div>
         <div class="header-right">
-          <div class="invoice-number">${invoiceData.invoice_number}</div>
-          <div class="invoice-status">${invoiceData.status?.replace('_', ' ') || 'Pending'}</div>
+          <div class="invoice-number">${printText(invoiceData.invoice_number)}</div>
+          <div class="invoice-status">${printText(statusText)}</div>
         </div>
       </div>
 
       <div class="info-section">
         <div class="info-box">
           <h3>Bill To</h3>
-          <div class="info-row"><strong>${invoiceData.patient_name || 'N/A'}</strong></div>
-          <div class="info-row">MRN: ${invoiceData.patient_mrn || 'N/A'}</div>
+          <div class="info-row"><strong>${printText(invoiceData.patient_name, 'N/A')}</strong></div>
+          <div class="info-row">MRN: ${printText(invoiceData.patient_mrn, 'N/A')}</div>
         </div>
         <div class="info-box" style="text-align: right;">
           <h3>Invoice Details</h3>
-          <div class="info-row"><span class="info-label">Invoice Date:</span> ${new Date(invoiceData.invoice_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-          <div class="info-row"><span class="info-label">Due Date:</span> ${invoiceData.due_date ? new Date(invoiceData.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</div>
-          ${invoiceData.encounter_number ? `<div class="info-row"><span class="info-label">Encounter:</span> ${invoiceData.encounter_number}</div>` : ''}
+          <div class="info-row"><span class="info-label">Invoice Date:</span> ${formatPrintDate(invoiceData.invoice_date)}</div>
+          <div class="info-row"><span class="info-label">Due Date:</span> ${invoiceData.due_date ? formatPrintDate(invoiceData.due_date) : 'N/A'}</div>
+          ${invoiceData.encounter_number ? `<div class="info-row"><span class="info-label">Encounter:</span> ${printText(invoiceData.encounter_number)}</div>` : ''}
         </div>
       </div>
 
@@ -326,15 +392,14 @@ function generateInvoiceHtml(invoiceData) {
       ${invoiceData.notes ? `
         <div class="payment-info">
           <h3>Notes</h3>
-          <p>${invoiceData.notes}</p>
+          <p>${printText(invoiceData.notes)}</p>
         </div>
       ` : ''}
 
       <div class="footer">
         <p>Thank you for choosing our services</p>
-        <p>Generated: ${new Date().toLocaleString()}</p>
+        <p>Generated: ${formatPrintDateTime()}</p>
       </div>
-      <script>window.onload = function() { window.print(); }</script>
     </body>
     </html>
   `;
@@ -387,8 +452,7 @@ export function useReceiptPrint() {
       }
 
       const receiptContent = generateReceiptHtml(receiptData, payment);
-      receiptWindow.document.write(receiptContent);
-      receiptWindow.document.close();
+      writePrintDocument(receiptWindow, receiptContent);
     } catch (err) {
       toast.error('Failed to load receipt details');
       console.error('Receipt print error:', err);
@@ -417,8 +481,7 @@ export function useReceiptPrint() {
       }
 
       const invoiceContent = generateInvoiceHtml(invoiceData);
-      invoiceWindow.document.write(invoiceContent);
-      invoiceWindow.document.close();
+      writePrintDocument(invoiceWindow, invoiceContent);
     } catch (err) {
       toast.error('Failed to load invoice for printing');
       console.error('Invoice print error:', err);

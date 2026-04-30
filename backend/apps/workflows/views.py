@@ -39,7 +39,12 @@ from .engines import (
 )
 from apps.users.permissions import IsAdminOrOwner
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, check_clinical_access, get_user_facility
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_user_facility,
+    scope_queryset_to_clinical_access,
+)
 from apps.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
@@ -52,6 +57,10 @@ def _require_patient_access(request, patient_id):
         raise PermissionDenied("Patient does not belong to the active facility.")
     check_clinical_access(request.user, patient)
     return patient
+
+
+def _require_workflow_patient_access(request, workflow):
+    return _require_patient_access(request, workflow.patient_id)
 
 
 class WorkflowViewSet(viewsets.ModelViewSet):
@@ -74,6 +83,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
             user=user,
             patient__facility=facility
         ).select_related('patient', 'patient__user')
+        queryset = scope_queryset_to_clinical_access(queryset, user)
 
         # Filter by workflow type
         workflow_type = self.request.query_params.get('workflow_type')
@@ -88,6 +98,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = self.request.query_params.get('patient_id')
         if patient_id:
+            _require_patient_access(self.request, patient_id)
             queryset = queryset.filter(patient_id=patient_id)
 
         return queryset.order_by('-created_at')
@@ -159,6 +170,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'This endpoint is only for consultation workflows'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_workflow_patient_access(request, workflow)
 
         serializer = ConsultationWorkflowUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -209,6 +221,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'This endpoint is only for consultation workflows'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_workflow_patient_access(request, workflow)
 
         serializer = ConsultationWorkflowCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -243,6 +256,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         }
         """
         workflow = self.get_object()
+        _require_workflow_patient_access(request, workflow)
 
         serializer = WorkflowDraftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -290,6 +304,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         # Filter by patient
         patient_id = request.query_params.get('patient_id')
         if patient_id:
+            _require_patient_access(request, patient_id)
             queryset = queryset.filter(patient_id=patient_id)
 
         # Filter by workflow type
@@ -312,6 +327,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
         POST /api/workflows/{id}/cancel/
         """
         workflow = self.get_object()
+        _require_workflow_patient_access(request, workflow)
 
         try:
             from .engines import BaseWorkflowEngine
@@ -400,6 +416,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'This endpoint is only for clinical note workflows'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_workflow_patient_access(request, workflow)
 
         serializer = ClinicalNoteWorkflowUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -460,6 +477,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'This endpoint is only for clinical note workflows'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_workflow_patient_access(request, workflow)
 
         serializer = ClinicalNoteWorkflowCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -553,6 +571,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid workflow type'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_workflow_patient_access(request, workflow)
 
         serializer = WardRoundWorkflowUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -595,6 +614,7 @@ class WorkflowViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid workflow type'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        _require_workflow_patient_access(request, workflow)
 
         serializer = WardRoundWorkflowCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

@@ -7,6 +7,11 @@ from django.db import transaction
 from .models import MedicationAdministration, TreatmentSheetEntry, SupplyRequest
 
 
+DEFAULT_MAR_GENERATION_DAYS = 7
+DEFAULT_TREATMENT_MAR_GENERATION_DAYS = 3
+MAX_MAR_GENERATION_DAYS = 31
+
+
 # Default administration times for different frequencies
 # Times are in 24-hour format, representing typical hospital medication rounds
 FREQUENCY_SCHEDULES = {
@@ -24,6 +29,25 @@ FREQUENCY_SCHEDULES = {
     'stat': [],  # Immediately - scheduled at creation time
     'prn': [],  # As needed - no scheduled times, created on demand
 }
+
+
+def normalize_mar_generation_days(days, default=DEFAULT_MAR_GENERATION_DAYS):
+    """
+    Validate and cap MAR generation windows so callers cannot request
+    unbounded dose creation.
+    """
+    if days in (None, ''):
+        days = default
+
+    try:
+        days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("days must be a positive integer") from exc
+
+    if days < 1:
+        raise ValueError("days must be a positive integer")
+
+    return min(days, MAX_MAR_GENERATION_DAYS)
 
 
 def get_scheduled_times_for_frequency(frequency):
@@ -55,7 +79,8 @@ def generate_mar_entries_for_prescription(prescription, days=None, start_date=No
         start_date = prescription.start_date or timezone.now().date()
 
     if days is None:
-        days = prescription.duration_days or 7  # Default to 7 days if no duration
+        days = prescription.duration_days or DEFAULT_MAR_GENERATION_DAYS
+    days = normalize_mar_generation_days(days)
 
     # Don't exceed prescription end date
     if prescription.end_date:
@@ -232,6 +257,28 @@ def calculate_daily_doses(frequency):
     return 1  # Default to once daily
 
 
+def calculate_required_doses_for_prescription(prescription):
+    """
+    Return the finite number of doses in a prescription course.
+    Ongoing and PRN prescriptions do not have a fixed course cap.
+    """
+    frequency = (prescription.frequency or '').lower()
+
+    if frequency == 'prn':
+        return None
+    if frequency in ['once', 'stat']:
+        return 1
+
+    duration_days = prescription.duration_days
+    if not duration_days:
+        return None
+
+    if frequency == 'weekly':
+        return max(1, ((int(duration_days) - 1) // 7) + 1)
+
+    return calculate_daily_doses(frequency) * int(duration_days)
+
+
 def create_treatment_entry_with_mar(treatment_data, created_by=None):
     """
     Create a treatment sheet entry and generate initial MAR entries.
@@ -262,7 +309,7 @@ def create_treatment_entry_with_mar(treatment_data, created_by=None):
         if entry.prescription:
             mar_entries = generate_mar_entries_for_prescription(
                 entry.prescription,
-                days=entry.duration_days or 3,
+                days=entry.duration_days or DEFAULT_TREATMENT_MAR_GENERATION_DAYS,
                 start_date=entry.start_datetime.date(),
                 created_by=created_by
             )
@@ -271,7 +318,10 @@ def create_treatment_entry_with_mar(treatment_data, created_by=None):
             frequency_lower = entry.frequency.lower()
             scheduled_times = get_scheduled_times_for_frequency(frequency_lower)
 
-            days = entry.duration_days or 3
+            days = normalize_mar_generation_days(
+                entry.duration_days,
+                default=DEFAULT_TREATMENT_MAR_GENERATION_DAYS
+            )
             start_date = entry.start_datetime.date()
             mar_entries = []
 

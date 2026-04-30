@@ -47,6 +47,10 @@ from ..audit.models import AuditCategory, AuditAction
 
 logger = logging.getLogger(__name__)
 
+LAB_RESULT_SELF_VERIFICATION_ERROR = (
+    'Results must be verified by a different staff member.'
+)
+
 LAB_TECH_VISIBLE_ORDER_STATUSES = [
     LabOrderStatus.ORDERED,
     LabOrderStatus.COLLECTED,
@@ -114,6 +118,10 @@ def _scope_lab_queryset_for_user(queryset, *, user, patient_lookup, order_status
         return queryset
 
     return queryset.none()
+
+
+def _lab_result_performed_by_staff_filter(staff, user):
+    return Q(performed_by_id=staff.id) | Q(performed_by__user_id=user.id)
 
 
 class LabTestCatalogViewSet(viewsets.ModelViewSet):
@@ -1150,6 +1158,30 @@ class LabResultViewSet(viewsets.ModelViewSet):
         check_lab_access(self.request.user, result.order_test.order.patient)
         return result
 
+    def _get_locked_result_for_verification(self, pk):
+        queryset = (
+            self.filter_queryset(self.get_queryset())
+            .select_related(None)
+            .prefetch_related(None)
+            .select_for_update()
+        )
+        result = get_object_or_404(queryset, pk=pk)
+        self.check_object_permissions(self.request, result)
+        check_lab_access(self.request.user, result.order_test.order.patient)
+        return result
+
+    def _get_verifying_staff(self, user):
+        try:
+            return user.staff_profile
+        except AttributeError:
+            return None
+
+    def _result_was_performed_by_verifier(self, result, staff, user):
+        if result.performed_by_id == staff.id:
+            return True
+        performed_by = getattr(result, 'performed_by', None)
+        return bool(performed_by and performed_by.user_id == user.id)
+
     @transaction.atomic
     def perform_create(self, serializer):
         """Create result and set performed_by to current user."""
@@ -1174,7 +1206,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
         """
         Verify a lab result (lab technicians, doctors, or admins).
         """
-        result = self.get_object()
+        result = self._get_locked_result_for_verification(pk)
 
         if result.is_verified:
             return Response(
@@ -1183,17 +1215,16 @@ class LabResultViewSet(viewsets.ModelViewSet):
             )
 
         # Get staff profile (lab technicians can verify results)
-        try:
-            staff = request.user.staff_profile
-        except AttributeError:
+        staff = self._get_verifying_staff(request.user)
+        if not staff:
             return Response(
                 {'error': 'Only lab staff can verify results'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if result.performed_by_id and result.performed_by_id == staff.id:
+        if self._result_was_performed_by_verifier(result, staff, request.user):
             return Response(
-                {'error': 'Results must be verified by a different staff member.'},
+                {'error': LAB_RESULT_SELF_VERIFICATION_ERROR},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -1375,9 +1406,8 @@ class LabResultViewSet(viewsets.ModelViewSet):
         verification_notes = request.data.get('verification_notes', '')
 
         # Get staff profile (lab technicians can verify results)
-        try:
-            staff = request.user.staff_profile
-        except AttributeError:
+        staff = self._get_verifying_staff(request.user)
+        if not staff:
             return Response(
                 {'error': 'Only lab staff can verify lab results'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1403,16 +1433,33 @@ class LabResultViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not results.exists():
+        result_ids_to_verify = list(
+            results
+            .select_related(None)
+            .prefetch_related(None)
+            .select_for_update()
+            .values_list('id', flat=True)
+        )
+
+        if not result_ids_to_verify:
             return Response(
                 {'error': 'No unverified results found'},
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        locked_results = LabResult.objects.filter(id__in=result_ids_to_verify)
+        if locked_results.filter(
+            _lab_result_performed_by_staff_filter(staff, request.user)
+        ).exists():
+            return Response(
+                {'error': LAB_RESULT_SELF_VERIFICATION_ERROR},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         # Verify all results
-        verified_count = results.count()
+        verified_count = len(result_ids_to_verify)
         now = timezone.now()
-        results.update(
+        locked_results.update(
             is_verified=True,
             verified_by=staff,
             verified_at=now

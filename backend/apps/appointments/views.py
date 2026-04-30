@@ -19,7 +19,8 @@ from .serializers import (
     AppointmentTypeSerializer, AppointmentFHIRMappingSerializer,
     AppointmentListSerializer, AppointmentSerializer,
     RecurringAppointmentRuleSerializer, ScheduleFHIRMappingSerializer,
-    RecurringScheduleSerializer, BlockedTimeSerializer
+    RecurringScheduleSerializer, RecurringScheduleSlotPreviewSerializer,
+    BlockedTimeSerializer
 )
 from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
 from .services import (
@@ -1566,20 +1567,15 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
         """
         Preview slots for a given schedule configuration.
         """
-        try:
-            start_time_str = request.data.get('start_time')
-            end_time_str = request.data.get('end_time')
-            slot_duration = int(request.data.get('slot_duration', 30))
-            breaks = request.data.get('breaks', [])
-            
-            if not start_time_str or not end_time_str:
-                return Response(
-                    {"error": "start_time and end_time are required"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        preview_serializer = RecurringScheduleSlotPreviewSerializer(data=request.data)
+        preview_serializer.is_valid(raise_exception=True)
+        preview_data = preview_serializer.validated_data
 
-            start_time = datetime.datetime.strptime(start_time_str, '%H:%M').time()
-            end_time = datetime.datetime.strptime(end_time_str, '%H:%M').time()
+        try:
+            start_time = preview_data['start_time']
+            end_time = preview_data['end_time']
+            slot_duration = preview_data['slot_duration']
+            breaks = preview_data['breaks']
             
             # Generate preview slots
             slots = []

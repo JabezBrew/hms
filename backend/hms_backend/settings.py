@@ -650,6 +650,16 @@ X_FRAME_OPTIONS = 'DENY'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 TRUST_PROXY_HEADERS = env.bool('TRUST_PROXY_HEADERS', default=False)
 TRUSTED_PROXY_HOPS = env.int('TRUSTED_PROXY_HOPS', default=1)
+TRUSTED_PROXY_CIDRS = env.list(
+    'TRUSTED_PROXY_CIDRS',
+    default=[
+        '127.0.0.1/32',
+        '::1/128',
+        '10.0.0.0/8',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+    ],
+)
 LOAD_TEST_THROTTLE_BYPASS_ENABLED = env.bool('LOAD_TEST_THROTTLE_BYPASS_ENABLED', default=False)
 SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000 if not DEBUG else 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True if not DEBUG else False)

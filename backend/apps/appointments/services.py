@@ -23,6 +23,18 @@ class AvailabilityService:
     """
 
     @staticmethod
+    def _validate_recurring_slot_duration(slot_duration: int) -> int:
+        try:
+            normalized_duration = int(slot_duration)
+        except (TypeError, ValueError):
+            raise ValueError("Recurring schedule slot_duration must be a positive integer.")
+
+        if normalized_duration <= 0:
+            raise ValueError("Recurring schedule slot_duration must be a positive integer.")
+
+        return normalized_duration
+
+    @staticmethod
     def _add_minutes_to_time(base_time: time, minutes: int) -> time:
         """
         Add minutes to a time object.
@@ -326,13 +338,16 @@ class AvailabilityService:
         )
         if facility is not None:
             recurring_schedules = recurring_schedules.filter(facility=facility)
-        recurring_schedules = recurring_schedules.filter(
+        recurring_schedules = list(recurring_schedules.filter(
             Q(active_to__isnull=True) | Q(active_to__gte=start_date_obj)
-        ).prefetch_related('practitioner')
+        ).select_related('practitioner'))
 
-        if not recurring_schedules.exists():
+        if not recurring_schedules:
             logger.info(f"No active recurring schedules found for practitioner {practitioner_id}")
             return []
+
+        for schedule in recurring_schedules:
+            AvailabilityService._validate_recurring_slot_duration(schedule.slot_duration)
 
         # 2. Get blocked times (1 query)
         blocked_times = BlockedTime.objects.filter(
@@ -377,12 +392,15 @@ class AvailabilityService:
 
                 # Generate time slots for this schedule
                 current_time = schedule.start_time
+                slot_duration = AvailabilityService._validate_recurring_slot_duration(
+                    schedule.slot_duration
+                )
 
                 while current_time < schedule.end_time:
                     # Calculate slot end time
                     slot_end = AvailabilityService._add_minutes_to_time(
                         current_time,
-                        schedule.slot_duration
+                        slot_duration
                     )
 
                     # Ensure slot doesn't go beyond schedule end time
@@ -468,15 +486,20 @@ class AvailabilityService:
             )
             if facility is not None:
                 recurring_schedules = recurring_schedules.filter(facility=facility)
-            recurring_schedules = recurring_schedules.filter(
+            recurring_schedules = list(recurring_schedules.filter(
                 Q(active_to__isnull=True) | Q(active_to__gte=target_date)
-            )
+            ).select_related('practitioner'))
 
-            if not recurring_schedules.exists():
+            if not recurring_schedules:
                 return {"slots_created": 0, "message": "No active recurring schedules found for this date"}
 
+            for recurring_schedule in recurring_schedules:
+                AvailabilityService._validate_recurring_slot_duration(
+                    recurring_schedule.slot_duration
+                )
+
             # Create FHIR Schedule for this date
-            practitioner = recurring_schedules.first().practitioner
+            practitioner = recurring_schedules[0].practitioner
             schedule = ScheduleProxy.create(
                 practitioner_id=practitioner.fhir_practitioner_id,
                 start_date=target_date.strftime('%Y-%m-%d'),
@@ -491,12 +514,15 @@ class AvailabilityService:
                 current_time = recurring_schedule.start_time
                 end_time = recurring_schedule.end_time
                 breaks = recurring_schedule.breaks or []
+                slot_duration = AvailabilityService._validate_recurring_slot_duration(
+                    recurring_schedule.slot_duration
+                )
 
                 while current_time < end_time:
                     # Calculate slot end time
                     slot_end_time = (
                         datetime.combine(target_date, current_time) + 
-                        timedelta(minutes=recurring_schedule.slot_duration)
+                        timedelta(minutes=slot_duration)
                     ).time()
 
                     # Ensure slot doesn't go beyond the schedule end time

@@ -40,6 +40,11 @@ from .serializers import (
     FluidBalanceSummarySerializer, FluidBalanceTrendPointSerializer,
 )
 from .permissions import IsNurseOrAdmin, IsNurseOrDoctor
+from .services import (
+    calculate_required_doses_for_prescription,
+    get_scheduled_times_for_frequency,
+    normalize_mar_generation_days,
+)
 from ..wards.models import Admission
 from ..encounters.services import ensure_encounter_for_entry
 from ..users.models import PatientProfile, PractitionerProfile
@@ -682,6 +687,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=['post'], url_path='create-and-administer')
+    @transaction.atomic
     def create_and_administer(self, request):
         """
         Create a new MAR entry and immediately mark it as administered.
@@ -698,6 +704,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
         prescription_id = request.data.get('prescription_id')
         scheduled_time_str = request.data.get('scheduled_time')
+        dose_number_raw = request.data.get('dose_number')
 
         if not prescription_id:
             return Response(
@@ -711,9 +718,29 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        dose_number = None
+        if dose_number_raw not in (None, ''):
+            try:
+                dose_number = int(dose_number_raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'dose_number must be a positive integer'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if dose_number < 1:
+                return Response(
+                    {'error': 'dose_number must be a positive integer'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Get prescription and patient from it
         try:
-            prescription = Prescription.objects.select_related('patient', 'prescribed_by').get(id=prescription_id)
+            prescription = (
+                Prescription.objects
+                .select_for_update()
+                .select_related('patient', 'prescribed_by')
+                .get(id=prescription_id)
+            )
             patient = prescription.patient
             medication_name = prescription.medication_name
             dosage = prescription.dosage
@@ -729,6 +756,7 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(request)
         if not facility or patient.facility_id != facility.id:
             raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, patient)
 
         # Parse scheduled time
         try:
@@ -741,8 +769,83 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        current_tz = timezone.get_current_timezone()
+        scheduled_date = timezone.localtime(scheduled_time, current_tz).date()
+        scheduled_times = get_scheduled_times_for_frequency(frequency or '')
+        if dose_number is not None and scheduled_times:
+            if dose_number > len(scheduled_times):
+                return Response(
+                    {'error': 'dose_number is outside the prescribed daily schedule'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            scheduled_time = timezone.make_aware(
+                datetime.combine(scheduled_date, scheduled_times[dose_number - 1]),
+                current_tz,
+            )
+
         # Get practitioner profile
         practitioner = getattr(request.user, 'practitioner_profile', None)
+        if practitioner is None:
+            practitioner = _get_request_practitioner(request.user)
+
+        administered_qs = MedicationAdministration.objects.select_for_update().filter(
+            prescription=prescription,
+            status='administered',
+        )
+
+        required_doses = calculate_required_doses_for_prescription(prescription)
+        if required_doses is not None and administered_qs.count() >= required_doses:
+            return Response(
+                {'error': 'Medication course is already complete'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        day_start = timezone.make_aware(
+            datetime.combine(scheduled_date, datetime.min.time()),
+            current_tz,
+        )
+        day_end = day_start + timedelta(days=1)
+        doses_per_day = self._get_doses_per_day(frequency)
+
+        existing_slot = (
+            MedicationAdministration.objects
+            .select_for_update()
+            .filter(
+                prescription=prescription,
+                scheduled_time=scheduled_time,
+            )
+            .exclude(status='cancelled')
+            .first()
+        )
+        if existing_slot and existing_slot.status == 'administered':
+            return Response(
+                {'error': 'This dose has already been administered'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        administered_for_day = administered_qs.filter(
+            scheduled_time__gte=day_start,
+            scheduled_time__lt=day_end,
+        ).count()
+        if administered_for_day >= doses_per_day:
+            return Response(
+                {'error': 'All scheduled doses for this day have already been administered'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        if existing_slot:
+            existing_slot.status = 'administered'
+            existing_slot.administered_time = timezone.now()
+            existing_slot.administered_by = practitioner
+            existing_slot.administration_notes = request.data.get('notes', '')
+            existing_slot.save(update_fields=[
+                'status',
+                'administered_time',
+                'administered_by',
+                'administration_notes',
+                'updated_at',
+            ])
+            return Response(MedicationAdministrationSerializer(existing_slot).data, status=status.HTTP_200_OK)
 
         # Create and immediately administer
         med_admin = MedicationAdministration.objects.create(
@@ -824,7 +927,13 @@ class MedicationAdministrationViewSet(viewsets.ModelViewSet):
 
         # Parse date range
         start_date_str = request.query_params.get('start_date')
-        days_to_show = int(request.query_params.get('days', 7))
+        try:
+            days_to_show = normalize_mar_generation_days(request.query_params.get('days', 7))
+        except ValueError:
+            return Response(
+                {'error': 'days must be a positive integer'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if start_date_str:
             try:
@@ -1514,21 +1623,7 @@ class TreatmentSheetEntryViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Override to add filtering."""
-        facility = get_user_facility(self.request)
-        if not facility:
-            return TreatmentSheetEntry.objects.none()
-
-        queryset = super().get_queryset().filter(facility=facility)
-
-        patient_id = self.request.query_params.get('patient') or self.request.query_params.get('patient_id')
-        if patient_id:
-            patient = PatientProfile.objects.filter(id=patient_id).first()
-            if not patient:
-                return queryset.none()
-            if patient.facility_id != facility.id:
-                raise PermissionDenied("Patient does not belong to the active facility.")
-            check_clinical_access(self.request.user, patient)
-            queryset = queryset.filter(patient_id=patient_id)
+        queryset = _scope_nursing_patient_queryset(self.request, super().get_queryset())
 
         # Filter by admission
         admission_id = self.request.query_params.get('admission_id')

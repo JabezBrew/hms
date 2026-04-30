@@ -15,6 +15,9 @@ from apps.core.security import get_user_facility
 from apps.organization.models import Clinic
 
 
+RECURRING_SLOT_DURATION_ERROR = 'Slot duration must be a positive integer.'
+
+
 class AppointmentTypeSerializer(serializers.ModelSerializer):
     """
     Serializer for the AppointmentType model.
@@ -209,6 +212,10 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
     """
     Serializer for the RecurringSchedule model.
     """
+    slot_duration = serializers.IntegerField(
+        min_value=1,
+        error_messages={'min_value': RECURRING_SLOT_DURATION_ERROR}
+    )
     practitioner_name = serializers.SerializerMethodField()
     practitioners = serializers.ListField(
         child=serializers.UUIDField(),
@@ -355,6 +362,10 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         if active_to and active_from and active_to < active_from:
             raise serializers.ValidationError("active_to cannot be before active_from.")
 
+        slot_duration = attrs.get('slot_duration', getattr(self.instance, 'slot_duration', None))
+        if slot_duration is not None and slot_duration <= 0:
+            raise serializers.ValidationError({'slot_duration': RECURRING_SLOT_DURATION_ERROR})
+
         facility = get_user_facility(request) if request else None
 
         if not is_create and 'practitioners' in attrs:
@@ -472,6 +483,29 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         self.created_count = len(created_schedules)
         self.created_template_key = str(template_key) if template_key else None
         return created_schedules[0]
+
+
+class RecurringScheduleSlotPreviewSerializer(serializers.Serializer):
+    """
+    Validates recurring schedule slot preview inputs before loop-based generation.
+    """
+    start_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'])
+    end_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'])
+    slot_duration = serializers.IntegerField(
+        min_value=1,
+        default=30,
+        error_messages={'min_value': RECURRING_SLOT_DURATION_ERROR}
+    )
+    breaks = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        default=list,
+    )
+
+    def validate(self, attrs):
+        if attrs['end_time'] <= attrs['start_time']:
+            raise serializers.ValidationError({'end_time': 'end_time must be after start_time.'})
+        return attrs
 
 
 class BlockedTimeSerializer(serializers.ModelSerializer):

@@ -294,9 +294,22 @@ export function TreatmentSheetContent({
     } else {
       // Create new MAR entry and administer
       try {
+        const [year, month, day] = date.split('-').map(Number);
+        const now = new Date();
+        const scheduledTime = new Date(
+          year,
+          month - 1,
+          day,
+          now.getHours(),
+          now.getMinutes(),
+          now.getSeconds(),
+          now.getMilliseconds()
+        );
+
         await createAndAdministerMutation.mutateAsync({
           prescription_id: medication.id,
-          scheduled_time: new Date().toISOString(), // Current time as administered time
+          scheduled_time: scheduledTime.toISOString(),
+          dose_number: dose.dose_number,
         });
         toast.success(`${medication.medication_name} dose ${dose.dose_number} marked as given`);
         refetch();

@@ -4,7 +4,7 @@ API regression tests for timeline note metadata and copy-forward section mapping
 import pytest
 
 from apps.charts.models import ChartAssignment, ChartEntry, ChartField, ChartTemplate
-from apps.clinical_notes.models import NoteTemplate, NoteEntry
+from apps.clinical_notes.models import NoteTemplate, NoteEntry, NoteEntryVersion
 from apps.clinical_notes.tests.factories import PrescriptionFactory
 from apps.encounters.tests.factories import EncounterFactory
 from apps.laboratory.tests.factories import (
@@ -119,6 +119,113 @@ class TestNoteCopyAndTimelineApi:
         assert response.data['data']['Subjective'] == 'Nausea and dizziness'
         assert 'subjective' not in response.data['data']
         assert response.data['sections_copied'] == ['Subjective']
+
+    def test_clone_endpoint_rejects_copying_phi_to_different_patient(
+        self,
+        doctor_client,
+        doctor_user,
+        doctor_practitioner,
+        patient_profile_factory,
+        default_facility,
+    ):
+        source_patient = patient_profile_factory(facility=default_facility)
+        target_patient = patient_profile_factory(facility=default_facility)
+        encounter = EncounterFactory(
+            patient=source_patient,
+            facility=default_facility,
+            practitioner=doctor_practitioner,
+            created_by=doctor_user,
+            status='in-progress',
+        )
+        template = _build_soap_template(default_facility, doctor_user)
+        source_note = NoteEntry.objects.create(
+            template=template,
+            patient=source_patient,
+            facility=default_facility,
+            encounter=encounter,
+            practitioner=doctor_practitioner,
+            data={'Subjective': 'Sensitive history'},
+        )
+
+        response = doctor_client.post(
+            f'/api/clinical-notes/entries/{source_note.id}/clone/',
+            {'patient': str(target_patient.id), 'sections': ['Subjective']},
+            format='json',
+        )
+
+        assert response.status_code == 403
+        assert not NoteEntry.objects.filter(patient=target_patient, copied_from=source_note).exists()
+
+    def test_update_rejects_unknown_template_section_without_version_snapshot(
+        self,
+        doctor_client,
+        doctor_user,
+        doctor_practitioner,
+        patient_profile_factory,
+        default_facility,
+    ):
+        patient = patient_profile_factory(facility=default_facility)
+        encounter = EncounterFactory(
+            patient=patient,
+            facility=default_facility,
+            practitioner=doctor_practitioner,
+            created_by=doctor_user,
+            status='in-progress',
+        )
+        template = _build_soap_template(default_facility, doctor_user)
+        note = NoteEntry.objects.create(
+            template=template,
+            patient=patient,
+            facility=default_facility,
+            encounter=encounter,
+            practitioner=doctor_practitioner,
+            data={'Subjective': 'Original'},
+        )
+
+        response = doctor_client.patch(
+            f'/api/clinical-notes/entries/{note.id}/',
+            {'data': {'Subjective': 'Updated', 'Unexpected': 'Injected'}},
+            format='json',
+        )
+
+        assert response.status_code == 400
+        assert NoteEntryVersion.objects.filter(note_entry=note).count() == 0
+
+    def test_update_validates_template_and_creates_one_version_snapshot(
+        self,
+        doctor_client,
+        doctor_user,
+        doctor_practitioner,
+        patient_profile_factory,
+        default_facility,
+    ):
+        patient = patient_profile_factory(facility=default_facility)
+        encounter = EncounterFactory(
+            patient=patient,
+            facility=default_facility,
+            practitioner=doctor_practitioner,
+            created_by=doctor_user,
+            status='in-progress',
+        )
+        template = _build_soap_template(default_facility, doctor_user)
+        note = NoteEntry.objects.create(
+            template=template,
+            patient=patient,
+            facility=default_facility,
+            encounter=encounter,
+            practitioner=doctor_practitioner,
+            data={'Subjective': 'Original'},
+        )
+
+        response = doctor_client.patch(
+            f'/api/clinical-notes/entries/{note.id}/',
+            {'data': {'Subjective': 'Updated', '_metadata': {'source': 'test'}}},
+            format='json',
+        )
+
+        assert response.status_code == 200
+        assert response.data['data']['Subjective'] == 'Updated'
+        assert NoteEntryVersion.objects.filter(note_entry=note).count() == 1
 
     def test_patient_timeline_includes_note_author_id_for_edit_visibility(
         self,

@@ -50,6 +50,7 @@ from ..core.security import (
     check_prescription_access,
     get_accessible_patients_for_clinician,
     get_user_facility,
+    scope_queryset_to_clinical_access,
 )
 
 logger = logging.getLogger(__name__)
@@ -500,6 +501,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
                 NoteEntryVersion.objects.filter(note_entry_id=OuterRef('pk'))
             )
         ).filter(facility=facility)
+        queryset = scope_queryset_to_clinical_access(queryset, self.request.user)
 
         # Filter by encounter ID
         encounter_id = self.request.query_params.get('encounter_id') or self.request.query_params.get('encounter')
@@ -611,6 +613,8 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         Only allows cloning to the same template type.
         """
         source_note = self.get_object()
+        if source_note.patient:
+            check_clinical_access(request.user, source_note.patient)
 
         # Validate input
         serializer = NoteEntryCloneSerializer(data=request.data)
@@ -642,6 +646,15 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         if not target_patient:
             return Response(
                 {"error": "Patient is required for cloning"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        facility = get_user_facility(request)
+        if not facility or target_patient.facility_id != facility.id:
+            raise PermissionDenied("Patient does not belong to the active facility.")
+        check_clinical_access(request.user, target_patient)
+        if source_note.patient_id != target_patient.id:
+            return Response(
+                {"error": "Clinical notes can only be cloned for the same patient."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -701,25 +714,24 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
                 new_data[section_name] = copy.deepcopy(source_data[source_key])
 
         # Create the new note entry
-        facility = get_user_facility(request)
-        if not facility or target_patient.facility_id != facility.id:
-            raise PermissionDenied("Patient does not belong to the active facility.")
-        check_clinical_access(request.user, target_patient)
         template_revision = source_note.template_revision or source_note.template.revisions.filter(
             status='published'
         ).order_by('-version').first()
 
-        new_note = NoteEntry.objects.create(
-            template=source_note.template,
-            template_revision=template_revision,
-            template_version=template_revision.version if template_revision else source_note.template_version,
-            patient=target_patient,
-            encounter=encounter,
-            practitioner=practitioner_profile,
-            facility=facility,
-            data=new_data,
-            copied_from=source_note,
+        clone_serializer = NoteEntrySerializer(
+            data={
+                'template': source_note.template_id,
+                'template_revision': template_revision.id if template_revision else None,
+                'patient': target_patient.id,
+                'encounter': encounter.id,
+                'practitioner': practitioner_profile.id,
+                'data': new_data,
+                'copied_from': source_note.id,
+            },
+            context={'request': request},
         )
+        clone_serializer.is_valid(raise_exception=True)
+        new_note = clone_serializer.save(facility=facility)
 
         # Audit log
         AuditService.log(
@@ -897,6 +909,19 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
         # Get edit reason from request
         edit_reason = request.data.get('edit_reason', '')
 
+        # Validate and update the note data
+        update_serializer = NoteEntryUpdateSerializer(data=request.data)
+        update_serializer.is_valid(raise_exception=True)
+        data = update_serializer.validated_data['data']
+
+        validation_serializer = NoteEntrySerializer(
+            instance,
+            data={'data': data},
+            partial=True,
+            context={'request': request},
+        )
+        validation_serializer.is_valid(raise_exception=True)
+
         # Create version snapshot BEFORE updating
         NoteEntryVersion.create_version(
             note_entry=instance,
@@ -904,12 +929,8 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             edit_reason=edit_reason
         )
 
-        # Validate and update the note data
-        data = request.data.get('data', instance.data)
-
-        # Update the instance
-        instance.data = data
-        instance.save()
+        instance.data = validation_serializer.validated_data['data']
+        instance.save(update_fields=['data', 'updated_at'])
 
         # Audit log - clinical note updated
         AuditService.log(
@@ -1822,9 +1843,9 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 
             # Generate MAR if explicitly requested OR if auto and patient is admitted
             if generate_mar == 'yes' or (generate_mar == 'auto' and is_admitted):
-                from ..nursing.services import generate_mar_entries_for_prescription
+                from ..nursing.services import generate_mar_entries_for_prescription, normalize_mar_generation_days
                 try:
-                    days = int(data.get('mar_days', 7))  # Default 7 days
+                    days = normalize_mar_generation_days(data.get('mar_days', 7))
                     mar_entries = generate_mar_entries_for_prescription(
                         prescription,
                         days=days,
@@ -2115,7 +2136,15 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
             )
 
         # Get parameters
-        days = request.data.get('days', 7)
+        from apps.nursing.services import generate_mar_entries_for_prescription, normalize_mar_generation_days
+
+        try:
+            days = normalize_mar_generation_days(request.data.get('days', 7))
+        except ValueError:
+            return Response(
+                {'error': 'days must be a positive integer'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         start_date_str = request.data.get('start_date')
 
         start_date = None
@@ -2127,9 +2156,6 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
                     {'error': 'Invalid start_date format'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
-        # Import and use the MAR generation service
-        from apps.nursing.services import generate_mar_entries_for_prescription
 
         entries = generate_mar_entries_for_prescription(
             prescription,

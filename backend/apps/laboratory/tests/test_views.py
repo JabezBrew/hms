@@ -476,6 +476,187 @@ class TestLabResultViewSet:
         result.refresh_from_db()
         assert result.is_verified is False
 
+    def test_bulk_verify_by_result_ids_denies_same_performer_without_partial_updates(
+        self,
+        api_client,
+        default_facility,
+        db
+    ):
+        """Bulk verification by IDs cannot include a result entered by the verifier."""
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        verifier = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=default_facility),
+            primary_facility=default_facility,
+        )
+        other_performer = StaffFactory(primary_facility=default_facility)
+        order = LabOrderFactory(
+            facility=default_facility,
+            patient=PatientProfileFactory(facility=default_facility),
+            status='processing',
+        )
+        specimen = LabSpecimenFactory(order=order, facility=default_facility)
+        self_result = LabResultFactory(
+            order_test=LabOrderTestFactory(
+                order=order,
+                facility=default_facility,
+                test=LabTestCatalogFactory(facility=default_facility),
+            ),
+            specimen=specimen,
+            facility=default_facility,
+            performed_by=verifier,
+            is_verified=False,
+            verified_by=None,
+            verified_at=None,
+        )
+        other_result = LabResultFactory(
+            order_test=LabOrderTestFactory(
+                order=order,
+                facility=default_facility,
+                test=LabTestCatalogFactory(facility=default_facility),
+            ),
+            specimen=specimen,
+            facility=default_facility,
+            performed_by=other_performer,
+            is_verified=False,
+            verified_by=None,
+            verified_at=None,
+        )
+
+        token = AccessToken.for_user(verifier.user)
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=default_facility.code
+        )
+
+        response = api_client.post(
+            f'{BASE_URL}/results/bulk-verify/',
+            {'result_ids': [str(self_result.id), str(other_result.id)]},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        self_result.refresh_from_db()
+        other_result.refresh_from_db()
+        assert self_result.is_verified is False
+        assert self_result.verified_by is None
+        assert other_result.is_verified is False
+        assert other_result.verified_by is None
+
+    def test_bulk_verify_by_order_denies_same_performer_without_partial_updates(
+        self,
+        api_client,
+        default_facility,
+        db
+    ):
+        """Bulk verification by order cannot release a verifier's own result."""
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        verifier = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=default_facility),
+            primary_facility=default_facility,
+        )
+        other_performer = StaffFactory(primary_facility=default_facility)
+        order = LabOrderFactory(
+            facility=default_facility,
+            patient=PatientProfileFactory(facility=default_facility),
+            status='processing',
+        )
+        specimen = LabSpecimenFactory(order=order, facility=default_facility)
+        self_result = LabResultFactory(
+            order_test=LabOrderTestFactory(
+                order=order,
+                facility=default_facility,
+                test=LabTestCatalogFactory(facility=default_facility),
+            ),
+            specimen=specimen,
+            facility=default_facility,
+            performed_by=verifier,
+            is_verified=False,
+            verified_by=None,
+            verified_at=None,
+        )
+        other_result = LabResultFactory(
+            order_test=LabOrderTestFactory(
+                order=order,
+                facility=default_facility,
+                test=LabTestCatalogFactory(facility=default_facility),
+            ),
+            specimen=specimen,
+            facility=default_facility,
+            performed_by=other_performer,
+            is_verified=False,
+            verified_by=None,
+            verified_at=None,
+        )
+
+        token = AccessToken.for_user(verifier.user)
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=default_facility.code
+        )
+
+        response = api_client.post(
+            f'{BASE_URL}/results/bulk-verify/',
+            {'order_id': str(order.id)},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        self_result.refresh_from_db()
+        other_result.refresh_from_db()
+        assert self_result.is_verified is False
+        assert self_result.verified_by is None
+        assert other_result.is_verified is False
+        assert other_result.verified_by is None
+
+    def test_bulk_verify_allows_different_performer(self, api_client, default_facility, db):
+        """A lab staff member can bulk verify results entered by another staff member."""
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        verifier = StaffFactory(
+            user=LabTechnicianUserFactory(primary_facility=default_facility),
+            primary_facility=default_facility,
+        )
+        performer = StaffFactory(primary_facility=default_facility)
+        order = LabOrderFactory(
+            facility=default_facility,
+            patient=PatientProfileFactory(facility=default_facility),
+            status='processing',
+        )
+        specimen = LabSpecimenFactory(order=order, facility=default_facility)
+        result = LabResultFactory(
+            order_test=LabOrderTestFactory(
+                order=order,
+                facility=default_facility,
+                test=LabTestCatalogFactory(facility=default_facility),
+            ),
+            specimen=specimen,
+            facility=default_facility,
+            performed_by=performer,
+            is_verified=False,
+            verified_by=None,
+            verified_at=None,
+        )
+
+        token = AccessToken.for_user(verifier.user)
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=default_facility.code
+        )
+
+        response = api_client.post(
+            f'{BASE_URL}/results/bulk-verify/',
+            {'result_ids': [str(result.id)]},
+            format='json'
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['verified_count'] == 1
+        result.refresh_from_db()
+        assert result.is_verified is True
+        assert result.verified_by == verifier
+
 
 @pytest.mark.tier1
 class TestLabOrderWorkflow:

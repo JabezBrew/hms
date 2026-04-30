@@ -224,6 +224,30 @@ class TestRecurringScheduleViewSet:
         assert response.status_code == status.HTTP_201_CREATED
         assert RecurringSchedule.objects.filter(name='Morning Clinic').exists()
 
+    def test_create_recurring_schedule_rejects_non_positive_slot_duration(
+        self, admin_client, default_facility, db
+    ):
+        practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
+        data = {
+            'name': 'Invalid Clinic',
+            'practitioner': str(practitioner.id),
+            'days_of_week': [0, 1, 2],
+            'start_time': '09:00:00',
+            'end_time': '12:00:00',
+            'slot_duration': 0,
+            'active_from': str(date.today()),
+            'breaks': [],
+        }
+
+        response = admin_client.post(
+            f'{BASE_URL}/recurring-schedules/',
+            data,
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'slot_duration' in response.data
+
     def test_create_shared_recurring_schedule_for_multiple_practitioners(self, admin_client, default_facility, db):
         """Creating with practitioners should clone one schedule per practitioner."""
         practitioner_a = PractitionerProfileFactory(staff__primary_facility=default_facility)
@@ -422,6 +446,23 @@ class TestRecurringScheduleViewSet:
         assert response.status_code == status.HTTP_200_OK
         # 9-12 = 3 hours = 6 slots at 30 min each
         assert len(response.data['slots']) == 6
+
+    def test_preview_slots_rejects_non_positive_slot_duration(self, admin_client, db):
+        data = {
+            'start_time': '09:00',
+            'end_time': '12:00',
+            'slot_duration': 0,
+            'breaks': [],
+        }
+
+        response = admin_client.post(
+            f'{BASE_URL}/recurring-schedules/preview_slots/',
+            data,
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'slot_duration' in response.data
 
 
 @pytest.mark.tier1

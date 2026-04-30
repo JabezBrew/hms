@@ -121,6 +121,24 @@ def _is_nurse_actor(user):
     return role in {'nurse', 'head_nurse', 'nurse_practitioner'}
 
 
+def _get_user_practitioner_profile(user):
+    try:
+        return user.staff_profile.practitioner_profile
+    except AttributeError:
+        return None
+    except PractitionerProfile.DoesNotExist:
+        return None
+
+
+def _practitioner_belongs_to_facility(practitioner, facility):
+    staff = getattr(practitioner, 'staff', None)
+    if not staff:
+        return False
+    staff_facility_id = getattr(staff, 'primary_facility_id', None)
+    user_facility_id = getattr(getattr(staff, 'user', None), 'primary_facility_id', None)
+    return facility.id in {staff_facility_id, user_facility_id}
+
+
 def _forbidden_admin_only_response():
     return Response({'detail': 'Admin role is required.'}, status=403)
 
@@ -1276,13 +1294,23 @@ def clinic_schedule(request):
     else:
         target_date = timezone.now().date()
 
-    # Get practitioner ID
-    practitioner_id = request.query_params.get('practitioner_id')
-    if not practitioner_id:
-        if hasattr(user, 'practitionerprofile'):
-            practitioner_id = user.practitionerprofile.fhir_practitioner_id
+    requested_practitioner_id = request.query_params.get('practitioner_id')
+    current_practitioner = _get_user_practitioner_profile(user)
+
+    if requested_practitioner_id:
+        if _is_admin_actor(user):
+            practitioner = PractitionerProfile.objects.select_related('staff', 'staff__user').filter(
+                fhir_practitioner_id=requested_practitioner_id
+            ).first()
+            if not practitioner or not _practitioner_belongs_to_facility(practitioner, facility):
+                raise PermissionDenied("Practitioner is not available in the active facility.")
+            practitioner_id = requested_practitioner_id
         else:
-            return Response({'error': 'Practitioner profile not found'}, status=400)
+            if not current_practitioner or current_practitioner.fhir_practitioner_id != requested_practitioner_id:
+                raise PermissionDenied("You can only view your own clinic schedule.")
+            practitioner_id = requested_practitioner_id
+    else:
+        practitioner_id = current_practitioner.fhir_practitioner_id if current_practitioner else None
 
     if not practitioner_id:
         return Response({'error': 'Practitioner profile not found'}, status=400)

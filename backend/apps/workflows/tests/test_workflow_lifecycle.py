@@ -16,6 +16,7 @@ from apps.workflows.models import (
     ClinicalWorkflow, ConsultationWorkflow,
     WorkflowStatus, WorkflowType
 )
+from apps.users.models import UserPatientList
 from apps.users.tests.factories import PatientProfileFactory, DoctorUserFactory
 from .factories import (
     ClinicalWorkflowFactory, InProgressWorkflowFactory, CompletedWorkflowFactory,
@@ -218,6 +219,34 @@ class TestWorkflowDraftSaveResume:
         workflow.refresh_from_db()
         assert workflow.context_data['existing_field'] == 'existing_value'
         assert workflow.context_data['new_field'] == 'new_value'
+
+    def test_save_draft_requires_current_patient_access(
+        self,
+        settings,
+        doctor_client,
+        doctor_user,
+        patient_profile_factory,
+        default_facility,
+    ):
+        """A clinician cannot keep mutating an owned workflow after losing patient access."""
+        settings.TEAM_ACCESS_STRICT = True
+        accessible_patient = patient_profile_factory(facility=default_facility)
+        inaccessible_patient = patient_profile_factory(facility=default_facility)
+        UserPatientList.objects.create(user=doctor_user, patient=accessible_patient)
+        workflow = ClinicalWorkflowFactory(
+            user=doctor_user,
+            patient=inaccessible_patient,
+            workflow_type=WorkflowType.CONSULTATION,
+            status=WorkflowStatus.IN_PROGRESS,
+        )
+
+        response = doctor_client.post(
+            f'/api/workflows/{workflow.id}/save-draft/',
+            {'context_data': {'chief_complaint': 'Headache'}},
+            format='json',
+        )
+
+        assert response.status_code == 404
 
     def test_resume_workflow_from_draft(self, db):
         """Test resuming workflow from saved draft."""

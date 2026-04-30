@@ -79,3 +79,15 @@ def test_nurse_dashboard_rejects_nurse_without_assigned_ward(django_user_model):
 
     response = client.get('/api/dashboards/nurse/')
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_clinic_schedule_rejects_other_practitioner_id(doctor_client, doctor_practitioner):
+    doctor_practitioner.fhir_practitioner_id = 'Practitioner/current-doctor'
+    doctor_practitioner.save(update_fields=['fhir_practitioner_id'])
+
+    response = doctor_client.get(
+        '/api/dashboards/clinic/?practitioner_id=Practitioner/other-doctor'
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN

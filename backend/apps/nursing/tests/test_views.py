@@ -8,8 +8,10 @@ from apps.nursing.tests.factories import (
     BedFactory,
     EncounterFactory,
     CompletedNursingTaskFactory,
+    TreatmentSheetEntryFactory,
     WardFactory,
 )
+from apps.users.models import UserPatientList
 
 
 @pytest.mark.django_db
@@ -108,3 +110,32 @@ def test_vital_signs_create_query_budget(
 
     assert response.status_code == 201
     assert response.data['encounter_created'] is False
+
+
+@pytest.mark.django_db
+def test_treatment_sheet_list_scopes_to_accessible_patients_when_strict(
+    settings,
+    nurse_client,
+    nurse_user,
+    patient_profile_factory,
+    default_facility,
+):
+    settings.TEAM_ACCESS_STRICT = True
+    allowed_patient = patient_profile_factory(facility=default_facility)
+    blocked_patient = patient_profile_factory(facility=default_facility)
+    allowed_entry = TreatmentSheetEntryFactory(
+        patient=allowed_patient,
+        facility=default_facility,
+    )
+    blocked_entry = TreatmentSheetEntryFactory(
+        patient=blocked_patient,
+        facility=default_facility,
+    )
+    UserPatientList.objects.create(user=nurse_user, patient=allowed_patient)
+
+    response = nurse_client.get('/api/nursing/treatment-sheet/')
+
+    assert response.status_code == 200
+    returned_ids = {item['id'] for item in response.data['results']}
+    assert str(allowed_entry.id) in returned_ids
+    assert str(blocked_entry.id) not in returned_ids

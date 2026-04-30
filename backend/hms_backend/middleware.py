@@ -1,6 +1,7 @@
 import logging
 import time
 import json
+import ipaddress
 from uuid import UUID
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
@@ -46,21 +47,68 @@ def _disabled_feature_response_for_request(request):
     return _feature_disabled_response(feature_key)
 
 
+def _normalize_ip_address(value):
+    if not value:
+        return None
+    try:
+        return str(ipaddress.ip_address(str(value).strip()))
+    except ValueError:
+        return None
+
+
+def _trusted_proxy_networks():
+    cidrs = getattr(settings, 'TRUSTED_PROXY_CIDRS', [])
+    networks = []
+    for cidr in cidrs:
+        try:
+            networks.append(ipaddress.ip_network(str(cidr).strip(), strict=False))
+        except ValueError:
+            logger.warning("Ignoring invalid trusted proxy CIDR setting.")
+    return networks
+
+
+def _is_trusted_proxy_source(remote_addr):
+    remote_ip = _normalize_ip_address(remote_addr)
+    if remote_ip is None:
+        return False
+    ip = ipaddress.ip_address(remote_ip)
+    return any(ip in network for network in _trusted_proxy_networks())
+
+
+def _trusted_forwarded_client_ip(x_forwarded_for, trusted_hops):
+    raw_hops = [part.strip() for part in str(x_forwarded_for or '').split(',') if part.strip()]
+    if not raw_hops:
+        return None
+
+    normalized_hops = [_normalize_ip_address(hop) for hop in raw_hops]
+    if any(hop is None for hop in normalized_hops):
+        return None
+
+    trusted_hops = max(1, trusted_hops)
+    if len(normalized_hops) > trusted_hops:
+        return normalized_hops[-(trusted_hops + 1)]
+    return normalized_hops[0]
+
+
 def get_client_ip(request):
     """
     Get the client's real IP address from the request.
     Handles X-Forwarded-For header for reverse proxy setups.
     """
-    if getattr(settings, 'TRUST_PROXY_HEADERS', False):
+    remote_addr = _normalize_ip_address(request.META.get('REMOTE_ADDR'))
+
+    if getattr(settings, 'TRUST_PROXY_HEADERS', False) and _is_trusted_proxy_source(remote_addr):
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
-            hops = [part.strip() for part in x_forwarded_for.split(',') if part.strip()]
-            trusted_hops = max(1, int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1)))
-            if len(hops) > trusted_hops:
-                return hops[-(trusted_hops + 1)]
-            if hops:
-                return hops[0]
-    return request.META.get('REMOTE_ADDR')
+            try:
+                trusted_hops = int(getattr(settings, 'TRUSTED_PROXY_HOPS', 1))
+            except (TypeError, ValueError):
+                trusted_hops = 1
+            forwarded_ip = _trusted_forwarded_client_ip(x_forwarded_for, trusted_hops)
+            if forwarded_ip:
+                return forwarded_ip
+
+    return remote_addr
 
 
 def _scrub_path_segment(segment):
