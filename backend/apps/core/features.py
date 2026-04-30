@@ -14,7 +14,7 @@ from django.core.cache import cache
 from django.db import OperationalError, ProgrammingError
 from rest_framework.exceptions import NotFound
 
-from hms_backend.deployment import setting_feature_default
+from hms_backend.deployment import normalize_feature_set, setting_feature_default
 from hms_backend.feature_manifest import FEATURE_MANIFEST
 
 CACHE_TIMEOUT_SECONDS = 300
@@ -108,6 +108,8 @@ def effective_feature_state(facility=None, request=None, django_settings=None, d
             sources[override.feature_key] = 'facility_override'
     except (OperationalError, ProgrammingError):
         pass
+
+    features = normalize_feature_set(features)
 
     state = {
         'features': features,

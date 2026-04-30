@@ -432,3 +432,34 @@ def test_entitlement_cache_invalidates_on_override_update(settings):
     override.save()
 
     assert db_feature_enabled('pharmacy') is True
+
+
+@pytest.mark.django_db
+def test_db_entitlement_overrides_are_dependency_normalized(settings):
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        'billing': True,
+        'insurance_claims': True,
+        'patient_chronicle': True,
+    }
+    FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_GLOBAL,
+        feature_key='billing',
+        is_enabled=False,
+    )
+    FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_GLOBAL,
+        feature_key='insurance_claims',
+        is_enabled=True,
+    )
+    FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_GLOBAL,
+        feature_key='patient_chronicle',
+        is_enabled=False,
+    )
+
+    state = effective_feature_state()
+
+    assert state['features']['billing'] is False
+    assert state['features']['insurance_claims'] is False
+    assert state['features']['patient_chronicle'] is True
