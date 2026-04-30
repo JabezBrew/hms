@@ -11,8 +11,10 @@ from datetime import timedelta
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.referrals.models import Referral, ClinicWaitlistEntry
+from apps.referrals.views import ClinicWaitlistEntryViewSet
 from .factories import ReferralFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
+from apps.encounters.tests.factories import EncounterFactory
 from apps.core.tests.factories import DefaultFacilityFactory
 from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
 from apps.appointments.models import AppointmentType
@@ -75,6 +77,34 @@ def create_clinic(
 @pytest.mark.tier1
 class TestReferralViewSet:
     """Tests for ReferralViewSet API endpoints."""
+
+    def test_waitlist_permissions_build_for_all_mutation_actions(self):
+        mutation_actions = [
+            'create',
+            'update',
+            'partial_update',
+            'destroy',
+            'offer_next',
+            'expire_offers',
+            'promote',
+            'cancel',
+        ]
+
+        for action in mutation_actions:
+            view = ClinicWaitlistEntryViewSet()
+            view.action = action
+
+            permissions = view.get_permissions()
+
+            assert len(permissions) == 3
+
+    def test_waitlist_permissions_build_for_read_actions(self):
+        view = ClinicWaitlistEntryViewSet()
+        view.action = 'list'
+
+        permissions = view.get_permissions()
+
+        assert len(permissions) == 3
 
     def test_list_referrals(self, admin_client, db):
         """Test listing all referrals."""
@@ -478,6 +508,12 @@ class TestReferralSLAAndWaitlist:
     def test_waitlist_create_and_promote_to_appointment(self, api_client, db):
         practitioner, facility = self._authenticate_as_practitioner(api_client)
         patient = PatientProfileFactory(facility=facility)
+        EncounterFactory(
+            patient=patient,
+            practitioner=practitioner,
+            facility=facility,
+            status='in-progress',
+        )
         clinic = create_clinic(
             facility,
             booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,

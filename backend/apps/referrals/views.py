@@ -844,8 +844,22 @@ class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
     filterset_fields = ['clinic', 'status', 'urgency', 'deadline_risk', 'vulnerability_flag']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy', 'offer_next', 'expire_offers', 'promote', 'cancel']:
-            return [permissions.IsAuthenticated(), FacilityScopedPermission(), (IsAdmin() | IsDoctor())]
+        if self.action in [
+            'create',
+            'update',
+            'partial_update',
+            'destroy',
+            'offer_next',
+            'expire_offers',
+            'promote',
+            'cancel',
+        ]:
+            permission_classes = [
+                permissions.IsAuthenticated,
+                FacilityScopedPermission,
+                (IsAdmin | IsDoctor),
+            ]
+            return [permission() for permission in permission_classes]
         return super().get_permissions()
 
     def get_queryset(self):
