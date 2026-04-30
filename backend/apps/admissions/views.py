@@ -34,7 +34,12 @@ from apps.admissions.services import (
     start_admission_case,
 )
 from apps.core.pagination import StandardResultsSetPagination
-from apps.core.security import FacilityScopedPermission, get_user_facility, scope_queryset_to_clinical_access
+from apps.core.security import (
+    FacilityScopedPermission,
+    check_clinical_access,
+    get_user_facility,
+    scope_queryset_to_clinical_access,
+)
 
 
 CLINICAL_CASE_ROLES = CLINICAL_REQUESTER_ROLES | NURSING_ROLES | PLACEMENT_ROLES
@@ -118,6 +123,10 @@ class AdmissionCaseViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = AdmissionCaseStartSerializer(data=request.data, context={'request': request, 'facility': facility})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        if getattr(request.user, 'user_type', None) in CLINICAL_CASE_ROLES:
+            check_clinical_access(request.user, data['patient'])
+
         case = start_admission_case(
             patient=data['patient'],
             facility=facility,
