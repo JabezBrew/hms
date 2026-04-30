@@ -36,6 +36,7 @@ from ..users.permissions import IsAdminOrOwner, IsAdminOrReadOnly
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
+    check_clinical_access,
     check_demographics_access,
     get_user_facility,
 )
@@ -421,9 +422,12 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY: check-in is a front-desk operation; enforce demographics access,
-        # not clinical access (receptionists must be allowed to check in).
-        check_demographics_access(request.user, appointment.patient)
+        if request.user.user_type == 'receptionist':
+            # Front-desk check-in requires demographics-level access.
+            check_demographics_access(request.user, appointment.patient)
+        else:
+            # Starting a clinical visit must enforce clinical/team-based access.
+            check_clinical_access(request.user, appointment.patient)
 
         with transaction.atomic():
             appointment = (

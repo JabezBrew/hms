@@ -1114,6 +1114,34 @@ class TestAppointmentViewSet:
 
 @pytest.mark.tier1
 class TestWalkInArrivals:
+    def test_start_visit_doctor_uses_clinical_access_gate(self, doctor_client, default_facility, db):
+        clinic = create_clinic(default_facility)
+        patient = PatientProfileFactory(facility=default_facility)
+        practitioner = PractitionerProfileFactory()
+        apt_type = AppointmentTypeFactory()
+
+        start_time = timezone.now() + timedelta(minutes=30)
+        end_time = start_time + timedelta(minutes=30)
+        appointment = Appointment.objects.create(
+            facility=default_facility,
+            patient=patient,
+            practitioner=practitioner,
+            clinic=clinic,
+            appointment_type=apt_type,
+            status='booked',
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        with patch('apps.appointments.views.check_clinical_access') as clinical_access_mock, patch(
+            'apps.appointments.views.check_demographics_access'
+        ) as demographics_access_mock:
+            response = doctor_client.post(f'{BASE_URL}/appointments/{appointment.id}/start_visit/')
+
+        assert response.status_code == status.HTTP_201_CREATED
+        clinical_access_mock.assert_called_once()
+        demographics_access_mock.assert_not_called()
+
     def test_start_visit_allows_receptionist(self, receptionist_client, default_facility, db):
         clinic = create_clinic(default_facility)
         patient = PatientProfileFactory(facility=default_facility)
