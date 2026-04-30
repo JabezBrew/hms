@@ -2,6 +2,8 @@
 URL configuration for hms_backend project.
 """
 
+import importlib.util
+
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -27,6 +29,19 @@ from apps.users.password_reset_views import (
     PasswordResetValidateTokenView,
     AdminForceResetView,
 )
+
+
+def _module_available(module_path):
+    try:
+        return importlib.util.find_spec(module_path) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
+
+
+def _ward_board_urlconf():
+    if _module_available('apps.ward_board.urls'):
+        return include('apps.ward_board.urls')
+    return include(([], 'ward_board'))
 
 
 urlpatterns = [
@@ -83,6 +98,7 @@ urlpatterns = [
     path('api/consent/', include('apps.consent.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
     path('api/ai/', include('apps.ai.urls')),
+    path('api/ward-board/', _ward_board_urlconf()),
     path('api/', include('apps.workflows.urls')),
     path('api/', include('apps.dashboards.urls')),
     path('api/admin/', include('apps.audit.urls')),

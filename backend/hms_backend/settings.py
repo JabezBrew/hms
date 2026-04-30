@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import json
+import importlib.util
 from pathlib import Path
 import environ
 import logging.config
@@ -126,6 +127,14 @@ def _parse_feature_flag_overrides(raw_value):
             overrides[key] = flag_value.strip()
     return overrides
 
+
+def _module_available(module_path):
+    try:
+        return importlib.util.find_spec(module_path) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=False)
 
@@ -180,6 +189,9 @@ INSTALLED_APPS = [
     'apps.notifications.apps.NotificationsConfig',
     'apps.ai.apps.AIConfig',
 ]
+
+if _module_available('apps.ward_board'):
+    INSTALLED_APPS.append('apps.ward_board.apps.WardBoardConfig')
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Must be first to handle preflight requests

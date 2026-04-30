@@ -117,6 +117,18 @@ FEATURE_MANIFEST = {
         'profile_default': True,
         'api_prefixes': ['/api/discharges/', '/api/workflows/discharge'],
     },
+    'ward_task_board': {
+        'label': 'Ward clinical task board',
+        'kind': 'subfeature',
+        'profile_default': True,
+        'api_prefixes': ['/api/ward-board/'],
+        'optional_lanes': (
+            'laboratory',
+            'discharge_workflows',
+            'pharmacy',
+            'referrals',
+        ),
+    },
 
     # Operational modules
     'appointments': {
@@ -326,6 +338,11 @@ FEATURE_CONTRACT = {
         'sellable': True,
         'toggleable': True,
     },
+    'ward_task_board': {
+        'contract': 'sellable_add_on',
+        'sellable': True,
+        'toggleable': True,
+    },
     'insurance_claims': {
         'contract': 'sellable_add_on',
         'sellable': True,
@@ -377,6 +394,12 @@ FEATURE_DEPENDENCIES = {
         'wards',
         'clinical_notes',
     ),
+    'ward_task_board': (
+        'patient_chronicle',
+        'wards',
+        'inpatient_admissions',
+        'nursing_workflows',
+    ),
     'appointments': ('patient_registration',),
     'billing': ('patient_registration',),
     'insurance_claims': ('billing',),
@@ -418,6 +441,7 @@ CLINIC_DISABLED_FEATURES = (
     'bed_management',
     'nursing_workflows',
     'discharge_workflows',
+    'ward_task_board',
     'cross_facility_referrals',
     'cross_facility_record_exchange',
 )

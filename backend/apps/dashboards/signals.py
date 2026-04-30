@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from django.apps import apps
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -20,6 +21,7 @@ from .realtime import (
     invalidate_inpatient_dashboard,
     invalidate_nurse_dashboard,
     invalidate_reception_dashboard,
+    invalidate_ward_task_board,
 )
 
 
@@ -75,6 +77,17 @@ def _invalidate_nurse_for_facility_code(facility_code: Optional[str], reason: st
     if not code:
         return
     invalidate_nurse_dashboard(code, reason=reason, ward_scope=ward_scope)
+
+
+def _invalidate_ward_board_for_facility_code(
+    facility_code: Optional[str],
+    reason: str,
+    ward_scope: Optional[str] = None,
+) -> None:
+    code = normalize_facility_code(facility_code)
+    if not code:
+        return
+    invalidate_ward_task_board(code, reason=reason, ward_scope=ward_scope)
 
 
 def _invalidate_doctor_for_facility_code(
@@ -163,6 +176,113 @@ def _invalidate_admin_and_reception_for_appointment_date(
     )
 
 
+def _ward_scope_from_bed(instance) -> Optional[str]:
+    ward_id = getattr(instance, "ward_id", None)
+    if not ward_id:
+        ward = getattr(instance, "ward", None)
+        ward_id = getattr(ward, "id", None) if ward else None
+    return str(ward_id) if ward_id else None
+
+
+def _ward_scope_from_bed_allocation_log(instance) -> Optional[str]:
+    bed = getattr(instance, "bed", None)
+    ward_id = getattr(bed, "ward_id", None) if bed else None
+    if not ward_id:
+        admission = getattr(instance, "admission", None)
+        if admission:
+            return _ward_scope_from_admission(admission)
+    return str(ward_id) if ward_id else None
+
+
+def _ward_scopes_from_transfer(instance) -> tuple[str, ...]:
+    scopes = []
+    for attr in ("from_admission", "to_admission"):
+        admission = getattr(instance, attr, None)
+        scope = _ward_scope_from_admission(admission) if admission else None
+        if scope and scope not in scopes:
+            scopes.append(scope)
+    return tuple(scopes)
+
+
+def _ward_scope_from_lab_order(instance) -> Optional[str]:
+    if not instance:
+        return None
+    return _resolve_active_ward_scope(
+        getattr(instance, "facility_id", None),
+        getattr(instance, "patient_id", None),
+    )
+
+
+def _lab_order_from_order_test(instance):
+    return getattr(instance, "order", None)
+
+
+def _lab_order_from_result(instance):
+    order_test = getattr(instance, "order_test", None)
+    if not order_test:
+        return None
+    return _lab_order_from_order_test(order_test)
+
+
+def _ward_scope_from_discharge_case(instance) -> Optional[str]:
+    if not instance:
+        return None
+    admission = getattr(instance, "admission", None)
+    ward_scope = _ward_scope_from_admission(admission) if admission else None
+    if ward_scope:
+        return ward_scope
+    return _resolve_active_ward_scope(
+        getattr(instance, "facility_id", None),
+        getattr(instance, "patient_id", None),
+    )
+
+
+def _ward_scope_from_discharge_task(instance) -> Optional[str]:
+    case = getattr(instance, "case", None)
+    return _ward_scope_from_discharge_case(case) if case else None
+
+
+def _facility_code_from_discharge_task(instance) -> Optional[str]:
+    case = getattr(instance, "case", None)
+    return _normalize_facility_code_from_obj(case) if case else None
+
+
+def _ward_scope_from_board_task(instance) -> Optional[str]:
+    for attr in ("ward_scope", "ward_id"):
+        value = getattr(instance, attr, None)
+        if value:
+            return str(value)
+
+    ward = getattr(instance, "ward", None)
+    if ward and getattr(ward, "id", None):
+        return str(ward.id)
+
+    admission = getattr(instance, "admission", None)
+    if admission:
+        ward_scope = _ward_scope_from_admission(admission)
+        if ward_scope:
+            return ward_scope
+
+    return _resolve_active_ward_scope(
+        getattr(instance, "facility_id", None),
+        getattr(instance, "patient_id", None),
+    )
+
+
+def _board_task_from_related_event(instance):
+    return getattr(instance, "task", None)
+
+
+def _facility_code_from_board_task_related_event(instance) -> Optional[str]:
+    task = _board_task_from_related_event(instance)
+    return _normalize_facility_code_from_obj(instance) or _normalize_facility_code_from_obj(task)
+
+
+def _ward_scope_from_board_task_related_event(instance) -> Optional[str]:
+    task = _board_task_from_related_event(instance)
+    return _ward_scope_from_board_task(task) if task else None
+
+
 @receiver(post_save, sender="users.PatientProfile")
 @receiver(post_delete, sender="users.PatientProfile")
 def invalidate_admin_dashboard_on_patient_change(sender, instance, **kwargs):
@@ -172,17 +292,28 @@ def invalidate_admin_dashboard_on_patient_change(sender, instance, **kwargs):
 @receiver(post_save, sender="wards.Bed")
 @receiver(post_delete, sender="wards.Bed")
 def invalidate_admin_dashboard_on_bed_change(sender, instance, **kwargs):
-    _invalidate_admin_for_facility_code(_normalize_facility_code_from_obj(instance), "bed_changed")
-    current_ward_scope = str(instance.ward_id) if getattr(instance, "ward_id", None) else None
+    facility_code = _normalize_facility_code_from_obj(instance)
+    _invalidate_admin_for_facility_code(facility_code, "bed_changed")
+    current_ward_scope = _ward_scope_from_bed(instance)
     previous_ward_scope = getattr(instance, "_previous_ward_scope", None)
     _invalidate_nurse_for_facility_code(
-        _normalize_facility_code_from_obj(instance),
+        facility_code,
+        "bed_changed",
+        ward_scope=current_ward_scope,
+    )
+    _invalidate_ward_board_for_facility_code(
+        facility_code,
         "bed_changed",
         ward_scope=current_ward_scope,
     )
     if previous_ward_scope and previous_ward_scope != current_ward_scope:
         _invalidate_nurse_for_facility_code(
-            _normalize_facility_code_from_obj(instance),
+            facility_code,
+            "bed_changed",
+            ward_scope=previous_ward_scope,
+        )
+        _invalidate_ward_board_for_facility_code(
+            facility_code,
             "bed_changed",
             ward_scope=previous_ward_scope,
         )
@@ -204,6 +335,11 @@ def invalidate_admin_dashboard_on_ward_change(sender, instance, **kwargs):
         "ward_changed",
         ward_scope=str(instance.id),
     )
+    _invalidate_ward_board_for_facility_code(
+        facility_code,
+        "ward_changed",
+        ward_scope=str(instance.id),
+    )
 
 
 @receiver(post_save, sender="wards.Admission")
@@ -215,8 +351,10 @@ def invalidate_admin_dashboard_on_admission_change(sender, instance, **kwargs):
     current_ward_scope = _ward_scope_from_admission(instance)
     previous_ward_scope = getattr(instance, "_previous_ward_scope", None)
     _invalidate_nurse_for_facility_code(facility_code, "admission_changed", ward_scope=current_ward_scope)
+    _invalidate_ward_board_for_facility_code(facility_code, "admission_changed", ward_scope=current_ward_scope)
     if previous_ward_scope and previous_ward_scope != current_ward_scope:
         _invalidate_nurse_for_facility_code(facility_code, "admission_changed", ward_scope=previous_ward_scope)
+        _invalidate_ward_board_for_facility_code(facility_code, "admission_changed", ward_scope=previous_ward_scope)
 
     current_practitioner_id = str(instance.admitting_doctor_id) if getattr(instance, "admitting_doctor_id", None) else None
     previous_practitioner_id = getattr(instance, "_previous_admitting_doctor_id", None)
@@ -369,6 +507,7 @@ def invalidate_nurse_dashboard_on_alert_change(sender, instance, **kwargs):
         getattr(instance, "patient_id", None),
     )
     _invalidate_nurse_for_facility_code(facility_code, "alert_changed", ward_scope=ward_scope)
+    _invalidate_ward_board_for_facility_code(facility_code, "alert_changed", ward_scope=ward_scope)
 
 
 @receiver(post_save, sender="nursing.NursingTask")
@@ -380,6 +519,7 @@ def invalidate_nurse_dashboard_on_task_change(sender, instance, **kwargs):
         getattr(instance, "patient_id", None),
     )
     _invalidate_nurse_for_facility_code(facility_code, "task_changed", ward_scope=ward_scope)
+    _invalidate_ward_board_for_facility_code(facility_code, "task_changed", ward_scope=ward_scope)
 
 
 @receiver(post_save, sender="nursing.MedicationAdministration")
@@ -395,3 +535,120 @@ def invalidate_nurse_dashboard_on_medication_change(sender, instance, **kwargs):
         "medication_administration_changed",
         ward_scope=ward_scope,
     )
+    _invalidate_ward_board_for_facility_code(
+        facility_code,
+        "medication_administration_changed",
+        ward_scope=ward_scope,
+    )
+
+
+@receiver(post_save, sender="wards.BedAllocationLog")
+@receiver(post_delete, sender="wards.BedAllocationLog")
+def invalidate_ward_board_on_bed_allocation_change(sender, instance, **kwargs):
+    facility_code = _normalize_facility_code_from_obj(instance)
+    ward_scope = _ward_scope_from_bed_allocation_log(instance)
+    _invalidate_ward_board_for_facility_code(facility_code, "bed_allocation_changed", ward_scope=ward_scope)
+
+
+@receiver(post_save, sender="wards.WardTransfer")
+@receiver(post_delete, sender="wards.WardTransfer")
+def invalidate_ward_board_on_transfer_change(sender, instance, **kwargs):
+    facility_code = _normalize_facility_code_from_obj(instance)
+    scopes = _ward_scopes_from_transfer(instance)
+    if not scopes:
+        _invalidate_ward_board_for_facility_code(facility_code, "ward_transfer_changed")
+        return
+    for ward_scope in scopes:
+        _invalidate_ward_board_for_facility_code(
+            facility_code,
+            "ward_transfer_changed",
+            ward_scope=ward_scope,
+        )
+
+
+@receiver(post_save, sender="laboratory.LabOrder")
+@receiver(post_delete, sender="laboratory.LabOrder")
+def invalidate_ward_board_on_lab_order_change(sender, instance, **kwargs):
+    facility_code = _normalize_facility_code_from_obj(instance)
+    ward_scope = _ward_scope_from_lab_order(instance)
+    _invalidate_ward_board_for_facility_code(facility_code, "lab_order_changed", ward_scope=ward_scope)
+
+
+@receiver(post_save, sender="laboratory.LabOrderTest")
+@receiver(post_delete, sender="laboratory.LabOrderTest")
+def invalidate_ward_board_on_lab_order_test_change(sender, instance, **kwargs):
+    order = _lab_order_from_order_test(instance)
+    facility_code = _normalize_facility_code_from_obj(instance) or _normalize_facility_code_from_obj(order)
+    ward_scope = _ward_scope_from_lab_order(order) if order else None
+    _invalidate_ward_board_for_facility_code(facility_code, "lab_order_changed", ward_scope=ward_scope)
+
+
+@receiver(post_save, sender="laboratory.LabResult")
+@receiver(post_delete, sender="laboratory.LabResult")
+def invalidate_ward_board_on_lab_result_change(sender, instance, **kwargs):
+    order = _lab_order_from_result(instance)
+    facility_code = _normalize_facility_code_from_obj(instance) or _normalize_facility_code_from_obj(order)
+    ward_scope = _ward_scope_from_lab_order(order) if order else None
+    _invalidate_ward_board_for_facility_code(facility_code, "lab_result_changed", ward_scope=ward_scope)
+
+
+@receiver(post_save, sender="discharge.DischargeCase")
+@receiver(post_delete, sender="discharge.DischargeCase")
+def invalidate_ward_board_on_discharge_case_change(sender, instance, **kwargs):
+    facility_code = _normalize_facility_code_from_obj(instance)
+    ward_scope = _ward_scope_from_discharge_case(instance)
+    _invalidate_ward_board_for_facility_code(facility_code, "discharge_case_changed", ward_scope=ward_scope)
+
+
+@receiver(post_save, sender="discharge.DischargeTask")
+@receiver(post_delete, sender="discharge.DischargeTask")
+def invalidate_ward_board_on_discharge_task_change(sender, instance, **kwargs):
+    facility_code = _facility_code_from_discharge_task(instance)
+    ward_scope = _ward_scope_from_discharge_task(instance)
+    _invalidate_ward_board_for_facility_code(facility_code, "discharge_task_changed", ward_scope=ward_scope)
+
+
+def invalidate_ward_board_on_board_task_change(sender, instance, **kwargs):
+    facility_code = _normalize_facility_code_from_obj(instance)
+    ward_scope = _ward_scope_from_board_task(instance)
+    _invalidate_ward_board_for_facility_code(facility_code, "board_task_changed", ward_scope=ward_scope)
+
+
+def invalidate_ward_board_on_board_task_related_event(sender, instance, **kwargs):
+    facility_code = _facility_code_from_board_task_related_event(instance)
+    ward_scope = _ward_scope_from_board_task_related_event(instance)
+    _invalidate_ward_board_for_facility_code(facility_code, "board_task_changed", ward_scope=ward_scope)
+
+
+def _connect_optional_ward_board_model(model_name, receiver_func, dispatch_uid_prefix):
+    try:
+        model = apps.get_model("ward_board", model_name)
+    except LookupError:
+        return
+    post_save.connect(
+        receiver_func,
+        sender=model,
+        dispatch_uid=f"{dispatch_uid_prefix}.post_save",
+    )
+    post_delete.connect(
+        receiver_func,
+        sender=model,
+        dispatch_uid=f"{dispatch_uid_prefix}.post_delete",
+    )
+
+
+_connect_optional_ward_board_model(
+    "WardBoardTask",
+    invalidate_ward_board_on_board_task_change,
+    "dashboards.ward_board_task",
+)
+_connect_optional_ward_board_model(
+    "WardBoardTaskEvent",
+    invalidate_ward_board_on_board_task_related_event,
+    "dashboards.ward_board_task_event",
+)
+_connect_optional_ward_board_model(
+    "WardBoardAcknowledgement",
+    invalidate_ward_board_on_board_task_related_event,
+    "dashboards.ward_board_acknowledgement",
+)

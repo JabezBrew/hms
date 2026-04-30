@@ -42,6 +42,7 @@ SINGLE_SITE_HOSPITAL_FEATURES = (
     'bed_management',
     'nursing_workflows',
     'discharge_workflows',
+    'ward_task_board',
 )
 
 
@@ -87,6 +88,25 @@ def test_feature_manifest_declares_complete_commercial_contract():
         for feature_key, config in FEATURE_MANIFEST.items()
         if config['sellable']
     }
+
+
+def test_ward_task_board_feature_manifest_declares_gating_contract():
+    config = FEATURE_MANIFEST['ward_task_board']
+
+    assert config['api_prefixes'] == ['/api/ward-board/']
+    assert config['depends_on'] == (
+        'patient_chronicle',
+        'wards',
+        'inpatient_admissions',
+        'nursing_workflows',
+    )
+    assert config['optional_lanes'] == (
+        'laboratory',
+        'discharge_workflows',
+        'pharmacy',
+        'referrals',
+    )
+    assert feature_for_api_path('/api/ward-board/tasks/') == 'ward_task_board'
 
 
 @pytest.mark.parametrize(
@@ -236,6 +256,7 @@ def test_feature_dependencies_are_normalized_fail_closed():
             'inpatient_admissions': True,
             'nursing_workflows': True,
             'discharge_workflows': True,
+            'ward_task_board': True,
             'billing': False,
             'insurance_claims': True,
             'fhir_claims': True,
@@ -252,6 +273,7 @@ def test_feature_dependencies_are_normalized_fail_closed():
     assert config['features']['inpatient_admissions'] is False
     assert config['features']['nursing_workflows'] is False
     assert config['features']['discharge_workflows'] is False
+    assert config['features']['ward_task_board'] is False
     assert config['features']['billing'] is False
     assert config['features']['insurance_claims'] is False
     assert config['features']['fhir_claims'] is False
@@ -265,10 +287,12 @@ def test_feature_dependency_violation_helper_reports_impossible_combinations():
         'fhir_claims': True,
         'wards': False,
         'bed_management': True,
+        'ward_task_board': True,
     })
     assert features['insurance_claims'] is False
     assert features['fhir_claims'] is False
     assert features['bed_management'] is False
+    assert features['ward_task_board'] is False
 
     violations = feature_dependency_violations({
         'billing': False,
@@ -276,12 +300,14 @@ def test_feature_dependency_violation_helper_reports_impossible_combinations():
         'fhir_claims': True,
         'wards': False,
         'bed_management': True,
+        'ward_task_board': True,
     })
 
     assert ('insurance_claims', 'billing') in violations
     assert ('fhir_claims', 'billing') in violations
     assert ('fhir_claims', 'insurance_claims') not in violations
     assert ('bed_management', 'wards') in violations
+    assert ('ward_task_board', 'wards') in violations
 
 
 def test_setting_feature_default_normalizes_partial_deployment_features(settings):
@@ -327,6 +353,7 @@ def test_api_path_feature_mapping_supports_module_and_nested_roster_paths(settin
         'cross_facility_referrals': False,
         'cross_facility_record_exchange': False,
         'referrals': False,
+        'ward_task_board': False,
     }
     settings.PRACTITIONER_SCHEDULING_MODE = 'simple'
 
@@ -341,6 +368,8 @@ def test_api_path_feature_mapping_supports_module_and_nested_roster_paths(settin
     )
     assert feature_for_api_path('/api/referrals/') == 'referrals'
     assert api_path_enabled('/api/referrals/') == (False, 'referrals')
+    assert feature_for_api_path('/api/ward-board/tasks/') == 'ward_task_board'
+    assert api_path_enabled('/api/ward-board/tasks/') == (False, 'ward_task_board')
     assert feature_for_api_path('/api/consent/referrals/') == 'cross_facility_referrals'
     assert api_path_enabled('/api/consent/referrals/') == (
         False,

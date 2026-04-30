@@ -13,8 +13,11 @@ from apps.dashboards.realtime import (
     invalidate_nurse_dashboard,
     invalidate_reception_dashboard,
     invalidate_admin_dashboard,
+    invalidate_ward_task_board,
     nurse_dashboard_projection_cache_key,
     reception_dashboard_projection_cache_key,
+    ward_task_board_group_name,
+    ward_task_board_projection_cache_key,
 )
 
 
@@ -140,6 +143,45 @@ def test_invalidate_nurse_dashboard_clears_scoped_projection_cache_and_broadcast
         assert payload["ward_scope"] == "ward-1"
 
     sent_again = invalidate_nurse_dashboard(facility_code, ward_scope="ward-1", reason="task_changed")
+    assert sent_again is False
+
+
+@pytest.mark.django_db
+def test_invalidate_ward_task_board_clears_cache_and_sends_phi_free_payload(monkeypatch):
+    facility_code = "WDB"
+    all_scope_key = ward_task_board_projection_cache_key(facility_code, "all")
+    ward_scope_key = ward_task_board_projection_cache_key(facility_code, "ward-1")
+    cache.set(all_scope_key, {"lanes": []}, timeout=60)
+    cache.set(ward_scope_key, {"lanes": [{"count": 2}]}, timeout=60)
+
+    calls = []
+
+    class FakeChannelLayer:
+        async def group_send(self, group, payload):
+            calls.append((group, payload))
+
+    monkeypatch.setattr("apps.dashboards.realtime.get_channel_layer", lambda: FakeChannelLayer())
+
+    sent = invalidate_ward_task_board(facility_code, ward_scope="ward-1", reason="lab_result_changed")
+    assert sent is True
+    assert cache.get(all_scope_key) is None
+    assert cache.get(ward_scope_key) is None
+    assert len(calls) == 2
+
+    groups = {group for group, _payload in calls}
+    assert groups == {
+        ward_task_board_group_name(facility_code, "all"),
+        ward_task_board_group_name(facility_code, "ward-1"),
+    }
+    for _, payload in calls:
+        assert set(payload) == {"type", "facility_code", "ward_scope", "reason", "timestamp"}
+        assert payload["type"] == "ward_board.invalidate"
+        assert payload["facility_code"] == facility_code
+        assert payload["ward_scope"] == "ward-1"
+        assert payload["reason"] == "lab_result_changed"
+        assert payload["timestamp"]
+
+    sent_again = invalidate_ward_task_board(facility_code, ward_scope="ward-1", reason="lab_result_changed")
     assert sent_again is False
 
 
