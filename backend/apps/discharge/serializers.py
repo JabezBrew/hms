@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from apps.billing.models import Invoice
 from apps.discharge.models import DischargeCase, DischargeTask
-from apps.discharge.services import build_billing_summary
+from apps.discharge.services import BILLING_ROLES, build_billing_summary
 
 
 class DischargeTaskSerializer(serializers.ModelSerializer):
@@ -120,6 +120,10 @@ class DischargeCaseDetailSerializer(DischargeCaseListSerializer):
         tasks = getattr(obj, 'prefetched_tasks', None)
         if tasks is None:
             tasks = obj.tasks.all().order_by('blocking', 'task_type')
+        user = self.context.get('request').user if self.context.get('request') else None
+        user_type = getattr(user, 'user_type', None)
+        if user_type in BILLING_ROLES:
+            tasks = [task for task in tasks if task.task_type == DischargeTask.TaskType.BILLING_CLEARANCE]
         return DischargeTaskSerializer(tasks, many=True).data
 
 
@@ -159,4 +163,3 @@ class DischargeFinalizeSerializer(serializers.Serializer):
 
 class DischargeCancelSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True)
-
