@@ -2,7 +2,6 @@ import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
@@ -19,6 +18,7 @@ import {
   DashboardGrid,
 } from '@/components/dashboard';
 import {
+  useDashboardModuleGates,
   useDashboardActions,
   useReceptionDashboardLiveUpdates,
   useReceptionistDashboard,
@@ -36,8 +36,14 @@ import { PageState } from '@/shared/components/page/PageState';
 export default function ReceptionistDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
+  const hasReceptionModules = moduleGate.appointmentsEnabled
+    || moduleGate.billingEnabled
+    || moduleGate.emergencyEncountersEnabled
+    || moduleGate.patientRegistrationEnabled;
+  const dashboardEnabled = Boolean(facilityCode) && moduleGate.hasFeatureMap && hasReceptionModules;
   const { isConnected: isLiveConnected } = useReceptionDashboardLiveUpdates({
-    enabled: Boolean(facilityCode),
+    enabled: dashboardEnabled,
   });
 
   // Fetch dashboard data with websocket-triggered refresh, polling fallback.
@@ -47,10 +53,13 @@ export default function ReceptionistDashboard() {
     error,
     refetch,
     isFetching,
-  } = useReceptionistDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
+  } = useReceptionistDashboard({
+    refetchInterval: isLiveConnected ? false : 30000,
+    enabled: dashboardEnabled,
+  });
 
   // Action handlers
-  const { checkInPatient, scheduleAppointment } = useDashboardActions();
+  const { checkInPatient } = useDashboardActions();
 
   if (!facilityCode) {
     return (
@@ -63,6 +72,61 @@ export default function ReceptionistDashboard() {
           <div className="p-4 sm:p-6">
             <FacilityRequiredPanel />
           </div>
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (moduleGate.isResolving) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Reception Dashboard"
+            description="Manage check-ins, scheduling, and front desk operations"
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Reception Dashboard"
+            description="Manage check-ins, scheduling, and front desk operations"
+          />
+          <PageState
+            variant="error"
+            title="Feature capabilities unavailable"
+            description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+            action={() => moduleGate.refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!hasReceptionModules) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Reception Dashboard"
+            description="Manage check-ins, scheduling, and front desk operations"
+          />
+          <PageState
+            variant="empty"
+            title="Reception modules disabled"
+            description="Patient registration, appointments, triage, and billing are not enabled for this deployment."
+            fullHeight={false}
+            className="min-h-0"
+          />
         </PageShell>
       </Layout>
     );
@@ -102,22 +166,26 @@ export default function ReceptionistDashboard() {
           description="Manage patient check-ins, registrations, and appointments"
           actions={(
             <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => navigate('/patients/create')}
-              >
-                <UserPlus className="h-4 w-4 mr-2" />
-                Register Patient
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/triage')}
-              >
-                <ClipboardList className="h-4 w-4 mr-2" />
-                Triage Queue
-              </Button>
+              {moduleGate.patientRegistrationEnabled ? (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => navigate('/patients/create')}
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Register Patient
+                </Button>
+              ) : null}
+              {moduleGate.emergencyEncountersEnabled ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/triage')}
+                >
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  Triage Queue
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 size="icon"
@@ -141,42 +209,51 @@ export default function ReceptionistDashboard() {
           </DashboardGrid>
         ) : (
           <DashboardGrid columns="4">
-            <StatCard
-              title="Check-In Queue"
-              value={checkInQueue.length}
-              subtitle="Waiting to check in"
-              icon={Users}
-              color="amber"
-            />
-            <StatCard
-              title="Today's Appointments"
-              value={stats.todays_appointments_count || 0}
-              subtitle={`${stats.checked_in_count || 0} checked in`}
-              icon={Calendar}
-              color="sky"
-            />
-            <StatCard
-              title="New Registrations"
-              value={recentRegistrations.length}
-              subtitle="Last 24 hours"
-              icon={UserPlus}
-              color="emerald"
-            />
-            <StatCard
-              title="Pending Payments"
-              value={stats.pending_payments_count || 0}
-              subtitle="Requires processing"
-              icon={DollarSign}
-              color="rose"
-            />
+            {moduleGate.appointmentsEnabled ? (
+              <>
+                <StatCard
+                  title="Check-In Queue"
+                  value={checkInQueue.length}
+                  subtitle="Waiting to check in"
+                  icon={Users}
+                  color="amber"
+                />
+                <StatCard
+                  title="Today's Appointments"
+                  value={stats.todays_appointments_count || 0}
+                  subtitle={`${stats.checked_in_count || 0} checked in`}
+                  icon={Calendar}
+                  color="sky"
+                />
+              </>
+            ) : null}
+            {moduleGate.patientRegistrationEnabled ? (
+              <StatCard
+                title="New Registrations"
+                value={recentRegistrations.length}
+                subtitle="Last 24 hours"
+                icon={UserPlus}
+                color="emerald"
+              />
+            ) : null}
+            {moduleGate.billingEnabled ? (
+              <StatCard
+                title="Pending Payments"
+                value={stats.pending_payments_count || 0}
+                subtitle="Requires processing"
+                icon={DollarSign}
+                color="rose"
+              />
+            ) : null}
           </DashboardGrid>
         )}
 
         {/* Check-In Queue */}
-        <DashboardSection
-          title="Check-In Queue"
-          subtitle="Patients with appointments today who haven't checked in"
-        >
+        {moduleGate.appointmentsEnabled ? (
+          <DashboardSection
+            title="Check-In Queue"
+            subtitle="Patients with appointments today who haven't checked in"
+          >
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -243,22 +320,24 @@ export default function ReceptionistDashboard() {
               ))}
             </div>
           )}
-        </DashboardSection>
+          </DashboardSection>
+        ) : null}
 
         {/* Today's Appointments */}
-        <DashboardSection
-          title="Today's Appointments"
-          subtitle={`${todaysAppointments.length} appointments scheduled`}
-          actions={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/appointments')}
-            >
-              View All
-            </Button>
-          }
-        >
+        {moduleGate.appointmentsEnabled ? (
+          <DashboardSection
+            title="Today's Appointments"
+            subtitle={`${todaysAppointments.length} appointments scheduled`}
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/appointments')}
+              >
+                View All
+              </Button>
+            }
+          >
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(4)].map((_, i) => (
@@ -316,13 +395,15 @@ export default function ReceptionistDashboard() {
               ))}
             </div>
           )}
-        </DashboardSection>
+          </DashboardSection>
+        ) : null}
 
         {/* Recent Registrations */}
-        <DashboardSection
-          title="Recent Registrations"
-          subtitle="New patients registered in the last 24 hours"
-        >
+        {moduleGate.patientRegistrationEnabled ? (
+          <DashboardSection
+            title="Recent Registrations"
+            subtitle="New patients registered in the last 24 hours"
+          >
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -364,22 +445,23 @@ export default function ReceptionistDashboard() {
                     },
                   ].filter(Boolean)}
                   actions={[
-                    {
+                    moduleGate.appointmentsEnabled && {
                       label: 'Schedule Appointment',
                       variant: 'default',
                       onClick: () => navigate(`/appointments/create?patient=${patient.id}`),
                     },
-                    {
+                    moduleGate.patientChronicleEnabled && {
                       label: 'View Profile',
                       variant: 'outline',
                       onClick: () => navigate(`/patients/${patient.id}`),
                     },
-                  ]}
+                  ].filter(Boolean)}
                 />
               ))}
             </div>
           )}
-        </DashboardSection>
+          </DashboardSection>
+        ) : null}
         </div>
       </PageShell>
     </Layout>

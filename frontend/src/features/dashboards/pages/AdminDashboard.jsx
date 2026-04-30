@@ -29,7 +29,12 @@ import {
   useAdminDashboardV2Compliance,
   useAdminDashboardV2Summary,
   useAdminDashboardV2Workforce,
+  useDashboardModuleGates,
 } from '@/features/dashboards/hooks';
+import {
+  DASHBOARD_FEATURES,
+  filterDashboardItemsByFeature,
+} from '@/features/dashboards/utils/moduleGates';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -171,6 +176,11 @@ export default function AdminDashboard() {
     workforce: false,
     compliance: false,
   });
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
+  const dashboardQueriesEnabled = Boolean(facilityCode) && moduleGate.hasFeatureMap;
+  const capacitySectionEnabled = moduleGate.wardsEnabled && moduleGate.inpatientAdmissionsEnabled;
+  const workforceSectionEnabled = moduleGate.rostersEnabled;
+  const complianceSectionEnabled = moduleGate.auditEnabled;
 
   const pageMeta = usePageMeta({
     title: 'Admin Dashboard | Hospital Management System',
@@ -181,43 +191,53 @@ export default function AdminDashboard() {
   });
 
   const { isConnected: isLiveConnected } = useAdminDashboardLiveUpdates({
-    enabled: Boolean(facilityCode),
+    enabled: dashboardQueriesEnabled,
   });
 
   const summaryQuery = useAdminDashboardV2Summary(
     { window },
     {
       refetchInterval: isLiveConnected ? false : 30000,
-      enabled: Boolean(facilityCode),
+      enabled: dashboardQueriesEnabled,
     },
   );
 
   const capacityQuery = useAdminDashboardV2Capacity(
     { window },
     {
-      enabled: Boolean(facilityCode) && expanded.capacity,
+      enabled: dashboardQueriesEnabled && capacitySectionEnabled && expanded.capacity,
     },
   );
 
   const workforceQuery = useAdminDashboardV2Workforce(
     { window },
     {
-      enabled: Boolean(facilityCode) && expanded.workforce,
+      enabled: dashboardQueriesEnabled && workforceSectionEnabled && expanded.workforce,
     },
   );
 
   const complianceQuery = useAdminDashboardV2Compliance(
     { window },
     {
-      enabled: Boolean(facilityCode) && expanded.compliance,
+      enabled: dashboardQueriesEnabled && complianceSectionEnabled && expanded.compliance,
     },
   );
 
   const dashboardData = summaryQuery.data || {};
   const kpis = dashboardData.kpis || {};
   const sectionSummaries = dashboardData.section_summaries || {};
-  const alerts = dashboardData.alerts_top || [];
-  const actionQueue = dashboardData.action_queue_top || [];
+  const alerts = useMemo(
+    () => filterDashboardItemsByFeature(
+      dashboardData.alerts_top || [],
+      moduleGate.enabledFeatures,
+      (alert) => alert.primary_action?.href,
+    ),
+    [dashboardData.alerts_top, moduleGate.enabledFeatures],
+  );
+  const actionQueue = useMemo(
+    () => filterDashboardItemsByFeature(dashboardData.action_queue_top || [], moduleGate.enabledFeatures),
+    [dashboardData.action_queue_top, moduleGate.enabledFeatures],
+  );
   const generatedAt = dashboardData?.meta?.generated_at;
 
   const anyFetching = summaryQuery.isFetching
@@ -227,13 +247,13 @@ export default function AdminDashboard() {
 
   const onRefresh = () => {
     summaryQuery.refetch();
-    if (expanded.capacity) {
+    if (expanded.capacity && capacitySectionEnabled) {
       capacityQuery.refetch();
     }
-    if (expanded.workforce) {
+    if (expanded.workforce && workforceSectionEnabled) {
       workforceQuery.refetch();
     }
-    if (expanded.compliance) {
+    if (expanded.compliance && complianceSectionEnabled) {
       complianceQuery.refetch();
     }
   };
@@ -253,6 +273,7 @@ export default function AdminDashboard() {
         subvalue: `${occupancy.occupied_beds || 0}/${occupancy.total_beds || 0} occupied`,
         icon: Bed,
         status: Number(occupancy.percent || 0) >= 100 ? 'critical' : Number(occupancy.percent || 0) >= 85 ? 'warning' : 'normal',
+        features: [...DASHBOARD_FEATURES.inpatientAdmissions, ...DASHBOARD_FEATURES.wards],
       },
       {
         label: 'Admissions Today',
@@ -260,6 +281,7 @@ export default function AdminDashboard() {
         subvalue: `${admissions.trend_pct || 0}% vs yesterday`,
         icon: UserPlus,
         status: 'normal',
+        features: DASHBOARD_FEATURES.inpatientAdmissions,
       },
       {
         label: 'Discharge Progress',
@@ -267,6 +289,7 @@ export default function AdminDashboard() {
         subvalue: `${discharges.completed || 0}/${discharges.planned || 0} completed`,
         icon: ClipboardList,
         status: Number(discharges.completion_rate || 0) < 70 ? 'warning' : 'normal',
+        features: DASHBOARD_FEATURES.dischargeWorkflows,
       },
       {
         label: 'Appointment Throughput',
@@ -274,6 +297,7 @@ export default function AdminDashboard() {
         subvalue: `${throughput.completed || 0}/${throughput.scheduled || 0} completed`,
         icon: Calendar,
         status: Number(throughput.completion_rate || 0) < 70 ? 'warning' : 'normal',
+        features: DASHBOARD_FEATURES.appointments,
       },
       {
         label: 'Staffing Coverage',
@@ -281,6 +305,7 @@ export default function AdminDashboard() {
         subvalue: `${staffing.critical_uncovered || 0} uncovered`,
         icon: Users,
         status: Number(staffing.critical_uncovered || 0) > 0 ? 'warning' : 'normal',
+        features: DASHBOARD_FEATURES.rosters,
       },
       {
         label: 'Compliance Queue',
@@ -288,9 +313,10 @@ export default function AdminDashboard() {
         subvalue: `${compliance.break_glass_pending_review || 0} break-glass, ${compliance.audit_anomalies_24h || 0} anomalies`,
         icon: Shield,
         status: Number(compliance.total || 0) > 0 ? 'warning' : 'normal',
+        features: DASHBOARD_FEATURES.audit,
       },
-    ];
-  }, [kpis]);
+    ].filter((metric) => moduleGate.canUse(metric.features));
+  }, [kpis, moduleGate]);
 
   if (!facilityCode) {
     return (
@@ -323,6 +349,43 @@ export default function AdminDashboard() {
             title="Failed to load admin dashboard"
             description={summaryQuery.error.message}
             action={() => summaryQuery.refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (moduleGate.isResolving) {
+    return (
+      <Layout>
+        {pageMeta}
+        <PageShell>
+          <PageHeader
+            title="Admin Dashboard"
+            description="Operational command center for capacity, workforce, and compliance"
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <Layout>
+        {pageMeta}
+        <PageShell>
+          <PageHeader
+            title="Admin Dashboard"
+            description="Operational command center for capacity, workforce, and compliance"
+          />
+          <PageState
+            variant="error"
+            title="Feature capabilities unavailable"
+            description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+            action={() => moduleGate.refetch()}
             fullHeight={false}
             className="min-h-0"
           />
@@ -491,15 +554,16 @@ export default function AdminDashboard() {
           </div>
 
           <div className="space-y-4">
-            <SectionPanel
-              title="Capacity"
-              description="Ward occupancy, throughput, and wait-time pressure"
-              summary={sectionSummaries.capacity}
-              open={expanded.capacity}
-              onToggle={() => setExpanded((current) => ({ ...current, capacity: !current.capacity }))}
-              loading={capacityQuery.isLoading}
-              error={capacityQuery.error}
-            >
+            {capacitySectionEnabled ? (
+              <SectionPanel
+                title="Capacity"
+                description="Ward occupancy, throughput, and wait-time pressure"
+                summary={sectionSummaries.capacity}
+                open={expanded.capacity}
+                onToggle={() => setExpanded((current) => ({ ...current, capacity: !current.capacity }))}
+                loading={capacityQuery.isLoading}
+                error={capacityQuery.error}
+              >
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-lg border border-border p-3">
                   <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Wait time</p>
@@ -531,17 +595,19 @@ export default function AdminDashboard() {
                   </div>
                 ))}
               </div>
-            </SectionPanel>
+              </SectionPanel>
+            ) : null}
 
-            <SectionPanel
-              title="Workforce"
-              description="Shift coverage gaps and immediate staffing risk"
-              summary={sectionSummaries.workforce}
-              open={expanded.workforce}
-              onToggle={() => setExpanded((current) => ({ ...current, workforce: !current.workforce }))}
-              loading={workforceQuery.isLoading}
-              error={workforceQuery.error}
-            >
+            {workforceSectionEnabled ? (
+              <SectionPanel
+                title="Workforce"
+                description="Shift coverage gaps and immediate staffing risk"
+                summary={sectionSummaries.workforce}
+                open={expanded.workforce}
+                onToggle={() => setExpanded((current) => ({ ...current, workforce: !current.workforce }))}
+                loading={workforceQuery.isLoading}
+                error={workforceQuery.error}
+              >
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-lg border border-border p-3">
                   <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Coverage</p>
@@ -580,17 +646,19 @@ export default function AdminDashboard() {
                   </div>
                 ) : null}
               </div>
-            </SectionPanel>
+              </SectionPanel>
+            ) : null}
 
-            <SectionPanel
-              title="Compliance"
-              description="Break-glass monitoring, audit anomalies, and documentation"
-              summary={sectionSummaries.compliance}
-              open={expanded.compliance}
-              onToggle={() => setExpanded((current) => ({ ...current, compliance: !current.compliance }))}
-              loading={complianceQuery.isLoading}
-              error={complianceQuery.error}
-            >
+            {complianceSectionEnabled ? (
+              <SectionPanel
+                title="Compliance"
+                description="Break-glass monitoring, audit anomalies, and documentation"
+                summary={sectionSummaries.compliance}
+                open={expanded.compliance}
+                onToggle={() => setExpanded((current) => ({ ...current, compliance: !current.compliance }))}
+                loading={complianceQuery.isLoading}
+                error={complianceQuery.error}
+              >
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-lg border border-border p-3">
                   <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Documentation completeness</p>
@@ -630,7 +698,8 @@ export default function AdminDashboard() {
                     </div>
                   ) : null}
               </div>
-            </SectionPanel>
+              </SectionPanel>
+            ) : null}
           </div>
         </div>
       </PageShell>

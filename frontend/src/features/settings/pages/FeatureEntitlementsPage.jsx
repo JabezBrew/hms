@@ -1,6 +1,6 @@
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js'
 import Boxes from 'lucide-react/dist/esm/icons/boxes.js'
-import Save from 'lucide-react/dist/esm/icons/save.js'
+import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js'
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -23,39 +23,95 @@ import {
   useDeleteFeatureEntitlement,
   useFeatureEntitlements,
   useSystemCapabilities,
+  useUpdateFeatureEntitlement,
 } from '@/hooks/useSystemQueries'
-import { usePageMeta } from '@/shared/hooks/usePageMeta'
 import { PageHeader } from '@/shared/components/page/PageHeader'
 import { PageShell } from '@/shared/components/page/PageShell'
+import { usePageMeta } from '@/shared/hooks/usePageMeta'
 
 const GLOBAL_SCOPE = 'global'
 const FACILITY_SCOPE = 'facility'
 const NO_FACILITY = '__none__'
 const EMPTY_ARRAY = []
+const EMPTY_OBJECT = {}
+
+const SOURCE_LABELS = {
+  deployment_profile: 'Deployment profile',
+  global_override: 'Global override',
+  facility_override: 'Facility override',
+}
+
+function sourceLabel(source) {
+  return SOURCE_LABELS[source] || source || 'Unknown'
+}
+
+function idMatches(left, right) {
+  return String(left || '') === String(right || '')
+}
 
 export default function FeatureEntitlementsPage() {
   const navigate = useNavigate()
   const [scope, setScope] = useState(GLOBAL_SCOPE)
   const [facilityId, setFacilityId] = useState(NO_FACILITY)
-  const [featureKey, setFeatureKey] = useState('')
-  const [isEnabled, setIsEnabled] = useState(true)
   const [reason, setReason] = useState('')
 
   const { data: capabilities, isLoading: capabilitiesLoading } = useSystemCapabilities()
-  const { data: entitlements, isLoading: entitlementsLoading } = useFeatureEntitlements()
+  const { data: entitlements, isLoading: entitlementsLoading } = useFeatureEntitlements({ page_size: 200 })
   const { data: facilities = [] } = useFacilities({ includeInactive: true })
   const createOverride = useCreateFeatureEntitlement()
+  const updateOverride = useUpdateFeatureEntitlement()
   const deleteOverride = useDeleteFeatureEntitlement()
 
   const featureManifest = capabilities?.feature_manifest || EMPTY_ARRAY
-  const effectiveFeatures = capabilities?.features || {}
-  const featureSources = capabilities?.feature_sources || {}
-  const overrides = entitlements?.results || entitlements || []
+  const effectiveFeatures = capabilities?.features || EMPTY_OBJECT
+  const featureSources = capabilities?.feature_sources || EMPTY_OBJECT
+  const overrides = entitlements?.results || entitlements || EMPTY_ARRAY
+  const isLoading = capabilitiesLoading || entitlementsLoading
+  const isSaving = createOverride.isPending || updateOverride.isPending || deleteOverride.isPending
+  const selectedFacility = facilities.find((facility) => idMatches(facility.id, facilityId))
+  const facilityRequired = scope === FACILITY_SCOPE && facilityId === NO_FACILITY
 
   const sortedFeatures = useMemo(
     () => [...featureManifest].sort((a, b) => a.label.localeCompare(b.label)),
     [featureManifest]
   )
+  const moduleFeatures = useMemo(
+    () => sortedFeatures.filter((feature) => feature.kind === 'module'),
+    [sortedFeatures]
+  )
+  const advancedFeatures = useMemo(
+    () => sortedFeatures.filter((feature) => feature.kind !== 'module'),
+    [sortedFeatures]
+  )
+
+  const globalOverrideByFeature = useMemo(() => {
+    const byFeature = new Map()
+    overrides
+      .filter((override) => override.scope === GLOBAL_SCOPE)
+      .forEach((override) => byFeature.set(override.feature_key, override))
+    return byFeature
+  }, [overrides])
+
+  const selectedOverrideByFeature = useMemo(() => {
+    const byFeature = new Map()
+    overrides.forEach((override) => {
+      if (scope === GLOBAL_SCOPE && override.scope === GLOBAL_SCOPE) {
+        byFeature.set(override.feature_key, override)
+        return
+      }
+
+      if (scope !== FACILITY_SCOPE || override.scope !== FACILITY_SCOPE || facilityId === NO_FACILITY) {
+        return
+      }
+
+      const matchesFacilityId = idMatches(override.facility, facilityId)
+      const matchesFacilityCode = selectedFacility?.code && override.facility_code === selectedFacility.code
+      if (matchesFacilityId || matchesFacilityCode) {
+        byFeature.set(override.feature_key, override)
+      }
+    })
+    return byFeature
+  }, [facilityId, overrides, scope, selectedFacility?.code])
 
   const pageMeta = usePageMeta({
     title: 'Feature Entitlements | HMS',
@@ -65,42 +121,127 @@ export default function FeatureEntitlementsPage() {
     ],
   })
 
-  const submitOverride = async (event) => {
-    event.preventDefault()
-    if (!featureKey) {
-      toast.error('Choose a feature to override')
-      return
-    }
-    if (scope === FACILITY_SCOPE && facilityId === NO_FACILITY) {
-      toast.error('Choose a facility for a facility override')
-      return
-    }
+  const resolveFeatureState = (feature) => {
+    const selectedOverride = selectedOverrideByFeature.get(feature.key)
+    const inheritedGlobalOverride = scope === FACILITY_SCOPE
+      ? globalOverrideByFeature.get(feature.key)
+      : null
+    const checked = selectedOverride?.is_enabled
+      ?? inheritedGlobalOverride?.is_enabled
+      ?? effectiveFeatures[feature.key] === true
+    const source = selectedOverride
+      ? `${scope === GLOBAL_SCOPE ? 'Global' : selectedFacility?.code || 'Facility'} override`
+      : inheritedGlobalOverride
+      ? 'Global override'
+      : sourceLabel(featureSources[feature.key])
 
-    try {
-      await createOverride.mutateAsync({
-        scope,
-        facility: scope === FACILITY_SCOPE ? facilityId : null,
-        feature_key: featureKey,
-        is_enabled: isEnabled,
-        reason,
-      })
-      toast.success('Feature override saved')
-      setReason('')
-    } catch (error) {
-      toast.error(error.message || 'Failed to save feature override')
+    return {
+      checked,
+      source,
+      selectedOverride,
     }
   }
 
-  const removeOverride = async (overrideId) => {
+  const saveFeatureOverride = async (feature, nextEnabled) => {
+    if (facilityRequired) {
+      toast.error('Choose a facility before setting a facility override')
+      return
+    }
+
+    const selectedOverride = selectedOverrideByFeature.get(feature.key)
+    const cleanReason = reason.trim()
+
+    try {
+      if (selectedOverride) {
+        await updateOverride.mutateAsync({
+          id: selectedOverride.id,
+          data: {
+            is_enabled: nextEnabled,
+            reason: cleanReason,
+          },
+        })
+      } else {
+        await createOverride.mutateAsync({
+          scope,
+          facility: scope === FACILITY_SCOPE ? facilityId : null,
+          feature_key: feature.key,
+          is_enabled: nextEnabled,
+          reason: cleanReason,
+        })
+      }
+      toast.success(`${feature.label} ${nextEnabled ? 'enabled' : 'disabled'}`)
+    } catch (error) {
+      toast.error(error.message || `Failed to update ${feature.label}`)
+    }
+  }
+
+  const removeOverride = async (overrideId, label = 'Feature') => {
     try {
       await deleteOverride.mutateAsync(overrideId)
-      toast.success('Feature override removed')
+      toast.success(`${label} override removed`)
     } catch (error) {
       toast.error(error.message || 'Failed to remove feature override')
     }
   }
 
-  const isLoading = capabilitiesLoading || entitlementsLoading
+  const renderFeatureToggle = (feature) => {
+    const state = resolveFeatureState(feature)
+    const toggleDisabled = isLoading || isSaving || facilityRequired
+
+    return (
+      <div
+        key={feature.key}
+        className="rounded-xl border border-border bg-background/60 p-4"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
+            <h3 className="font-heading text-sm text-foreground">
+              {feature.label}
+            </h3>
+            <p className="font-mono text-[11px] text-muted-foreground">
+              {feature.key} · {feature.kind}
+            </p>
+          </div>
+          <Switch
+            checked={state.checked}
+            disabled={toggleDisabled}
+            onCheckedChange={(checked) => saveFeatureOverride(feature, checked)}
+            aria-label={`Toggle ${feature.label}`}
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-1">
+            <span
+              className={`inline-flex font-mono text-[10px] uppercase tracking-wider rounded-full px-2 py-1 ${
+                state.checked
+                  ? 'bg-emerald-500/10 text-emerald-400'
+                  : 'bg-rose-500/10 text-rose-400'
+              }`}
+            >
+              {state.checked ? 'Enabled' : 'Disabled'}
+            </span>
+            <p className="font-mono text-[11px] text-muted-foreground">
+              Source: {state.source}
+            </p>
+          </div>
+          {state.selectedOverride ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => removeOverride(state.selectedOverride.id, feature.label)}
+              disabled={isSaving}
+              className="font-mono text-xs"
+            >
+              <RotateCcw className="mr-2 h-3.5 w-3.5" />
+              Inherit
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <PageShell>
@@ -131,65 +272,33 @@ export default function FeatureEntitlementsPage() {
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
           <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-            <div className="flex items-center justify-between gap-4 mb-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
               <div>
-                <h2 className="font-display text-xl text-foreground">Effective Features</h2>
+                <h2 className="font-display text-xl text-foreground">Module Toggles</h2>
                 <p className="text-sm text-muted-foreground">
                   Profile: {capabilities?.profile_label || capabilities?.deployment_profile || 'Unknown'}
                 </p>
               </div>
               <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                Facility {capabilities?.facility_code || 'global'}
+                Current facility {capabilities?.facility_code || 'global'}
               </span>
             </div>
 
             {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading feature matrix...</p>
+              <p className="text-sm text-muted-foreground">Loading module toggles...</p>
+            ) : moduleFeatures.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No product modules are available.</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {sortedFeatures.map((feature) => {
-                  const enabled = effectiveFeatures[feature.key] === true
-                  return (
-                    <div
-                      key={feature.key}
-                      className="rounded-xl border border-border bg-background/60 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-heading text-sm text-foreground">
-                            {feature.label}
-                          </h3>
-                          <p className="font-mono text-[11px] text-muted-foreground">
-                            {feature.key} · {feature.kind}
-                          </p>
-                        </div>
-                        <span
-                          className={`font-mono text-[10px] uppercase tracking-wider rounded-full px-2 py-1 ${
-                            enabled
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : 'bg-rose-500/10 text-rose-400'
-                          }`}
-                        >
-                          {enabled ? 'Enabled' : 'Disabled'}
-                        </span>
-                      </div>
-                      <p className="mt-3 font-mono text-[11px] text-muted-foreground">
-                        Source: {featureSources[feature.key] || 'unknown'}
-                      </p>
-                    </div>
-                  )
-                })}
+                {moduleFeatures.map(renderFeatureToggle)}
               </div>
             )}
           </section>
 
           <aside className="space-y-6">
-            <form
-              onSubmit={submitOverride}
-              className="bg-card border border-border rounded-2xl p-5 sm:p-6 space-y-4"
-            >
+            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 space-y-4">
               <div>
-                <h2 className="font-display text-xl text-foreground">Add Override</h2>
+                <h2 className="font-display text-xl text-foreground">Toggle Scope</h2>
                 <p className="text-sm text-muted-foreground">
                   Facility overrides win over global overrides and deployment defaults.
                 </p>
@@ -224,32 +333,16 @@ export default function FeatureEntitlementsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {facilityRequired ? (
+                    <p className="text-xs text-amber-500">
+                      Choose a facility before changing facility-level toggles.
+                    </p>
+                  ) : null}
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label className="font-mono text-xs uppercase">Feature</Label>
-                <Select value={featureKey} onValueChange={setFeatureKey}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose feature" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sortedFeatures.map((feature) => (
-                      <SelectItem key={feature.key} value={feature.key}>
-                        {feature.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl border border-border p-3">
-                <Label className="font-mono text-xs uppercase">Enabled</Label>
-                <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="reason" className="font-mono text-xs uppercase">Reason</Label>
+                <Label htmlFor="reason" className="font-mono text-xs uppercase">Change reason</Label>
                 <Input
                   id="reason"
                   value={reason}
@@ -258,12 +351,7 @@ export default function FeatureEntitlementsPage() {
                   placeholder="Optional operational reason"
                 />
               </div>
-
-              <Button type="submit" disabled={createOverride.isPending} className="w-full">
-                <Save className="h-4 w-4 mr-2" />
-                Save Override
-              </Button>
-            </form>
+            </section>
 
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <h2 className="font-display text-xl text-foreground mb-4">Active Overrides</h2>
@@ -284,7 +372,7 @@ export default function FeatureEntitlementsPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        onClick={() => removeOverride(override.id)}
+                        onClick={() => removeOverride(override.id, override.feature_label)}
                         disabled={deleteOverride.isPending}
                         aria-label={`Remove ${override.feature_key} override`}
                       >
@@ -299,6 +387,24 @@ export default function FeatureEntitlementsPage() {
               </div>
             </section>
           </aside>
+
+          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6 xl:col-span-2">
+            <div className="mb-5">
+              <h2 className="font-display text-xl text-foreground">Advanced Feature Controls</h2>
+              <p className="text-sm text-muted-foreground">
+                Platform, subfeature, and integration toggles that support the commercial modules.
+              </p>
+            </div>
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading feature controls...</p>
+            ) : advancedFeatures.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No advanced features are available.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {advancedFeatures.map(renderFeatureToggle)}
+              </div>
+            )}
+          </section>
         </div>
       </main>
     </PageShell>

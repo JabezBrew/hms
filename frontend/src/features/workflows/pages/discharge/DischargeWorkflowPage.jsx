@@ -7,6 +7,7 @@ import { Layout } from '@/components/layout/layout';
 import { WorkflowProgress, WorkflowStepRenderer } from '@/components/workflow';
 import { useDischargeWorkflow } from '@/features/workflows/hooks';
 import { usePatient } from '@/features/patients/hooks/usePatientQueries';
+import { useDashboardModuleGates } from '@/features/dashboards/hooks';
 import { PatientIdentityHero } from '@/components/chronicle';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -28,8 +29,12 @@ export default function DischargeWorkflowPage() {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [workflowData, setWorkflowData] = useState(null);
+  const moduleGate = useDashboardModuleGates();
+  const workflowEnabled = moduleGate.dischargeWorkflowsEnabled && moduleGate.patientChronicleEnabled;
 
-  const { data: patient, isLoading: patientLoading } = usePatient(patientId);
+  const { data: patient, isLoading: patientLoading } = usePatient(patientId, {
+    enabled: workflowEnabled,
+  });
   const { startDischarge, updateDischargeStep, completeDischarge } = useDischargeWorkflow();
 
   const workflowDef = {
@@ -64,10 +69,10 @@ export default function DischargeWorkflowPage() {
   };
 
   useEffect(() => {
-    if (!workflowId && patientId && admissionId) {
+    if (workflowEnabled && !workflowId && patientId && admissionId) {
       handleStartWorkflow();
     }
-  }, [patientId, admissionId, workflowId]);
+  }, [patientId, admissionId, workflowId, workflowEnabled]);
 
   const handleStartWorkflow = async () => {
     try {
@@ -154,6 +159,62 @@ export default function DischargeWorkflowPage() {
     title: 'Medical Discharge Workflow | HMS',
     breadcrumbs,
   });
+
+  if (moduleGate.isResolving) {
+    return (
+      <Layout>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Medical Discharge Workflow"
+            description="Guided steps to submit a medical discharge for operational clearance."
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <Layout>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Medical Discharge Workflow"
+            description="Guided steps to submit a medical discharge for operational clearance."
+          />
+          <PageState
+            variant="error"
+            title="Feature capabilities unavailable"
+            description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+            action={() => moduleGate.refetch()}
+            fullHeight={false}
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!workflowEnabled) {
+    return (
+      <Layout>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Medical Discharge Workflow"
+            description="Guided steps to submit a medical discharge for operational clearance."
+          />
+          <PageState
+            variant="empty"
+            title="Medical discharge disabled"
+            description="Discharge workflows and patient chronicle must both be enabled to launch medical discharge."
+            fullHeight={false}
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
 
   if (!patientId || !admissionId) {
     return (

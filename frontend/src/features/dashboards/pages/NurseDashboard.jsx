@@ -6,7 +6,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
 import {
@@ -16,8 +16,8 @@ import {
   DashboardSection,
   DashboardGrid,
 } from '@/components/dashboard';
-import { WorkflowLauncher } from '@/components/workflow';
 import {
+  useDashboardModuleGates,
   useDashboardActions,
   useNurseDashboard,
   useNurseDashboardLiveUpdates,
@@ -44,14 +44,14 @@ export default function NurseDashboard() {
   const navigate = useNavigate();
   const [selectedWard, setSelectedWard] = useState('all');
   const { facilityCode } = useAuth();
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
+  const dashboardEnabled = Boolean(facilityCode) && moduleGate.nursingWorkflowsEnabled;
 
-  // Fetch ward list
-  const { data: wardsData } = useWards();
-  const wards = wardsData || [];
-
-  const wardFilters = selectedWard && selectedWard !== 'all' ? { ward: selectedWard } : {};
+  const wardFilters = moduleGate.wardsEnabled && selectedWard && selectedWard !== 'all'
+    ? { ward: selectedWard }
+    : {};
   const { isConnected: isLiveConnected } = useNurseDashboardLiveUpdates({
-    enabled: Boolean(facilityCode),
+    enabled: dashboardEnabled,
     wardScope: selectedWard,
   });
 
@@ -62,15 +62,22 @@ export default function NurseDashboard() {
     error,
     refetch,
     isFetching,
-  } = useNurseDashboard(wardFilters, { refetchInterval: isLiveConnected ? false : 30000 });
+  } = useNurseDashboard(wardFilters, {
+    refetchInterval: isLiveConnected ? false : 30000,
+    enabled: dashboardEnabled,
+  });
 
   // Action handlers
   const {
     administerMedication,
     completeTask,
-    acknowledgeAlert,
-    recordVitals,
   } = useDashboardActions();
+
+  useEffect(() => {
+    if (!moduleGate.wardsEnabled && selectedWard !== 'all') {
+      setSelectedWard('all');
+    }
+  }, [moduleGate.wardsEnabled, selectedWard]);
 
   if (!facilityCode) {
     return (
@@ -79,25 +86,68 @@ export default function NurseDashboard() {
           <PageHeader
             title="Nurse Dashboard"
             description="Monitor patients, administer medications, and manage tasks"
-            actions={(
-              <Select value={selectedWard} onValueChange={setSelectedWard}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="All Wards" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Wards</SelectItem>
-                  {wards.map((ward) => (
-                    <SelectItem key={ward.id} value={ward.id}>
-                      {ward.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            actions={moduleGate.wardsEnabled ? (
+              <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+            ) : null}
           />
           <div className="p-4 sm:p-6">
             <FacilityRequiredPanel />
           </div>
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (moduleGate.isResolving) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Nurse Dashboard"
+            description="Monitor patients, administer medications, and manage tasks"
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Nurse Dashboard"
+            description="Monitor patients, administer medications, and manage tasks"
+          />
+          <PageState
+            variant="error"
+            title="Feature capabilities unavailable"
+            description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+            action={() => moduleGate.refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.nursingWorkflowsEnabled) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Nurse Dashboard"
+            description="Monitor patients, administer medications, and manage tasks"
+          />
+          <PageState
+            variant="empty"
+            title="Nurse dashboard disabled"
+            description="Nursing workflows are not enabled for this deployment."
+            fullHeight={false}
+            className="min-h-0"
+          />
         </PageShell>
       </Layout>
     );
@@ -110,21 +160,9 @@ export default function NurseDashboard() {
           <PageHeader
             title="Nurse Dashboard"
             description="Monitor patients, administer medications, and manage tasks"
-            actions={(
-              <Select value={selectedWard} onValueChange={setSelectedWard}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="All Wards" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Wards</SelectItem>
-                  {wards.map((ward) => (
-                    <SelectItem key={ward.id} value={ward.id}>
-                      {ward.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            actions={moduleGate.wardsEnabled ? (
+              <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+            ) : null}
           />
           <PageState
             variant="error"
@@ -148,20 +186,22 @@ export default function NurseDashboard() {
   const urgentItems = [
     ...urgent.critical_alerts.map((alert) => ({
       id: alert.id,
+      patient_id: alert.patient_id,
       label: 'ALERT',
       patient_name: alert.patient_name,
       description: alert.message,
       time: format(new Date(alert.created_at), 'h:mm a'),
       badge: alert.severity.toUpperCase(),
     })),
-    ...urgent.overdue_medications.map((med) => ({
+    ...(moduleGate.pharmacyEnabled ? urgent.overdue_medications.map((med) => ({
       id: med.id,
+      patient_id: med.patient_id,
       label: 'OVERDUE MED',
       patient_name: med.patient_name,
       description: `${med.medication_name} - Scheduled: ${format(new Date(med.scheduled_time), 'h:mm a')}`,
       time: `${Math.floor((new Date() - new Date(med.scheduled_time)) / 60000)} min late`,
       badge: 'OVERDUE',
-    })),
+    })) : []),
   ];
 
   return (
@@ -172,19 +212,9 @@ export default function NurseDashboard() {
           description="Monitor patients, administer medications, and manage tasks"
           actions={(
             <div className="flex items-center gap-2">
-              <Select value={selectedWard} onValueChange={setSelectedWard}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="All Wards" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Wards</SelectItem>
-                  {wards.map((ward) => (
-                    <SelectItem key={ward.id} value={ward.id}>
-                      {ward.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {moduleGate.wardsEnabled ? (
+                <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+              ) : null}
               <Button
                 variant="outline"
                 size="icon"
@@ -200,14 +230,15 @@ export default function NurseDashboard() {
 
         <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
         {/* Urgent Banner */}
-        {urgent.count > 0 && (
+        {urgentItems.length > 0 && (
           <UrgentBanner
             items={urgentItems}
             severity="critical"
             title="Urgent Items"
             onItemClick={(item) => {
-              // Navigate to patient detail or handle alert
-              console.log('Urgent item clicked:', item);
+              if (moduleGate.patientChronicleEnabled && item.patient_id) {
+                navigate(`/patients/${item.patient_id}`);
+              }
             }}
           />
         )}
@@ -235,13 +266,15 @@ export default function NurseDashboard() {
               icon={AlertTriangle}
               color="rose"
             />
-            <StatCard
-              title="Medications Due"
-              value={medicationsSchedule.length}
-              subtitle="Next 2 hours"
-              icon={Pill}
-              color="sky"
-            />
+            {moduleGate.pharmacyEnabled ? (
+              <StatCard
+                title="Medications Due"
+                value={medicationsSchedule.length}
+                subtitle="Next 2 hours"
+                icon={Pill}
+                color="sky"
+              />
+            ) : null}
             <StatCard
               title="Pending Tasks"
               value={tasks.length}
@@ -294,12 +327,12 @@ export default function NurseDashboard() {
                     },
                   ].filter(Boolean)}
                   metadata={[
-                    {
+                    moduleGate.wardsEnabled && {
                       label: 'Ward/Bed',
                       value: `${patient.ward_name} - Bed ${patient.bed_number}`,
                       icon: Bed,
                     },
-                    {
+                    moduleGate.inpatientAdmissionsEnabled && {
                       label: 'Admission',
                       value: format(new Date(patient.admission_date), 'MMM d, yyyy'),
                       icon: Clock,
@@ -311,18 +344,18 @@ export default function NurseDashboard() {
                     },
                   ].filter(Boolean)}
                   actions={[
-                    {
+                    moduleGate.patientChronicleEnabled && {
                       label: 'Record Vitals',
                       variant: 'default',
                       onClick: () => navigate(`/patients/${patient.patient_id}`),
                     },
-                    {
+                    moduleGate.patientChronicleEnabled && {
                       label: 'View Details',
                       variant: 'outline',
                       onClick: () => navigate(`/patients/${patient.patient_id}`),
                     },
-                  ]}
-                  onClick={() => navigate(`/patients/${patient.patient_id}`)}
+                  ].filter(Boolean)}
+                  onClick={moduleGate.patientChronicleEnabled ? () => navigate(`/patients/${patient.patient_id}`) : undefined}
                 />
               ))}
             </DashboardGrid>
@@ -330,10 +363,11 @@ export default function NurseDashboard() {
         </DashboardSection>
 
         {/* Medications Schedule */}
-        <DashboardSection
-          title="Medications Schedule"
-          subtitle="Due in the next 2 hours"
-        >
+        {moduleGate.pharmacyEnabled ? (
+          <DashboardSection
+            title="Medications Schedule"
+            subtitle="Due in the next 2 hours"
+          >
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(4)].map((_, i) => (
@@ -384,7 +418,8 @@ export default function NurseDashboard() {
               ))}
             </div>
           )}
-        </DashboardSection>
+          </DashboardSection>
+        ) : null}
 
         {/* Pending Tasks */}
         <DashboardSection
@@ -442,5 +477,26 @@ export default function NurseDashboard() {
         </div>
       </PageShell>
     </Layout>
+  );
+}
+
+function WardFilterSelect({ selectedWard, onSelectedWardChange }) {
+  const { data: wardsData } = useWards();
+  const wards = wardsData || [];
+
+  return (
+    <Select value={selectedWard} onValueChange={onSelectedWardChange}>
+      <SelectTrigger className="w-[200px]">
+        <SelectValue placeholder="All Wards" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All Wards</SelectItem>
+        {wards.map((ward) => (
+          <SelectItem key={ward.id} value={ward.id}>
+            {ward.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

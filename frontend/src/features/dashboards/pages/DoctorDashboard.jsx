@@ -1,11 +1,9 @@
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
-import User from 'lucide-react/dist/esm/icons/user.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import PlayCircle from 'lucide-react/dist/esm/icons/circle-play.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Send from 'lucide-react/dist/esm/icons/send.js';
 import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
@@ -14,7 +12,11 @@ import Phone from 'lucide-react/dist/esm/icons/phone.js';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoctorDashboard, useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks';
+import {
+  useDashboardModuleGates,
+  useDoctorDashboard,
+  useDoctorDashboardLiveUpdates,
+} from '@/features/dashboards/hooks';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
 import { useNavigate } from 'react-router-dom';
@@ -26,15 +28,22 @@ import { PageState } from '@/shared/components/page/PageState';
 
 export default function DoctorDashboard() {
   const { facilityCode } = useAuth();
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
+  const dashboardEnabled = Boolean(facilityCode) && moduleGate.outpatientEncountersEnabled;
   const { isConnected: isLiveConnected } = useDoctorDashboardLiveUpdates({
-    enabled: Boolean(facilityCode),
+    enabled: dashboardEnabled,
     stream: 'my-work',
   });
   const { data, loading, error, refetch, isFetching } = useDoctorDashboard({
     refetchInterval: isLiveConnected ? false : 30000,
+    enabled: dashboardEnabled,
   });
   const navigate = useNavigate();
   const { callPatient, startConsultation } = useVisitActions();
+  const canUseAppointments = moduleGate.appointmentsEnabled;
+  const canUsePatientChronicle = moduleGate.patientChronicleEnabled;
+  const canUseReferrals = moduleGate.referralsEnabled;
+  const canStartConsultation = moduleGate.outpatientEncountersEnabled && canUsePatientChronicle;
 
   if (!facilityCode) {
     return (
@@ -46,6 +55,53 @@ export default function DoctorDashboard() {
         <div className="p-6">
           <FacilityRequiredPanel className="max-w-4xl mx-auto" />
         </div>
+      </PageShell>
+    );
+  }
+
+  if (moduleGate.isResolving) {
+    return (
+      <PageShell>
+        <PageHeader
+          title="Today's Clinic"
+          description="Clinic overview"
+        />
+        <PageState variant="loading" fullHeight={false} />
+      </PageShell>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <PageShell>
+        <PageHeader
+          title="Today's Clinic"
+          description="Clinic overview"
+        />
+        <PageState
+          variant="error"
+          title="Feature capabilities unavailable"
+          description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+          action={() => moduleGate.refetch()}
+          fullHeight={false}
+        />
+      </PageShell>
+    );
+  }
+
+  if (!moduleGate.outpatientEncountersEnabled) {
+    return (
+      <PageShell>
+        <PageHeader
+          title="Today's Clinic"
+          description="Clinic overview"
+        />
+        <PageState
+          variant="empty"
+          title="Clinic dashboard disabled"
+          description="Outpatient encounters are not enabled for this deployment."
+          fullHeight={false}
+        />
       </PageShell>
     );
   }
@@ -105,7 +161,9 @@ export default function DoctorDashboard() {
         day: 'numeric'
       });
 
-  const totalAppointments = (data.upcoming?.length || 0) + (data.completed?.length || 0) + (data.current_patient ? 1 : 0);
+  const totalAppointments = canUseAppointments
+    ? (data.upcoming?.length || 0) + (data.completed?.length || 0) + (data.current_patient ? 1 : 0)
+    : 0;
 
   return (
     <PageShell>
@@ -124,24 +182,28 @@ export default function DoctorDashboard() {
         )}
         actions={(
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/referrals/sent')}
-              className="font-mono text-xs"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Sent Referrals
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/referrals/inbox')}
-              className="font-mono text-xs"
-            >
-              <Inbox className="h-4 w-4 mr-2" />
-              Referral Inbox
-            </Button>
+            {canUseReferrals ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/referrals/sent')}
+                  className="font-mono text-xs"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Sent Referrals
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/referrals/inbox')}
+                  className="font-mono text-xs"
+                >
+                  <Inbox className="h-4 w-4 mr-2" />
+                  Referral Inbox
+                </Button>
+              </>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
@@ -188,12 +250,15 @@ export default function DoctorDashboard() {
             <div className="flex items-center justify-between">
               <div className="space-y-3">
                 <h2
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`View patient ${data.current_patient.patient_name}`}
-                  className="font-display text-3xl text-foreground cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline"
-                  onClick={() => handleViewPatient(data.current_patient.patient_id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewPatient(data.current_patient.patient_id); } }}
+                  tabIndex={canUsePatientChronicle ? 0 : undefined}
+                  role={canUsePatientChronicle ? 'button' : undefined}
+                  aria-label={canUsePatientChronicle ? `View patient ${data.current_patient.patient_name}` : undefined}
+                  className={cn(
+                    'font-display text-3xl text-foreground',
+                    canUsePatientChronicle && 'cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline',
+                  )}
+                  onClick={canUsePatientChronicle ? () => handleViewPatient(data.current_patient.patient_id) : undefined}
+                  onKeyDown={canUsePatientChronicle ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewPatient(data.current_patient.patient_id); } } : undefined}
                 >
                   {data.current_patient.patient_name}
                 </h2>
@@ -209,14 +274,16 @@ export default function DoctorDashboard() {
                   </span>
                 </div>
               </div>
-              <Button
-                size="lg"
-                onClick={() => handleStartConsultation(data.current_patient)}
-                className="font-mono"
-              >
-                Begin Consultation
-                <ChevronRight className="h-4 w-4 ml-2" />
-              </Button>
+              {canStartConsultation ? (
+                <Button
+                  size="lg"
+                  onClick={() => handleStartConsultation(data.current_patient)}
+                  className="font-mono"
+                >
+                  Begin Consultation
+                  <ChevronRight className="h-4 w-4 ml-2" />
+                </Button>
+              ) : null}
             </div>
           </article>
         ) : (
@@ -229,9 +296,11 @@ export default function DoctorDashboard() {
             </div>
             <h3 className="font-display text-xl text-foreground mb-2">No Current Patient</h3>
             <p className="text-muted-foreground text-sm">
-              {data.upcoming && data.upcoming.length > 0
+              {canUseAppointments && data.upcoming && data.upcoming.length > 0
                 ? 'Next patient arriving soon'
-                : 'No appointments scheduled for today'}
+                : canUseAppointments
+                ? 'No appointments scheduled for today'
+                : 'No active clinic patient'}
             </p>
           </article>
         )}
@@ -254,8 +323,8 @@ export default function DoctorDashboard() {
                   visit={visit}
                   index={index}
                   onCall={() => callPatient.mutate(visit.encounter_id)}
-                  onStart={() => startConsultation.mutate(visit.encounter_id)}
-                  onViewPatient={() => handleViewPatient(visit.patient_id || visit.encounter_id)}
+                  onStart={canStartConsultation ? () => startConsultation.mutate(visit.encounter_id) : undefined}
+                  onViewPatient={canUsePatientChronicle ? () => handleViewPatient(visit.patient_id || visit.encounter_id) : undefined}
                   isCallingPending={callPatient.isPending}
                   isStartingPending={startConsultation.isPending}
                 />
@@ -265,6 +334,7 @@ export default function DoctorDashboard() {
         )}
 
         {/* Upcoming Appointments */}
+        {canUseAppointments ? (
         <section>
           <header className="flex items-center gap-3 mb-4">
             <Calendar className="h-5 w-5 text-muted-foreground" />
@@ -281,8 +351,8 @@ export default function DoctorDashboard() {
                   key={appointment.id}
                   appointment={appointment}
                   index={index}
-                  onStart={() => handleStartConsultation(appointment)}
-                  onViewPatient={() => handleViewPatient(appointment.patient_id)}
+                  onStart={canStartConsultation ? () => handleStartConsultation(appointment) : undefined}
+                  onViewPatient={canUsePatientChronicle ? () => handleViewPatient(appointment.patient_id) : undefined}
                 />
               ))}
             </div>
@@ -294,9 +364,10 @@ export default function DoctorDashboard() {
             </div>
           )}
         </section>
+        ) : null}
 
         {/* Completed Today */}
-        {data.completed && data.completed.length > 0 && (
+        {canUseAppointments && data.completed && data.completed.length > 0 && (
           <section>
             <header className="flex items-center gap-3 mb-4">
               <CheckCircle className="h-5 w-5 text-[oklch(0.70_0.17_155)]" />
@@ -312,7 +383,7 @@ export default function DoctorDashboard() {
                   key={appointment.id}
                   appointment={appointment}
                   index={index}
-                  onViewPatient={() => handleViewPatient(appointment.patient_id)}
+                  onViewPatient={canUsePatientChronicle ? () => handleViewPatient(appointment.patient_id) : undefined}
                 />
               ))}
             </div>
@@ -353,12 +424,15 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <h3
-              tabIndex={0}
-              role="button"
-              aria-label={`View patient ${appointment.patient_name}`}
-              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline"
+              tabIndex={onViewPatient ? 0 : undefined}
+              role={onViewPatient ? 'button' : undefined}
+              aria-label={onViewPatient ? `View patient ${appointment.patient_name}` : undefined}
+              className={cn(
+                'font-display text-xl text-foreground',
+                onViewPatient && 'cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline',
+              )}
               onClick={onViewPatient}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } }}
+              onKeyDown={onViewPatient ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } } : undefined}
             >
               {appointment.patient_name}
             </h3>
@@ -377,15 +451,17 @@ function AppointmentCard({ appointment, index, onStart, onViewPatient }) {
             </span>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onStart}
-          className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          Start
-          <ChevronRight className="h-3 w-3 ml-1" />
-        </Button>
+        {onStart ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onStart}
+            className="font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            Start
+            <ChevronRight className="h-3 w-3 ml-1" />
+          </Button>
+        ) : null}
       </div>
     </article>
   );
@@ -399,7 +475,7 @@ function CompletedCard({ appointment, index, onViewPatient }) {
     <article
       className={cn(
         "bg-card/30 border border-border rounded-xl p-4 opacity-60",
-        "hover:opacity-80 transition-opacity cursor-pointer",
+        onViewPatient && "hover:opacity-80 transition-opacity cursor-pointer",
         "animate-chronicle-enter"
       )}
       style={{ animationDelay: `${(index + 5) * 50}ms` }}
@@ -449,12 +525,15 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
               #{visit.queue_number}
             </span>
             <h3
-              tabIndex={0}
-              role="button"
-              aria-label={`View patient ${visit.patient_name}`}
-              className="font-display text-xl text-foreground cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline"
+              tabIndex={onViewPatient ? 0 : undefined}
+              role={onViewPatient ? 'button' : undefined}
+              aria-label={onViewPatient ? `View patient ${visit.patient_name}` : undefined}
+              className={cn(
+                'font-display text-xl text-foreground',
+                onViewPatient && 'cursor-pointer hover:text-primary transition-colors focus:outline-none focus-visible:underline',
+              )}
               onClick={onViewPatient}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } }}
+              onKeyDown={onViewPatient ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPatient(); } } : undefined}
             >
               {visit.patient_name}
             </h3>
@@ -493,7 +572,7 @@ function WaitingPatientCard({ visit, index, onCall, onStart, onViewPatient, isCa
               Call
             </Button>
           )}
-          {isCalled && (
+          {isCalled && onStart && (
             <Button
               size="sm"
               onClick={onStart}

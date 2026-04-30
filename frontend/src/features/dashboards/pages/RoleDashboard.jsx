@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth'
 import { Layout } from '@/components/layout/layout'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useDashboardModuleGates } from '@/features/dashboards/hooks'
+import { dashboardFeaturesForRole } from '@/features/dashboards/utils/moduleGates'
 
 // Lazy load dashboard components
 const DoctorDashboard = lazy(() => import('./DoctorDashboard'))
@@ -58,15 +60,18 @@ const ROLE_DASHBOARD_MAP = {
 }
 
 // Default dashboard for unknown roles
-function DefaultDashboard() {
+function DefaultDashboard({
+  title = 'Welcome to HMS',
+  description = 'Your dashboard is being configured.',
+}) {
   const { user } = useAuth()
   
   return (
     <Layout>
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <h1 className="text-3xl font-bold">Welcome to HMS</h1>
+        <h1 className="text-3xl font-bold">{title}</h1>
         <p className="text-muted-foreground">
-          Hello, {user?.full_name || user?.email}! Your dashboard is being configured.
+          Hello, {user?.full_name || user?.email}! {description}
         </p>
         <p className="text-sm text-muted-foreground">
           Role: {user?.role || 'Unknown'}
@@ -78,15 +83,33 @@ function DefaultDashboard() {
 
 export default function RoleDashboard() {
   const { user } = useAuth()
+  const dashboardConfig = user?.role ? ROLE_DASHBOARD_MAP[user.role] : null
+  const requiredFeatures = dashboardFeaturesForRole(user?.role)
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(dashboardConfig) })
   
   if (!user?.role) {
     return <DefaultDashboard />
   }
   
-  const dashboardConfig = ROLE_DASHBOARD_MAP[user.role]
-  
   if (!dashboardConfig) {
     return <DefaultDashboard />
+  }
+
+  if (requiredFeatures.length > 0 && moduleGate.isResolving) {
+    return (
+      <Layout>
+        <DashboardLoader />
+      </Layout>
+    )
+  }
+
+  if (requiredFeatures.length > 0 && !moduleGate.canUse(requiredFeatures)) {
+    return (
+      <DefaultDashboard
+        title="Dashboard unavailable"
+        description="The module for your default dashboard is not enabled for this deployment."
+      />
+    )
   }
   
   const { component: DashboardComponent, hasLayout } = dashboardConfig

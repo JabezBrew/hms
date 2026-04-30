@@ -9,6 +9,7 @@ import { WorkflowWizard, WorkflowProgress } from '@/components/workflow';
 import { WorkflowStepRenderer } from '@/components/workflow';
 import { useWardRoundWorkflow } from '@/features/workflows/hooks';
 import { usePatient } from '@/features/patients/hooks/usePatientQueries';
+import { useDashboardModuleGates } from '@/features/dashboards/hooks';
 import { PatientIdentityHero } from '@/components/chronicle';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/shared/components/page/PageHeader';
@@ -34,8 +35,12 @@ export default function WardRoundWorkflowPage() {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [workflowData, setWorkflowData] = useState(null);
+  const moduleGate = useDashboardModuleGates();
+  const workflowEnabled = moduleGate.wardsEnabled && moduleGate.patientChronicleEnabled;
 
-  const { data: patient, isLoading: patientLoading } = usePatient(patientId);
+  const { data: patient, isLoading: patientLoading } = usePatient(patientId, {
+    enabled: workflowEnabled,
+  });
   const { startWardRound, updateWardRoundStep, completeWardRound } = useWardRoundWorkflow();
 
   // Workflow definition (matching backend)
@@ -72,10 +77,10 @@ export default function WardRoundWorkflowPage() {
 
   // Initialize workflow on mount
   useEffect(() => {
-    if (!workflowId && patientId && admissionId) {
+    if (workflowEnabled && !workflowId && patientId && admissionId) {
       handleStartWorkflow();
     }
-  }, [patientId, admissionId, workflowId]);
+  }, [patientId, admissionId, workflowId, workflowEnabled]);
 
   const handleStartWorkflow = async () => {
     try {
@@ -169,6 +174,62 @@ export default function WardRoundWorkflowPage() {
     title: 'Ward Round Workflow | HMS',
     breadcrumbs,
   });
+
+  if (moduleGate.isResolving) {
+    return (
+      <Layout>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Ward Round Workflow"
+            description="Guided daily rounds and patient updates."
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <Layout>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Ward Round Workflow"
+            description="Guided daily rounds and patient updates."
+          />
+          <PageState
+            variant="error"
+            title="Feature capabilities unavailable"
+            description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+            action={() => moduleGate.refetch()}
+            fullHeight={false}
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!workflowEnabled) {
+    return (
+      <Layout>
+        <PageShell>
+          {pageMeta}
+          <PageHeader
+            title="Ward Round Workflow"
+            description="Guided daily rounds and patient updates."
+          />
+          <PageState
+            variant="empty"
+            title="Ward round disabled"
+            description="Wards and patient chronicle must both be enabled to launch ward rounds."
+            fullHeight={false}
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
 
   if (!patientId || !admissionId) {
     return (

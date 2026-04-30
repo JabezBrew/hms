@@ -2,7 +2,6 @@ import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
-import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
@@ -22,6 +21,7 @@ import {
 } from '@/components/dashboard';
 import { WorkflowLauncher } from '@/components/workflow';
 import {
+  useDashboardModuleGates,
   useInpatientDashboard,
   useInpatientDashboardLiveUpdates,
 } from '@/features/dashboards/hooks';
@@ -39,8 +39,10 @@ import { PageState } from '@/shared/components/page/PageState';
 export default function InpatientDoctorDashboard() {
   const navigate = useNavigate();
   const { facilityCode } = useAuth();
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
+  const dashboardEnabled = Boolean(facilityCode) && moduleGate.inpatientAdmissionsEnabled;
   const { isConnected: isLiveConnected } = useInpatientDashboardLiveUpdates({
-    enabled: Boolean(facilityCode),
+    enabled: dashboardEnabled,
   });
 
   // Fetch dashboard data with websocket-triggered refresh, polling fallback.
@@ -50,7 +52,15 @@ export default function InpatientDoctorDashboard() {
     error,
     refetch,
     isFetching,
-  } = useInpatientDashboard({ refetchInterval: isLiveConnected ? false : 30000 });
+  } = useInpatientDashboard({
+    refetchInterval: isLiveConnected ? false : 30000,
+    enabled: dashboardEnabled,
+  });
+  const canUseReferrals = moduleGate.referralsEnabled;
+  const canUsePatientChronicle = moduleGate.patientChronicleEnabled;
+  const canUseWardRound = moduleGate.wardsEnabled && canUsePatientChronicle;
+  const canUseDischarge = moduleGate.dischargeWorkflowsEnabled && canUsePatientChronicle;
+  const canShowWorkflowLauncher = moduleGate.wardsEnabled && moduleGate.dischargeWorkflowsEnabled;
 
   if (!facilityCode) {
     return (
@@ -59,7 +69,7 @@ export default function InpatientDoctorDashboard() {
           <PageHeader
             title="Inpatient Dashboard"
             description="Manage ward patients, rounds, and discharges"
-            actions={(
+            actions={canUseReferrals ? (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -78,11 +88,66 @@ export default function InpatientDoctorDashboard() {
                   Referral Inbox
                 </Button>
               </div>
-            )}
+            ) : null}
           />
           <div className="p-4 sm:p-6">
             <FacilityRequiredPanel />
           </div>
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (moduleGate.isResolving) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Inpatient Dashboard"
+            description="Manage ward patients, rounds, and discharges"
+          />
+          <PageState variant="loading" fullHeight={false} />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Inpatient Dashboard"
+            description="Manage ward patients, rounds, and discharges"
+          />
+          <PageState
+            variant="error"
+            title="Feature capabilities unavailable"
+            description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+            action={() => moduleGate.refetch()}
+            fullHeight={false}
+            className="min-h-0"
+          />
+        </PageShell>
+      </Layout>
+    );
+  }
+
+  if (!moduleGate.inpatientAdmissionsEnabled) {
+    return (
+      <Layout>
+        <PageShell>
+          <PageHeader
+            title="Inpatient Dashboard"
+            description="Manage ward patients, rounds, and discharges"
+          />
+          <PageState
+            variant="empty"
+            title="Inpatient dashboard disabled"
+            description="Inpatient admissions are not enabled for this deployment."
+            fullHeight={false}
+            className="min-h-0"
+          />
         </PageShell>
       </Layout>
     );
@@ -95,7 +160,7 @@ export default function InpatientDoctorDashboard() {
           <PageHeader
             title="Inpatient Dashboard"
             description="Manage ward patients, rounds, and discharges"
-            actions={(
+            actions={canUseReferrals ? (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -114,7 +179,7 @@ export default function InpatientDoctorDashboard() {
                   Referral Inbox
                 </Button>
               </div>
-            )}
+            ) : null}
           />
           <PageState
             variant="error"
@@ -148,32 +213,38 @@ export default function InpatientDoctorDashboard() {
           description="Manage ward patients, rounds, and discharges"
           actions={(
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/referrals/sent')}
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Sent Referrals
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/referrals/inbox')}
-              >
-                <Inbox className="h-4 w-4 mr-2" />
-                Referral Inbox
-              </Button>
-              <WorkflowLauncher
-                variant="default"
-                size="sm"
-                trigger={
-                  <Button variant="default" size="sm">
-                    <Stethoscope className="h-4 w-4 mr-2" />
-                    Start Workflow
+              {canUseReferrals ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/referrals/sent')}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Sent Referrals
                   </Button>
-                }
-              />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/referrals/inbox')}
+                  >
+                    <Inbox className="h-4 w-4 mr-2" />
+                    Referral Inbox
+                  </Button>
+                </>
+              ) : null}
+              {canShowWorkflowLauncher ? (
+                <WorkflowLauncher
+                  variant="default"
+                  size="sm"
+                  trigger={
+                    <Button variant="default" size="sm">
+                      <Stethoscope className="h-4 w-4 mr-2" />
+                      Start Workflow
+                    </Button>
+                  }
+                />
+              ) : null}
               <Button
                 variant="outline"
                 size="icon"
@@ -211,13 +282,15 @@ export default function InpatientDoctorDashboard() {
               icon={Users}
               color="emerald"
             />
-            <StatCard
-              title="Planned Discharges"
-              value={plannedDischarges.length}
-              subtitle="Today"
-              icon={UserCheck}
-              color="sky"
-            />
+            {moduleGate.dischargeWorkflowsEnabled ? (
+              <StatCard
+                title="Planned Discharges"
+                value={plannedDischarges.length}
+                subtitle="Today"
+                icon={UserCheck}
+                color="sky"
+              />
+            ) : null}
             <StatCard
               title="Pending Items"
               value={(pending.results_to_review || 0) + (pending.orders_to_sign || 0)}
@@ -260,7 +333,7 @@ export default function InpatientDoctorDashboard() {
                     },
                   ]}
                   metadata={[
-                    {
+                    moduleGate.wardsEnabled && {
                       label: 'Ward/Bed',
                       value: `${admission.ward_name} - Bed ${admission.bed_number}`,
                       icon: Bed,
@@ -281,18 +354,18 @@ export default function InpatientDoctorDashboard() {
                     },
                   ]}
                   actions={[
-                    {
+                    canUseWardRound && {
                       label: 'Start Ward Round',
                       variant: 'default',
                       onClick: () => openWardRound(admission.patient_id),
                     },
-                    {
+                    canUsePatientChronicle && {
                       label: 'View Details',
                       variant: 'outline',
                       onClick: () => navigate(`/patients/${admission.patient_id}`),
                     },
-                  ]}
-                  onClick={() => navigate(`/patients/${admission.patient_id}`)}
+                  ].filter(Boolean)}
+                  onClick={canUsePatientChronicle ? () => navigate(`/patients/${admission.patient_id}`) : undefined}
                 />
               ))}
             </DashboardGrid>
@@ -303,7 +376,7 @@ export default function InpatientDoctorDashboard() {
         <DashboardSection
           title="My Patients"
           subtitle={`${myPatients.length} active patients under your care`}
-          actions={
+          actions={canUsePatientChronicle ? (
             <Button
               variant="outline"
               size="sm"
@@ -311,7 +384,7 @@ export default function InpatientDoctorDashboard() {
             >
               View All
             </Button>
-          }
+          ) : null}
         >
           {isLoading ? (
             <div className="space-y-4">
@@ -339,7 +412,7 @@ export default function InpatientDoctorDashboard() {
                       : 'stable'
                   }
                   badges={[
-                    patient.estimated_discharge && {
+                    moduleGate.dischargeWorkflowsEnabled && patient.estimated_discharge && {
                       text: `Discharge: ${format(
                         new Date(patient.estimated_discharge),
                         'MMM d'
@@ -348,7 +421,7 @@ export default function InpatientDoctorDashboard() {
                     },
                   ].filter(Boolean)}
                   metadata={[
-                    {
+                    moduleGate.wardsEnabled && {
                       label: 'Ward/Bed',
                       value: `${patient.ward_name} - Bed ${patient.bed_number}`,
                       icon: Bed,
@@ -360,7 +433,7 @@ export default function InpatientDoctorDashboard() {
                       }`,
                       icon: Calendar,
                     },
-                    patient.last_round_date && {
+                    moduleGate.wardsEnabled && patient.last_round_date && {
                       label: 'Last Round',
                       value: formatDistanceToNow(new Date(patient.last_round_date), {
                         addSuffix: true,
@@ -369,18 +442,18 @@ export default function InpatientDoctorDashboard() {
                     },
                   ].filter(Boolean)}
                   actions={[
-                    {
+                    canUseWardRound && {
                       label: 'Ward Round',
                       variant: 'default',
                       onClick: () => openWardRound(patient.patient_id),
                     },
-                    {
+                    canUsePatientChronicle && {
                       label: 'View Chart',
                       variant: 'outline',
                       onClick: () => navigate(`/patients/${patient.patient_id}`),
                     },
-                  ]}
-                  onClick={() => navigate(`/patients/${patient.patient_id}`)}
+                  ].filter(Boolean)}
+                  onClick={canUsePatientChronicle ? () => navigate(`/patients/${patient.patient_id}`) : undefined}
                 />
               ))}
             </DashboardGrid>
@@ -388,10 +461,11 @@ export default function InpatientDoctorDashboard() {
         </DashboardSection>
 
         {/* Planned Discharges */}
-        <DashboardSection
-          title="Planned Discharges"
-          subtitle="Patients scheduled for discharge today"
-        >
+        {moduleGate.dischargeWorkflowsEnabled ? (
+          <DashboardSection
+            title="Planned Discharges"
+            subtitle="Patients scheduled for discharge today"
+          >
           {isLoading ? (
             <div className="space-y-4">
               {[...Array(2)].map((_, i) => (
@@ -421,7 +495,7 @@ export default function InpatientDoctorDashboard() {
                     },
                   ]}
                   metadata={[
-                    {
+                    moduleGate.wardsEnabled && {
                       label: 'Ward/Bed',
                       value: `${discharge.ward_name} - Bed ${discharge.bed_number}`,
                       icon: Bed,
@@ -435,24 +509,25 @@ export default function InpatientDoctorDashboard() {
                     },
                   ]}
                   actions={[
-                    {
+                    canUseDischarge && {
                       label: 'Start Discharge',
                       variant: 'default',
                       onClick: () => navigate(
                         `/patients/${discharge.patient_id}?action=discharge&admission=${discharge.id}&source=dashboard`
                       ),
                     },
-                    {
+                    canUsePatientChronicle && {
                       label: 'View Details',
                       variant: 'outline',
                       onClick: () => navigate(`/patients/${discharge.patient_id}`),
                     },
-                  ]}
+                  ].filter(Boolean)}
                 />
               ))}
             </div>
           )}
-        </DashboardSection>
+          </DashboardSection>
+        ) : null}
         </div>
       </PageShell>
     </Layout>

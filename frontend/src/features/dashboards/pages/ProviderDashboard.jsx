@@ -18,8 +18,10 @@ import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import FacilityRequiredPanel from '@/components/facilities/FacilityRequiredPanel';
+import { useDashboardModuleGates } from '@/features/dashboards/hooks';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -114,6 +116,7 @@ export default function ProviderDashboard() {
   const navigate = useNavigate();
   const [selectedTask, setSelectedTask] = useState(null);
   const { facilityCode } = useAuth();
+  const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
 
   const pageMeta = usePageMeta({
     title: 'Command Center | HMS',
@@ -142,17 +145,84 @@ export default function ProviderDashboard() {
     );
   }
 
-  const urgentTasks = mockTasks.filter(t => t.priority === 'Urgent');
+  if (moduleGate.isResolving) {
+    return (
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Command Center"
+          description="Loading enabled modules."
+          meta={todayDate}
+          size="lg"
+        />
+        <PageState variant="loading" fullHeight={false} />
+      </PageShell>
+    );
+  }
+
+  if (!moduleGate.hasFeatureMap) {
+    return (
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Command Center"
+          description="Facility access is required to load your schedule."
+          meta={todayDate}
+          size="lg"
+        />
+        <PageState
+          variant="error"
+          title="Feature capabilities unavailable"
+          description={moduleGate.error?.message || 'Module entitlements could not be loaded.'}
+          action={() => moduleGate.refetch()}
+          fullHeight={false}
+        />
+      </PageShell>
+    );
+  }
+
+  const visibleAppointments = moduleGate.appointmentsEnabled ? mockAppointments : [];
+  const visibleTasks = mockTasks.filter((task) => {
+    if (task.type === 'Refill') return moduleGate.pharmacyEnabled;
+    if (task.type === 'LabReview') return moduleGate.laboratoryEnabled;
+    if (task.type === 'SignNote') return moduleGate.clinicalNotesEnabled;
+    return true;
+  });
+  const urgentTasks = visibleTasks.filter(t => t.priority === 'Urgent');
+  const hasProviderModules = moduleGate.appointmentsEnabled
+    || moduleGate.pharmacyEnabled
+    || moduleGate.laboratoryEnabled
+    || moduleGate.clinicalNotesEnabled;
+
+  if (!hasProviderModules) {
+    return (
+      <PageShell>
+        {pageMeta}
+        <PageHeader
+          title="Command Center"
+          description="No provider modules are enabled for this deployment."
+          meta={todayDate}
+          size="lg"
+        />
+        <PageState
+          variant="empty"
+          title="Command center disabled"
+          description="Appointments, pharmacy, laboratory, and clinical notes are not enabled."
+          fullHeight={false}
+        />
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>
       {pageMeta}
       <PageHeader
         title="Command Center"
-        description={`${mockAppointments.length} appointments · ${mockTasks.length} tasks pending`}
+        description={`${visibleAppointments.length} appointments · ${visibleTasks.length} tasks pending`}
         meta={todayDate}
         size="lg"
-        actions={(
+        actions={moduleGate.appointmentsEnabled ? (
           <Button
             onClick={() => navigate('/appointments/create')}
             className="font-mono text-xs"
@@ -160,7 +230,7 @@ export default function ProviderDashboard() {
             <Plus className="h-4 w-4 mr-2" />
             New Appointment
           </Button>
-        )}
+        ) : null}
       />
 
       <main className="p-6">
@@ -198,17 +268,18 @@ export default function ProviderDashboard() {
             )}
 
             {/* Up Next Section */}
+            {moduleGate.appointmentsEnabled ? (
             <section>
               <header className="flex items-center gap-3 mb-4">
                 <Calendar className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-display text-2xl text-foreground">Up Next</h2>
                 <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                  {mockAppointments.length}
+                  {visibleAppointments.length}
                 </span>
               </header>
 
               <div className="space-y-3">
-                {mockAppointments.map((appointment, index) => (
+                {visibleAppointments.map((appointment, index) => (
                   <ChronicleAppointmentCard
                     key={appointment.id}
                     appointment={appointment}
@@ -224,12 +295,13 @@ export default function ProviderDashboard() {
                 </div>
               </div>
             </section>
+            ) : null}
           </div>
 
           {/* Right Column: Inbox */}
           <div className="lg:col-span-5">
             <ChronicleInbox
-              tasks={mockTasks}
+              tasks={visibleTasks}
               selectedTask={selectedTask}
               onSelectTask={setSelectedTask}
             />
