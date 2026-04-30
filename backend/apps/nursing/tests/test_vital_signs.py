@@ -207,7 +207,7 @@ class TestCriticalValueDetection:
 class TestAutoAlertGeneration:
     """Tests for automatic alert generation on critical vitals."""
 
-    def test_critical_vitals_create_alert(self, db):
+    def test_critical_vitals_create_alert(self, db, django_capture_on_commit_callbacks):
         """Test that critical vitals automatically create an alert."""
         patient = PatientProfileFactory()
         encounter = EncounterFactory(patient=patient)
@@ -215,7 +215,8 @@ class TestAutoAlertGeneration:
         # Clear existing alerts
         NursingAlert.objects.filter(patient=patient).delete()
 
-        vital = CriticalVitalSignsFactory(patient=patient, encounter=encounter)
+        with django_capture_on_commit_callbacks(execute=True):
+            vital = CriticalVitalSignsFactory(patient=patient, encounter=encounter)
 
         alert = NursingAlert.objects.filter(
             patient=patient,

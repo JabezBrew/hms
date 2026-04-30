@@ -48,6 +48,13 @@ def seed_organization_data(db):
     call_command('seed_organization')
 
 
+def _grant_facility_access(user, facility):
+    user.primary_facility = facility
+    user.save(update_fields=['primary_facility'])
+    user.facilities.add(facility)
+    return user
+
+
 @pytest.fixture
 def unit_types(seed_organization_data):
     """Get all seeded unit types."""
@@ -124,40 +131,46 @@ def hospital_structure(unit_types, default_facility):
 
 
 @pytest.fixture
-def admin_user(db, django_user_model):
+def admin_user(db, django_user_model, default_facility):
     """Create an admin user."""
-    return django_user_model.objects.create_user(
+    user = django_user_model.objects.create_user(
         username='admin',
         email='admin@test.com',
         password='testpass123',
-        user_type='admin'
+        user_type='admin',
+        primary_facility=default_facility,
     )
+    return _grant_facility_access(user, default_facility)
 
 
 @pytest.fixture
-def doctor_user(db, django_user_model):
+def doctor_user(db, django_user_model, default_facility):
     """Create a doctor user."""
-    return django_user_model.objects.create_user(
+    user = django_user_model.objects.create_user(
         username='doctor',
         email='doctor@test.com',
         password='testpass123',
         first_name='John',
         last_name='Smith',
-        user_type='doctor'
+        user_type='doctor',
+        primary_facility=default_facility,
     )
+    return _grant_facility_access(user, default_facility)
 
 
 @pytest.fixture
-def nurse_user(db, django_user_model):
+def nurse_user(db, django_user_model, default_facility):
     """Create a nurse user."""
-    return django_user_model.objects.create_user(
+    user = django_user_model.objects.create_user(
         username='nurse',
         email='nurse@test.com',
         password='testpass123',
         first_name='Jane',
         last_name='Doe',
-        user_type='nurse'
+        user_type='nurse',
+        primary_facility=default_facility,
     )
+    return _grant_facility_access(user, default_facility)
 
 
 @pytest.fixture
@@ -171,7 +184,8 @@ def doctor_practitioner(db, doctor_user):
         employee_id='EMP001',
         department='Surgery',
         position='Attending Physician',
-        hire_date=date(2020, 1, 1)
+        hire_date=date(2020, 1, 1),
+        primary_facility=doctor_user.primary_facility,
     )
     return PractitionerProfile.objects.create(
         staff=staff,

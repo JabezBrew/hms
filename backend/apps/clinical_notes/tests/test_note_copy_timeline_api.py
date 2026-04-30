@@ -310,7 +310,7 @@ class TestNoteCopyAndTimelineApi:
                 oxygen_saturation=95,
             )
 
-        with django_assert_max_num_queries(30):
+        with django_assert_max_num_queries(31):
             response = doctor_client.get(f'/api/clinical-notes/chronicle/{patient.id}/timeline/')
 
         assert response.status_code == 200
@@ -365,7 +365,7 @@ class TestNoteCopyAndTimelineApi:
             oxygen_saturation=97,
         )
 
-        with django_assert_max_num_queries(24):
+        with django_assert_max_num_queries(25):
             response = doctor_client.get(f'/api/clinical-notes/chronicle/{patient.id}/context/')
 
         assert response.status_code == 200

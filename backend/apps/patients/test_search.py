@@ -2,7 +2,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
-from apps.users.models import PatientProfile
+from apps.users.models import PatientProfile, UserPatientList
 from apps.core.models import Facility
 from apps.core.tests.factories import DepartmentFactory
 from apps.wards.models import Ward, Bed, Admission
@@ -35,7 +35,7 @@ class PatientSearchTests(APITestCase):
             password='testpassword',
             first_name='Test',
             last_name='User',
-            user_type='admin',
+            user_type='doctor',
             primary_facility=self.facility
         )
         self.client.force_authenticate(user=self.user)
@@ -71,6 +71,8 @@ class PatientSearchTests(APITestCase):
             medical_record_number='MRN002',
             nhis_id='NHIS002'
         )
+        UserPatientList.objects.create(user=self.user, patient=self.patient1)
+        UserPatientList.objects.create(user=self.user, patient=self.patient2)
 
         # Create Ward and Bed
         self.department = DepartmentFactory(facility=self.facility)

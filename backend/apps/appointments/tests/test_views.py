@@ -1155,10 +1155,15 @@ class TestAppointmentViewSet:
 
 @pytest.mark.tier1
 class TestWalkInArrivals:
-    def test_start_visit_doctor_uses_clinical_access_gate(self, doctor_client, default_facility, db):
+    def test_start_visit_doctor_uses_clinical_access_gate(
+        self,
+        doctor_client,
+        doctor_practitioner,
+        default_facility,
+        db,
+    ):
         clinic = create_clinic(default_facility)
         patient = PatientProfileFactory(facility=default_facility)
-        practitioner = PractitionerProfileFactory()
         apt_type = AppointmentTypeFactory()
 
         start_time = timezone.now() + timedelta(minutes=30)
@@ -1166,7 +1171,7 @@ class TestWalkInArrivals:
         appointment = Appointment.objects.create(
             facility=default_facility,
             patient=patient,
-            practitioner=practitioner,
+            practitioner=doctor_practitioner,
             clinic=clinic,
             appointment_type=apt_type,
             status='booked',

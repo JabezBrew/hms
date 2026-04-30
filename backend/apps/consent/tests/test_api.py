@@ -10,6 +10,16 @@ from apps.mpi.services import resolve_patient_identity
 from apps.users.tests.factories import AdminUserFactory, PatientProfileFactory
 
 
+@pytest.fixture(autouse=True)
+def enable_cross_facility_features(settings):
+    settings.ALLOW_CROSS_FACILITY_ACCESS = True
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        'cross_facility_access': True,
+        'cross_facility_referrals': True,
+    }
+
+
 @pytest.mark.django_db
 def test_create_cross_facility_referral(api_client):
     admin = AdminUserFactory()

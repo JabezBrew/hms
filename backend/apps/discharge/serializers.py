@@ -99,9 +99,9 @@ class DischargeCaseListSerializer(serializers.ModelSerializer):
 
 class DischargeCaseDetailSerializer(DischargeCaseListSerializer):
     tasks = serializers.SerializerMethodField()
-    discharge_note_id = serializers.UUIDField(source='discharge_note_id', read_only=True)
-    workflow_id = serializers.UUIDField(source='workflow_id', read_only=True)
-    nursing_task_id = serializers.UUIDField(source='nursing_task_id', read_only=True)
+    discharge_note_id = serializers.UUIDField(read_only=True)
+    workflow_id = serializers.UUIDField(read_only=True)
+    nursing_task_id = serializers.UUIDField(read_only=True)
     metadata = serializers.JSONField(read_only=True)
 
     class Meta(DischargeCaseListSerializer.Meta):

@@ -653,10 +653,7 @@ class NoteEntryViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Patient does not belong to the active facility.")
         check_clinical_access(request.user, target_patient)
         if source_note.patient_id != target_patient.id:
-            return Response(
-                {"error": "Clinical notes can only be cloned for the same patient."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise PermissionDenied("Clinical notes can only be cloned for the same patient.")
 
         # Get or create encounter
         encounter_id = validated_data.get('encounter')

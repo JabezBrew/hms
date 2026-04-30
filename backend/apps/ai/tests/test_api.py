@@ -19,6 +19,13 @@ def _auth_client(user, facility):
     return client
 
 
+def _enable_deployment_features(settings, *features):
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        **{feature: True for feature in features},
+    }
+
+
 @pytest.mark.django_db
 @override_settings(
     AI_ENABLED=True,
@@ -135,7 +142,8 @@ def test_observability_summary_admin_only(default_facility):
     AI_ENABLED=True,
     AI_OMNI_NL_ENABLED=True,
 )
-def test_omni_execute_preview_rejects_unapproved_target_route(default_facility):
+def test_omni_execute_preview_rejects_unapproved_target_route(default_facility, settings):
+    _enable_deployment_features(settings, 'ai_omni_nl')
     doctor = DoctorUserFactory(primary_facility=default_facility)
     doctor.facilities.add(default_facility)
     client = _auth_client(doctor, default_facility)

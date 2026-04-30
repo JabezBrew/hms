@@ -60,22 +60,22 @@ class TestWardModel:
         assert str(ward) == 'ICU Ward (Intensive Care Unit)'
 
     def test_available_beds_count_no_occupied(self, db):
-        """Test available beds count when no beds are occupied."""
+        """Test available beds count from actual available bed inventory."""
         ward = WardFactory(total_beds=10)
         # Create 5 beds, all available
         for i in range(5):
             BedFactory(ward=ward, status='available')
-        assert ward.available_beds_count == 10  # total_beds - occupied (0)
+        assert ward.available_beds_count == 5
 
     def test_available_beds_count_with_occupied(self, db):
-        """Test available beds count with some occupied beds."""
+        """Test available beds count excludes occupied physical beds."""
         ward = WardFactory(total_beds=10)
         # Create 3 available and 2 occupied beds
         for i in range(3):
             BedFactory(ward=ward, status='available')
         for i in range(2):
             BedFactory(ward=ward, status='occupied')
-        assert ward.available_beds_count == 8  # 10 - 2 occupied
+        assert ward.available_beds_count == 3
 
     def test_occupancy_rate_empty_ward(self, db):
         """Test occupancy rate for ward with no beds."""

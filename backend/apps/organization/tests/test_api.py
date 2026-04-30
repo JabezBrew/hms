@@ -49,9 +49,17 @@ def staff_user(db, django_user_model):
     )
 
 
+def _grant_facility_access(user, facility):
+    user.primary_facility = facility
+    user.save(update_fields=['primary_facility'])
+    user.facilities.add(facility)
+    return user
+
+
 @pytest.fixture
 def authenticated_client(api_client, admin_user, default_facility):
     """Create an authenticated API client."""
+    _grant_facility_access(admin_user, default_facility)
     api_client.force_authenticate(user=admin_user)
     api_client.credentials(HTTP_X_FACILITY_CODE=default_facility.code)
     return api_client
@@ -60,6 +68,7 @@ def authenticated_client(api_client, admin_user, default_facility):
 @pytest.fixture
 def staff_authenticated_client(staff_user, default_facility):
     """Create an authenticated non-admin API client."""
+    _grant_facility_access(staff_user, default_facility)
     client = APIClient()
     client.force_authenticate(user=staff_user)
     client.credentials(HTTP_X_FACILITY_CODE=default_facility.code)

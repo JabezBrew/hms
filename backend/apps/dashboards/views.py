@@ -130,6 +130,22 @@ def _get_user_practitioner_profile(user):
         return None
 
 
+def _get_primary_assigned_ward_id(user, facility=None):
+    practitioner = _get_user_practitioner_profile(user)
+    if not practitioner:
+        return None
+
+    assignments = practitioner.ward_assignments.filter(is_active=True, ward__is_active=True)
+    if facility:
+        assignments = assignments.filter(ward__department__facility=facility)
+    return (
+        assignments
+        .order_by('-is_primary', 'assigned_at')
+        .values_list('ward_id', flat=True)
+        .first()
+    )
+
+
 def _practitioner_belongs_to_facility(practitioner, facility):
     staff = getattr(practitioner, 'staff', None)
     if not staff:
@@ -958,8 +974,7 @@ def get_nurse_dashboard_data(user, request):
     ward_id = request.query_params.get('ward')
 
     # Get nurse's assigned ward
-    nurse_profile = getattr(user, 'practitionerprofile', None)
-    profile_assigned_ward = getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None
+    profile_assigned_ward = _get_primary_assigned_ward_id(user, facility)
 
     is_admin = _is_admin_actor(user)
     if not is_admin:
@@ -1804,8 +1819,7 @@ def _get_nurse_context_patients(user, request):
 
     # Get ward filter from query params or nurse's assigned ward
     ward_id = request.query_params.get('ward')
-    nurse_profile = getattr(user, 'practitionerprofile', None)
-    assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
+    assigned_ward = ward_id or _get_primary_assigned_ward_id(user, facility)
 
     # Build admission filter
     admission_filter = {'status': 'admitted', 'facility': facility}

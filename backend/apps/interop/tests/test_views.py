@@ -18,8 +18,10 @@ from apps.users.tests.factories import (
 
 @pytest.fixture(autouse=True)
 def enable_interop_feature(settings):
+    settings.ALLOW_CROSS_FACILITY_ACCESS = True
     settings.DEPLOYMENT_FEATURES = {
         **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        'cross_facility_access': True,
         'cross_facility_record_exchange': True,
     }
 

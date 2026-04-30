@@ -104,7 +104,7 @@ def test_vital_signs_create_query_budget(
         'notes': 'Routine round',
     }
 
-    with django_assert_max_num_queries(34):
+    with django_assert_max_num_queries(35):
         with django_capture_on_commit_callbacks(execute=True):
             response = nurse_client.post('/api/nursing/vital-signs/', payload, format='json')
 

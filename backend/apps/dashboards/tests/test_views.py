@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.core.tests.factories import FacilityFactory
+from apps.wards.tests.factories import StaffRoleFactory, WardFactory, WardStaffAssignmentFactory
 
 
 @pytest.mark.django_db
@@ -33,8 +34,20 @@ def test_my_work_dashboard_routes_using_user_type(django_user_model, monkeypatch
 
 
 @pytest.mark.django_db
-def test_my_work_dashboard_nurse_cache_miss_returns_projection(nurse_client):
+def test_my_work_dashboard_nurse_cache_miss_returns_projection(
+    nurse_client,
+    nurse_practitioner,
+    default_facility,
+):
     cache.clear()
+    ward = WardFactory(department__facility=default_facility)
+    role = StaffRoleFactory(category='nursing')
+    WardStaffAssignmentFactory(
+        ward=ward,
+        practitioner=nurse_practitioner,
+        role=role,
+        is_primary=True,
+    )
 
     response = nurse_client.get('/api/dashboards/my-work/')
 

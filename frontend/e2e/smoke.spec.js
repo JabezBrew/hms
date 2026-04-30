@@ -29,6 +29,6 @@ test('admin can sign in, open the patient registry, and load a patient chronicle
   await patientRow.click();
 
   await page.waitForURL(/\/patients\/.+/);
-  await expect(page.getByText(smokePatientName, { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: smokePatientName })).toBeVisible();
   await expect(page.getByPlaceholder('Search notes, prescriptions...')).toBeVisible();
 });

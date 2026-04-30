@@ -33,6 +33,13 @@ def _auth_client(user, facility):
     return client
 
 
+def _enable_deployment_features(settings, *features):
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        **{feature: True for feature in features},
+    }
+
+
 def _create_lab_result(
     *,
     facility,
@@ -82,7 +89,8 @@ def _create_lab_result(
         ('order lab test for patient', 'order.create'),
     ],
 )
-def test_omni_parse_sensitive_intents_require_confirmation(query, expected_intent):
+def test_omni_parse_sensitive_intents_require_confirmation(settings, query, expected_intent):
+    _enable_deployment_features(settings, 'ai_omni_nl')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)
@@ -97,7 +105,8 @@ def test_omni_parse_sensitive_intents_require_confirmation(query, expected_inten
 
 @pytest.mark.django_db
 @override_settings(AI_ENABLED=True, AI_OMNI_NL_ENABLED=True, TEAM_ACCESS_STRICT=False)
-def test_omni_parse_and_preview_have_no_side_effects():
+def test_omni_parse_and_preview_have_no_side_effects(settings):
+    _enable_deployment_features(settings, 'ai_omni_nl')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)
@@ -122,7 +131,8 @@ def test_omni_parse_and_preview_have_no_side_effects():
 
 @pytest.mark.django_db
 @override_settings(AI_ENABLED=True, AI_OMNI_NL_ENABLED=True, TEAM_ACCESS_STRICT=False)
-def test_omni_execute_preview_query_budget():
+def test_omni_execute_preview_query_budget(settings):
+    _enable_deployment_features(settings, 'ai_omni_nl')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)

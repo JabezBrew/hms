@@ -26,6 +26,13 @@ def _auth_client(user, facility):
     return client
 
 
+def _enable_deployment_features(settings, *features):
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        **{feature: True for feature in features},
+    }
+
+
 def _create_timeline_event(
     *,
     patient,
@@ -61,7 +68,8 @@ def _create_timeline_event(
     AI_VECTOR_BACKEND='pgvector',
     TEAM_ACCESS_STRICT=False,
 )
-def test_chronicle_summarize_requires_clinical_access():
+def test_chronicle_summarize_requires_clinical_access(settings):
+    _enable_deployment_features(settings, 'ai_chronicle_copilot')
     facility = DefaultFacilityFactory()
     receptionist = ReceptionistUserFactory(primary_facility=facility)
     receptionist.facilities.add(facility)
@@ -85,7 +93,8 @@ def test_chronicle_summarize_requires_clinical_access():
     AI_VECTOR_BACKEND='pgvector',
     TEAM_ACCESS_STRICT=False,
 )
-def test_chronicle_summarize_returns_envelope_blocks_and_citations():
+def test_chronicle_summarize_returns_envelope_blocks_and_citations(settings):
+    _enable_deployment_features(settings, 'ai_chronicle_copilot')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)
@@ -134,7 +143,8 @@ def test_chronicle_summarize_returns_envelope_blocks_and_citations():
     AI_VECTOR_BACKEND='pgvector',
     TEAM_ACCESS_STRICT=False,
 )
-def test_chronicle_ask_returns_answer_supporting_points_and_citations():
+def test_chronicle_ask_returns_answer_supporting_points_and_citations(settings):
+    _enable_deployment_features(settings, 'ai_chronicle_copilot')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)
@@ -180,7 +190,8 @@ def test_chronicle_ask_returns_answer_supporting_points_and_citations():
     AI_CHRONICLE_COPILOT_ENABLED=True,
     TEAM_ACCESS_STRICT=False,
 )
-def test_chronicle_endpoints_enforce_facility_scope():
+def test_chronicle_endpoints_enforce_facility_scope(settings):
+    _enable_deployment_features(settings, 'ai_chronicle_copilot')
     facility_a = FacilityFactory(code='ALPHA')
     facility_b = FacilityFactory(code='BRAVO')
     doctor = DoctorUserFactory(primary_facility=facility_a)
@@ -206,7 +217,8 @@ def test_chronicle_endpoints_enforce_facility_scope():
     AI_CHRONICLE_COPILOT_ENABLED=True,
     TEAM_ACCESS_STRICT=False,
 )
-def test_chronicle_summarize_filters_timeline_by_encounter():
+def test_chronicle_summarize_filters_timeline_by_encounter(settings):
+    _enable_deployment_features(settings, 'ai_chronicle_copilot')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)
@@ -246,7 +258,8 @@ def test_chronicle_summarize_filters_timeline_by_encounter():
     AI_CHRONICLE_COPILOT_ENABLED=True,
     TEAM_ACCESS_STRICT=False,
 )
-def test_chronicle_summarize_query_budget():
+def test_chronicle_summarize_query_budget(settings):
+    _enable_deployment_features(settings, 'ai_chronicle_copilot')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)

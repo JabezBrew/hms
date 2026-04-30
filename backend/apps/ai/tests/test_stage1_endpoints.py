@@ -30,6 +30,13 @@ def _auth_client(user, facility):
     return client
 
 
+def _enable_deployment_features(settings, *features):
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        **{feature: True for feature in features},
+    }
+
+
 def _create_lab_result(
     *,
     facility,
@@ -74,7 +81,8 @@ def _create_lab_result(
     AI_LAB_INTERPRET_ENABLED=True,
     TEAM_ACCESS_STRICT=False,
 )
-def test_omni_parse_returns_fallback_signal_for_low_confidence():
+def test_omni_parse_returns_fallback_signal_for_low_confidence(settings):
+    _enable_deployment_features(settings, 'ai_omni_nl')
     facility = DefaultFacilityFactory()
     doctor = DoctorUserFactory(primary_facility=facility)
     doctor.facilities.add(facility)
@@ -94,7 +102,8 @@ def test_omni_parse_returns_fallback_signal_for_low_confidence():
     AI_OMNI_NL_ENABLED=True,
     TEAM_ACCESS_STRICT=False,
 )
-def test_omni_execute_preview_is_dry_run_and_blocks_sensitive_non_admin():
+def test_omni_execute_preview_is_dry_run_and_blocks_sensitive_non_admin(settings):
+    _enable_deployment_features(settings, 'ai_omni_nl')
     facility = DefaultFacilityFactory()
     receptionist = ReceptionistUserFactory(primary_facility=facility)
     receptionist.facilities.add(facility)

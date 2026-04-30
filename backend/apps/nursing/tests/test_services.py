@@ -189,7 +189,7 @@ class TestGetPendingDispensing:
             is_dispensed=True
         )
 
-        pending = get_pending_dispensing()
+        pending = get_pending_dispensing(facility=scheduled.facility)
         pending_ids = list(pending.values_list('id', flat=True))
 
         assert scheduled.id in pending_ids
@@ -346,7 +346,7 @@ class TestGetPendingSupplyRequests:
         dispensed = SupplyRequestFactory(status='dispensed')
         rejected = SupplyRequestFactory(status='rejected')
 
-        result = get_pending_supply_requests()
+        result = get_pending_supply_requests(facility=pending.facility)
         result_ids = list(result.values_list('id', flat=True))
 
         assert pending.id in result_ids
