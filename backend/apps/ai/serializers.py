@@ -38,7 +38,7 @@ class AISessionCreateSerializer(serializers.Serializer):
         user = request.user
 
         feature = attrs['feature']
-        policy.ensure_feature_enabled(feature)
+        policy.ensure_feature_enabled(feature, request=request)
 
         facility = get_user_facility(request)
         if not facility:

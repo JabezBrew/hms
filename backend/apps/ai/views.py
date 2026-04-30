@@ -142,7 +142,7 @@ class AISessionViewSet(
     @action(detail=True, methods=['post'])
     def ask(self, request, pk=None):
         session = self.get_object()
-        ensure_feature_enabled(session.feature)
+        ensure_feature_enabled(session.feature, request=request)
 
         question = str(request.data.get('question', '')).strip()
         if not question:
@@ -312,7 +312,7 @@ class AIOmniParseView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_OMNI_NL)
+        ensure_feature_enabled(constants.FEATURE_OMNI_NL, request=request)
 
         facility = get_user_facility(request)
         if not facility:
@@ -385,7 +385,7 @@ class AIOmniExecutePreviewView(APIView):
         }
 
     def post(self, request, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_OMNI_NL)
+        ensure_feature_enabled(constants.FEATURE_OMNI_NL, request=request)
 
         facility = get_user_facility(request)
         if not facility:
@@ -443,7 +443,7 @@ class AIChronicleSummarizeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, patient_id, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_CHRONICLE_COPILOT)
+        ensure_feature_enabled(constants.FEATURE_CHRONICLE_COPILOT, request=request)
 
         facility = get_user_facility(request)
         if not facility:
@@ -507,7 +507,7 @@ class AIChronicleAskView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, patient_id, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_CHRONICLE_COPILOT)
+        ensure_feature_enabled(constants.FEATURE_CHRONICLE_COPILOT, request=request)
 
         facility = get_user_facility(request)
         if not facility:
@@ -569,7 +569,7 @@ class AINoteDraftView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_NOTE_DRAFT)
+        ensure_feature_enabled(constants.FEATURE_NOTE_DRAFT, request=request)
 
         facility = get_user_facility(request)
         if not facility:
@@ -621,7 +621,7 @@ class AINoteLintView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_NOTE_LINT)
+        ensure_feature_enabled(constants.FEATURE_NOTE_LINT, request=request)
 
         facility = get_user_facility(request)
         if not facility:
@@ -671,7 +671,7 @@ class AILabInterpretView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        ensure_feature_enabled(constants.FEATURE_LAB_INTERPRETATION)
+        ensure_feature_enabled(constants.FEATURE_LAB_INTERPRETATION, request=request)
 
         facility = get_user_facility(request)
         if not facility:

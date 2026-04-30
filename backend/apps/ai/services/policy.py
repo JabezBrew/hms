@@ -3,9 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from django.conf import settings
-from rest_framework.exceptions import PermissionDenied
 
 from apps.ai import constants
+from apps.core.security import feature_disabled_payload
+from hms_backend.deployment import feature_enabled as deployment_feature_enabled
+from rest_framework.exceptions import NotFound
+
+
+DEPLOYMENT_FEATURE_BY_AI_FEATURE = {
+    constants.FEATURE_CHRONICLE_COPILOT: 'ai_chronicle_copilot',
+    constants.FEATURE_OMNI_NL: 'ai_omni_nl',
+}
 
 
 def get_feature_flag_setting_name(feature: str) -> str:
@@ -16,16 +24,27 @@ def is_ai_enabled() -> bool:
     return bool(getattr(settings, 'AI_ENABLED', False))
 
 
-def is_feature_enabled(feature: str) -> bool:
+def deployment_feature_key_for_feature(feature: str) -> str | None:
+    return DEPLOYMENT_FEATURE_BY_AI_FEATURE.get(feature)
+
+
+def is_feature_enabled(feature: str, *, request=None) -> bool:
     if not is_ai_enabled():
         return False
     setting_name = get_feature_flag_setting_name(feature)
-    return bool(getattr(settings, setting_name, False))
+    if not bool(getattr(settings, setting_name, False)):
+        return False
+
+    deployment_feature_key = deployment_feature_key_for_feature(feature)
+    if not deployment_feature_key:
+        return True
+
+    return bool(deployment_feature_enabled(deployment_feature_key, request=request))
 
 
-def ensure_feature_enabled(feature: str) -> None:
-    if not is_feature_enabled(feature):
-        raise PermissionDenied('AI feature is currently disabled for this deployment.')
+def ensure_feature_enabled(feature: str, *, request=None) -> None:
+    if not is_feature_enabled(feature, request=request):
+        raise NotFound(feature_disabled_payload(deployment_feature_key_for_feature(feature) or feature))
 
 
 def get_access_scope_for_feature(feature: str) -> str | None:

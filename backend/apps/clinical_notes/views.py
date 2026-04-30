@@ -45,6 +45,7 @@ from ..laboratory.models import LabOrder, LabOrderStatus
 from ..core.security import (
     ACTIVE_ADMISSION_STATUSES,
     FacilityScopedPermission,
+    FeatureRequiredPermission,
     check_clinical_access,
     check_prescription_access,
     get_accessible_patients_for_clinician,
@@ -1648,9 +1649,18 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'discontinue', 'hold', 'resume', 'renew']:
-            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsDoctor]
+            permission_classes = [
+                FeatureRequiredPermission,
+                permissions.IsAuthenticated,
+                FacilityScopedPermission,
+                IsDoctor,
+            ]
         else:
-            permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+            permission_classes = [
+                FeatureRequiredPermission,
+                permissions.IsAuthenticated,
+                FacilityScopedPermission,
+            ]
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):
