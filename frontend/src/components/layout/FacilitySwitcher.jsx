@@ -17,21 +17,28 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useFacilities } from "@/hooks/useFacilityQueries";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
-import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "@/lib/runtime-config";
+import { getDefaultFacilityCode } from "@/lib/runtime-config";
 import { toast } from "sonner";
 
 const DEFAULT_FACILITY_CODE = getDefaultFacilityCode() || "";
 
 export function FacilitySwitcher() {
+  const { data: deploymentCapabilities } = useSystemCapabilities();
+  const featureSwitcherEnabled =
+    deploymentCapabilities?.features?.facility_switcher ??
+    deploymentCapabilities?.capabilities?.facility_switcher;
+
+  if (featureSwitcherEnabled !== true) {
+    return null;
+  }
+
+  return <FacilitySwitcherMenu />;
+}
+
+function FacilitySwitcherMenu() {
   const { facilityCode, setFacilityCode } = useAuth();
   const [draft, setDraft] = useState(facilityCode || DEFAULT_FACILITY_CODE);
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: deploymentCapabilities } = useSystemCapabilities();
-  const backendFacilitySwitcher =
-    deploymentCapabilities?.features?.facility_switcher ??
-    deploymentCapabilities?.capabilities?.facility_switcher ??
-    deploymentCapabilities?.capabilities?.multi_facility_mode;
-  const multiFacilityMode = backendFacilitySwitcher ?? isMultiFacilityModeEnabled();
   const {
     data: facilities = [],
     isLoading,
@@ -87,9 +94,6 @@ export function FacilitySwitcher() {
     setSearchQuery("");
   };
 
-  if (!multiFacilityMode) {
-    return null;
-  }
   if (!isLoading && facilities.length < 2 && !isError) {
     return null;
   }

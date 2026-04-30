@@ -22,7 +22,7 @@ function renderSidebar({
   user = { role: ROLES.ADMIN },
   route = '/',
   params = {},
-  enabledFeatures = {},
+  enabledFeatures,
   inboxCount = 0,
 } = {}) {
   const sections = resolveSidebarSections({
@@ -49,6 +49,7 @@ describe('dynamic sidebar', () => {
       sidebar: SIDEBARS.LABORATORY,
       user: { role: ROLES.NURSE },
       route: '/laboratory/orders',
+      enabledFeatures: { laboratory: true },
     })
 
     expect(screen.getByRole('link', { name: /Collection Queue/i })).toBeInTheDocument()
@@ -73,6 +74,7 @@ describe('dynamic sidebar', () => {
       sidebar: SIDEBARS.BILLING,
       user: { role: ROLES.BILLING },
       route: '/billing/invoices',
+      enabledFeatures: { billing: true },
     })
 
     expect(screen.getByRole('link', { name: /Invoices/i })).toHaveAttribute('data-active', 'true')
@@ -83,6 +85,7 @@ describe('dynamic sidebar', () => {
       sidebar: SIDEBARS.GLOBAL,
       user: { role: ROLES.LAB_TECHNICIAN },
       route: '/laboratory/orders',
+      enabledFeatures: { laboratory: true },
     })
 
     expect(screen.getByRole('button', { name: /Laboratory/i })).toHaveAttribute('data-active', 'true')
@@ -109,6 +112,7 @@ describe('dynamic sidebar', () => {
       user: { role: ROLES.DOCTOR },
       route: '/patients/pat-123',
       params: { id: 'pat-123' },
+      enabledFeatures: { wards: true },
     })
 
     expect(screen.getByRole('link', { name: /Chronicle/i })).toHaveAttribute('href', '/patients/pat-123')
@@ -120,5 +124,16 @@ describe('dynamic sidebar', () => {
     expect(screen.queryByRole('link', { name: /Labs/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Notes/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Allergies/i })).not.toBeInTheDocument()
+  })
+
+  it('hides feature-gated entries until feature flags are known', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.GLOBAL,
+      user: { role: ROLES.LAB_TECHNICIAN },
+      route: '/laboratory/orders',
+    })
+
+    expect(screen.queryByRole('button', { name: /Laboratory/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Orders/i })).not.toBeInTheDocument()
   })
 })

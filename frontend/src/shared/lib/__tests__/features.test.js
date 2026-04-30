@@ -9,6 +9,8 @@ describe('feature helpers', () => {
   })
 
   it('fails closed when feature keys are missing or disabled', () => {
+    expect(areFeaturesEnabled(['wards'])).toBe(false)
+    expect(areFeaturesEnabled(['wards'], undefined)).toBe(false)
     expect(areFeaturesEnabled(['wards'], {})).toBe(false)
     expect(areFeaturesEnabled(['wards'], { wards: true })).toBe(true)
     expect(areFeaturesEnabled(['wards'], { wards: false })).toBe(false)

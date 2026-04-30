@@ -53,6 +53,7 @@ import { useInboxCount } from '@/features/inbox/hooks'
 import { useSystemCapabilities } from '@/hooks/useSystemQueries'
 import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 import { userCanAccess } from '@/shared/lib/access'
+import { areFeaturesEnabled } from '@/shared/lib/features'
 import { useSidebarState } from '@/hooks/useSidebarState'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { useLocation, useParams } from 'react-router-dom'
@@ -555,11 +556,8 @@ function resolveHref(href, context) {
   return href
 }
 
-function hasFeatureAccess(features, enabledFeatures = {}) {
-  if (!Array.isArray(features) || features.length === 0) {
-    return true
-  }
-  return features.every((feature) => enabledFeatures?.[feature] !== false)
+function hasFeatureAccess(features, enabledFeatures) {
+  return areFeaturesEnabled(features, enabledFeatures)
 }
 
 function hasAccess(user, entry) {
@@ -785,7 +783,7 @@ export function AppSidebar({ sidebar = SIDEBARS.GLOBAL }) {
   const { user } = useAuth()
   const { count: inboxCount } = useInboxCount()
   const { data: deploymentCapabilities } = useSystemCapabilities()
-  const enabledFeatures = deploymentCapabilities?.features || {}
+  const enabledFeatures = deploymentCapabilities?.features
   const location = useLocation()
   const params = useParams()
   const sections = resolveSidebarSections({
