@@ -93,6 +93,12 @@ FEATURE_MANIFEST = {
         'label': 'Bed management',
         'kind': 'subfeature',
         'profile_default': True,
+        'api_prefixes': [
+            '/api/wards/allocation-logs/',
+            '/api/wards/amenities/',
+            '/api/wards/beds/',
+            '/api/wards/transfers/',
+        ],
     },
     'emergency_encounters': {
         'label': 'Emergency encounters',
@@ -160,6 +166,7 @@ FEATURE_MANIFEST = {
         'label': 'Referrals',
         'kind': 'module',
         'profile_default': True,
+        'api_prefixes': ['/api/referrals/'],
     },
     'clinical_notes': {
         'label': 'Clinical notes',
@@ -186,26 +193,56 @@ FEATURE_MANIFEST = {
 }
 
 
-PROFILE_FEATURE_OVERRIDES = {
+CLINIC_DISABLED_FEATURES = (
+    'department_rosters',
+    'inpatient_admissions',
+    'wards',
+    'bed_management',
+    'nursing_workflows',
+    'discharge_workflows',
+    'cross_facility_referrals',
+    'cross_facility_record_exchange',
+)
+
+HOSPITAL_NETWORK_ENABLED_FEATURES = (
+    'multi_facility',
+    'facility_switcher',
+    'cross_facility_access',
+    'cross_facility_referrals',
+    'cross_facility_record_exchange',
+)
+
+PRODUCT_TIER_PROFILES = {
     'clinic': {
-        'outpatient_active_clinic_required': False,
-        'department_rosters': False,
-        'inpatient_admissions': False,
-        'wards': False,
-        'bed_management': False,
-        'nursing_workflows': False,
-        'discharge_workflows': False,
-        'cross_facility_referrals': False,
-        'cross_facility_record_exchange': False,
+        'label': 'Clinic',
+        'facility_scope': 'single',
+        'description': 'Lean single-site outpatient deployment.',
+        'features': {
+            'outpatient_active_clinic_required': False,
+            **{feature_key: False for feature_key in CLINIC_DISABLED_FEATURES},
+        },
     },
-    'hospital': {},
+    'hospital': {
+        'label': 'Hospital',
+        'facility_scope': 'single',
+        'description': 'Single hospital deployment with full inpatient and outpatient workflows.',
+        'features': {},
+    },
     'hospital_network': {
-        'multi_facility': True,
-        'facility_switcher': True,
-        'cross_facility_access': True,
-        'cross_facility_referrals': True,
-        'cross_facility_record_exchange': True,
+        'label': 'Hospital Network',
+        'facility_scope': 'network',
+        'description': 'Multi-facility deployment with network-level sharing and administration.',
+        'features': {
+            feature_key: True
+            for feature_key in HOSPITAL_NETWORK_ENABLED_FEATURES
+        },
     },
+}
+
+
+PROFILE_FEATURE_OVERRIDES = {
+    profile_key: dict(profile['features'])
+    for profile_key, profile in PRODUCT_TIER_PROFILES.items()
 }
 
 
@@ -225,4 +262,4 @@ def api_feature_prefixes():
     for feature_key, config in FEATURE_MANIFEST.items():
         for prefix in config.get('api_prefixes', ()):
             prefixes.append((prefix, feature_key))
-    return tuple(prefixes)
+    return tuple(sorted(prefixes, key=lambda item: len(item[0]), reverse=True))

@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from hms_backend.feature_manifest import (
     FEATURE_MANIFEST,
-    PROFILE_FEATURE_OVERRIDES,
+    PRODUCT_TIER_PROFILES,
     api_feature_prefixes,
     base_feature_defaults,
 )
@@ -29,26 +29,7 @@ PROFILE_ALIASES = {
 BASE_FEATURES = base_feature_defaults()
 
 
-DEPLOYMENT_PROFILES = {
-    'clinic': {
-        'label': 'Clinic',
-        'facility_scope': 'single',
-        'description': 'Lean single-site outpatient deployment.',
-        'features': PROFILE_FEATURE_OVERRIDES['clinic'],
-    },
-    'hospital': {
-        'label': 'Hospital',
-        'facility_scope': 'single',
-        'description': 'Single hospital deployment with full inpatient and outpatient workflows.',
-        'features': PROFILE_FEATURE_OVERRIDES['hospital'],
-    },
-    'hospital_network': {
-        'label': 'Hospital Network',
-        'facility_scope': 'network',
-        'description': 'Multi-facility deployment with network-level sharing and administration.',
-        'features': PROFILE_FEATURE_OVERRIDES['hospital_network'],
-    },
-}
+DEPLOYMENT_PROFILES = deepcopy(PRODUCT_TIER_PROFILES)
 
 
 API_FEATURE_PREFIXES = api_feature_prefixes()
