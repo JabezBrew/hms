@@ -20,6 +20,28 @@ from apps.users.admin_access import (
     user_has_unit_admin_capability,
 )
 from apps.users.models import PractitionerProfile, Staff
+from apps.users.serializers import UserCreateSerializer
+
+
+@pytest.mark.django_db
+def test_user_create_serializer_does_not_grant_django_admin_staff_to_app_admin():
+    serializer = UserCreateSerializer(data={
+        'email': 'facility-admin@example.com',
+        'username': 'facility-admin',
+        'password': 'pass1234',
+        'confirm_password': 'pass1234',
+        'first_name': 'Facility',
+        'last_name': 'Admin',
+        'user_type': 'admin',
+    })
+
+    assert serializer.is_valid(), serializer.errors
+
+    user = serializer.save()
+
+    assert user.user_type == 'admin'
+    assert user.is_staff is False
+    assert user.is_superuser is False
 
 
 @pytest.mark.django_db
