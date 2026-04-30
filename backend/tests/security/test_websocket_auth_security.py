@@ -8,7 +8,7 @@ import pytest
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.users.tests.factories import DoctorUserFactory
-from hms_backend.websocket_auth import JWTAuthMiddleware
+from hms_backend.websocket_auth import JWTAuthMiddleware, get_user_from_token
 
 
 pytestmark = [
@@ -89,3 +89,14 @@ def test_websocket_auth_rejects_query_string_jwt():
     assert captured["scope"]["user"].is_authenticated is False
     assert captured["scope"]["jwt_claims"] == {}
     assert "facility_code" not in captured["scope"]
+
+
+def test_get_user_from_token_rejects_must_change_password_user():
+    user = DoctorUserFactory(must_change_password=True)
+    access_token = str(RefreshToken.for_user(user).access_token)
+
+    resolved_user, claims = async_to_sync(get_user_from_token)(access_token)
+
+    assert isinstance(resolved_user, AnonymousUser)
+    assert resolved_user.is_authenticated is False
+    assert claims is None

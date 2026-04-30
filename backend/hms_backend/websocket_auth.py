@@ -56,6 +56,10 @@ def get_user_from_token(token_str):
             logger.warning(f"Inactive user {user_id} attempted WebSocket connection")
             return AnonymousUser(), None
 
+        if getattr(user, 'must_change_password', False):
+            logger.warning(f"Password change required for user {user_id} in WebSocket auth")
+            return AnonymousUser(), None
+
         token_user_type = token.payload.get('user_type')
         if token_user_type and token_user_type != user.user_type:
             logger.warning("JWT user_type mismatch in WebSocket auth")
