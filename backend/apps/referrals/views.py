@@ -839,9 +839,14 @@ class ReferralSLAEventViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
     """Clinic waitlist queue with ranking/offer/promotion actions."""
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor | IsNurse | IsReceptionist)]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, (IsAdmin | IsDoctor | IsNurse)]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['clinic', 'status', 'urgency', 'deadline_risk', 'vulnerability_flag']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'offer_next', 'expire_offers', 'promote', 'cancel']:
+            return [permissions.IsAuthenticated(), FacilityScopedPermission(), (IsAdmin() | IsDoctor())]
+        return super().get_permissions()
 
     def get_queryset(self):
         facility = get_user_facility(self.request)
@@ -856,6 +861,11 @@ class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
         ).filter(facility=facility)
         if self.request.query_params.get('active_only') == 'true':
             queryset = queryset.filter(status__in=[ClinicWaitlistEntryStatus.WAITING, ClinicWaitlistEntryStatus.OFFERED])
+
+        if getattr(self.request.user, 'user_type', None) != 'admin':
+            accessible_patients = get_accessible_patients_for_clinician(self.request.user)
+            queryset = queryset.filter(patient__in=accessible_patients)
+
         return queryset
 
     def get_serializer_class(self):
@@ -869,6 +879,7 @@ class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Facility context is required.")
 
         payload = serializer.validated_data
+        check_clinical_access(self.request.user, payload['patient'])
         entry = ClinicWaitlistService.create_or_update_entry(
             facility=facility,
             clinic=payload['clinic'],
@@ -886,6 +897,7 @@ class ClinicWaitlistEntryViewSet(viewsets.ModelViewSet):
         serializer.instance = entry
 
     def perform_update(self, serializer):
+        check_clinical_access(self.request.user, serializer.instance.patient)
         serializer.save(updated_by=self.request.user)
 
     @action(detail=False, methods=['post'], url_path='offer-next')
