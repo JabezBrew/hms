@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_ADMISSION_STATUSES = ['admitted', 'pending_discharge']
 ACTIVE_ENCOUNTER_STATUSES = ['planned', 'in-progress']
+FEATURE_DISABLED_MESSAGE = "This feature is not enabled for the current deployment."
 CLINICAL_PATIENT_ACCESS_USER_TYPES = frozenset({
     'doctor',
     'nurse',
@@ -90,6 +91,14 @@ def is_cross_facility_admin(user):
 
 def can_use_cross_facility_access(user):
     return bool(feature_enabled('cross_facility_access') and is_cross_facility_admin(user))
+
+
+def feature_disabled_payload(feature_key):
+    return {
+        'detail': FEATURE_DISABLED_MESSAGE,
+        'code': 'feature_disabled',
+        'feature': feature_key,
+    }
 
 
 def _ensure_user_can_reference_patient_facility(user, patient_profile):
@@ -334,7 +343,7 @@ class FeatureRequiredPermission(BasePermission):
     """
     Allow endpoints to declare `required_feature = 'feature_key'`.
     """
-    message = "This feature is not enabled for the current deployment."
+    message = FEATURE_DISABLED_MESSAGE
 
     def has_permission(self, request, view):
         required_feature = getattr(view, 'required_feature', None)
@@ -342,17 +351,12 @@ class FeatureRequiredPermission(BasePermission):
             return True
         if feature_enabled(required_feature, request=request):
             return True
-        raise NotFound({
-            'detail': self.message,
-            'code': 'feature_disabled',
-        })
+        raise NotFound(feature_disabled_payload(required_feature))
 
 
 def require_feature(feature_key):
     if not feature_enabled(feature_key):
-        raise PermissionDenied(
-            "This feature is not enabled for the current deployment."
-        )
+        raise NotFound(feature_disabled_payload(feature_key))
 
 
 def _get_patient_profile(patient_or_id):

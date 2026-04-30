@@ -5,6 +5,7 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from hms_backend.auth_utils import get_access_context
 from hms_backend.middleware import FacilityContextMiddleware, JWTAuthentication, _scrub_path, get_client_ip
+from apps.core.models import FeatureEntitlementOverride
 from apps.core.tests.factories import DefaultFacilityFactory, FacilityFactory
 from apps.users.tests.factories import AdminUserFactory, UserFactory
 
@@ -51,11 +52,115 @@ def test_deployment_capabilities_endpoint_does_not_require_facility_context(sett
     assert request.facility_code is None
 
 
+@pytest.mark.django_db
+def test_deployment_capabilities_endpoint_allows_missing_context_for_multi_facility_user(
+    monkeypatch, settings
+):
+    settings.FACILITY_CONTEXT_REQUIRED = True
+    settings.MULTI_FACILITY_MODE = True
+    settings.DEFAULT_FACILITY_CODE = None
+
+    facility_a = FacilityFactory(code='CAPA')
+    facility_b = FacilityFactory(code='CAPB')
+    user = UserFactory(primary_facility=facility_a)
+    user.facilities.add(facility_a, facility_b)
+
+    request = RequestFactory().get(
+        '/api/settings/deployment-capabilities/',
+        HTTP_AUTHORIZATION='Bearer valid-token',
+    )
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    monkeypatch.setattr(JWTAuthentication, 'get_header', lambda self, req: b'Bearer valid-token')
+    monkeypatch.setattr(JWTAuthentication, 'get_raw_token', lambda self, header: b'valid-token')
+    monkeypatch.setattr(
+        JWTAuthentication,
+        'get_validated_token',
+        lambda self, raw: {'user_id': str(user.id)},
+    )
+    monkeypatch.setattr(JWTAuthentication, 'get_user', lambda self, validated_token: user)
+
+    response = middleware.process_request(request)
+
+    assert response is None
+    assert request.facility is None
+    assert request.facility_code is None
+
+
 def test_disabled_feature_api_prefix_is_blocked(settings):
     settings.FACILITY_CONTEXT_REQUIRED = False
     settings.DEPLOYMENT_FEATURES = {'wards': False}
 
     request = RequestFactory().get('/api/wards/wards/')
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    response = middleware.process_request(request)
+
+    assert response is not None
+    assert response.status_code == 404
+    body = json.loads(response.content.decode('utf-8'))
+    assert body.get('code') == 'feature_disabled'
+    assert body.get('feature') == 'wards'
+
+
+@pytest.mark.django_db
+def test_disabled_feature_api_prefix_uses_consistent_response_before_facility_required(
+    monkeypatch, settings
+):
+    settings.FACILITY_CONTEXT_REQUIRED = True
+    settings.MULTI_FACILITY_MODE = True
+    settings.DEFAULT_FACILITY_CODE = None
+    settings.DEPLOYMENT_FEATURES = {'wards': False}
+
+    facility_a = FacilityFactory(code='WARDA')
+    facility_b = FacilityFactory(code='WARDB')
+    user = UserFactory(primary_facility=facility_a)
+    user.facilities.add(facility_a, facility_b)
+
+    request = RequestFactory().get(
+        '/api/wards/wards/',
+        HTTP_AUTHORIZATION='Bearer valid-token',
+    )
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    monkeypatch.setattr(JWTAuthentication, 'get_header', lambda self, req: b'Bearer valid-token')
+    monkeypatch.setattr(JWTAuthentication, 'get_raw_token', lambda self, header: b'valid-token')
+    monkeypatch.setattr(
+        JWTAuthentication,
+        'get_validated_token',
+        lambda self, raw: {'user_id': str(user.id)},
+    )
+    monkeypatch.setattr(JWTAuthentication, 'get_user', lambda self, validated_token: user)
+
+    response = middleware.process_request(request)
+
+    assert response is not None
+    assert response.status_code == 404
+    body = json.loads(response.content.decode('utf-8'))
+    assert body == {
+        'detail': 'This feature is not enabled for the current deployment.',
+        'code': 'feature_disabled',
+        'feature': 'wards',
+    }
+
+
+@pytest.mark.django_db
+def test_disabled_feature_api_prefix_respects_facility_entitlement_override(settings):
+    settings.FACILITY_CONTEXT_REQUIRED = False
+    settings.DEPLOYMENT_FEATURES = {
+        **getattr(settings, 'DEPLOYMENT_FEATURES', {}),
+        'wards': True,
+    }
+
+    facility = FacilityFactory(code='WARDX')
+    FeatureEntitlementOverride.objects.create(
+        scope=FeatureEntitlementOverride.SCOPE_FACILITY,
+        facility=facility,
+        feature_key='wards',
+        is_enabled=False,
+    )
+
+    request = RequestFactory().get('/api/wards/wards/', HTTP_X_FACILITY_CODE=facility.code)
     middleware = FacilityContextMiddleware(lambda req: None)
 
     response = middleware.process_request(request)

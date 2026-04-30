@@ -15,6 +15,37 @@ from hms_backend.deployment import api_path_enabled, feature_enabled
 logger = logging.getLogger('django.request')
 
 
+FACILITY_CONTEXT_OPTIONAL_PATH_PREFIXES = (
+    '/api/auth/',
+    '/api/facilities/',
+    '/api/settings/deployment-capabilities/',
+    '/admin/',
+    '/static/',
+    '/media/',
+)
+
+
+def _facility_context_required_applies(path):
+    normalized_path = str(path or '')
+    return not any(
+        normalized_path.startswith(prefix)
+        for prefix in FACILITY_CONTEXT_OPTIONAL_PATH_PREFIXES
+    )
+
+
+def _feature_disabled_response(feature_key):
+    from apps.core.security import feature_disabled_payload
+
+    return JsonResponse(feature_disabled_payload(feature_key), status=404)
+
+
+def _disabled_feature_response_for_request(request):
+    feature_is_enabled, feature_key = api_path_enabled(request.path, request=request)
+    if feature_is_enabled:
+        return None
+    return _feature_disabled_response(feature_key)
+
+
 def get_client_ip(request):
     """
     Get the client's real IP address from the request.
@@ -89,6 +120,7 @@ class FacilityContextMiddleware(MiddlewareMixin):
 
         request.facility = None
         request.facility_code = None
+        facility_context_required_applies = _facility_context_required_applies(request.path)
 
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
         header_key = f'HTTP_{header_name.upper().replace("-", "_")}'
@@ -128,7 +160,10 @@ class FacilityContextMiddleware(MiddlewareMixin):
                 facility_code = next(iter(allowed_codes))
                 facility_code_source = 'user'
             elif feature_enabled('multi_facility'):
-                if feature_enabled('facility_context_required'):
+                if feature_enabled('facility_context_required') and facility_context_required_applies:
+                    disabled_response = _disabled_feature_response_for_request(request)
+                    if disabled_response is not None:
+                        return disabled_response
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
                         status=403
@@ -167,27 +202,12 @@ class FacilityContextMiddleware(MiddlewareMixin):
                     status=403
                 )
 
-        feature_is_enabled, feature_key = api_path_enabled(request.path, request=request)
-        if not feature_is_enabled:
-            return JsonResponse(
-                {
-                    'detail': 'This feature is not enabled for the current deployment.',
-                    'code': 'feature_disabled',
-                    'feature': feature_key,
-                },
-                status=404,
-            )
+        disabled_response = _disabled_feature_response_for_request(request)
+        if disabled_response is not None:
+            return disabled_response
 
         if feature_enabled('facility_context_required'):
-            skip_paths = [
-                '/api/auth/',
-                '/api/facilities/',
-                '/api/settings/deployment-capabilities/',
-                '/admin/',
-                '/static/',
-                '/media/',
-            ]
-            if not any(request.path.startswith(path) for path in skip_paths):
+            if facility_context_required_applies:
                 if not request.facility_code:
                     return JsonResponse(
                         {'detail': 'Facility context is required.', 'code': 'facility_required'},
