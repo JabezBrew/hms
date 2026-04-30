@@ -36,6 +36,29 @@ from hms_backend.deployment import feature_enabled
 logger = logging.getLogger(__name__)
 
 
+def _billing_feature_enabled(facility=None) -> bool:
+    return bool(feature_enabled('billing', facility=facility))
+
+
+def _insurance_claims_feature_enabled(facility=None) -> bool:
+    return (
+        _billing_feature_enabled(facility)
+        and bool(feature_enabled('insurance_claims', facility=facility))
+    )
+
+
+def _feature_disabled_message(feature_key: str) -> str:
+    return f"{feature_key} feature is disabled for this deployment."
+
+
+def _mark_failed_for_disabled_feature(model, object_id: str, feature_key: str) -> None:
+    model.objects.filter(id=object_id).update(
+        status='failed',
+        error_message=_feature_disabled_message(feature_key),
+        updated_at=timezone.now(),
+    )
+
+
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def create_fhir_claim_for_claim(self, claim_id: str) -> None:
     """
@@ -45,11 +68,8 @@ def create_fhir_claim_for_claim(self, claim_id: str) -> None:
     - Never block request threads on external I/O.
     - Do not log PHI; log claim IDs only.
     """
-    if not feature_enabled('fhir_claims'):
-        logger.info("FHIR claim task skipped: feature disabled (claim_id=%s)", claim_id)
-        return
-
     claim = Claim.objects.select_related(
+        'invoice__facility',
         'invoice__patient',
         'invoice__patient_insurance__plan__provider',
     ).prefetch_related(
@@ -57,6 +77,13 @@ def create_fhir_claim_for_claim(self, claim_id: str) -> None:
     ).filter(id=claim_id).first()
     if not claim:
         logger.warning("FHIR claim task: claim not found (id=%s)", claim_id)
+        return
+    facility = getattr(claim.invoice, 'facility', None)
+    if not (
+        _insurance_claims_feature_enabled(facility)
+        and feature_enabled('fhir_claims', facility=facility)
+    ):
+        logger.info("FHIR claim task skipped: feature disabled (claim_id=%s)", claim_id)
         return
 
     invoice = claim.invoice
@@ -243,6 +270,16 @@ def process_psp_webhook_event(self, webhook_event_id: str) -> None:
             ])
             return
 
+        if not _billing_feature_enabled(intent.facility):
+            locked_event.processing_status = 'ignored'
+            locked_event.error_message = _feature_disabled_message('billing')
+            locked_event.processed_at = now
+            locked_event.save(update_fields=[
+                'provider_reference', 'client_reference',
+                'processing_status', 'error_message', 'processed_at', 'updated_at'
+            ])
+            return
+
         # Update intent status and post payment when succeeded.
         next_status = parsed.status
         if next_status not in dict(PaymentIntent.STATUS_CHOICES):
@@ -356,6 +393,9 @@ def process_settlement_batch(self, settlement_batch_id: str) -> None:
         return
 
     if batch.status != 'pending':
+        return
+    if not _billing_feature_enabled(batch.facility):
+        _mark_failed_for_disabled_feature(SettlementBatch, settlement_batch_id, 'billing')
         return
 
     now = timezone.now()
@@ -578,6 +618,13 @@ def process_payer_service_code_import_job(self, import_job_id: str) -> None:
         return
     if job.status not in ('pending',):
         return
+    if not _insurance_claims_feature_enabled(job.facility):
+        _mark_failed_for_disabled_feature(
+            PayerServiceCodeImportJob,
+            import_job_id,
+            'insurance_claims',
+        )
+        return
 
     now = timezone.now()
     with transaction.atomic():
@@ -784,6 +831,13 @@ def apply_payer_service_code_import_job(self, import_job_id: str) -> None:
     if job.status in ('applied', 'failed'):
         return
     if job.status not in ('preview_ready', 'applying'):
+        return
+    if not _insurance_claims_feature_enabled(job.facility):
+        _mark_failed_for_disabled_feature(
+            PayerServiceCodeImportJob,
+            import_job_id,
+            'insurance_claims',
+        )
         return
 
     now = timezone.now()
@@ -1011,6 +1065,13 @@ def generate_nhis_claim_export(self, export_job_id: str) -> None:
         return
     if job.status not in ('pending',):
         return
+    if not _insurance_claims_feature_enabled(job.facility):
+        _mark_failed_for_disabled_feature(
+            NHISClaimExportJob,
+            export_job_id,
+            'insurance_claims',
+        )
+        return
 
     now = timezone.now()
     with transaction.atomic():
@@ -1164,6 +1225,13 @@ def process_remittance_import_job(self, remittance_job_id: str) -> None:
     if not job:
         return
     if job.status not in ('pending',):
+        return
+    if not _insurance_claims_feature_enabled(job.facility):
+        _mark_failed_for_disabled_feature(
+            RemittanceImportJob,
+            remittance_job_id,
+            'insurance_claims',
+        )
         return
 
     now = timezone.now()
@@ -1380,6 +1448,8 @@ def sync_draft_invoice_for_encounter(self, encounter_id: str) -> None:
     encounter = Encounter.objects.select_related('facility', 'patient').filter(id=encounter_id).first()
     if not encounter:
         return
+    if not _billing_feature_enabled(getattr(encounter, 'facility', None)):
+        return
 
     service = DraftInvoiceSyncService()
     service.ensure_and_sync_for_encounter(
@@ -1398,6 +1468,8 @@ def sync_draft_invoice_for_admission(self, admission_id: str) -> None:
 
     admission = Admission.objects.select_related('facility', 'patient').filter(id=admission_id).first()
     if not admission:
+        return
+    if not _billing_feature_enabled(getattr(admission, 'facility', None)):
         return
 
     service = DraftInvoiceSyncService()
@@ -1418,12 +1490,16 @@ def finalize_draft_invoice_for_encounter(self, encounter_id: str) -> None:
     encounter = Encounter.objects.select_related('facility', 'patient').filter(id=encounter_id).first()
     if not encounter:
         return
+    if not _billing_feature_enabled(getattr(encounter, 'facility', None)):
+        return
 
     service = DraftInvoiceSyncService()
     invoice = service.ensure_and_sync_for_encounter(
         encounter=encounter,
         actor=getattr(encounter, 'updated_by', None) or getattr(encounter, 'created_by', None),
     )
+    if invoice is None:
+        return
     service.finalize_invoice(
         invoice=invoice,
         actor=getattr(encounter, 'updated_by', None) or getattr(encounter, 'created_by', None),
@@ -1440,6 +1516,8 @@ def finalize_draft_invoice_for_admission(self, admission_id: str) -> None:
 
     admission = Admission.objects.select_related('facility', 'patient').filter(id=admission_id).first()
     if not admission:
+        return
+    if not _billing_feature_enabled(getattr(admission, 'facility', None)):
         return
 
     service = DraftInvoiceSyncService()
@@ -1458,4 +1536,6 @@ def finalize_draft_invoice_for_admission(self, admission_id: str) -> None:
         return
 
     invoice = service.ensure_and_sync_for_admission(admission=admission, actor=actor)
+    if invoice is None:
+        return
     service.finalize_invoice(invoice=invoice, actor=actor)

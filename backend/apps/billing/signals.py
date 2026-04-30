@@ -21,8 +21,13 @@ import logging
 from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger(__name__)
+
+
+def _billing_enabled(facility=None):
+    return bool(feature_enabled('billing', facility=facility))
 
 
 @receiver(
@@ -37,8 +42,6 @@ def handle_encounter_completion(sender, instance, **kwargs):
     - status == 'in-progress': ensure draft invoice exists and is synced (async)
     - status == 'finished': finalize the draft invoice (async)
     """
-    from apps.billing.models import FacilityBillingSettings
-
     status = getattr(instance, 'status', None)
     if status not in ('in-progress', 'finished'):
         return
@@ -52,6 +55,10 @@ def handle_encounter_completion(sender, instance, **kwargs):
                 "No facility found"
             )
             return
+        if not _billing_enabled(facility):
+            return
+
+        from apps.billing.models import FacilityBillingSettings
 
         # Check facility billing settings
         try:
@@ -101,9 +108,6 @@ def handle_discharge(sender, instance, **kwargs):
     Billing freeze/finalization for pending discharge is explicit in the discharge
     workflow and should not be retriggered by the final ward discharge transition.
     """
-    from apps.billing.models import FacilityBillingSettings
-    from apps.billing.tasks import sync_draft_invoice_for_admission
-
     status = getattr(instance, 'status', None)
     if status != 'admitted':
         return
@@ -118,6 +122,11 @@ def handle_discharge(sender, instance, **kwargs):
                 "No facility found"
             )
             return
+        if not _billing_enabled(facility):
+            return
+
+        from apps.billing.models import FacilityBillingSettings
+        from apps.billing.tasks import sync_draft_invoice_for_admission
 
         # Check facility billing settings
         try:
@@ -158,6 +167,11 @@ def handle_lab_order_test_update(sender, instance, **kwargs):
     order = getattr(instance, 'order', None)
     encounter = getattr(order, 'encounter', None) if order else None
     if not encounter:
+        return
+    facility = getattr(encounter, 'facility', None) or getattr(order, 'facility', None)
+    if not _billing_enabled(facility):
+        return
+    if not feature_enabled('laboratory', facility=facility):
         return
 
     from apps.billing.tasks import sync_draft_invoice_for_encounter

@@ -5,9 +5,14 @@ Maps laboratory data to FHIR ServiceRequest, DiagnosticReport, and Observation r
 import logging
 from typing import Dict, Optional, List
 from apps.fhir_client.client import fhir_client
+from hms_backend.deployment import feature_enabled
 from .models import LabOrder, LabResult
 
 logger = logging.getLogger(__name__)
+
+
+def _laboratory_enabled(facility=None) -> bool:
+    return bool(feature_enabled('laboratory', facility=facility))
 
 
 def map_lab_order_to_service_request(order: LabOrder) -> Dict:
@@ -257,8 +262,11 @@ def sync_lab_order_to_fhir(order_id: str) -> Dict:
     """
     try:
         order = LabOrder.objects.select_related(
-            'patient', 'ordering_provider', 'encounter'
+            'facility', 'patient', 'ordering_provider', 'encounter'
         ).prefetch_related('order_tests__test', 'order_tests__panel').get(id=order_id)
+
+        if not _laboratory_enabled(order.facility):
+            return {'status': 'skipped', 'message': 'feature_disabled'}
 
         # Map to FHIR resource
         fhir_resource = map_lab_order_to_service_request(order)
@@ -307,11 +315,15 @@ def sync_lab_result_to_fhir(result_id: str) -> Dict:
     """
     try:
         result = LabResult.objects.select_related(
+            'facility',
             'order_test__order__patient',
             'order_test__test',
             'performed_by',
             'verified_by'
         ).get(id=result_id)
+
+        if not _laboratory_enabled(result.facility):
+            return {'status': 'skipped', 'message': 'feature_disabled'}
 
         # Map to FHIR resource
         fhir_resource = map_lab_result_to_observation(result)

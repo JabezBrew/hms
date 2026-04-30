@@ -3,11 +3,19 @@ Signal handlers for syncing laboratory data to TimelineEvent.
 """
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
+from hms_backend.deployment import feature_enabled
+
+
+def _laboratory_enabled(facility=None) -> bool:
+    return bool(feature_enabled('laboratory', facility=facility))
 
 
 @receiver(post_save, sender='laboratory.LabOrder')
 def sync_lab_order_to_timeline(sender, instance, created, **kwargs):
     """Sync LabOrder to TimelineEvent on save."""
+    if not _laboratory_enabled(getattr(instance, 'facility', None)):
+        return
+
     from apps.clinical_notes.models import TimelineEvent
 
     # Get author info
@@ -61,6 +69,9 @@ def sync_lab_order_to_timeline(sender, instance, created, **kwargs):
 @receiver(post_delete, sender='laboratory.LabOrder')
 def delete_lab_order_timeline_event(sender, instance, **kwargs):
     """Delete TimelineEvent when LabOrder is deleted."""
+    if not _laboratory_enabled(getattr(instance, 'facility', None)):
+        return
+
     from apps.clinical_notes.models import TimelineEvent
 
     TimelineEvent.objects.filter(

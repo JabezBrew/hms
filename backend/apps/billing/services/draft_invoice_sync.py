@@ -31,6 +31,7 @@ from apps.billing.models import (
 )
 from apps.billing.services.pricing import PricingService
 from apps.billing.services.rules_engine import BillingContext, BillingRulesEngine, PatientContext
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,16 @@ def _safe_days_inclusive(start_dt, end_dt) -> int:
     if end < start:
         return 0
     return (end - start).days + 1
+
+
+def _billing_enabled(facility=None) -> bool:
+    return bool(feature_enabled("billing", facility=facility))
+
+
+def _insurance_claims_enabled(facility=None) -> bool:
+    return _billing_enabled(facility) and bool(
+        feature_enabled("insurance_claims", facility=facility)
+    )
 
 
 @dataclass(frozen=True)
@@ -87,6 +98,8 @@ class DraftInvoiceSyncService:
         """
         Best-effort selection of an active insurance for this facility.
         """
+        if not _insurance_claims_enabled(facility):
+            return None
         if not patient:
             return None
         qs = (
@@ -204,7 +217,11 @@ class DraftInvoiceSyncService:
         total_amount = rules_result.adjusted_amount + tax_total + rules_result.total_surcharge
         invoice.total_amount = max(Decimal("0.00"), _to_decimal(total_amount))
 
-        if invoice.patient_insurance and invoice.patient_insurance.is_valid:
+        if (
+            _insurance_claims_enabled(facility)
+            and invoice.patient_insurance
+            and invoice.patient_insurance.is_valid
+        ):
             coverage_pct = _to_decimal(invoice.patient_insurance.plan.coverage_percentage) / Decimal("100")
             invoice.insurance_amount = invoice.total_amount * coverage_pct
             invoice.patient_responsibility = invoice.total_amount - invoice.insurance_amount
@@ -284,6 +301,8 @@ class DraftInvoiceSyncService:
     @transaction.atomic
     def ensure_and_sync_for_encounter(self, *, encounter, actor=None) -> Invoice:
         facility = encounter.facility
+        if not _billing_enabled(facility):
+            return None
         billing_settings = self._get_billing_settings(facility)
 
         invoice = (
@@ -334,33 +353,34 @@ class DraftInvoiceSyncService:
             keep.add(key.as_tuple())
 
         # Lab tests (via mapping LabTestCatalog.billing_service).
-        from apps.laboratory.models import LabOrderTest
+        if feature_enabled("laboratory", facility=facility):
+            from apps.laboratory.models import LabOrderTest
 
-        trigger = self._lab_trigger_for_invoice(invoice, billing_settings)
-        billable_statuses = self._lab_billable_statuses(trigger)
+            trigger = self._lab_trigger_for_invoice(invoice, billing_settings)
+            billable_statuses = self._lab_billable_statuses(trigger)
 
-        lab_tests = (
-            LabOrderTest.objects.select_related("order", "test", "test__billing_service")
-            .filter(order__encounter=encounter, facility=facility)
-            .exclude(order__status="cancelled")
-        )
-        for lot in lab_tests:
-            if lot.status not in billable_statuses:
-                continue
-            svc = getattr(lot.test, "billing_service", None)
-            if not svc:
-                continue
-            key = self._upsert_auto_item(
-                invoice=invoice,
-                facility=facility,
-                service=svc,
-                quantity=1,
-                source_type="lab_order_test",
-                source_id=lot.id,
-                actor=actor,
-                description=getattr(lot.test, "name", None) or "Lab Test",
+            lab_tests = (
+                LabOrderTest.objects.select_related("order", "test", "test__billing_service")
+                .filter(order__encounter=encounter, facility=facility)
+                .exclude(order__status="cancelled")
             )
-            keep.add(key.as_tuple())
+            for lot in lab_tests:
+                if lot.status not in billable_statuses:
+                    continue
+                svc = getattr(lot.test, "billing_service", None)
+                if not svc:
+                    continue
+                key = self._upsert_auto_item(
+                    invoice=invoice,
+                    facility=facility,
+                    service=svc,
+                    quantity=1,
+                    source_type="lab_order_test",
+                    source_id=lot.id,
+                    actor=actor,
+                    description=getattr(lot.test, "name", None) or "Lab Test",
+                )
+                keep.add(key.as_tuple())
 
         # Only prune when unpaid (payments are also blocked for auto-updating invoices, but be defensive).
         if not invoice.payments.filter(status="posted").exists():
@@ -384,6 +404,8 @@ class DraftInvoiceSyncService:
     @transaction.atomic
     def ensure_and_sync_for_admission(self, *, admission, actor=None, allow_reopen=False, end_dt=None) -> Invoice:
         facility = admission.facility
+        if not _billing_enabled(facility):
+            return None
         billing_settings = self._get_billing_settings(facility)
 
         invoice = (
@@ -456,6 +478,8 @@ class DraftInvoiceSyncService:
 
     @transaction.atomic
     def freeze_admission_invoice(self, *, admission, cutoff_at, actor=None) -> Invoice:
+        if not _billing_enabled(getattr(admission, "facility", None)):
+            return None
         invoice = self.ensure_and_sync_for_admission(
             admission=admission,
             actor=actor,
@@ -466,6 +490,8 @@ class DraftInvoiceSyncService:
 
     @transaction.atomic
     def reopen_admission_invoice(self, *, admission, actor=None) -> Invoice:
+        if not _billing_enabled(getattr(admission, "facility", None)):
+            return None
         return self.ensure_and_sync_for_admission(
             admission=admission,
             actor=actor,
@@ -477,6 +503,8 @@ class DraftInvoiceSyncService:
         """
         Stop auto-updates and mark invoice as ready for payment/claims.
         """
+        if not _billing_enabled(getattr(invoice, "facility", None)):
+            return None
         locked = Invoice.objects.select_for_update().get(id=invoice.id)
         if locked.status == "cancelled":
             return locked

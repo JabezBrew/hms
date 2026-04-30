@@ -18,6 +18,8 @@ from django.core.exceptions import ValidationError
 
 from django.db import models
 
+from hms_backend.deployment import feature_enabled
+
 from .models import (
     InventoryItem, StorageLocation, LocationStock,
     StockMovement, ExpiryTracker, Supplier
@@ -49,6 +51,44 @@ class InsufficientStockError(Exception):
             f"Insufficient stock for {item.name} at {location.name}: "
             f"requested {requested}, available {available}"
         )
+
+
+class FeatureDisabledError(ValidationError):
+    """Raised when inventory services are called while the module is disabled."""
+
+
+def _resolve_facility(*objects):
+    for obj in objects:
+        if obj is None:
+            continue
+        facility = getattr(obj, 'facility', None)
+        if facility is not None:
+            return facility
+        item = getattr(obj, 'item', None)
+        facility = getattr(item, 'facility', None)
+        if facility is not None:
+            return facility
+        register = getattr(obj, 'register', None)
+        facility = getattr(register, 'facility', None)
+        if facility is not None:
+            return facility
+    return None
+
+
+def _ensure_inventory_enabled(facility=None, *objects) -> None:
+    resolved_facility = facility or _resolve_facility(*objects)
+    if not feature_enabled('inventory', facility=resolved_facility):
+        raise FeatureDisabledError(
+            "Inventory feature is not enabled for this deployment."
+        )
+
+
+def _inventory_enabled(facility=None, *objects) -> bool:
+    try:
+        _ensure_inventory_enabled(facility, *objects)
+    except FeatureDisabledError:
+        return False
+    return True
 
 
 class StockService:
@@ -107,6 +147,8 @@ class StockService:
             InsufficientStockError: If decreasing stock below zero
             ValidationError: If invalid parameters
         """
+        _ensure_inventory_enabled(None, item, location)
+
         # Get or create LocationStock with row-level locking
         loc_stock, created = LocationStock.objects.select_for_update().get_or_create(
             item=item,
@@ -222,6 +264,8 @@ class StockService:
             InsufficientStockError: If source doesn't have enough stock
             ValidationError: If from_location == to_location
         """
+        _ensure_inventory_enabled(None, item, from_location, to_location)
+
         if from_location.id == to_location.id:
             raise ValidationError("Source and destination locations must be different")
 
@@ -280,6 +324,15 @@ class StockService:
                 - shortfall: int (0 if sufficient)
                 - alternative_locations: List of locations with stock
         """
+        if not _inventory_enabled(None, item, location):
+            return {
+                'available': False,
+                'quantity_at_location': 0,
+                'available_quantity': 0,
+                'shortfall': quantity_needed,
+                'alternative_locations': [],
+            }
+
         try:
             loc_stock = LocationStock.objects.get(item=item, location=location)
             available_qty = loc_stock.available_quantity
@@ -346,6 +399,9 @@ class BatchSelectionService:
                 - batch: ExpiryTracker instance
                 - quantity: Amount to take from this batch
         """
+        if not _inventory_enabled(None, item, location):
+            return []
+
         today = timezone.now().date()
 
         # Get active batches at this location, ordered by expiry date
@@ -403,6 +459,19 @@ class BatchSelectionService:
                 - is_sufficient: Whether enough stock exists
                 - warnings: List of warning messages
         """
+        if not _inventory_enabled(None, item, location):
+            return {
+                'selections': [],
+                'total_available': 0,
+                'is_sufficient': False,
+                'warnings': [
+                    {
+                        'level': 'error',
+                        'message': 'Inventory feature is not enabled for this deployment.',
+                    }
+                ],
+            }
+
         selections = BatchSelectionService.select_batch_fefo(
             item, location, quantity_needed
         )
@@ -459,6 +528,9 @@ class BatchSelectionService:
         Returns:
             List of ExpiryTracker instances
         """
+        if not _inventory_enabled(facility, location):
+            return []
+
         today = timezone.now().date()
         expiry_threshold = today + timezone.timedelta(days=days)
 
@@ -585,6 +657,8 @@ class ProcurementService:
         Returns:
             Created PurchaseRequisition
         """
+        _ensure_inventory_enabled(facility, location, *items_below_reorder)
+
         from .models import PurchaseRequisition, PurchaseRequisitionItem
 
         req = PurchaseRequisition.objects.create(
@@ -616,6 +690,8 @@ class ProcurementService:
         """
         Submit a requisition for approval.
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status != 'draft':
             raise ValidationError("Only draft requisitions can be submitted")
 
@@ -632,6 +708,8 @@ class ProcurementService:
         """
         Approve a requisition.
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status != 'pending_approval':
             raise ValidationError("Only pending requisitions can be approved")
 
@@ -657,6 +735,8 @@ class ProcurementService:
         """
         Reject a requisition.
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status != 'pending_approval':
             raise ValidationError("Only pending requisitions can be rejected")
 
@@ -689,6 +769,8 @@ class ProcurementService:
         Returns:
             Created PurchaseOrder
         """
+        _ensure_inventory_enabled(None, requisition, supplier, delivery_location)
+
         from .models import PurchaseOrder, PurchaseOrderItem
 
         if requisition.status != 'approved':
@@ -734,6 +816,8 @@ class ProcurementService:
         """
         Approve a purchase order.
         """
+        _ensure_inventory_enabled(None, po)
+
         if po.status not in ('draft', 'pending_approval'):
             raise ValidationError("PO cannot be approved in current status")
 
@@ -749,6 +833,8 @@ class ProcurementService:
         """
         Mark PO as sent to supplier.
         """
+        _ensure_inventory_enabled(None, po)
+
         if po.status != 'approved':
             raise ValidationError("Only approved POs can be sent")
 
@@ -768,6 +854,8 @@ class ProcurementService:
         """
         Create a goods received note for a PO.
         """
+        _ensure_inventory_enabled(None, po, receiving_location)
+
         from .models import GoodsReceivedNote, GoodsReceivedNoteItem
 
         if po.status not in ('sent', 'acknowledged', 'partially_received'):
@@ -814,6 +902,8 @@ class ProcurementService:
         Returns:
             Updated GoodsReceivedNote
         """
+        _ensure_inventory_enabled(None, grn)
+
         if grn.status not in ('draft', 'pending_inspection', 'inspected'):
             raise ValidationError(f"Cannot accept GRN in {grn.status} status")
 
@@ -889,6 +979,9 @@ class ProcurementService:
         Returns:
             List of InventoryItem instances below reorder level
         """
+        if not _inventory_enabled(facility, location):
+            return []
+
         if location:
             # Location-specific check
             low_stocks = LocationStock.objects.filter(
@@ -1012,6 +1105,8 @@ class InternalLogisticsService:
         Returns:
             Created InternalRequisition
         """
+        _ensure_inventory_enabled(facility, requesting_location, fulfilling_location)
+
         from .models import InternalRequisition, InternalRequisitionItem
 
         req = InternalRequisition.objects.create(
@@ -1044,6 +1139,8 @@ class InternalLogisticsService:
         """
         Submit an internal requisition for approval.
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status != 'draft':
             raise ValidationError("Only draft requisitions can be submitted")
 
@@ -1066,6 +1163,8 @@ class InternalLogisticsService:
             approver: User approving
             approved_quantities: Optional dict of {item_id: approved_qty}
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status != 'pending_approval':
             raise ValidationError("Only pending requisitions can be approved")
 
@@ -1094,6 +1193,8 @@ class InternalLogisticsService:
         """
         Reject an internal requisition.
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status != 'pending_approval':
             raise ValidationError("Only pending requisitions can be rejected")
 
@@ -1123,6 +1224,8 @@ class InternalLogisticsService:
         Returns:
             Updated InternalRequisition
         """
+        _ensure_inventory_enabled(None, requisition)
+
         if requisition.status not in ('approved', 'in_progress'):
             raise ValidationError("Only approved/in-progress requisitions can be fulfilled")
 
@@ -1233,6 +1336,8 @@ class InternalLogisticsService:
         Returns:
             Created StockTransferRequest
         """
+        _ensure_inventory_enabled(facility, from_location, to_location)
+
         from .models import StockTransferRequest, StockTransferItem
 
         if from_location.id == to_location.id:
@@ -1278,6 +1383,8 @@ class InternalLogisticsService:
         """
         Approve a stock transfer request.
         """
+        _ensure_inventory_enabled(None, transfer)
+
         if transfer.status != 'pending':
             raise ValidationError("Only pending transfers can be approved")
 
@@ -1305,6 +1412,8 @@ class InternalLogisticsService:
         Returns:
             Updated StockTransferRequest
         """
+        _ensure_inventory_enabled(None, transfer)
+
         if transfer.status != 'approved':
             raise ValidationError("Only approved transfers can be dispatched")
 
@@ -1372,6 +1481,8 @@ class InternalLogisticsService:
         Returns:
             Updated StockTransferRequest
         """
+        _ensure_inventory_enabled(None, transfer)
+
         if transfer.status != 'in_transit':
             raise ValidationError("Only in-transit transfers can be received")
 
@@ -1423,6 +1534,8 @@ class InternalLogisticsService:
         """
         Cancel a transfer request.
         """
+        _ensure_inventory_enabled(None, transfer)
+
         if transfer.status in ('received', 'cancelled'):
             raise ValidationError(f"Cannot cancel transfer in {transfer.status} status")
 
@@ -1455,6 +1568,8 @@ class InternalLogisticsService:
         Returns:
             Created InternalRequisition
         """
+        _ensure_inventory_enabled(None, standing_order)
+
         from .models import StandingOrderItem
 
         if not standing_order.is_active:
@@ -1495,6 +1610,9 @@ class InternalLogisticsService:
         Returns:
             List of StandingOrder instances due for generation
         """
+        if not _inventory_enabled(facility):
+            return []
+
         from .models import StandingOrder
 
         today = timezone.now().date()
@@ -1521,6 +1639,9 @@ class InternalLogisticsService:
         Returns:
             List of created InternalRequisitions
         """
+        if not _inventory_enabled(facility):
+            return []
+
         due_orders = InternalLogisticsService.get_due_standing_orders(facility)
         requisitions = []
 
@@ -1570,6 +1691,8 @@ class ControlledSubstanceService:
         """
         Get or create a controlled substance register for an item at a location.
         """
+        _ensure_inventory_enabled(facility, location, item)
+
         from .models import ControlledSubstanceRegister
 
         if not item.is_controlled_substance:
@@ -1636,6 +1759,8 @@ class ControlledSubstanceService:
         Returns:
             Created ControlledSubstanceEntry
         """
+        _ensure_inventory_enabled(facility, location, item)
+
         from .models import ControlledSubstanceEntry
 
         ControlledSubstanceService._validate_witness(performer, witness)
@@ -1723,6 +1848,8 @@ class ControlledSubstanceService:
         Returns:
             Created ControlledSubstanceEntry
         """
+        _ensure_inventory_enabled(facility, location, item)
+
         from .models import ControlledSubstanceEntry
 
         ControlledSubstanceService._validate_witness(performer, witness)
@@ -1827,6 +1954,8 @@ class ControlledSubstanceService:
         Returns:
             Created ControlledSubstanceEntry
         """
+        _ensure_inventory_enabled(facility, location, item)
+
         from .models import ControlledSubstanceEntry
 
         if not wastage_reason:
@@ -1914,6 +2043,8 @@ class ControlledSubstanceService:
         Returns:
             Dict with count results and any discrepancy
         """
+        _ensure_inventory_enabled(facility, location, item)
+
         from .models import ControlledSubstanceDiscrepancy
 
         ControlledSubstanceService._validate_witness(performer, witness)
@@ -1974,6 +2105,9 @@ class ControlledSubstanceService:
         Returns:
             List of ControlledSubstanceEntry instances
         """
+        if not _inventory_enabled(None, register):
+            return []
+
         queryset = register.entries.select_related(
             'performed_by', 'witness', 'patient', 'batch'
         ).order_by('-timestamp')
@@ -2002,6 +2136,9 @@ class ControlledSubstanceService:
         Returns:
             List of ControlledSubstanceDiscrepancy instances
         """
+        if not _inventory_enabled(facility, location):
+            return []
+
         from .models import ControlledSubstanceDiscrepancy
 
         queryset = ControlledSubstanceDiscrepancy.objects.filter(
@@ -2036,6 +2173,8 @@ class ControlledSubstanceService:
         Returns:
             Updated ControlledSubstanceDiscrepancy
         """
+        _ensure_inventory_enabled(None, discrepancy)
+
         if discrepancy.status == 'resolved':
             raise ValidationError("Discrepancy is already resolved")
 

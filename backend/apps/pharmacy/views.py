@@ -9,14 +9,16 @@ This module provides endpoints for:
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
     check_prescription_access,
+    feature_disabled_payload,
     get_user_facility,
 )
+from hms_backend.deployment import feature_enabled
 from apps.nursing.models import MedicationAdministration, SupplyRequest
 from apps.audit.services import AuditService
 from apps.audit.models import AuditCategory, AuditAction
@@ -27,6 +29,11 @@ from .permissions import IsPharmacistOrAdmin
 from .serializers import MedicationDispensingListSerializer, SupplyRequestDispensingSerializer
 from . import services
 from .services import DispensingError
+
+
+def _require_inventory_feature(request, facility):
+    if not feature_enabled('inventory', request=request, facility=facility):
+        raise NotFound(feature_disabled_payload('inventory'))
 
 
 class DispensingViewSet(viewsets.ViewSet):
@@ -125,6 +132,9 @@ class DispensingViewSet(viewsets.ViewSet):
         batch_override = None
 
         inventory_item_id = request.data.get('inventory_item_id')
+        if inventory_item_id or request.data.get('location_id') or request.data.get('batch_id'):
+            _require_inventory_feature(request, facility)
+
         if inventory_item_id:
             try:
                 inventory_item = InventoryItem.objects.get(id=inventory_item_id, facility=facility)
@@ -206,6 +216,7 @@ class DispensingViewSet(viewsets.ViewSet):
 
         if not facility:
             raise PermissionDenied("Facility context is required.")
+        _require_inventory_feature(request, facility)
 
         dispensing_location = None
         if location_id:
@@ -248,6 +259,7 @@ class DispensingViewSet(viewsets.ViewSet):
         facility = get_user_facility(request)
         if not facility:
             raise PermissionDenied("Facility context is required.")
+        _require_inventory_feature(request, facility)
 
         item_id = request.query_params.get('item_id')
         location_id = request.query_params.get('location_id')
@@ -416,6 +428,9 @@ class SupplyRequestDispensingViewSet(viewsets.ViewSet):
         batch_override = None
 
         location_id = request.data.get('location_id')
+        if location_id or request.data.get('batch_id'):
+            _require_inventory_feature(request, facility)
+
         if location_id:
             try:
                 dispensing_location = StorageLocation.objects.get(

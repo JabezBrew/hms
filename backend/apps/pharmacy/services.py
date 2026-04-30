@@ -23,6 +23,7 @@ from django.db import models
 from apps.inventory.models import (
     InventoryItem, StorageLocation, ExpiryTracker, LocationStock
 )
+from hms_backend.deployment import feature_enabled
 
 if TYPE_CHECKING:
     from apps.nursing.models import MedicationAdministration
@@ -31,6 +32,39 @@ if TYPE_CHECKING:
 class DispensingError(Exception):
     """Raised when medication cannot be dispensed."""
     pass
+
+
+def _pharmacy_enabled(facility=None) -> bool:
+    return bool(feature_enabled('pharmacy', facility=facility))
+
+
+def _inventory_enabled(facility=None) -> bool:
+    return bool(feature_enabled('inventory', facility=facility))
+
+
+def _query_feature_enabled(*, facility=None, patient_id=None) -> bool:
+    if facility is None and patient_id:
+        from apps.users.models import PatientProfile
+
+        patient = PatientProfile.objects.select_related('facility').filter(id=patient_id).first()
+        facility = getattr(patient, 'facility', None)
+    if facility is None:
+        return False
+    return _pharmacy_enabled(facility)
+
+
+def _facility_from_dispense_context(*objects):
+    for obj in objects:
+        if not obj:
+            continue
+        facility = getattr(obj, 'facility', None)
+        if facility is not None:
+            return facility
+        patient = getattr(obj, 'patient', None)
+        facility = getattr(patient, 'facility', None)
+        if facility is not None:
+            return facility
+    return None
 
 
 def check_stock_availability(
@@ -55,6 +89,22 @@ def check_stock_availability(
             - alternative_locations: List of locations with stock
             - warnings: List of warning messages
     """
+    facility = _facility_from_dispense_context(inventory_item, location)
+    if not _pharmacy_enabled(facility) or not _inventory_enabled(facility):
+        return {
+            'available': False,
+            'available_quantity': 0,
+            'shortfall': quantity,
+            'batch_recommendations': [],
+            'alternative_locations': [],
+            'warnings': [
+                {
+                    'level': 'error',
+                    'message': 'Pharmacy stock checks are unavailable for this deployment.',
+                }
+            ],
+        }
+
     # Check basic availability
     availability = StockService.check_availability(
         item=inventory_item,
@@ -108,6 +158,21 @@ def dispense_medication(
         DispensingError: If stock is insufficient
         InsufficientStockError: If stock deduction fails
     """
+    facility = _facility_from_dispense_context(
+        mar_entry,
+        inventory_item,
+        dispensing_location,
+    )
+    if not _pharmacy_enabled(facility):
+        raise DispensingError("Pharmacy feature is not enabled for this deployment.")
+    if (
+        inventory_item
+        and dispensing_location
+        and not skip_stock_deduction
+        and not _inventory_enabled(facility)
+    ):
+        raise DispensingError("Inventory feature is not enabled for stock deduction.")
+
     with transaction.atomic():
         # Update dispensing status
         mar_entry.is_dispensed = True
@@ -189,6 +254,17 @@ def dispense_medication_batch(
     dispensed = []
     errors = []
 
+    if not _pharmacy_enabled(getattr(dispensing_location, 'facility', None)):
+        return dispensed, [
+            {
+                'entry_id': str(getattr(entry, 'id', '')),
+                'medication': getattr(entry, 'medication_name', ''),
+                'patient': 'Unknown',
+                'error': 'Pharmacy feature is not enabled for this deployment.',
+            }
+            for entry in mar_entries
+        ]
+
     for entry in mar_entries:
         try:
             # Try to find matching inventory item if auto-linking enabled
@@ -239,6 +315,9 @@ def get_pending_dispensing(patient_id=None, facility=None):
         QuerySet of MedicationAdministration entries
     """
     from apps.nursing.models import MedicationAdministration
+
+    if not _query_feature_enabled(facility=facility, patient_id=patient_id):
+        return MedicationAdministration.objects.none()
 
     # Show ALL undispensed scheduled medications
     # Pharmacy needs to see everything that hasn't been dispensed yet
@@ -312,6 +391,9 @@ def get_dispensed_ready_for_admin(patient_id=None, facility=None):
     """
     from apps.nursing.models import MedicationAdministration
 
+    if not _query_feature_enabled(facility=facility, patient_id=patient_id):
+        return MedicationAdministration.objects.none()
+
     queryset = MedicationAdministration.objects.filter(
         status='scheduled',
         is_dispensed=True,
@@ -353,12 +435,22 @@ def dispense_supply_request(
     Returns:
         Updated SupplyRequest instance
     """
+    facility = _facility_from_dispense_context(
+        supply_request,
+        dispensing_location,
+        getattr(supply_request, 'treatment_entry', None),
+    )
+    if not _pharmacy_enabled(facility):
+        raise DispensingError("Pharmacy feature is not enabled for this deployment.")
+
     with transaction.atomic():
         entry = supply_request.treatment_entry
         inventory_item = entry.inventory_item
 
         # Deduct from inventory if linked
         if inventory_item and dispensing_location:
+            if not _inventory_enabled(facility):
+                raise DispensingError("Inventory feature is not enabled for stock deduction.")
             batch_to_use = batch_override
             if not batch_to_use:
                 selections = BatchSelectionService.select_batch_fefo(
@@ -414,6 +506,13 @@ def reject_supply_request(supply_request, rejection_reason, rejected_by):
     Returns:
         Updated SupplyRequest instance
     """
+    facility = _facility_from_dispense_context(
+        supply_request,
+        getattr(supply_request, 'treatment_entry', None),
+    )
+    if not _pharmacy_enabled(facility):
+        raise DispensingError("Pharmacy feature is not enabled for this deployment.")
+
     supply_request.status = 'rejected'
     supply_request.rejection_reason = rejection_reason
     supply_request.save()
@@ -433,6 +532,9 @@ def get_pending_supply_requests(patient_id=None, admission_id=None, facility=Non
         QuerySet of SupplyRequest entries
     """
     from apps.nursing.models import SupplyRequest
+
+    if not _query_feature_enabled(facility=facility, patient_id=patient_id):
+        return SupplyRequest.objects.none()
 
     queryset = SupplyRequest.objects.filter(
         status='pending'
@@ -475,6 +577,9 @@ def link_medication_to_inventory(
     Returns:
         InventoryItem if found, None otherwise
     """
+    if not _pharmacy_enabled(facility) or not _inventory_enabled(facility):
+        return None
+
     # Exact match first
     item = InventoryItem.objects.filter(
         facility=facility,
@@ -508,6 +613,9 @@ def get_low_stock_medications(facility, location: StorageLocation = None):
     Returns:
         List of inventory items below reorder level
     """
+    if not _pharmacy_enabled(facility) or not _inventory_enabled(facility):
+        return LocationStock.objects.none() if location else InventoryItem.objects.none()
+
     if location:
         # Location-specific low stock
         return LocationStock.objects.filter(

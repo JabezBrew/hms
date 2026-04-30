@@ -33,8 +33,19 @@ from apps.billing.services.pricing import PricingService
 from apps.billing.services.rules_engine import (
     BillingRulesEngine, PatientContext, BillingContext, RuleEvaluationResult
 )
+from hms_backend.deployment import feature_enabled
 
 logger = logging.getLogger(__name__)
+
+
+def _billing_enabled(facility=None) -> bool:
+    return bool(feature_enabled('billing', facility=facility))
+
+
+def _insurance_claims_enabled(facility=None) -> bool:
+    return _billing_enabled(facility) and bool(
+        feature_enabled('insurance_claims', facility=facility)
+    )
 
 
 @dataclass
@@ -122,6 +133,11 @@ class InvoiceGenerationService:
                     success=False,
                     error_message="Cannot determine facility from encounter"
                 )
+            if not _billing_enabled(facility):
+                return InvoiceGenerationResult(
+                    success=False,
+                    error_message="Billing feature is disabled"
+                )
 
             # Collect services from encounter
             service_lines = self._collect_encounter_services(
@@ -202,6 +218,11 @@ class InvoiceGenerationService:
                     success=False,
                     error_message="Cannot determine facility from admission"
                 )
+            if not _billing_enabled(facility):
+                return InvoiceGenerationResult(
+                    success=False,
+                    error_message="Billing feature is disabled"
+                )
 
             # Collect services from admission
             service_lines = self._collect_admission_services(
@@ -279,6 +300,11 @@ class InvoiceGenerationService:
         """
         try:
             warnings = []
+            if not _billing_enabled(facility):
+                return InvoiceGenerationResult(
+                    success=False,
+                    error_message="Billing feature is disabled"
+                )
 
             # Get facility billing settings
             billing_settings = self._get_billing_settings(facility)
@@ -294,8 +320,10 @@ class InvoiceGenerationService:
                 )
 
             # Get patient's active insurance if not specified
-            if patient_insurance is None:
+            if patient_insurance is None and _insurance_claims_enabled(facility):
                 patient_insurance = self._get_active_insurance(patient)
+            elif not _insurance_claims_enabled(facility):
+                patient_insurance = None
 
             # Build patient context for rules engine
             patient_context = self._build_patient_context(patient, patient_insurance)
@@ -401,7 +429,11 @@ class InvoiceGenerationService:
             ]
 
             # Calculate insurance coverage
-            if patient_insurance and patient_insurance.is_valid:
+            if (
+                _insurance_claims_enabled(facility)
+                and patient_insurance
+                and patient_insurance.is_valid
+            ):
                 coverage_pct = patient_insurance.plan.coverage_percentage / Decimal('100')
                 invoice.insurance_amount = invoice.total_amount * coverage_pct
                 invoice.patient_responsibility = (
@@ -492,6 +524,9 @@ class InvoiceGenerationService:
 
     def _get_active_insurance(self, patient) -> Optional[PatientInsurance]:
         """Get patient's active insurance."""
+        facility = getattr(patient, 'facility', None)
+        if not _insurance_claims_enabled(facility):
+            return None
         return patient.insurances.filter(
             is_active=True,
             valid_from__lte=timezone.now().date()

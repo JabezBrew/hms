@@ -5,7 +5,7 @@ import sys
 from rest_framework import viewsets, mixins, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.views import APIView
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -56,6 +56,7 @@ from apps.core.security import (
     FacilityScopedPermission,
     FeatureRequiredPermission,
     check_billing_access,
+    feature_disabled_payload,
     get_user_facility,
 )
 from apps.audit.models import AuditAction, AuditCategory
@@ -71,6 +72,11 @@ LEGACY_PAYMENT_METHOD_MAP = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+def _require_enabled_feature(feature_key, *, request=None, facility=None):
+    if not feature_enabled(feature_key, request=request, facility=facility):
+        raise NotFound(feature_disabled_payload(feature_key))
 
 
 def _to_decimal(value, *, default=Decimal('0.00')) -> Decimal:
@@ -517,6 +523,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         """
         Generate an insurance claim for an invoice.
         """
+        _require_enabled_feature('insurance_claims', request=request)
         invoice = self.get_object()
 
         # Check if invoice has insurance
@@ -2726,14 +2733,21 @@ class BillingDashboardViewSet(viewsets.ViewSet):
         # QUERY 3: All claims metrics in a single query
         # Replaces 3+ separate queries
         # =================================================================
-        claims_metrics = Claim.objects.filter(claim_filter).aggregate(
-            pending_claims=Count('id', filter=Q(status__in=['submitted', 'in_review'])),
-            pending_claims_amount=Sum('claimed_amount', filter=Q(status__in=['submitted', 'in_review'])),
-            approved_claims_amount=Sum(
-                'approved_amount',
-                filter=Q(status__in=['approved', 'partially_approved'])
-            ),
-        )
+        if feature_enabled('insurance_claims', request=request, facility=facility):
+            claims_metrics = Claim.objects.filter(claim_filter).aggregate(
+                pending_claims=Count('id', filter=Q(status__in=['submitted', 'in_review'])),
+                pending_claims_amount=Sum('claimed_amount', filter=Q(status__in=['submitted', 'in_review'])),
+                approved_claims_amount=Sum(
+                    'approved_amount',
+                    filter=Q(status__in=['approved', 'partially_approved'])
+                ),
+            )
+        else:
+            claims_metrics = {
+                'pending_claims': 0,
+                'pending_claims_amount': Decimal('0.00'),
+                'approved_claims_amount': Decimal('0.00'),
+            }
 
         # =================================================================
         # QUERY 4: Payment method breakdown (this month)
@@ -2833,7 +2847,11 @@ from apps.core.features import attach_required_feature, bind_required_feature
 bind_required_feature(globals(), 'billing')
 attach_required_feature(
     [
+        InsuranceProviderViewSet,
+        InsurancePlanViewSet,
+        PatientInsuranceViewSet,
         ClaimViewSet,
+        PayerServiceCodeViewSet,
         NHISClaimBatchViewSet,
         NHISClaimExportJobViewSet,
         RemittanceImportJobViewSet,

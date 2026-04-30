@@ -3,9 +3,14 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
 from .models import LabResult, LabOrder
+from hms_backend.deployment import feature_enabled
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _laboratory_enabled(facility=None) -> bool:
+    return bool(feature_enabled('laboratory', facility=facility))
 
 
 @shared_task(bind=True, max_retries=3)
@@ -19,10 +24,14 @@ def send_critical_value_alert(self, result_id):
     """
     try:
         result = LabResult.objects.select_related(
+            'facility',
             'order_test__order__ordering_provider',
             'order_test__order__patient',
             'order_test__test'
         ).get(id=result_id)
+
+        if not _laboratory_enabled(result.facility):
+            return {"status": "skipped", "reason": "feature_disabled"}
 
         if not result.is_critical:
             logger.warning(f"Result {result_id} is not marked as critical")
@@ -93,9 +102,13 @@ def send_result_available_notification(self, order_id):
     """
     try:
         order = LabOrder.objects.select_related(
+            'facility',
             'ordering_provider',
             'patient'
         ).prefetch_related('order_tests__results').get(id=order_id)
+
+        if not _laboratory_enabled(order.facility):
+            return {"status": "skipped", "reason": "feature_disabled"}
 
         if order.status != 'completed':
             logger.warning(f"Order {order_id} is not completed yet")
@@ -175,6 +188,9 @@ def send_daily_lab_summary(provider_id):
         provider_id: UUID of the provider
     """
     try:
+        if not _laboratory_enabled():
+            return {"status": "skipped", "reason": "feature_disabled"}
+
         from apps.users.models import User
 
         provider = User.objects.get(id=provider_id)
