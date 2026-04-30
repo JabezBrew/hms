@@ -140,6 +140,28 @@ export function getDashboardUrl(role) {
   return '/dashboard/provider'
 }
 
+function getDashboardFeatures(role) {
+  if ([ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER].includes(role)) {
+    return ['nursing_workflows']
+  }
+  if ([ROLES.DOCTOR, ROLES.INPATIENT_DOCTOR].includes(role)) {
+    return ['inpatient_admissions']
+  }
+  if ([ROLES.PHARMACIST, ROLES.PHARMACY_TECH].includes(role)) {
+    return ['pharmacy']
+  }
+  if (role === ROLES.LAB_TECHNICIAN) {
+    return ['laboratory']
+  }
+  if (role === ROLES.BILLING) {
+    return ['billing']
+  }
+  if (role === ROLES.STORE_KEEPER) {
+    return ['inventory']
+  }
+  return []
+}
+
 const item = ({
   key,
   label,
@@ -174,6 +196,7 @@ const dashboardItem = item({
   href: ({ user }) => getDashboardUrl(user?.role || user?.user_type || ''),
   icon: LayoutDashboard,
   roles: DASHBOARD_ROLES,
+  features: ({ user }) => getDashboardFeatures(user?.role || user?.user_type || ''),
   exact: true,
   props: { 'data-onboarding': 'nav-dashboard' },
 })
@@ -194,6 +217,7 @@ const patientRegistryItem = item({
   href: '/patients',
   icon: BookOpen,
   roles: ROLE_GROUPS.PATIENT_REGISTRY,
+  features: ['patient_chronicle'],
   exact: true,
   props: { 'data-onboarding': 'nav-patients' },
 })
@@ -405,6 +429,7 @@ const globalSections = [
           icon: FileSearch,
           roles: ROLE_GROUPS.ADMIN_ONLY,
           capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW],
+          features: ['audit'],
           exact: true,
         }),
       ],
@@ -421,6 +446,7 @@ const patientSections = [
       href: '/patients/my-patients',
       icon: Users,
       roles: ROLE_GROUPS.MY_PATIENTS,
+      features: ['patient_chronicle'],
       exact: true,
     }),
     item({
@@ -429,6 +455,7 @@ const patientSections = [
       href: '/patients/create',
       icon: UserPlus,
       roles: [ROLES.ADMIN, ROLES.RECEPTIONIST],
+      features: ['patient_chronicle', 'patient_registration'],
       exact: true,
     }),
   ]),
@@ -443,6 +470,7 @@ const patientWorkspaceSections = [
       href: ({ params }) => params.id ? `/patients/${params.id}` : null,
       icon: BookOpen,
       roles: ROLE_GROUPS.PATIENT_DETAIL,
+      features: ['patient_chronicle'],
       exact: true,
     }),
     item({
@@ -451,6 +479,7 @@ const patientWorkspaceSections = [
       href: ({ params }) => params.id ? `/patients/${params.id}/edit` : null,
       icon: IdCard,
       roles: [ROLES.ADMIN, ROLES.DOCTOR, ROLES.NURSE],
+      features: ['patient_chronicle', 'patient_registration'],
       exact: true,
     }),
     item({
@@ -459,7 +488,7 @@ const patientWorkspaceSections = [
       href: ({ params }) => params.id ? `/patients/${params.id}/ward-round` : null,
       icon: ClipboardList,
       roles: ROLE_GROUPS.CLINICAL,
-      features: ['wards'],
+      features: ['patient_chronicle', 'wards'],
       exact: true,
     }),
   ]),
@@ -471,8 +500,8 @@ const billingSections = [
     item({ key: 'invoices', label: 'Invoices', href: '/billing/invoices', icon: FileText, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: false }),
     item({ key: 'payments', label: 'Payments', href: '/billing/payments', icon: CreditCard, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
     item({ key: 'cash-sessions', label: 'Cash Sessions', href: '/billing/cash-sessions', icon: Clock, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
-    item({ key: 'claims', label: 'Claims', href: '/billing/claims', icon: ClipboardList, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
-    item({ key: 'nhis', label: 'NHIS', href: '/billing/nhis', icon: Shield, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: false }),
+    item({ key: 'claims', label: 'Claims', href: '/billing/claims', icon: ClipboardList, roles: ROLE_GROUPS.BILLING, features: ['billing', 'insurance_claims'], exact: true }),
+    item({ key: 'nhis', label: 'NHIS', href: '/billing/nhis', icon: Shield, roles: ROLE_GROUPS.BILLING, features: ['billing', 'insurance_claims'], exact: false }),
     item({ key: 'insurance', label: 'Insurance', href: '/billing/insurance', icon: IdCard, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
     item({ key: 'billing-discharges', label: 'Discharges', href: '/billing/discharges', icon: ArrowLeftRight, roles: ROLE_GROUPS.BILLING, features: ['billing', 'discharge_workflows'], exact: true }),
     item({ key: 'catalog', label: 'Catalog', href: '/billing/catalog', icon: BookOpen, roles: ROLE_GROUPS.BILLING, features: ['billing'], exact: true }),
@@ -515,7 +544,7 @@ const adminSections = [
     item({ key: 'staff', label: 'Staff', href: '/staff', icon: Shield, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.STAFF_VIEW], exact: false }),
     item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE], exact: false }),
     item({ key: 'duty-roster', label: 'Duty Roster', href: '/admin/organization/duty-roster', icon: CalendarClock, roles: DUTY_ROSTER_ROLES, capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW], features: ['department_rosters'], exact: true }),
-    item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], exact: true }),
+    item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], features: ['audit'], exact: true }),
   ]),
 ]
 
@@ -556,8 +585,12 @@ function resolveHref(href, context) {
   return href
 }
 
-function hasFeatureAccess(features, enabledFeatures) {
-  return areFeaturesEnabled(features, enabledFeatures)
+function resolveEntryFeatures(features, context) {
+  return typeof features === 'function' ? features(context) : features
+}
+
+function hasFeatureAccess(features, enabledFeatures, context) {
+  return areFeaturesEnabled(resolveEntryFeatures(features, context), enabledFeatures)
 }
 
 function hasAccess(user, entry) {
@@ -593,7 +626,7 @@ function formatBadge(value) {
 }
 
 function resolveItem(entry, context) {
-  if (!hasFeatureAccess(entry.features, context.enabledFeatures) || !hasAccess(context.user, entry)) {
+  if (!hasFeatureAccess(entry.features, context.enabledFeatures, context) || !hasAccess(context.user, entry)) {
     return null
   }
 

@@ -19,6 +19,10 @@ const TIER_CONTROLLED_ROUTE_REQUIREMENTS = [
   { prefix: '/appointments', features: ['appointments'] },
   { prefix: '/practitioner-availability', features: ['appointments'] },
   { prefix: '/schedules', features: ['appointments'] },
+  { prefix: '/patients', features: ['patient_chronicle'] },
+  { path: '/patients/create', features: ['patient_registration'] },
+  { path: '/patients/:id/edit', features: ['patient_registration'] },
+  { prefix: '/encounters', features: ['outpatient_encounters'] },
   { prefix: '/wards', features: ['wards'] },
   { prefix: '/admissions', features: ['inpatient_admissions'] },
   { path: '/billing/admissions', features: ['billing', 'inpatient_admissions'] },
@@ -56,7 +60,7 @@ function routeMatchesRequirement(routePath, requirement) {
   return routePath === requirement.prefix || routePath.startsWith(`${requirement.prefix}/`)
 }
 
-function requiredFeaturesForRoute(routePath) {
+export function requiredFeaturesForRoute(routePath) {
   const features = new Set()
   TIER_CONTROLLED_ROUTE_REQUIREMENTS.forEach((requirement) => {
     if (routeMatchesRequirement(routePath, requirement)) {

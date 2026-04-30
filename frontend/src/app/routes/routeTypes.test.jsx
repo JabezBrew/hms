@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { featureRoutes } from './featureRoutes'
-import { ROUTE_LAYOUTS, SIDEBARS, validateRoutes } from './routeTypes'
+import { ROUTE_LAYOUTS, SIDEBARS, requiredFeaturesForRoute, validateRoutes } from './routeTypes'
 
 
 describe('featureRoutes', () => {
@@ -51,9 +51,53 @@ describe('featureRoutes', () => {
     ])).toThrow(/must declare feature nursing_workflows/)
   })
 
+  it('reports required feature metadata for controlled route prefixes', () => {
+    expect(requiredFeaturesForRoute('/patients/create')).toEqual(
+      expect.arrayContaining(['patient_chronicle', 'patient_registration'])
+    )
+    expect(requiredFeaturesForRoute('/encounters/new')).toEqual(['outpatient_encounters'])
+    expect(requiredFeaturesForRoute('/billing/nhis/mappings')).toEqual(
+      expect.arrayContaining(['billing', 'insurance_claims'])
+    )
+    expect(requiredFeaturesForRoute('/patients/:id/ward-round')).toEqual(
+      expect.arrayContaining(['patient_chronicle', 'wards'])
+    )
+  })
+
+  it.each([
+    ['/patients/new-route', 'patient_chronicle'],
+    ['/encounters/new-route', 'outpatient_encounters'],
+    ['/inventory/new-route', 'inventory'],
+    ['/laboratory/new-route', 'laboratory'],
+    ['/pharmacy/new-route', 'pharmacy'],
+    ['/referrals/new-route', 'referrals'],
+    ['/clinical-notes/new-route', 'clinical_notes'],
+  ])('fails closed for ungated controlled route %s', (path, missingFeature) => {
+    expect(() => validateRoutes([
+      {
+        path,
+        component: () => null,
+        roles: null,
+        layout: ROUTE_LAYOUTS.APP,
+      },
+    ])).toThrow(new RegExp(`must declare feature ${missingFeature}`))
+  })
+
   it('declares expected features for cross-feature and subfeature routes', () => {
     const routesByPath = new Map(featureRoutes.map((route) => [route.path, route]))
 
+    expect(routesByPath.get('/patients')?.features).toEqual(
+      expect.arrayContaining(['patient_chronicle'])
+    )
+    expect(routesByPath.get('/patients/create')?.features).toEqual(
+      expect.arrayContaining(['patient_chronicle', 'patient_registration'])
+    )
+    expect(routesByPath.get('/encounters/new')?.features).toEqual(
+      expect.arrayContaining(['outpatient_encounters'])
+    )
+    expect(routesByPath.get('/encounters/:id/clinical-notes')?.features).toEqual(
+      expect.arrayContaining(['clinical_notes', 'outpatient_encounters'])
+    )
     expect(routesByPath.get('/billing/admissions')?.features).toEqual(
       expect.arrayContaining(['billing', 'inpatient_admissions'])
     )
@@ -95,6 +139,7 @@ describe('featureRoutes', () => {
         path: '/patients',
         component: () => null,
         roles: null,
+        features: ['patient_chronicle'],
         layout: ROUTE_LAYOUTS.APP,
         sidebar: SIDEBARS.PATIENTS,
       },

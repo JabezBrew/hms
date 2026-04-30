@@ -22,10 +22,24 @@ import { chartRoutes } from '@/features/charts/routes'
 import { validateRoutes } from './routeTypes'
 import { withFeature } from '@/shared/lib/features'
 
+const patientRouteFeatures = (route) => {
+  if (route.path === '/patients/create' || route.path === '/patients/:id/edit') {
+    return ['patient_chronicle', 'patient_registration']
+  }
+  return ['patient_chronicle']
+}
+
+const clinicalNoteRouteFeatures = (route) => {
+  if (route.path?.startsWith('/encounters')) {
+    return ['clinical_notes', 'outpatient_encounters']
+  }
+  return ['clinical_notes']
+}
+
 export const featureRoutes = [
   ...withFeature(appointmentRoutes, 'appointments'),
-  ...patientRoutes,
-  ...encounterRoutes,
+  ...withFeature(patientRoutes, patientRouteFeatures),
+  ...withFeature(encounterRoutes, 'outpatient_encounters'),
   ...withFeature(wardRoutes, 'wards'),
   ...withFeature(admissionRoutes, 'inpatient_admissions'),
   ...withFeature(inventoryRoutes, 'inventory'),
@@ -42,7 +56,7 @@ export const featureRoutes = [
   ...inboxRoutes,
   ...staffRoutes,
   ...workflowRoutes,
-  ...withFeature(clinicalNotesRoutes, 'clinical_notes'),
+  ...withFeature(clinicalNotesRoutes, clinicalNoteRouteFeatures),
   ...chartRoutes,
 ]
 

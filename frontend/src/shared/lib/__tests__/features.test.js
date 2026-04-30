@@ -22,4 +22,19 @@ describe('feature helpers', () => {
 
     expect(routes[0].features).toEqual(['discharge_workflows', 'billing'])
   })
+
+  it('adds conditional route-level feature metadata without duplicates', () => {
+    const routes = withFeature(
+      [
+        { path: '/patients', features: ['patient_chronicle'] },
+        { path: '/patients/create', features: ['patient_chronicle'] },
+      ],
+      (route) => route.path === '/patients/create'
+        ? ['patient_chronicle', 'patient_registration']
+        : 'patient_chronicle',
+    )
+
+    expect(routes[0].features).toEqual(['patient_chronicle'])
+    expect(routes[1].features).toEqual(['patient_chronicle', 'patient_registration'])
+  })
 })

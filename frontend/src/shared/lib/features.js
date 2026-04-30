@@ -13,6 +13,9 @@ export function areFeaturesEnabled(requiredFeatures, enabledFeatures = {}) {
 export function withFeature(routes, features) {
   return routes.map((route) => ({
     ...route,
-    features: [...featureList(route.features), ...featureList(features)],
+    features: Array.from(new Set([
+      ...featureList(route.features),
+      ...featureList(typeof features === 'function' ? features(route) : features),
+    ])),
   }))
 }

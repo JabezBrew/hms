@@ -98,6 +98,7 @@ describe('dynamic sidebar', () => {
       user: { role: ROLES.DOCTOR },
       route: '/patients/pat-123',
       params: { id: 'pat-123' },
+      enabledFeatures: { inpatient_admissions: true, patient_chronicle: true },
       inboxCount: 4,
     })
 
@@ -112,7 +113,7 @@ describe('dynamic sidebar', () => {
       user: { role: ROLES.DOCTOR },
       route: '/patients/pat-123',
       params: { id: 'pat-123' },
-      enabledFeatures: { wards: true },
+      enabledFeatures: { patient_chronicle: true, patient_registration: true, wards: true },
     })
 
     expect(screen.getByRole('link', { name: /Chronicle/i })).toHaveAttribute('href', '/patients/pat-123')
@@ -126,6 +127,48 @@ describe('dynamic sidebar', () => {
     expect(screen.queryByRole('link', { name: /Allergies/i })).not.toBeInTheDocument()
   })
 
+  it('hides patient workspace actions when patient modules are disabled', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.PATIENT_WORKSPACE,
+      user: { role: ROLES.DOCTOR },
+      route: '/patients/pat-123',
+      params: { id: 'pat-123' },
+      enabledFeatures: { patient_chronicle: true, patient_registration: false, wards: false },
+    })
+
+    expect(screen.getByRole('link', { name: /Chronicle/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Edit Demographics/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Ward Round/i })).not.toBeInTheDocument()
+  })
+
+  it('hides insurance claim navigation when the subfeature is disabled', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.BILLING,
+      user: { role: ROLES.BILLING },
+      route: '/billing',
+      enabledFeatures: { billing: true, insurance_claims: false },
+    })
+
+    expect(screen.getByRole('link', { name: /Invoices/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Claims/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /NHIS/i })).not.toBeInTheDocument()
+  })
+
+  it('hides audit navigation when the audit feature is disabled', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.ADMIN,
+      user: {
+        role: ROLES.ADMIN,
+        adminAccess: { capabilities: ['admin.audit.view', 'admin.organization.manage'] },
+      },
+      route: '/admin/organization',
+      enabledFeatures: { audit: false },
+    })
+
+    expect(screen.getByRole('link', { name: /Organization/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Audit Logs/i })).not.toBeInTheDocument()
+  })
+
   it('hides feature-gated entries until feature flags are known', () => {
     renderSidebar({
       sidebar: SIDEBARS.GLOBAL,
@@ -135,5 +178,16 @@ describe('dynamic sidebar', () => {
 
     expect(screen.queryByRole('button', { name: /Laboratory/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Orders/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Dashboard/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps always-on dashboard navigation visible without feature flags', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.GLOBAL,
+      user: { role: ROLES.ADMIN },
+      route: '/dashboards/admin',
+    })
+
+    expect(screen.getByRole('link', { name: /Dashboard/i })).toBeInTheDocument()
   })
 })
