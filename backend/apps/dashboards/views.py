@@ -8,6 +8,7 @@ from django.db.models import Count, Exists, OuterRef, Q
 from django.db.models.functions import TruncHour
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -113,6 +114,11 @@ def _get_cached_appointments(facility_code, cache_key, refresh_fn):
 def _is_admin_actor(user):
     role = str(_resolve_dashboard_role(user) or '').lower()
     return role == 'admin' or bool(getattr(user, 'is_staff', False) or getattr(user, 'is_superuser', False))
+
+
+def _is_nurse_actor(user):
+    role = str(_resolve_dashboard_role(user) or '').lower()
+    return role in {'nurse', 'head_nurse', 'nurse_practitioner'}
 
 
 def _forbidden_admin_only_response():
@@ -935,7 +941,16 @@ def get_nurse_dashboard_data(user, request):
 
     # Get nurse's assigned ward
     nurse_profile = getattr(user, 'practitionerprofile', None)
-    assigned_ward = ward_id or (getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None)
+    profile_assigned_ward = getattr(nurse_profile, 'assigned_ward_id', None) if nurse_profile else None
+
+    is_admin = _is_admin_actor(user)
+    if not is_admin:
+        if not profile_assigned_ward:
+            raise PermissionDenied('Nurse ward assignment is required.')
+        if ward_id and str(ward_id) != str(profile_assigned_ward):
+            raise PermissionDenied('Ward access denied.')
+
+    assigned_ward = ward_id or profile_assigned_ward
 
     ward_scope = str(assigned_ward) if assigned_ward else "all"
     projection_cache_key = nurse_dashboard_projection_cache_key(facility.code, ward_scope)
@@ -1321,6 +1336,8 @@ def nurse_dashboard(request):
         - ward: Filter by ward ID (optional)
     """
     user = request.user
+    if not (_is_nurse_actor(user) or _is_admin_actor(user)):
+        return Response({'detail': 'Nurse or admin role is required.'}, status=403)
     return Response(get_nurse_dashboard_data(user, request))
 
 
