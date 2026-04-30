@@ -2548,6 +2548,18 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
         if not department_id:
             raise ValidationError({'department_id': 'Department ID is required.'})
 
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+
+        department = ClinicalUnit.objects.filter(
+            id=department_id,
+            root_unit__code=facility.code,
+            is_active=True,
+        ).first()
+        if not department:
+            raise PermissionDenied("Department does not belong to the active facility.")
+
         # Get date range
         date_from = request.data.get('date_from')
         date_to = request.data.get('date_to')
@@ -2563,7 +2575,7 @@ class RosterValidationRuleViewSet(viewsets.ModelViewSet):
             entries_qs = entries_qs.filter(date__lte=date_to)
 
         entries = list(entries_qs)
-        rules = RosterValidationService.get_rules_for_department(department_id)
+        rules = RosterValidationService.get_rules_for_department(department.id)
         result = RosterValidationService.validate_roster(entries, rules)
 
         return Response(result)

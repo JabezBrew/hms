@@ -603,3 +603,21 @@ class TestAssignmentSerializerValidation:
             'coverage_type': 'backup',
         })
         assert serializer.is_valid(), serializer.errors
+
+
+@pytest.mark.django_db
+class TestRosterValidationRuleSerializer:
+    def test_rejects_int_param_below_template_min(self, department):
+        from apps.organization.serializers import RosterValidationRuleSerializer
+
+        serializer = RosterValidationRuleSerializer(data={
+            'department': str(department.id),
+            'name': 'Max per week',
+            'rule_type': 'max_per_period',
+            'params': {'max': 0, 'period': 'week'},
+            'severity': 'error',
+            'is_active': True,
+        })
+
+        assert not serializer.is_valid()
+        assert 'params' in serializer.errors

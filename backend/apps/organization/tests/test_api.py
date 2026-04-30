@@ -1036,3 +1036,65 @@ class TestWardAllocationAPI:
         # Should have ward fields, not allocation fields
         assert 'total_beds' in response.data[0]
         assert 'occupancy_rate' in response.data[0]
+
+
+@pytest.mark.django_db
+class TestRosterValidationRuleSecurityAPI:
+    def test_cannot_move_validation_rule_to_other_facility(
+        self, authenticated_client, unit_types, department
+    ):
+        """Rule update cannot reassign department outside active facility."""
+        other_facility = ClinicalUnit.objects.create(
+            code='OTHER',
+            name='Other Facility',
+            unit_type=unit_types['facility'],
+        )
+        other_department = ClinicalUnit.objects.create(
+            code='OTHER-DEPT',
+            name='Other Department',
+            unit_type=unit_types['department'],
+            parent=other_facility,
+        )
+
+        from apps.organization.models import RosterValidationRule
+        rule = RosterValidationRule.objects.create(
+            department=department,
+            name='Max per week',
+            rule_type='max_per_period',
+            params={'max': 2, 'period': 'week'},
+            severity='error',
+        )
+
+        response = authenticated_client.patch(
+            f'/api/organization/validation-rules/{rule.id}/',
+            {'department': str(other_department.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        rule.refresh_from_db()
+        assert rule.department_id == department.id
+
+    def test_validate_roster_denies_cross_facility_department(
+        self, authenticated_client, unit_types
+    ):
+        """Validate endpoint enforces facility ownership of department."""
+        other_facility = ClinicalUnit.objects.create(
+            code='OTHER2',
+            name='Other Facility 2',
+            unit_type=unit_types['facility'],
+        )
+        other_department = ClinicalUnit.objects.create(
+            code='OTHER2-DEPT',
+            name='Other Department 2',
+            unit_type=unit_types['department'],
+            parent=other_facility,
+        )
+
+        response = authenticated_client.post(
+            '/api/organization/validation-rules/validate/',
+            {'department_id': str(other_department.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
