@@ -352,9 +352,9 @@ jobs:
         retention-days: 30
 
   # ==========================================================================
-  # Railway Docker Build Parity
+  # Docker Build Validation
   # ==========================================================================
-  railway-docker-builds:
+  docker-builds:
     runs-on: ubuntu-latest
 
     steps:
@@ -363,14 +363,14 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build backend image (Railway parity)
+    - name: Build backend image
       run: |
         docker build \
           --file backend/Dockerfile \
           --tag hms-backend:ci-${{ github.sha }} \
           backend
 
-    - name: Build frontend image (Railway parity)
+    - name: Build frontend image
       run: |
         docker build \
           --file frontend/Dockerfile \
@@ -383,7 +383,7 @@ jobs:
   # Build and Deploy (only on main branch push)
   # ==========================================================================
   build-and-deploy:
-    needs: [backend-tests, frontend-tests, frontend-e2e, railway-docker-builds]
+    needs: [backend-tests, frontend-tests, frontend-e2e, docker-builds]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
