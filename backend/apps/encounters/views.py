@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from django.db import transaction
 from django.db.models import Q, Count
 from django.conf import settings
@@ -30,9 +30,12 @@ from .serializers import (
     TriageQueueCreateSerializer,
 )
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.features import feature_enabled as effective_feature_enabled
 from apps.core.security import (
     FacilityScopedPermission,
+    FeatureRequiredPermission,
     check_clinical_access,
+    feature_disabled_payload,
     get_accessible_patients_for_clinician,
     get_user_facility,
     resolve_object_facility,
@@ -43,6 +46,12 @@ from apps.appointments.models import AppointmentType
 from .services import VisitService, TriageService
 
 logger = logging.getLogger(__name__)
+
+
+ENCOUNTER_FEATURE_BY_TYPE = {
+    'outpatient': 'outpatient_encounters',
+    'emergency': 'emergency_encounters',
+}
 
 
 def is_valid_uuid(value):
@@ -88,6 +97,21 @@ class EncounterViewSet(viewsets.ModelViewSet):
     search_fields = ['patient__user__first_name', 'patient__user__last_name', 'reason', 'location']
     ordering_fields = ['start_time', 'created_at', 'status']
     ordering = ['-start_time']
+
+    def _require_encounter_type_enabled(self, encounter_type):
+        feature_key = ENCOUNTER_FEATURE_BY_TYPE.get(encounter_type)
+        if feature_key and not effective_feature_enabled(feature_key, request=self.request):
+            raise NotFound(feature_disabled_payload(feature_key))
+
+    def _filter_enabled_encounter_types(self, queryset):
+        disabled_types = [
+            encounter_type
+            for encounter_type, feature_key in ENCOUNTER_FEATURE_BY_TYPE.items()
+            if not effective_feature_enabled(feature_key, request=self.request)
+        ]
+        if not disabled_types:
+            return queryset
+        return queryset.exclude(encounter_type__in=disabled_types)
 
     def _get_facility_timezone(self, facility):
         if facility and facility.timezone:
@@ -190,9 +214,21 @@ class EncounterViewSet(viewsets.ModelViewSet):
         # Filter by encounter_type (inpatient, outpatient, emergency)
         encounter_type = self.request.query_params.get('encounter_type')
         if encounter_type:
+            self._require_encounter_type_enabled(encounter_type)
             queryset = queryset.filter(encounter_type=encounter_type)
+        else:
+            queryset = self._filter_enabled_encounter_types(queryset)
 
         return queryset
+
+    def get_object(self):
+        encounter = super().get_object()
+        self._require_encounter_type_enabled(encounter.encounter_type)
+        return encounter
+
+    def create(self, request, *args, **kwargs):
+        self._require_encounter_type_enabled(request.data.get('encounter_type') or 'outpatient')
+        return super().create(request, *args, **kwargs)
 
     def get_serializer_class(self):
         """
@@ -486,7 +522,12 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for outpatient visit lifecycle actions."""
     queryset = OutpatientVisit.objects.all()
     serializer_class = OutpatientVisitSerializer
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    required_feature = 'outpatient_encounters'
+    permission_classes = [
+        FeatureRequiredPermission,
+        permissions.IsAuthenticated,
+        FacilityScopedPermission,
+    ]
     pagination_class = StandardResultsSetPagination
     lookup_field = 'encounter_id'
     lifecycle_update_user_types = {'admin', 'doctor', 'nurse', 'receptionist'}
@@ -632,7 +673,12 @@ class OutpatientVisitViewSet(viewsets.ReadOnlyModelViewSet):
 class TriageQueueViewSet(viewsets.ModelViewSet):
     """ViewSet for triage queue management."""
     queryset = TriageQueue.objects.all()
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
+    required_feature = 'emergency_encounters'
+    permission_classes = [
+        FeatureRequiredPermission,
+        permissions.IsAuthenticated,
+        FacilityScopedPermission,
+    ]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):

@@ -1176,8 +1176,8 @@ class TestPatientViewSet:
             response = client.get('/api/patients/search/', {'query': 'Pat'})
 
         assert response.status_code == status.HTTP_200_OK
-        # Includes fixed auth, facility, and feature-scope middleware overhead.
-        assert len(ctx) <= 12
+        # Includes fixed auth, facility, feature gate, and feature-scope middleware overhead.
+        assert len(ctx) <= 13
 
     @patch('apps.patients.tasks.enqueue_patient_search_index_rebuild.delay')
     def test_admin_can_queue_patient_search_reindex(self, mock_reindex_task, db):

@@ -48,6 +48,7 @@ from apps.core.security import (
     ACTIVE_ADMISSION_STATUSES,
     CLINICAL_PATIENT_ACCESS_USER_TYPES,
     FacilityScopedPermission,
+    FeatureRequiredPermission,
     check_demographics_access,
     check_clinical_access,
     get_access_flags,
@@ -55,6 +56,7 @@ from apps.core.security import (
     is_cross_facility_admin,
     scope_patient_queryset_for_search_access,
 )
+from apps.core.features import attach_required_feature
 from apps.core.models import BreakGlassEvent
 from apps.core.serializers import BreakGlassRequestSerializer, BreakGlassEventSerializer
 from apps.core.cache_utils import facility_cache_key
@@ -72,6 +74,10 @@ from .tasks import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+PATIENT_REGISTRATION_FEATURE = 'patient_registration'
+PATIENT_CHRONICLE_FEATURE = 'patient_chronicle'
 
 
 def _patient_search_serializer_class(user):
@@ -449,6 +455,22 @@ class PatientViewSet(viewsets.ViewSet):
     """
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = PatientSearchPagination
+    ACTION_REQUIRED_FEATURES = {
+        'register': PATIENT_REGISTRATION_FEATURE,
+        'search': PATIENT_CHRONICLE_FEATURE,
+        'reindex_search_index': PATIENT_CHRONICLE_FEATURE,
+        'get_patient': PATIENT_CHRONICLE_FEATURE,
+        'get_demographics': PATIENT_CHRONICLE_FEATURE,
+        'break_glass': PATIENT_CHRONICLE_FEATURE,
+        'update_patient': PATIENT_CHRONICLE_FEATURE,
+        'delete_patient': PATIENT_CHRONICLE_FEATURE,
+    }
+
+    def _feature_permission_classes(self, permission_classes):
+        self.required_feature = self.ACTION_REQUIRED_FEATURES.get(self.action)
+        if self.required_feature and FeatureRequiredPermission not in permission_classes:
+            return [FeatureRequiredPermission, *permission_classes]
+        return permission_classes
 
     def get_permissions(self):
         if self.action == 'break_glass':
@@ -459,6 +481,7 @@ class PatientViewSet(viewsets.ViewSet):
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
         else:
             permission_classes = self.permission_classes
+        permission_classes = self._feature_permission_classes(permission_classes)
         return [permission() for permission in permission_classes]
 
     def _get_facility_patient(self, request, pk):
@@ -1463,3 +1486,18 @@ class PatientViewSet(viewsets.ViewSet):
                 {"error": "Failed to delete patient."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+attach_required_feature(
+    (
+        PatientFHIRMappingViewSet,
+        PatientSearchViewSet,
+        RecentPatientViewSet,
+        PatientNoteViewSet,
+    ),
+    PATIENT_CHRONICLE_FEATURE,
+)
+attach_required_feature(
+    (PatientRegistrationValidationViewSet,),
+    PATIENT_REGISTRATION_FEATURE,
+)

@@ -143,10 +143,9 @@ def feature_enabled(feature_key, facility=None, request=None, django_settings=No
 
 def require_feature(feature_key, facility=None, request=None):
     if not feature_enabled(feature_key, facility=facility, request=request):
-        raise NotFound({
-            'detail': 'This feature is not enabled for the current deployment.',
-            'code': 'feature_disabled',
-        })
+        from apps.core.security import feature_disabled_payload
+
+        raise NotFound(feature_disabled_payload(feature_key))
 
 
 def attach_required_feature(view_classes: Iterable[type], feature_key: str):

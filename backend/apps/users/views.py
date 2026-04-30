@@ -41,6 +41,7 @@ from .admin_access import AdminCapabilities, CanViewStaff, get_admin_accessible_
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
+    FeatureRequiredPermission,
     check_demographics_access,
     get_accessible_patients_for_clinician,
     get_user_facility,
@@ -50,6 +51,10 @@ from .tasks import fetch_practitioner_fhir_snapshot, search_practitioners_in_fhi
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+PATIENT_REGISTRATION_FEATURE = 'patient_registration'
+PATIENT_CHRONICLE_FEATURE = 'patient_chronicle'
 
 
 # Initialize RBAC system
@@ -880,6 +885,9 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission]
     pagination_class = StandardResultsSetPagination
+    ACTION_REQUIRED_FEATURES = {
+        'create': PATIENT_REGISTRATION_FEATURE,
+    }
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -895,6 +903,10 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
         """
         Instantiate and return the list of permissions that this view requires.
         """
+        self.required_feature = self.ACTION_REQUIRED_FEATURES.get(
+            self.action,
+            PATIENT_CHRONICLE_FEATURE,
+        )
         if self.action == 'create':
             # Admins, doctors, nurses, and receptionists can create patients
             permission_classes = [
@@ -922,6 +934,8 @@ class PatientProfileViewSet(viewsets.ModelViewSet):
                 ]
         else:
             permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin]
+        if FeatureRequiredPermission not in permission_classes:
+            permission_classes = [FeatureRequiredPermission, *permission_classes]
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):
@@ -1008,7 +1022,13 @@ class UserPatientListViewSet(viewsets.ModelViewSet):
     Only clinical providers (doctors, nurses, lab technicians, pharmacists) can access this feature.
     """
     serializer_class = UserPatientListSerializer
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsClinicalProvider]
+    required_feature = PATIENT_CHRONICLE_FEATURE
+    permission_classes = [
+        FeatureRequiredPermission,
+        permissions.IsAuthenticated,
+        FacilityScopedPermission,
+        IsClinicalProvider,
+    ]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):

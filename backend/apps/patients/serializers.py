@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 import logging
 from zoneinfo import ZoneInfo
 from .models import (
@@ -10,13 +11,25 @@ from ..users.serializers import PatientProfileSerializer, UserSerializer, genera
 from ..users.identifiers import generate_unique_mrn
 from .tasks import create_patient_in_fhir
 from apps.mpi.services import resolve_patient_identity, link_patient_to_facility
-from hms_backend.deployment import feature_enabled
+from hms_backend.deployment import feature_enabled as deployment_feature_enabled
 from hms_backend.tenancy import get_current_facility_code
-from apps.core.security import ACTIVE_ADMISSION_STATUSES, get_user_facility, resolve_object_facility
+from apps.core.features import feature_enabled as effective_feature_enabled
+from apps.core.security import (
+    ACTIVE_ADMISSION_STATUSES,
+    feature_disabled_payload,
+    get_user_facility,
+    resolve_object_facility,
+)
 from apps.core.models import Facility
 from django.utils import timezone
 from django.db import transaction
 logger = logging.getLogger(__name__)
+
+
+ENCOUNTER_FEATURE_BY_TYPE = {
+    'outpatient': 'outpatient_encounters',
+    'emergency': 'emergency_encounters',
+}
 
 
 class PatientFHIRMappingListSerializer(serializers.ModelSerializer):
@@ -206,10 +219,18 @@ class PatientRegistrationSerializer(serializers.Serializer):
     admission_details = serializers.DictField(write_only=True)
 
     def _requires_active_outpatient_clinic(self):
-        return feature_enabled('outpatient_active_clinic_required')
+        return deployment_feature_enabled('outpatient_active_clinic_required')
 
     def _uses_roster_for_initial_assignment(self):
-        return feature_enabled('department_rosters')
+        return deployment_feature_enabled('department_rosters')
+
+    def _require_encounter_feature(self, encounter_type):
+        feature_key = ENCOUNTER_FEATURE_BY_TYPE.get(encounter_type)
+        if not feature_key:
+            return
+        request = self.context.get('request')
+        if not effective_feature_enabled(feature_key, request=request):
+            raise NotFound(feature_disabled_payload(feature_key))
 
     def _get_department_timezone(self, department, facility):
         tz_name = None
@@ -328,6 +349,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 "admission_details": "Encounter type must be outpatient, inpatient, or emergency."
             })
+        self._require_encounter_feature(encounter_type)
 
         request = self.context.get('request')
         facility = get_user_facility(request) if request else None
