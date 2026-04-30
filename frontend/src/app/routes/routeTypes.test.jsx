@@ -51,6 +51,17 @@ describe('featureRoutes', () => {
     ])).toThrow(/must declare feature nursing_workflows/)
   })
 
+  it('fails closed for ward board routes without feature metadata', () => {
+    expect(() => validateRoutes([
+      {
+        path: '/ward-board',
+        component: () => null,
+        roles: null,
+        layout: ROUTE_LAYOUTS.APP,
+      },
+    ])).toThrow(/must declare features .*ward_task_board.*patient_chronicle.*wards.*inpatient_admissions.*nursing_workflows/)
+  })
+
   it('reports required feature metadata for controlled route prefixes', () => {
     expect(requiredFeaturesForRoute('/patients/create')).toEqual(
       expect.arrayContaining(['patient_chronicle', 'patient_registration'])
@@ -61,6 +72,24 @@ describe('featureRoutes', () => {
     )
     expect(requiredFeaturesForRoute('/patients/:id/ward-round')).toEqual(
       expect.arrayContaining(['patient_chronicle', 'wards'])
+    )
+    expect(requiredFeaturesForRoute('/ward-board')).toEqual(
+      expect.arrayContaining([
+        'ward_task_board',
+        'patient_chronicle',
+        'wards',
+        'inpatient_admissions',
+        'nursing_workflows',
+      ])
+    )
+    expect(requiredFeaturesForRoute('/wards/:wardId/board')).toEqual(
+      expect.arrayContaining([
+        'ward_task_board',
+        'patient_chronicle',
+        'wards',
+        'inpatient_admissions',
+        'nursing_workflows',
+      ])
     )
   })
 
@@ -119,6 +148,29 @@ describe('featureRoutes', () => {
     expect(routesByPath.get('/charts/templates')?.features).toEqual(
       expect.arrayContaining(['clinical_notes'])
     )
+    if (routesByPath.has('/ward-board')) {
+      expect(routesByPath.get('/ward-board')?.features).toEqual(
+        expect.arrayContaining([
+          'ward_task_board',
+          'patient_chronicle',
+          'wards',
+          'inpatient_admissions',
+          'nursing_workflows',
+        ])
+      )
+      expect(routesByPath.get('/ward-board')?.features).not.toContain('discharge_workflows')
+    }
+    if (routesByPath.has('/wards/:wardId/board')) {
+      expect(routesByPath.get('/wards/:wardId/board')?.features).toEqual(
+        expect.arrayContaining([
+          'ward_task_board',
+          'patient_chronicle',
+          'wards',
+          'inpatient_admissions',
+          'nursing_workflows',
+        ])
+      )
+    }
   })
 
   it('validates capabilities metadata when present', () => {

@@ -10,6 +10,7 @@ import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
 import Send from 'lucide-react/dist/esm/icons/send.js';
 import Inbox from 'lucide-react/dist/esm/icons/inbox.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/layout';
@@ -61,6 +62,13 @@ export default function InpatientDoctorDashboard() {
   const canUseWardRound = moduleGate.wardsEnabled && canUsePatientChronicle;
   const canUseDischarge = moduleGate.dischargeWorkflowsEnabled && canUsePatientChronicle;
   const canShowWorkflowLauncher = moduleGate.wardsEnabled && moduleGate.dischargeWorkflowsEnabled;
+  const canOpenWardBoard = moduleGate.canUse([
+    'ward_task_board',
+    'patient_chronicle',
+    'wards',
+    'inpatient_admissions',
+    'nursing_workflows',
+  ]);
 
   if (!facilityCode) {
     return (
@@ -244,6 +252,16 @@ export default function InpatientDoctorDashboard() {
                     </Button>
                   }
                 />
+              ) : null}
+              {canOpenWardBoard ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/ward-board')}
+                >
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  Open Ward Board
+                </Button>
               ) : null}
               <Button
                 variant="outline"

@@ -24,6 +24,8 @@ const TIER_CONTROLLED_ROUTE_REQUIREMENTS = [
   { path: '/patients/:id/edit', features: ['patient_registration'] },
   { prefix: '/encounters', features: ['outpatient_encounters'] },
   { prefix: '/wards', features: ['wards'] },
+  { path: '/wards/:wardId/board', features: ['ward_task_board', 'patient_chronicle', 'inpatient_admissions', 'nursing_workflows'] },
+  { prefix: '/ward-board', features: ['ward_task_board', 'patient_chronicle', 'wards', 'inpatient_admissions', 'nursing_workflows'] },
   { prefix: '/admissions', features: ['inpatient_admissions'] },
   { path: '/billing/admissions', features: ['billing', 'inpatient_admissions'] },
   { path: '/billing/discharges', features: ['billing', 'discharge_workflows'] },

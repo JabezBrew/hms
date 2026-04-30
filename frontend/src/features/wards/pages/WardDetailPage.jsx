@@ -6,6 +6,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import LayoutGrid from 'lucide-react/dist/esm/icons/layout-grid.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ import { useWard, useDeleteWard } from '@/features/wards/hooks/useWardQueries';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { useSystemCapabilities } from '@/hooks/useSystemQueries';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -48,6 +50,13 @@ export default function WardDetailPage() {
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const { data: deploymentCapabilities } = useSystemCapabilities();
+  const enabledFeatures = deploymentCapabilities?.features;
+  const canOpenWardBoard = enabledFeatures?.ward_task_board === true
+    && enabledFeatures?.patient_chronicle === true
+    && enabledFeatures?.wards === true
+    && enabledFeatures?.inpatient_admissions === true
+    && enabledFeatures?.nursing_workflows === true;
 
   const {
     data: ward,
@@ -168,25 +177,39 @@ export default function WardDetailPage() {
               <ChevronLeft className="h-4 w-4 mr-1" />
               All Wards
             </Button>
-            {isAdmin && (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate(`/wards/${wardId}/edit`)}
-                >
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Ward
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeleteDialog(true)}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
+            {(canOpenWardBoard || isAdmin) && (
+              <div className="flex flex-wrap gap-2">
+                {canOpenWardBoard ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/wards/${wardId}/board`)}
+                  >
+                    <ClipboardList className="h-4 w-4 mr-2" />
+                    Ward Board
+                  </Button>
+                ) : null}
+                {isAdmin && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/wards/${wardId}/edit`)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Ward
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowDeleteDialog(true)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </div>

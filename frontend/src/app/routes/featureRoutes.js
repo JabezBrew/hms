@@ -22,6 +22,22 @@ import { chartRoutes } from '@/features/charts/routes'
 import { validateRoutes } from './routeTypes'
 import { withFeature } from '@/shared/lib/features'
 
+const wardTaskBoardPageModules = import.meta.glob('/src/features/ward-board/pages/WardBoardPage.{js,jsx}')
+const wardTaskBoardRouteLoaders = import.meta.glob('/src/features/ward-board/routes.{js,jsx}')
+const WARD_TASK_BOARD_ROUTE_FEATURES = [
+  'ward_task_board',
+  'patient_chronicle',
+  'wards',
+  'inpatient_admissions',
+  'nursing_workflows',
+]
+const WARD_TASK_BOARD_OPTIONAL_LANES = new Set([
+  'discharge_workflows',
+  'laboratory',
+  'pharmacy',
+  'referrals',
+])
+
 const patientRouteFeatures = (route) => {
   if (route.path === '/patients/create' || route.path === '/patients/:id/edit') {
     return ['patient_chronicle', 'patient_registration']
@@ -36,11 +52,46 @@ const clinicalNoteRouteFeatures = (route) => {
   return ['clinical_notes']
 }
 
+const resolveWardTaskBoardRouteModule = (routeModule) => {
+  const routes = routeModule.wardTaskBoardRoutes
+    || routeModule.wardBoardRoutes
+    || routeModule.routes
+    || routeModule.default
+
+  if (!Array.isArray(routes)) {
+    return []
+  }
+
+  return routes.map((route) => ({
+    ...route,
+    features: Array.from(new Set([
+      ...(Array.isArray(route.features) ? route.features : [])
+        .filter((feature) => !WARD_TASK_BOARD_OPTIONAL_LANES.has(feature)),
+      ...WARD_TASK_BOARD_ROUTE_FEATURES,
+    ])),
+  }))
+}
+
+async function loadWardTaskBoardRoutes() {
+  // The ward-board package can land in parallel; avoid importing its route module until the page exists.
+  if (Object.keys(wardTaskBoardPageModules).length === 0) {
+    return []
+  }
+
+  const routeModules = await Promise.all(
+    Object.values(wardTaskBoardRouteLoaders).map((loadRouteModule) => loadRouteModule())
+  )
+  return routeModules.flatMap(resolveWardTaskBoardRouteModule)
+}
+
+const wardTaskBoardRoutes = await loadWardTaskBoardRoutes()
+
 export const featureRoutes = [
   ...withFeature(appointmentRoutes, 'appointments'),
   ...withFeature(patientRoutes, patientRouteFeatures),
   ...withFeature(encounterRoutes, 'outpatient_encounters'),
   ...withFeature(wardRoutes, 'wards'),
+  ...wardTaskBoardRoutes,
   ...withFeature(admissionRoutes, 'inpatient_admissions'),
   ...withFeature(inventoryRoutes, 'inventory'),
   ...withFeature(billingRoutes, 'billing'),

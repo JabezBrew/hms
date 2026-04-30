@@ -13,6 +13,7 @@ import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
+import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { usePatient } from "@/features/patients/hooks/usePatientQueries";
@@ -62,6 +63,7 @@ import {
 import { emitOnboardingEvent } from "@/features/onboarding";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
+import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 
 import { useDebounce } from "@/hooks/use-debounce";
 const DISCHARGE_CASE_ROLES = new Set([
@@ -144,6 +146,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
+  const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: !authLoading });
   const queryClient = useQueryClient();
   const prefetchedActionsRef = useRef(new Set());
   const openedPatientChartsRef = useRef(new Set());
@@ -343,6 +346,31 @@ const PatientChroniclePage = ({ defaultAction }) => {
       && activeOutpatientVisitStatuses.has(encounter.outpatient_visit_status)
     )) || null;
   }, [encounters]);
+
+  const enabledFeatures = deploymentCapabilities?.features;
+  const hasWardBoardContext = Boolean(
+    patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || (
+      activeEncounter
+      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(activeEncounter))
+    )
+  );
+  const canOpenWardBoard = hasWardBoardContext
+    && enabledFeatures?.ward_task_board === true
+    && enabledFeatures?.patient_chronicle === true
+    && enabledFeatures?.wards === true
+    && enabledFeatures?.inpatient_admissions === true
+    && enabledFeatures?.nursing_workflows === true;
+  const wardBoardHref = useMemo(() => {
+    const boardPatientId = patientLocalId || id;
+    return boardPatientId
+      ? `/ward-board?patient=${encodeURIComponent(boardPatientId)}`
+      : '/ward-board';
+  }, [id, patientLocalId]);
+  const handleOpenWardBoard = useCallback(() => {
+    navigate(wardBoardHref);
+  }, [navigate, wardBoardHref]);
 
   const resolvedVisitScope = useMemo(() => resolveChronicleVisitScope({
     requestedVisit: visitParam,
@@ -1337,6 +1365,20 @@ const PatientChroniclePage = ({ defaultAction }) => {
           insurance={patientInsurance}
           activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
         />
+
+        {canOpenWardBoard && (
+          <div className="px-6 pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenWardBoard}
+              className="font-mono text-xs"
+            >
+              <ClipboardList className="h-4 w-4 mr-2" />
+              Open Ward Board
+            </Button>
+          </div>
+        )}
 
         {canViewDischargeCase && dischargeCaseAdmissionId && (
           <div className="px-6 pt-6">

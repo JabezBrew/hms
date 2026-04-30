@@ -46,6 +46,16 @@ export default function NurseDashboard() {
   const { facilityCode } = useAuth();
   const moduleGate = useDashboardModuleGates({ enabled: Boolean(facilityCode) });
   const dashboardEnabled = Boolean(facilityCode) && moduleGate.nursingWorkflowsEnabled;
+  const canOpenWardBoard = moduleGate.canUse([
+    'ward_task_board',
+    'patient_chronicle',
+    'wards',
+    'inpatient_admissions',
+    'nursing_workflows',
+  ]);
+  const wardBoardHref = selectedWard && selectedWard !== 'all'
+    ? `/ward-board?ward=${encodeURIComponent(selectedWard)}`
+    : '/ward-board';
 
   const wardFilters = moduleGate.wardsEnabled && selectedWard && selectedWard !== 'all'
     ? { ward: selectedWard }
@@ -214,6 +224,16 @@ export default function NurseDashboard() {
             <div className="flex items-center gap-2">
               {moduleGate.wardsEnabled ? (
                 <WardFilterSelect selectedWard={selectedWard} onSelectedWardChange={setSelectedWard} />
+              ) : null}
+              {canOpenWardBoard ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(wardBoardHref)}
+                >
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  Open Ward Board
+                </Button>
               ) : null}
               <Button
                 variant="outline"
