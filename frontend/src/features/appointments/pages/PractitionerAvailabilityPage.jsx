@@ -52,9 +52,9 @@ import {
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import { useSearchPractitioners } from '@/features/encounters/hooks/useEncounterQueries';
 import { usePractitioner } from '@/features/staff/hooks';
-import RecurringScheduleForm from '@/components/appointments/RecurringScheduleForm';
-import BlockedTimeForm from '@/components/appointments/BlockedTimeForm';
-import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
+import RecurringScheduleForm from '@/features/appointments/components/RecurringScheduleForm';
+import BlockedTimeForm from '@/features/appointments/components/BlockedTimeForm';
+import DoctorAvailabilityCalendar from '@/features/appointments/components/DoctorAvailabilityCalendar';
 import { SearchBar } from '@/components/ui/search-bar';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';

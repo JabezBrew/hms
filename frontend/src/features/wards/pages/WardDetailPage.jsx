@@ -13,9 +13,9 @@ import { getAuthJSON } from '@/lib/auth-storage';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { WardDashboard } from '@/components/wards/WardDashboard';
-import { SectionManagement } from '@/components/wards/SectionManagement';
-import { WardStaffManagement } from '@/components/wards/WardStaffManagement';
+import { WardDashboard } from '@/features/wards/components/WardDashboard';
+import { SectionManagement } from '@/features/wards/components/SectionManagement';
+import { WardStaffManagement } from '@/features/wards/components/WardStaffManagement';
 import { useWard, useDeleteWard } from '@/features/wards/hooks/useWardQueries';
 
 import { PageShell } from '@/shared/components/page/PageShell';

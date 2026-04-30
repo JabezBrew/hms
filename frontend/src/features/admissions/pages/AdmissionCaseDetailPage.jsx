@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import format from 'date-fns/format'
 
-import { BedAssignment } from '@/components/wards/BedAssignment'
+import { BedAssignment } from '@/features/wards/components/BedAssignment'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'

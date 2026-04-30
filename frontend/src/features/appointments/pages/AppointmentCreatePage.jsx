@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchBar } from '@/components/ui/search-bar';
-import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
+import DoctorAvailabilityCalendar from '@/features/appointments/components/DoctorAvailabilityCalendar';
 
 import { appointmentsApi } from '@/features/appointments/api';
 import { patientsApi } from '@/features/patients/api';
