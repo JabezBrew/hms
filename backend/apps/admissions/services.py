@@ -10,6 +10,7 @@ from django.utils.dateparse import parse_datetime
 from apps.admissions.models import AdmissionCase, AdmissionTask, BedReservation
 from apps.billing.models import FacilityBillingSettings
 from apps.clinical_notes.models import NoteEntry, NoteTemplate
+from apps.core.features import require_feature
 from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from apps.encounters.models import Encounter
 from apps.notifications.models import InboxItem
@@ -42,6 +43,10 @@ ROLE_ACTION_URLS = {
     'lab_technician': '/notifications/inbox',
     'admin': '/notifications/inbox',
 }
+
+
+def _require_enabled_feature(feature_key, facility):
+    require_feature(feature_key, facility=facility)
 
 
 @dataclass
@@ -546,6 +551,7 @@ def start_admission_case(
     requested_admission_type='',
     admitting_practitioner=None,
 ):
+    _require_enabled_feature('inpatient_admissions', facility)
     active_admission_exists = Admission.objects.filter(
         patient=patient,
         facility=facility,
@@ -614,6 +620,7 @@ def start_admission_case(
 
 @transaction.atomic
 def reserve_bed_for_case(*, case: AdmissionCase, actor, bed, expires_at=None):
+    _require_enabled_feature('bed_management', case.facility)
     if case.cancelled_at or case.completed_at:
         raise ValueError('Cannot reserve a bed for a closed admission case.')
     if case.activated_at:
@@ -767,6 +774,7 @@ def _create_inpatient_encounter(*, case: AdmissionCase, admission: Admission, ac
 
 @transaction.atomic
 def activate_admission_case(*, case: AdmissionCase, actor, activated_at=None):
+    _require_enabled_feature('bed_management', case.facility)
     if case.cancelled_at or case.completed_at:
         raise ValueError('Cannot activate a closed admission case.')
     if case.activated_at or case.admission_id:
@@ -930,6 +938,7 @@ def add_advisory_task(*, case: AdmissionCase, actor, task_type, assigned_role=No
 
 @transaction.atomic
 def complete_intake(case: AdmissionCase, *, actor):
+    _require_enabled_feature('nursing_workflows', case.facility)
     if not case.activated_at:
         raise ValueError('Admission case has not been activated.')
     blocking_post = list(

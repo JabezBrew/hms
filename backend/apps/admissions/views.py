@@ -33,6 +33,7 @@ from apps.admissions.services import (
     reserve_bed_for_case,
     start_admission_case,
 )
+from apps.core.features import bind_required_feature, require_feature
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import (
     FacilityScopedPermission,
@@ -51,6 +52,10 @@ ADVISORY_ROLES = {'pharmacist', 'lab_technician'}
 def _require_role(request, allowed_roles, message):
     if getattr(request.user, 'user_type', None) not in allowed_roles:
         raise PermissionDenied(message)
+
+
+def _require_enabled_feature(feature_key, request):
+    require_feature(feature_key, request=request)
 
 
 class AdmissionCaseViewSet(viewsets.ReadOnlyModelViewSet):
@@ -116,6 +121,8 @@ class AdmissionCaseViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['post'], url_path='start')
     def start(self, request):
         _require_role(request, CASE_STARTER_ROLES | {'admin'}, 'You do not have permission to start admission cases.')
+        if request.data.get('requested_bed_id') or request.data.get('requested_bed'):
+            _require_enabled_feature('bed_management', request)
         facility = get_user_facility(request)
         if not facility:
             raise PermissionDenied('Facility context is required.')
@@ -165,6 +172,7 @@ class AdmissionCaseViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], url_path='reserve-bed')
     def reserve_bed(self, request, pk=None):
         _require_role(request, PLACEMENT_ROLES | {'admin'}, 'Bed reservation requires a placement role.')
+        _require_enabled_feature('bed_management', request)
         case = self.get_object()
         serializer = BedReservationUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -202,6 +210,7 @@ class AdmissionCaseViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], url_path='activate')
     def activate(self, request, pk=None):
         _require_role(request, NURSING_ROLES | PLACEMENT_ROLES | {'admin'}, 'Admission activation requires a nursing or placement role.')
+        _require_enabled_feature('bed_management', request)
         case = self.get_object()
         serializer = AdmissionCaseActivateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -215,6 +224,7 @@ class AdmissionCaseViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], url_path='complete-intake')
     def complete_case_intake(self, request, pk=None):
         _require_role(request, NURSING_ROLES | {'admin'}, 'Admission intake completion requires a nursing role.')
+        _require_enabled_feature('nursing_workflows', request)
         case = complete_intake(self.get_object(), actor=request.user)
         return Response(AdmissionCaseDetailSerializer(case, context={'request': request}).data)
 
@@ -318,8 +328,5 @@ class AdmissionTaskViewSet(viewsets.ReadOnlyModelViewSet):
             notes=serializer.validated_data.get('notes', ''),
         )
         return Response(AdmissionCaseDetailSerializer(case, context={'request': request}).data)
-
-
-from apps.core.features import bind_required_feature
 
 bind_required_feature(globals(), 'inpatient_admissions')

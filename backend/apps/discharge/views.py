@@ -5,6 +5,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.billing.models import Invoice
+from apps.core.features import bind_required_feature, require_feature
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.security import FacilityScopedPermission, get_user_facility, scope_queryset_to_clinical_access
 from apps.discharge.models import DischargeCase, DischargeTask
@@ -37,6 +38,10 @@ def _require_role(request, allowed_roles, message):
     user_type = getattr(request.user, 'user_type', None)
     if user_type not in allowed_roles:
         raise PermissionDenied(message)
+
+
+def _require_enabled_feature(feature_key, request):
+    require_feature(feature_key, request=request)
 
 
 class DischargeCaseViewSet(viewsets.ReadOnlyModelViewSet):
@@ -142,6 +147,8 @@ class DischargeCaseViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], url_path='finalize')
     def finalize(self, request, pk=None):
         _require_role(request, NURSING_FINALIZER_ROLES, 'Nursing finalization requires a nursing role.')
+        _require_enabled_feature('bed_management', request)
+        _require_enabled_feature('nursing_workflows', request)
         case = self.get_object()
         serializer = DischargeFinalizeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -242,8 +249,5 @@ class DischargeTaskViewSet(viewsets.ReadOnlyModelViewSet):
             notes=serializer.validated_data.get('notes', ''),
         )
         return Response(DischargeCaseDetailSerializer(case, context={'request': request}).data)
-
-
-from apps.core.features import bind_required_feature
 
 bind_required_feature(globals(), 'discharge_workflows')

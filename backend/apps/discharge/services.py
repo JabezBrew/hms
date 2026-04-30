@@ -10,6 +10,7 @@ from django.utils.dateparse import parse_datetime
 from apps.billing.models import Invoice
 from apps.billing.services import DraftInvoiceSyncService
 from apps.clinical_notes.models import NoteEntry, NoteTemplate, Prescription
+from apps.core.features import require_feature
 from apps.discharge.models import DischargeCase, DischargeTask
 from apps.laboratory.models import LabOrder, LabOrderStatus
 from apps.notifications.models import InboxItem
@@ -40,6 +41,10 @@ ROLE_ACTION_URLS = {
     'lab_technician': '/notifications/inbox',
     'admin': '/notifications/inbox',
 }
+
+
+def _require_enabled_feature(feature_key, facility):
+    require_feature(feature_key, facility=facility)
 
 
 @dataclass
@@ -347,6 +352,8 @@ def submit_medical_discharge(
     discharge_prescriptions=None,
     notes_snapshot=None,
 ):
+    _require_enabled_feature('discharge_workflows', admission.facility)
+    _require_enabled_feature('nursing_workflows', admission.facility)
     practitioner = _get_user_practitioner(actor)
     if practitioner is None:
         practitioner = admission.admitting_doctor
@@ -635,6 +642,9 @@ def acknowledge_task(*, task: DischargeTask, actor, notes=''):
 
 @transaction.atomic
 def finalize_discharge(*, case: DischargeCase, actor, finalized_at=None, acknowledge_task_ids=None):
+    _require_enabled_feature('bed_management', case.facility)
+    _require_enabled_feature('discharge_workflows', case.facility)
+    _require_enabled_feature('nursing_workflows', case.facility)
     if case.status == DischargeCase.Status.FINALIZED:
         raise ValueError('Discharge has already been finalized.')
     if case.status == DischargeCase.Status.CANCELLED:

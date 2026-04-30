@@ -10,6 +10,7 @@ from django.views.decorators.vary import vary_on_headers
 from django.core.cache import cache
 from django.db.models import Count, Avg, Sum, F, Q
 from django.db.models.functions import TruncDate
+from apps.core.features import attach_required_feature, bind_required_feature, require_feature
 from apps.core.pagination import StandardResultsSetPagination
 from datetime import timedelta, datetime
 
@@ -70,7 +71,27 @@ def invalidate_ward_caches():
         logger.warning(f"Failed to invalidate ward cache: {e}")
 
 
-class WardViewSet(viewsets.ModelViewSet):
+def _require_enabled_feature(feature_key, request):
+    require_feature(feature_key, request=request)
+
+
+class ActionFeatureGateMixin:
+    action_required_features = {}
+
+    def get_permissions(self):
+        default_feature = getattr(
+            type(self),
+            'required_feature',
+            getattr(self, 'required_feature', None),
+        )
+        self.required_feature = self.action_required_features.get(
+            getattr(self, 'action', None),
+            default_feature,
+        )
+        return super().get_permissions()
+
+
+class WardViewSet(ActionFeatureGateMixin, viewsets.ModelViewSet):
     """
     API endpoint for wards.
 
@@ -81,6 +102,11 @@ class WardViewSet(viewsets.ModelViewSet):
     queryset = Ward.objects.prefetch_related('beds').all()
     serializer_class = WardSerializer
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
+    action_required_features = {
+        'admissions': 'inpatient_admissions',
+        'analytics': 'bed_management',
+        'beds': 'bed_management',
+    }
     filterset_fields = ['ward_type', 'is_active']
     pagination_class = StandardResultsSetPagination
 
@@ -154,6 +180,8 @@ class WardViewSet(viewsets.ModelViewSet):
         # Get values from validated_data before saving
         auto_create_beds = serializer.validated_data.pop('auto_create_beds', True)
         total_beds = serializer.validated_data.get('total_beds', 0)
+        if auto_create_beds and total_beds > 0:
+            _require_enabled_feature('bed_management', self.request)
 
         # Save the ward first
         ward = serializer.save(created_by=self.request.user, updated_by=self.request.user)
@@ -698,7 +726,7 @@ class BedViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class AdmissionViewSet(viewsets.ModelViewSet):
+class AdmissionViewSet(ActionFeatureGateMixin, viewsets.ModelViewSet):
     """
     API endpoint for admissions.
     """
@@ -712,6 +740,9 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         'admitting_doctor__staff__user'
     ).all()
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
+    action_required_features = {
+        'discharge': 'discharge_workflows',
+    }
     filterset_fields = ['patient', 'bed', 'status', 'admission_type', 'is_billed']
     pagination_class = StandardResultsSetPagination
 
@@ -741,6 +772,9 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         return queryset
 
     def create(self, request, *args, **kwargs):
+        if request.data.get('bed'):
+            _require_enabled_feature('bed_management', request)
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -806,6 +840,8 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         """
         Discharge a patient.
         """
+        _require_enabled_feature('inpatient_admissions', request)
+        _require_enabled_feature('nursing_workflows', request)
         admission = self.get_object()
 
         # Validate the discharge
@@ -872,6 +908,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             return WardTransfer.objects.none()
+        _require_enabled_feature('inpatient_admissions', self.request)
         queryset = WardTransfer.objects.select_related(
             'from_admission',
             'from_admission__patient',
@@ -892,6 +929,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             raise PermissionDenied("Facility context is required.")
+        _require_enabled_feature('inpatient_admissions', self.request)
         from_admission = serializer.validated_data.get('from_admission')
         if from_admission and from_admission.patient.facility_id != facility.id:
             raise PermissionDenied("Admission does not belong to the active facility.")
@@ -904,6 +942,7 @@ class WardTransferViewSet(viewsets.ModelViewSet):
         """
         Request a patient transfer between wards.
         """
+        _require_enabled_feature('inpatient_admissions', request)
         serializer = TransferRequestSerializer(data=request.data)
 
         if serializer.is_valid():
@@ -1262,6 +1301,26 @@ class WardStaffAssignmentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-from apps.core.features import bind_required_feature
+BED_MANAGEMENT_VIEWSETS = (
+    BedViewSet,
+    BedAllocationLogViewSet,
+    WardTransferViewSet,
+    WardSectionViewSet,
+    BedAmenityViewSet,
+)
+INPATIENT_ADMISSION_VIEWSETS = (AdmissionViewSet,)
 
-bind_required_feature(globals(), 'wards')
+bind_required_feature(
+    globals(),
+    'wards',
+    exclude=(
+        'AdmissionViewSet',
+        'BedAllocationLogViewSet',
+        'BedAmenityViewSet',
+        'BedViewSet',
+        'WardSectionViewSet',
+        'WardTransferViewSet',
+    ),
+)
+attach_required_feature(BED_MANAGEMENT_VIEWSETS, 'bed_management')
+attach_required_feature(INPATIENT_ADMISSION_VIEWSETS, 'inpatient_admissions')
