@@ -1078,7 +1078,7 @@ def get_nurse_dashboard_data(user, request):
             'patient_id': str(med.patient.id),
             'patient_name': med.patient.user.get_full_name(),
             'medication_name': med.medication_name,
-            'dose': med.dose,
+            'dose': med.dosage,
             'scheduled_time': med.scheduled_time.isoformat(),
         })
 
@@ -1090,7 +1090,7 @@ def get_nurse_dashboard_data(user, request):
             'patient_id': str(med.patient.id),
             'patient_name': med.patient.user.get_full_name(),
             'medication_name': med.medication_name,
-            'dose': med.dose,
+            'dose': med.dosage,
             'route': med.route,
             'scheduled_time': med.scheduled_time.isoformat(),
         })
@@ -1102,7 +1102,7 @@ def get_nurse_dashboard_data(user, request):
             'id': str(task.id),
             'patient_id': str(task.patient.id),
             'patient_name': task.patient.user.get_full_name(),
-            'title': task.title,
+            'title': task.get_task_type_display(),
             'description': task.description,
             'priority': task.priority,
             'status': task.status,

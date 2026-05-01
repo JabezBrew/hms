@@ -7,10 +7,28 @@ from django.db import transaction
 
 from apps.core.management.commands import seed_production_dataset as seed_module
 from apps.core.management.commands.seed_production_dataset import Command, SeedManifest
+from apps.admissions.models import AdmissionCase
+from apps.discharge.models import DischargeCase
+from apps.encounters.models import EncounterCareTeam
+from apps.nursing.models import (
+    FluidBalance,
+    MedicationAdministration,
+    NursingTask,
+    ShiftHandoff,
+    SupplyRequest,
+    TreatmentSheetEntry,
+)
+from apps.organization.models import (
+    ClinicSchedule,
+    RosterEntry,
+    StaffUnitAssignment,
+    UnitMemberAssignment,
+    UnitWardAllocation,
+)
 from apps.patients.models import PatientSearchIndex
 from apps.users.identifiers import generate_unique_mrn
 from apps.users.models import PatientProfile, Staff
-from apps.wards.models import Admission, BedAllocationLog
+from apps.wards.models import Admission, BedAllocationLog, WardStaffAssignment
 
 User = get_user_model()
 
@@ -127,6 +145,52 @@ def test_seeded_staff_accounts_are_non_login_and_require_password_reset(tmp_path
 
 
 @pytest.mark.django_db
+def test_seed_facility_builds_operational_unit_staff_and_roster_graph(tmp_path):
+    _, _, _, ctx = _seed_facility(tmp_path, "TSPD7")
+
+    assert ctx.root_unit.code == ctx.facility.code
+    assert ctx.department_units
+    assert ctx.team_units
+    assert all(unit.root_unit_id == ctx.root_unit.id for unit in ctx.department_units.values())
+    assert StaffUnitAssignment.objects.filter(
+        unit__root_unit=ctx.root_unit,
+        practitioner__in=ctx.doctors + ctx.nurses,
+        is_active=True,
+    ).exists()
+    assert UnitWardAllocation.objects.filter(
+        ward__in=ctx.wards.values(),
+        unit__root_unit=ctx.root_unit,
+        is_active=True,
+    ).exists()
+    assert WardStaffAssignment.objects.filter(
+        ward__in=ctx.wards.values(),
+        practitioner__in=ctx.nurses,
+        is_active=True,
+    ).exists()
+    assert ctx.pharmacists
+    assert UnitMemberAssignment.objects.filter(
+        unit=ctx.department_units["Laboratory Services"],
+        staff__in=ctx.lab_techs,
+        is_active=True,
+    ).exists()
+    assert UnitMemberAssignment.objects.filter(
+        unit=ctx.department_units["Pharmacy"],
+        staff__in=ctx.pharmacists,
+        is_active=True,
+    ).exists()
+    assert UnitMemberAssignment.objects.filter(
+        unit=ctx.department_units["Administration"],
+        staff__in=ctx.support_staff,
+        is_active=True,
+    ).exists()
+    assert ClinicSchedule.objects.filter(facility=ctx.facility, clinic__in=ctx.clinics).exists()
+    assert RosterEntry.objects.filter(department__root_unit=ctx.root_unit, status="published").exists()
+    assert ctx.nhis_plan is not None
+    assert ctx.inventory_items
+    assert ctx.storage_locations["pharmacy"].can_dispense_to_patients is True
+
+
+@pytest.mark.django_db
 def test_seed_patient_batch_uses_mrn_allocator(tmp_path, monkeypatch):
     command, manifest, seed_user, ctx = _seed_facility(tmp_path, "TSPD3")
 
@@ -227,6 +291,35 @@ def test_ensure_manifest_run_config_rejects_dataset_mismatch(tmp_path):
         )
 
 
+@pytest.mark.django_db
+def test_resolve_facility_configs_can_target_existing_staging_facility():
+    facility = seed_module.Facility.objects.create(
+        code="MAIN",
+        name="HMS Staging",
+        facility_type="hospital",
+        address="",
+        city="Accra",
+        region="Greater Accra",
+        phone="+233000000000",
+        email="main@hms.local",
+    )
+    command = Command()
+
+    configs = command._resolve_facility_configs(
+        n_facilities=1,
+        facility_code="main",
+        facility_name=None,
+    )
+
+    assert configs == [{
+        "code": "MAIN",
+        "name": facility.name,
+        "address": "Korle-Bu, Accra",
+        "city": facility.city,
+        "region": facility.region,
+    }]
+
+
 def test_resolve_patient_range_rejects_resume_with_chunk(tmp_path):
     command = Command()
     manifest = SeedManifest(str(tmp_path / "range-manifest.json"))
@@ -287,11 +380,30 @@ def test_seed_patient_journey_creates_active_admission_and_respects_occupied_bed
         status__in=["admitted", "pending_discharge"],
     )
     assert active_admission.bed_id != occupied_bed.pk
+    assert active_admission.primary_team_id == ctx.ward_teams[active_admission.bed.ward_id].id
+    assert StaffUnitAssignment.objects.filter(
+        unit=active_admission.primary_team,
+        practitioner=active_admission.admitting_doctor,
+        is_active=True,
+    ).exists()
     assert BedAllocationLog.objects.filter(
         admission=active_admission,
         previous_status="available",
         new_status="occupied",
     ).exists()
+    assert AdmissionCase.objects.filter(admission=active_admission, patient=patient).exists()
+    assert TreatmentSheetEntry.objects.filter(admission=active_admission, patient=patient).exists()
+    assert MedicationAdministration.objects.filter(patient=patient, treatment_entry__admission=active_admission).exists()
+    assert MedicationAdministration.objects.filter(
+        patient=patient,
+        treatment_entry__admission=active_admission,
+        dispensed_by__user_type="pharmacist",
+    ).exists()
+    assert NursingTask.objects.filter(patient=patient).exists()
+    assert ShiftHandoff.objects.filter(patient=patient).exists()
+    assert FluidBalance.objects.filter(patient=patient, admission=active_admission).exists()
+    assert SupplyRequest.objects.filter(treatment_entry__patient=patient).exists()
+    assert EncounterCareTeam.objects.filter(encounter__patient=patient).exists()
 
     discharged_admissions = Admission.objects.filter(
         patient=patient,
@@ -310,6 +422,7 @@ def test_seed_patient_journey_creates_active_admission_and_respects_occupied_bed
             previous_status="occupied",
             new_status="available",
         ).exists()
+    assert DischargeCase.objects.filter(patient=patient, admission__in=discharged_admissions).exists()
 
 
 @pytest.mark.django_db

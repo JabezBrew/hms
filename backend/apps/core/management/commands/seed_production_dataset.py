@@ -8,6 +8,7 @@ every patient's labs, vitals, medications, and billing are medically coherent.
 
 Usage:
     python manage.py seed_production_dataset
+    python manage.py seed_production_dataset --profile staging --facility-code MAIN
     python manage.py seed_production_dataset --profile large
     python manage.py seed_production_dataset --facilities 3 --patients 10000 --years 5
     python manage.py seed_production_dataset --chunk 0-2000   # seed patients 0-1999
@@ -28,7 +29,7 @@ import json
 import random
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -38,20 +39,60 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.admissions.models import AdmissionCase, AdmissionTask, BedReservation
 from apps.appointments.models import Appointment, AppointmentType
-from apps.billing.models import Invoice, InvoiceItem, Payment, Service, ServiceCategory
-from apps.clinical_notes.models import NoteEntry, NoteTemplate
+from apps.billing.models import (
+    Claim,
+    InsurancePlan,
+    InsuranceProvider,
+    Invoice,
+    InvoiceItem,
+    NHISClaimBatch,
+    PatientInsurance,
+    Payment,
+    Service,
+    ServiceCategory,
+)
+from apps.clinical_notes.models import NoteEntry, NoteTemplate, Prescription
+from apps.core.features import feature_enabled
 from apps.core.models import Department, Facility
-from apps.encounters.models import Encounter, OutpatientVisit
+from apps.discharge.models import DischargeCase, DischargeTask
+from apps.encounters.models import Encounter, EncounterCareTeam, OutpatientVisit
+from apps.inventory.models import (
+    InventoryCategory,
+    InventoryItem,
+    LocationStock,
+    StorageLocation,
+)
 from apps.laboratory.models import (
     LabOrder, LabOrderSequence, LabOrderTest, LabResult, LabSpecimen, LabTestCatalog,
 )
-from apps.nursing.models import VitalSigns
-from apps.organization.models import ClinicalUnit, Clinic, UnitTypeConfig
+from apps.nursing.models import (
+    FluidBalance,
+    MedicationAdministration,
+    NursingAlert,
+    NursingTask,
+    ShiftHandoff,
+    SupplyRequest,
+    TreatmentSheetEntry,
+    VitalSigns,
+)
+from apps.organization.models import (
+    ClinicalUnit,
+    Clinic,
+    ClinicSchedule,
+    DepartmentDutyType,
+    RosterEntry,
+    StaffAssignmentTypeConfig,
+    StaffUnitAssignment,
+    UnitMemberAssignment,
+    UnitTypeConfig,
+    UnitWardAllocation,
+)
 from apps.patients.models import PatientSearchIndex
 from apps.users.identifiers import generate_unique_employee_id, generate_unique_mrn
 from apps.users.models import PatientProfile, PractitionerProfile, Staff
-from apps.wards.models import Admission, Bed, BedAllocationLog, Ward
+from apps.wards.models import Admission, Bed, BedAllocationLog, StaffRole, Ward, WardStaffAssignment
 
 User = get_user_model()
 
@@ -61,6 +102,7 @@ User = get_user_model()
 
 PROFILES = {
     "smoke":  {"facilities": 1, "patients": 50,     "years": 1},
+    "staging": {"facilities": 1, "patients": 150,    "years": 1},
     "small":  {"facilities": 1, "patients": 500,    "years": 2},
     "medium": {"facilities": 2, "patients": 2_000,  "years": 3},
     "large":  {"facilities": 3, "patients": 10_000, "years": 5},
@@ -260,6 +302,56 @@ WARD_BY_ARCHETYPE = {
 PAYMENT_METHODS = ["cash", "mobile_money", "bank_transfer", "credit_card", "insurance"]
 PAYMENT_WEIGHTS = [50, 30, 10, 5, 5]
 
+MEDICATION_CATALOG = [
+    {
+        "key": "paracetamol",
+        "name": "Paracetamol",
+        "dosage": "1g",
+        "route": "oral",
+        "frequency": "tid",
+        "unit_cost": Decimal("0.20"),
+        "selling_price": Decimal("0.50"),
+    },
+    {
+        "key": "amoxicillin",
+        "name": "Amoxicillin",
+        "dosage": "500mg",
+        "route": "oral",
+        "frequency": "tid",
+        "unit_cost": Decimal("0.80"),
+        "selling_price": Decimal("1.50"),
+    },
+    {
+        "key": "ceftriaxone",
+        "name": "Ceftriaxone",
+        "dosage": "1g",
+        "route": "iv",
+        "frequency": "daily",
+        "unit_cost": Decimal("8.00"),
+        "selling_price": Decimal("15.00"),
+    },
+    {
+        "key": "metformin",
+        "name": "Metformin",
+        "dosage": "500mg",
+        "route": "oral",
+        "frequency": "bid",
+        "unit_cost": Decimal("0.30"),
+        "selling_price": Decimal("0.75"),
+    },
+]
+
+ARCHETYPE_DEPARTMENT = {
+    "hypertensive": "Internal Medicine",
+    "diabetic": "Internal Medicine",
+    "chronic_complex": "Internal Medicine",
+    "respiratory": "Internal Medicine",
+    "surgical": "Surgery",
+    "maternity": "Obstetrics & Gynaecology",
+    "pediatric": "Paediatrics",
+    "infectious": "Emergency Medicine",
+}
+
 # ============================================================================
 # HELPERS
 # ============================================================================
@@ -424,6 +516,10 @@ class FacilityContext:
     facility: object
     departments: dict        # name -> Department
     clinical_units: dict     # name -> ClinicalUnit
+    root_unit: object
+    department_units: dict   # name -> department ClinicalUnit
+    team_units: dict         # name -> primary team ClinicalUnit
+    ward_teams: dict         # ward pk -> owning team ClinicalUnit
     clinics: list
     wards: dict              # name -> Ward
     beds: list               # all Bed objects
@@ -434,8 +530,13 @@ class FacilityContext:
     doctors: list            # PractitionerProfile objects
     nurses: list
     lab_techs: list          # Staff objects
+    pharmacists: list        # Staff objects
+    support_staff: list      # Staff objects without PractitionerProfile
     admin_user: object       # User
     seed_user: object        # seed engine user
+    nhis_plan: object = None
+    inventory_items: dict = field(default_factory=dict)
+    storage_locations: dict = field(default_factory=dict)
     occupied_bed_ids: set = field(default_factory=set)
     has_seeded_active_admission: bool = False
 
@@ -449,9 +550,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--profile", choices=list(PROFILES), default="large",
-                            help="Preset profile (smoke|small|medium|large)")
+                            help="Preset profile (smoke|staging|small|medium|large)")
         parser.add_argument("--facilities", type=int, default=None,
                             help="Override number of facilities to create")
+        parser.add_argument("--facility-code", type=str, default=None,
+                            help="Seed one explicit facility code, e.g. MAIN for staging")
+        parser.add_argument("--facility-name", type=str, default=None,
+                            help="Facility display name when --facility-code creates a new facility")
         parser.add_argument("--patients", type=int, default=None,
                             help="Override total number of patients")
         parser.add_argument("--years", type=int, default=None,
@@ -492,7 +597,11 @@ class Command(BaseCommand):
             self._dry_run(n_facilities, n_patients, n_years)
             return
 
-        fac_configs = FACILITIES_CONFIG[:n_facilities]
+        fac_configs = self._resolve_facility_configs(
+            n_facilities=n_facilities,
+            facility_code=options["facility_code"],
+            facility_name=options["facility_name"],
+        )
         patients_per_fac = self._distribute(n_patients, n_facilities)
 
         self._ensure_manifest_run_config(
@@ -636,6 +745,40 @@ class Command(BaseCommand):
         if created:
             self.stdout.write("  Created non-login seed engine user (seed_engine@hms.local)")
         return user, created
+
+    def _resolve_facility_configs(
+        self,
+        *,
+        n_facilities: int,
+        facility_code: Optional[str],
+        facility_name: Optional[str],
+    ) -> list[dict]:
+        if n_facilities < 1:
+            raise CommandError("--facilities must be greater than 0")
+        if n_facilities > len(FACILITIES_CONFIG) and not facility_code:
+            raise CommandError(
+                f"--facilities cannot exceed {len(FACILITIES_CONFIG)} without --facility-code"
+            )
+
+        if not facility_code:
+            return [dict(cfg) for cfg in FACILITIES_CONFIG[:n_facilities]]
+
+        if n_facilities != 1:
+            raise CommandError("--facility-code can only be used with one facility")
+
+        normalized_code = facility_code.strip().upper()
+        if not normalized_code:
+            raise CommandError("--facility-code cannot be blank")
+
+        existing = Facility.objects.filter(code__iexact=normalized_code).first()
+        template = dict(FACILITIES_CONFIG[0])
+        template["code"] = normalized_code
+        template["name"] = facility_name or getattr(existing, "name", None) or f"{normalized_code} Hospital"
+        if existing:
+            template["address"] = existing.address or template["address"]
+            template["city"] = existing.city or template["city"]
+            template["region"] = existing.region or template["region"]
+        return [template]
 
     def _ensure_manifest_run_config(
         self,
@@ -792,17 +935,33 @@ class Command(BaseCommand):
         manifest.add_bulk("Appointment", Appointment.objects.filter(patient=patient).values_list("pk", flat=True))
         manifest.add_bulk("OutpatientVisit", OutpatientVisit.objects.filter(appointment__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("Encounter", Encounter.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("EncounterCareTeam", EncounterCareTeam.objects.filter(encounter__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("Admission", Admission.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("AdmissionCase", AdmissionCase.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("AdmissionTask", AdmissionTask.objects.filter(case__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("BedReservation", BedReservation.objects.filter(case__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("DischargeCase", DischargeCase.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("DischargeTask", DischargeTask.objects.filter(case__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("BedAllocationLog", BedAllocationLog.objects.filter(admission__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("VitalSigns", VitalSigns.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("NursingTask", NursingTask.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("NursingAlert", NursingAlert.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("MedicationAdministration", MedicationAdministration.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("ShiftHandoff", ShiftHandoff.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("TreatmentSheetEntry", TreatmentSheetEntry.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("SupplyRequest", SupplyRequest.objects.filter(treatment_entry__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("FluidBalance", FluidBalance.objects.filter(patient=patient).values_list("pk", flat=True))
         manifest.add_bulk("NoteEntry", NoteEntry.objects.filter(patient=patient).values_list("pk", flat=True))
+        manifest.add_bulk("Prescription", Prescription.objects.filter(patient=patient).values_list("pk", flat=True))
         manifest.add_bulk("LabOrder", LabOrder.objects.filter(patient=patient).values_list("pk", flat=True))
         manifest.add_bulk("LabSpecimen", LabSpecimen.objects.filter(order__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("LabOrderTest", LabOrderTest.objects.filter(order__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("LabResult", LabResult.objects.filter(order_test__order__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("PatientInsurance", PatientInsurance.objects.filter(patient=patient).values_list("pk", flat=True))
         manifest.add_bulk("Invoice", Invoice.objects.filter(patient=patient).values_list("pk", flat=True))
         manifest.add_bulk("InvoiceItem", InvoiceItem.objects.filter(invoice__patient=patient).values_list("pk", flat=True).distinct())
         manifest.add_bulk("Payment", Payment.objects.filter(invoice__patient=patient).values_list("pk", flat=True).distinct())
+        manifest.add_bulk("Claim", Claim.objects.filter(invoice__patient=patient).values_list("pk", flat=True).distinct())
 
     def _reconcile_pending_batches(self, manifest: SeedManifest) -> None:
         pending_batches = list(manifest.pending_batches())
@@ -909,6 +1068,579 @@ class Command(BaseCommand):
             return ctx.services.get("WARD-PRIV")
         return ctx.services.get("WARD-GEN")
 
+    def _department_for_archetype(self, archetype: str) -> str:
+        return ARCHETYPE_DEPARTMENT.get(archetype, "General Outpatient")
+
+    def _care_units_for_archetype(
+        self,
+        ctx: FacilityContext,
+        archetype: str,
+        *,
+        ward: Optional[Ward] = None,
+    ) -> tuple[Optional[ClinicalUnit], Optional[ClinicalUnit]]:
+        if ward and ward.pk in ctx.ward_teams:
+            team = ctx.ward_teams[ward.pk]
+            department = team.parent or ctx.department_units.get(self._department_for_archetype(archetype))
+            return department, team
+        dept_name = self._department_for_archetype(archetype)
+        department = ctx.department_units.get(dept_name) or ctx.department_units.get("General Outpatient")
+        team = ctx.team_units.get(dept_name) or ctx.team_units.get("General Outpatient") or department
+        return department, team
+
+    def _pick_practitioner_for_department(
+        self,
+        practitioners: list,
+        department: Optional[ClinicalUnit],
+    ) -> Optional[PractitionerProfile]:
+        if not practitioners:
+            return None
+        dept_name = getattr(getattr(department, "core_department", None), "name", None)
+        if dept_name:
+            matches = [
+                practitioner for practitioner in practitioners
+                if getattr(practitioner.staff, "department", None) == dept_name
+            ]
+            if matches:
+                return _rng.choice(matches)
+        return _rng.choice(practitioners)
+
+    def _feature_enabled(self, facility: Facility, feature_key: str) -> bool:
+        try:
+            return feature_enabled(feature_key, facility=facility, default=True)
+        except Exception:
+            return True
+
+    def _get_or_create_unit_types(self) -> dict[str, UnitTypeConfig]:
+        facility_type, _ = UnitTypeConfig.objects.get_or_create(
+            code="facility",
+            defaults={
+                "name": "Facility",
+                "can_be_root": True,
+                "depth_level": 0,
+                "can_have_wards": False,
+                "can_admit_patients": False,
+                "can_consult": False,
+                "is_active": True,
+            },
+        )
+        department_type, _ = UnitTypeConfig.objects.get_or_create(
+            code="department",
+            defaults={
+                "name": "Department",
+                "can_be_root": False,
+                "depth_level": 1,
+                "can_have_wards": True,
+                "can_admit_patients": True,
+                "can_consult": True,
+                "is_active": True,
+            },
+        )
+        team_type, _ = UnitTypeConfig.objects.get_or_create(
+            code="team",
+            defaults={
+                "name": "Team",
+                "can_be_root": False,
+                "depth_level": 2,
+                "can_have_wards": True,
+                "can_admit_patients": True,
+                "can_consult": True,
+                "is_active": True,
+            },
+        )
+        return {"facility": facility_type, "department": department_type, "team": team_type}
+
+    def _unit_code(self, value: str, max_length: int = 30) -> str:
+        return value.upper().replace(" ", "-").replace("&", "AND").replace("'", "")[:max_length]
+
+    def _seed_clinical_unit_tree(
+        self,
+        *,
+        facility: Facility,
+        departments: dict,
+        seed_user: User,
+    ) -> tuple[ClinicalUnit, dict, dict, list]:
+        unit_types = self._get_or_create_unit_types()
+        created_units = []
+
+        root, root_created = ClinicalUnit.objects.get_or_create(
+            parent=None,
+            code=facility.code,
+            defaults={
+                "unit_type": unit_types["facility"],
+                "name": facility.name,
+                "short_name": facility.code,
+                "staffing_mode": "mixed",
+                "unit_category": "clinical",
+                "accepts_referrals": False,
+                "accepts_admissions": False,
+                "is_active": True,
+                "created_by": seed_user,
+            },
+        )
+        if root_created:
+            created_units.append(root.pk)
+
+        department_units = {}
+        team_units = {}
+        for dept_name, dept in departments.items():
+            dept_code = self._unit_code(dept_name, max_length=28)
+            dept_unit, dept_created = ClinicalUnit.objects.get_or_create(
+                parent=root,
+                code=dept_code,
+                defaults={
+                    "unit_type": unit_types["department"],
+                    "core_department": dept,
+                    "name": dept_name,
+                    "short_name": dept_name[:50],
+                    "staffing_mode": "mixed",
+                    "unit_category": "clinical",
+                    "accepts_referrals": True,
+                    "accepts_admissions": True,
+                    "is_active": True,
+                    "created_by": seed_user,
+                },
+            )
+            department_units[dept_name] = dept_unit
+            if dept_created:
+                created_units.append(dept_unit.pk)
+
+            team_code = f"{dept_code[:24]}-T1"
+            team, team_created = ClinicalUnit.objects.get_or_create(
+                parent=dept_unit,
+                code=team_code,
+                defaults={
+                    "unit_type": unit_types["team"],
+                    "core_department": dept,
+                    "name": f"{dept_name} Team A",
+                    "short_name": f"{dept_name[:42]} A",
+                    "staffing_mode": "clinical_only",
+                    "unit_category": "clinical",
+                    "accepts_referrals": True,
+                    "accepts_admissions": True,
+                    "is_active": True,
+                    "created_by": seed_user,
+                },
+            )
+            team_units[dept_name] = team
+            if team_created:
+                created_units.append(team.pk)
+
+        return root, department_units, team_units, created_units
+
+    def _seed_clinic_schedules(
+        self,
+        *,
+        facility: Facility,
+        clinics: list,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        for clinic in clinics:
+            if clinic.operates_24_hours:
+                start, end = time(0, 0), time(23, 59)
+                days = range(7)
+            else:
+                start = clinic.operating_hours_start or time(8, 0)
+                end = clinic.operating_hours_end or time(17, 0)
+                days = range(5)
+            for day in days:
+                exists = ClinicSchedule.objects.filter(
+                    facility=facility,
+                    clinic=clinic,
+                    department=clinic.department,
+                    day_of_week=day,
+                    start_time=start,
+                    end_time=end,
+                    is_active=True,
+                ).exists()
+                if exists:
+                    continue
+                schedule = ClinicSchedule.objects.create(
+                    facility=facility,
+                    clinic=clinic,
+                    department=clinic.department,
+                    day_of_week=day,
+                    start_time=start,
+                    end_time=end,
+                    is_active=True,
+                    created_by=seed_user,
+                )
+                manifest.add("ClinicSchedule", schedule.pk)
+
+    def _get_staff_assignment_type(self) -> StaffAssignmentTypeConfig:
+        assignment_type, _ = StaffAssignmentTypeConfig.objects.get_or_create(
+            code="primary_secondary",
+            defaults={
+                "name": "Primary and Secondary",
+                "requires_primary": True,
+                "allows_secondary": True,
+                "allows_multiple_primary": False,
+                "supports_date_ranges": True,
+                "applicable_user_types": ["doctor", "nurse", "pharmacist", "lab_technician", "receptionist"],
+                "is_active": True,
+            },
+        )
+        return assignment_type
+
+    def _seed_staff_unit_assignments(
+        self,
+        *,
+        facility: Facility,
+        department_units: dict,
+        team_units: dict,
+        doctors: list,
+        nurses: list,
+        support_staff: list,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        assignment_type = self._get_staff_assignment_type()
+        today = timezone.localdate()
+
+        for practitioner in doctors + nurses:
+            dept_name = getattr(practitioner.staff, "department", None)
+            unit = team_units.get(dept_name) or department_units.get(dept_name)
+            if not unit:
+                unit = next(iter(team_units.values()), None)
+            if not unit:
+                continue
+            assignment, created = StaffUnitAssignment.objects.get_or_create(
+                unit=unit,
+                practitioner=practitioner,
+                is_active=True,
+                defaults={
+                    "assignment_type": assignment_type,
+                    "is_primary": True,
+                    "effective_from": today,
+                    "role_description": practitioner.staff.position or "",
+                    "assigned_by": seed_user,
+                },
+            )
+            if created:
+                manifest.add("StaffUnitAssignment", assignment.pk)
+
+        for staff in support_staff:
+            dept_name = getattr(staff, "department", None)
+            unit = department_units.get(dept_name)
+            if not unit:
+                continue
+            assignment, created = UnitMemberAssignment.objects.get_or_create(
+                unit=unit,
+                staff=staff,
+                is_active=True,
+                defaults={
+                    "assignment_type": assignment_type,
+                    "is_primary": True,
+                    "effective_from": today,
+                    "role_description": staff.position or "",
+                    "assigned_by": seed_user,
+                },
+            )
+            if created:
+                manifest.add("UnitMemberAssignment", assignment.pk)
+
+    def _seed_ward_assignments_and_rosters(
+        self,
+        *,
+        facility: Facility,
+        department_units: dict,
+        team_units: dict,
+        ward_teams: dict,
+        wards: dict,
+        doctors: list,
+        nurses: list,
+        appointment_type: AppointmentType,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        nurse_role, _ = StaffRole.objects.get_or_create(
+            code="staff_nurse",
+            defaults={"name": "Staff Nurse", "category": "nursing", "is_active": True},
+        )
+        doctor_role, _ = StaffRole.objects.get_or_create(
+            code="attending_physician",
+            defaults={"name": "Attending Physician", "category": "medical", "is_active": True},
+        )
+
+        for ward in wards.values():
+            owning_team = ward_teams.get(ward.pk)
+            dept_name = getattr(getattr(owning_team, "core_department", None), "name", None)
+            ward_nurses = [n for n in nurses if getattr(n.staff, "department", None) == dept_name] or nurses[:2]
+            ward_doctors = [d for d in doctors if getattr(d.staff, "department", None) == dept_name] or doctors[:1]
+
+            for idx, nurse in enumerate(ward_nurses[:3]):
+                assignment, created = WardStaffAssignment.objects.get_or_create(
+                    ward=ward,
+                    practitioner=nurse,
+                    defaults={
+                        "role": nurse_role,
+                        "is_active": True,
+                        "is_primary": idx == 0,
+                        "assigned_by": seed_user,
+                    },
+                )
+                if created:
+                    manifest.add("WardStaffAssignment", assignment.pk)
+                if idx == 0 and ward.head_nurse_id is None:
+                    ward.head_nurse = nurse
+                    ward.save(update_fields=["head_nurse", "updated_at"])
+
+            for doctor in ward_doctors[:2]:
+                assignment, created = WardStaffAssignment.objects.get_or_create(
+                    ward=ward,
+                    practitioner=doctor,
+                    defaults={
+                        "role": doctor_role,
+                        "is_active": True,
+                        "is_primary": False,
+                        "assigned_by": seed_user,
+                    },
+                )
+                if created:
+                    manifest.add("WardStaffAssignment", assignment.pk)
+
+        self._seed_department_rosters(
+            facility=facility,
+            department_units=department_units,
+            team_units=team_units,
+            appointment_type=appointment_type,
+            seed_user=seed_user,
+            manifest=manifest,
+        )
+
+    def _seed_department_rosters(
+        self,
+        *,
+        facility: Facility,
+        department_units: dict,
+        team_units: dict,
+        appointment_type: AppointmentType,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        if not self._feature_enabled(facility, "department_rosters"):
+            return
+        today = timezone.localdate()
+        for dept_name, department_unit in department_units.items():
+            clinic = department_unit.clinics.first()
+            clinic_duty, created = DepartmentDutyType.objects.get_or_create(
+                department=department_unit,
+                code="CLINIC-AM",
+                defaults={
+                    "name": "Morning Clinic",
+                    "category": "clinic",
+                    "rotation_type": "none",
+                    "applicable_days": [0, 1, 2, 3, 4],
+                    "start_time": time(8, 0),
+                    "end_time": time(13, 0),
+                    "slot_duration_minutes": 30,
+                    "max_patients_per_slot": 2,
+                    "clinic": clinic,
+                    "default_appointment_type": appointment_type,
+                    "is_active": True,
+                    "display_order": 10,
+                },
+            )
+            if created:
+                manifest.add("DepartmentDutyType", clinic_duty.pk)
+
+            ward_duty, created = DepartmentDutyType.objects.get_or_create(
+                department=department_unit,
+                code="WARD-ROUND",
+                defaults={
+                    "name": "Ward Round",
+                    "category": "ward",
+                    "rotation_type": "none",
+                    "applicable_days": [0, 1, 2, 3, 4, 5, 6],
+                    "start_time": time(7, 30),
+                    "end_time": time(17, 0),
+                    "is_active": True,
+                    "display_order": 20,
+                },
+            )
+            if created:
+                manifest.add("DepartmentDutyType", ward_duty.pk)
+
+            team = team_units.get(dept_name)
+            if not team:
+                continue
+            for duty in (clinic_duty, ward_duty):
+                for offset in range(7):
+                    entry_date = today + timedelta(days=offset)
+                    entry, created = RosterEntry.objects.get_or_create(
+                        department=department_unit,
+                        duty_type=duty,
+                        date=entry_date,
+                        defaults={
+                            "team": team,
+                            "start_time": duty.start_time,
+                            "end_time": duty.end_time,
+                            "source": "generated",
+                            "status": "published",
+                            "created_by": seed_user,
+                        },
+                    )
+                    if created:
+                        manifest.add("RosterEntry", entry.pk)
+
+    def _seed_billing_foundation(
+        self,
+        *,
+        facility: Facility,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> Optional[InsurancePlan]:
+        if not self._feature_enabled(facility, "insurance_claims"):
+            return None
+        provider, created = InsuranceProvider.objects.get_or_create(
+            facility=facility,
+            code="NHIS",
+            defaults={
+                "name": "National Health Insurance Scheme",
+                "payer_type": "nhis",
+                "is_active": True,
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("InsuranceProvider", provider.pk)
+        plan, created = InsurancePlan.objects.get_or_create(
+            facility=facility,
+            provider=provider,
+            code="NHIS-STD",
+            defaults={
+                "name": "NHIS Standard Benefit",
+                "coverage_percentage": Decimal("80.00"),
+                "annual_limit": None,
+                "is_active": True,
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("InsurancePlan", plan.pk)
+        return plan
+
+    def _seed_inventory_foundation(
+        self,
+        *,
+        facility: Facility,
+        departments: dict,
+        wards: dict,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> tuple[dict, dict]:
+        if not self._feature_enabled(facility, "inventory"):
+            return {}, {}
+
+        storage_locations = {}
+        main_store, created = StorageLocation.objects.get_or_create(
+            facility=facility,
+            code="MAIN-STORE",
+            defaults={
+                "name": "Main Medical Store",
+                "location_type": "warehouse",
+                "can_receive_external": True,
+                "allows_controlled_substances": True,
+                "is_active": True,
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("StorageLocation", main_store.pk)
+        storage_locations["main_store"] = main_store
+
+        pharmacy, created = StorageLocation.objects.get_or_create(
+            facility=facility,
+            code="PHARMACY",
+            defaults={
+                "name": "Main Pharmacy",
+                "parent": main_store,
+                "location_type": "pharmacy",
+                "can_dispense_to_patients": True,
+                "allows_controlled_substances": True,
+                "is_active": True,
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("StorageLocation", pharmacy.pk)
+        storage_locations["pharmacy"] = pharmacy
+
+        for ward_name, ward in wards.items():
+            code = f"WARD-{self._unit_code(ward_name, max_length=18)}"
+            location, created = StorageLocation.objects.get_or_create(
+                facility=facility,
+                code=code,
+                defaults={
+                    "name": f"{ward.name} Store",
+                    "parent": main_store,
+                    "location_type": "ward_store",
+                    "ward": ward,
+                    "department": ward.department,
+                    "is_active": True,
+                    "created_by": seed_user,
+                    "updated_by": seed_user,
+                },
+            )
+            if created:
+                manifest.add("StorageLocation", location.pk)
+            storage_locations[f"ward:{ward.pk}"] = location
+
+        medication_category, created = InventoryCategory.objects.get_or_create(
+            facility=facility,
+            name="Medications",
+            defaults={"created_by": seed_user, "updated_by": seed_user},
+        )
+        if created:
+            manifest.add("InventoryCategory", medication_category.pk)
+
+        inventory_items = {}
+        for med in MEDICATION_CATALOG:
+            item, created = InventoryItem.objects.get_or_create(
+                facility=facility,
+                sku=f"MED-{med['key'].upper()}",
+                defaults={
+                    "name": med["name"],
+                    "category": medication_category,
+                    "item_type": "medication",
+                    "inventory_class": "B",
+                    "unit_of_measure": "dose",
+                    "minimum_stock": 50,
+                    "reorder_level": 100,
+                    "reorder_quantity": 500,
+                    "current_stock": 0,
+                    "unit_cost": med["unit_cost"],
+                    "selling_price": med["selling_price"],
+                    "is_active": True,
+                    "created_by": seed_user,
+                    "updated_by": seed_user,
+                },
+            )
+            if created:
+                manifest.add("InventoryItem", item.pk)
+            inventory_items[med["name"]] = item
+
+            stock, created = LocationStock.objects.get_or_create(
+                item=item,
+                location=pharmacy,
+                defaults={
+                    "quantity": 500,
+                    "reserved_quantity": 0,
+                    "reorder_level": 100,
+                    "reorder_quantity": 500,
+                    "max_level": 1000,
+                    "last_counted_at": timezone.now(),
+                },
+            )
+            if created:
+                manifest.add("LocationStock", stock.pk)
+
+        return storage_locations, inventory_items
+
     def _seed_facility(self, cfg: dict, seed_user: User, manifest: SeedManifest) -> FacilityContext:
         # --- Facility ---
         facility, created = Facility.objects.get_or_create(
@@ -941,26 +1673,13 @@ class Command(BaseCommand):
                 created_departments.append(dept.pk)
         manifest.add_bulk("Department", created_departments)
 
-        # --- Clinical Units (one per department, flat MPTT tree) ---
-        unit_type = self._get_or_create_unit_type(seed_user)
-        clinical_units = {}
-        created_units = []
-        for dept_name, dept in departments.items():
-            code = dept_name[:20].upper().replace(" ", "-").replace("&", "AND").replace("'", "")[:15]
-            cu, created = ClinicalUnit.objects.get_or_create(
-                code=f"{cfg['code']}-{code}",
-                defaults={
-                    "unit_type": unit_type,
-                    "core_department": dept,
-                    "name": dept_name,
-                    "short_name": dept_name[:30],
-                    "accepts_referrals": True,
-                    "accepts_admissions": True,
-                }
-            )
-            clinical_units[dept_name] = cu
-            if created:
-                created_units.append(cu.pk)
+        # --- Clinical Units (facility root -> departments -> teams) ---
+        root_unit, department_units, team_units, created_units = self._seed_clinical_unit_tree(
+            facility=facility,
+            departments=departments,
+            seed_user=seed_user,
+        )
+        clinical_units = department_units
         manifest.add_bulk("ClinicalUnit", created_units)
 
         # --- Clinics ---
@@ -981,8 +1700,10 @@ class Command(BaseCommand):
                     "name": f"{cd_name} Clinic",
                     "accepts_walk_ins": True,
                     "operates_24_hours": cd_name == "Emergency Medicine",
-                    "operating_hours_start": None if cd_name == "Emergency Medicine" else __import__("datetime").time(8, 0),
-                    "operating_hours_end": None if cd_name == "Emergency Medicine" else __import__("datetime").time(17, 0),
+                    "operating_hours_start": None if cd_name == "Emergency Medicine" else time(8, 0),
+                    "operating_hours_end": None if cd_name == "Emergency Medicine" else time(17, 0),
+                    "booking_mode": "practitioner_direct",
+                    "assignment_timing": "booking",
                 }
             )
             clinics.append(clinic)
@@ -998,8 +1719,16 @@ class Command(BaseCommand):
         if created:
             manifest.add("AppointmentType", apt.pk)
 
+        self._seed_clinic_schedules(
+            facility=facility,
+            clinics=clinics,
+            seed_user=seed_user,
+            manifest=manifest,
+        )
+
         # --- Wards & Beds ---
         wards = {}
+        ward_teams = {}
         all_beds = []
         for wc in WARDS_CONFIG:
             dept_name = wc["dept"]
@@ -1021,6 +1750,26 @@ class Command(BaseCommand):
             if created:
                 manifest.add("Ward", ward.pk)
             wards[wc["name"]] = ward
+
+            owning_team = team_units.get(dept_name) or department_units.get(dept_name)
+            if owning_team:
+                ward_teams[ward.pk] = owning_team
+                allocation, allocation_created = UnitWardAllocation.objects.get_or_create(
+                    unit=owning_team,
+                    ward=ward,
+                    effective_from=None,
+                    defaults={
+                        "allocation_type": "dedicated",
+                        "allocated_beds": wc["beds"],
+                        "max_beds": wc["beds"],
+                        "min_beds": 1,
+                        "priority": 10,
+                        "is_active": True,
+                        "created_by": seed_user,
+                    },
+                )
+                if allocation_created:
+                    manifest.add("UnitWardAllocation", allocation.pk)
 
             # Create beds
             existing_beds = set(ward.beds.values_list("bed_number", flat=True))
@@ -1119,7 +1868,43 @@ class Command(BaseCommand):
             manifest.add("NoteTemplate", note_tmpl.pk)
 
         # --- Staff ---
-        doctors, nurses, lab_techs = self._seed_staff(facility, departments, seed_user, manifest, cfg["code"])
+        doctors, nurses, lab_techs, pharmacists, support_staff = self._seed_staff(
+            facility, departments, seed_user, manifest, cfg["code"]
+        )
+        self._seed_staff_unit_assignments(
+            facility=facility,
+            department_units=department_units,
+            team_units=team_units,
+            doctors=doctors,
+            nurses=nurses,
+            support_staff=support_staff,
+            seed_user=seed_user,
+            manifest=manifest,
+        )
+        self._seed_ward_assignments_and_rosters(
+            facility=facility,
+            department_units=department_units,
+            team_units=team_units,
+            ward_teams=ward_teams,
+            wards=wards,
+            doctors=doctors,
+            nurses=nurses,
+            appointment_type=apt,
+            seed_user=seed_user,
+            manifest=manifest,
+        )
+        nhis_plan = self._seed_billing_foundation(
+            facility=facility,
+            seed_user=seed_user,
+            manifest=manifest,
+        )
+        storage_locations, inventory_items = self._seed_inventory_foundation(
+            facility=facility,
+            departments=departments,
+            wards=wards,
+            seed_user=seed_user,
+            manifest=manifest,
+        )
 
         seed_user.primary_facility = facility
         seed_user.save(update_fields=["primary_facility"])
@@ -1129,6 +1914,10 @@ class Command(BaseCommand):
             facility=facility,
             departments=departments,
             clinical_units=clinical_units,
+            root_unit=root_unit,
+            department_units=department_units,
+            team_units=team_units,
+            ward_teams=ward_teams,
             clinics=clinics,
             wards=wards,
             beds=all_beds,
@@ -1139,8 +1928,13 @@ class Command(BaseCommand):
             doctors=doctors,
             nurses=nurses,
             lab_techs=lab_techs,
+            pharmacists=pharmacists,
+            support_staff=support_staff,
             admin_user=seed_user,
             seed_user=seed_user,
+            nhis_plan=nhis_plan,
+            inventory_items=inventory_items,
+            storage_locations=storage_locations,
             occupied_bed_ids=set(
                 Admission.objects.filter(
                     facility=facility,
@@ -1151,22 +1945,10 @@ class Command(BaseCommand):
         )
 
     def _get_or_create_unit_type(self, seed_user: User) -> UnitTypeConfig:
-        ut, _ = UnitTypeConfig.objects.get_or_create(
-            code="department",
-            defaults={
-                "name": "Department",
-                "can_be_root": True,
-                "depth_level": 0,
-                "can_have_wards": True,
-                "can_admit_patients": True,
-                "can_consult": True,
-                "is_active": True,
-            }
-        )
-        return ut
+        return self._get_or_create_unit_types()["department"]
 
     def _seed_staff(self, facility, departments, seed_user, manifest, fac_code):
-        doctors, nurses, lab_techs = [], [], []
+        doctors, nurses, lab_techs, pharmacists, support_staff = [], [], [], [], []
         emp_counter = getattr(self, "_emp_counter", 0)
 
         for spec in STAFF_SPECS:
@@ -1243,9 +2025,15 @@ class Command(BaseCommand):
                         nurses.append(prac)
                 elif user_type == "lab_technician":
                     lab_techs.append(staff)
+                    support_staff.append(staff)
+                elif user_type == "pharmacist":
+                    pharmacists.append(staff)
+                    support_staff.append(staff)
+                else:
+                    support_staff.append(staff)
 
         self._emp_counter = emp_counter
-        return doctors, nurses, lab_techs
+        return doctors, nurses, lab_techs, pharmacists, support_staff
 
     # ------------------------------------------------------------------
     # PATIENT BATCH SEEDER
@@ -1365,11 +2153,17 @@ class Command(BaseCommand):
         if _rng.random() < adm_prob_total:
             n_admissions += 1
 
-        # Pick a primary doctor for this patient
-        doctor = _rng.choice(ctx.doctors) if ctx.doctors else None
-        nurse = _rng.choice(ctx.nurses) if ctx.nurses else None
+        # Pick care team members from the same department/team used by this journey.
+        outpatient_department, outpatient_team = self._care_units_for_archetype(ctx, archetype)
+        doctor = self._pick_practitioner_for_department(ctx.doctors, outpatient_department)
+        nurse = self._pick_practitioner_for_department(ctx.nurses, outpatient_department)
         lab_tech = _rng.choice(ctx.lab_techs) if ctx.lab_techs else None
-        clinic = _rng.choice(ctx.clinics) if ctx.clinics else None
+        matching_clinics = [
+            clinic for clinic in ctx.clinics
+            if outpatient_department and clinic.department_id == outpatient_department.pk
+        ]
+        clinic = _rng.choice(matching_clinics or ctx.clinics) if ctx.clinics else None
+        patient_insurance = self._maybe_seed_patient_insurance(ctx, patient, seed_user, manifest)
 
         days_span = n_years * 365
         now = timezone.now()
@@ -1403,14 +2197,13 @@ class Command(BaseCommand):
             manifest.add("Appointment", appt.pk)
 
             # Encounter
-            clinical_unit = _rng.choice(list(ctx.clinical_units.values())) if ctx.clinical_units else None
             enc = Encounter(
                 patient=patient,
                 facility=facility,
                 practitioner=doctor,
                 clinic=clinic,
-                department=clinical_unit,
-                primary_team=clinical_unit,
+                department=outpatient_department,
+                primary_team=outpatient_team,
                 appointment=appt,
                 encounter_type="outpatient",
                 status="finished" if is_finished else "in-progress",
@@ -1481,12 +2274,23 @@ class Command(BaseCommand):
                     ctx, patient, enc, doctor, lab_tech, start_dt, archetype, manifest
                 )
 
+            if doctor and _rng.random() < 0.65:
+                self._seed_prescription(
+                    ctx=ctx,
+                    patient=patient,
+                    encounter=enc,
+                    doctor=doctor,
+                    start_dt=start_dt,
+                    manifest=manifest,
+                )
+
             # Billing
             if ctx.services:
                 cons_svc = ctx.services.get("CONS-GEN") or ctx.services.get("CONS-SPEC")
                 if cons_svc:
                     self._seed_invoice(
-                        ctx, patient, enc, cons_svc, start_dt, seed_user, manifest
+                        ctx, patient, enc, cons_svc, start_dt, seed_user, manifest,
+                        patient_insurance=patient_insurance,
                     )
 
         # --- INPATIENT ADMISSIONS ---
@@ -1528,6 +2332,10 @@ class Command(BaseCommand):
                 ward_beds = [bed for bed in ctx.beds if ward and bed.ward_id == ward.pk]
                 bed = _rng.choice(ward_beds) if ward_beds else None
 
+            inpatient_department, inpatient_team = self._care_units_for_archetype(ctx, archetype, ward=ward)
+            admission_doctor = self._pick_practitioner_for_department(ctx.doctors, inpatient_department) or doctor
+            ward_nurse = self._pick_practitioner_for_department(ctx.nurses, inpatient_department) or nurse
+
             admission_type = "maternity" if archetype == "maternity" else (
                 "emergency" if archetype in ("infectious", "respiratory", "chronic_complex") and _rng.random() < 0.4
                 else "elective"
@@ -1540,13 +2348,13 @@ class Command(BaseCommand):
                 admission_date=adm_dt,
                 status=status,
                 admission_type=admission_type,
-                admitting_doctor=doctor,
+                admitting_doctor=admission_doctor,
                 daily_rate=Decimal(ward.base_rate_per_night if ward else "0.00"),
                 admission_notes=f"Admitted with {_rng.choice(ARCHETYPE_COMPLAINTS[archetype])}",
                 discharge_notes="Condition improved. Discharged in stable condition." if status == "discharged" else None,
                 actual_discharge_date=disch_dt if status == "discharged" else None,
                 expected_discharge_date=expected_discharge_date,
-                primary_team=_rng.choice(list(ctx.clinical_units.values())) if ctx.clinical_units else None,
+                primary_team=inpatient_team,
                 created_by=seed_user,
             )
             adm.save()
@@ -1560,8 +2368,9 @@ class Command(BaseCommand):
             inpat_enc = Encounter(
                 patient=patient,
                 facility=facility,
-                practitioner=doctor,
+                practitioner=admission_doctor,
                 admission=adm,
+                department=inpatient_department,
                 encounter_type="inpatient",
                 status="finished" if status == "discharged" else "in-progress",
                 start_time=adm_dt,
@@ -1569,12 +2378,32 @@ class Command(BaseCommand):
                 reason=_rng.choice(ARCHETYPE_COMPLAINTS[archetype]),
                 admission_source="emergency" if admission_type == "emergency" else "referral",
                 discharge_disposition="home" if status == "discharged" else None,
-                primary_team=adm.primary_team,
-                admitted_by_team=adm.primary_team,
+                primary_team=inpatient_team,
+                admitted_by_team=inpatient_team,
                 created_by=seed_user,
             )
             inpat_enc.save()
             manifest.add("Encounter", inpat_enc.pk)
+            self._seed_admission_workflow(
+                ctx=ctx,
+                patient=patient,
+                admission=adm,
+                encounter=inpat_enc,
+                ward=ward,
+                bed=bed,
+                doctor=admission_doctor,
+                status=status,
+                seed_user=seed_user,
+                manifest=manifest,
+            )
+            self._seed_consulting_team(
+                ctx=ctx,
+                encounter=inpat_enc,
+                primary_team=inpatient_team,
+                archetype=archetype,
+                seed_user=seed_user,
+                manifest=manifest,
+            )
 
             # Bed allocation log
             if bed:
@@ -1609,7 +2438,7 @@ class Command(BaseCommand):
                 vs = VitalSigns(
                     patient=patient,
                     facility=facility,
-                    recorded_by=nurse or doctor,
+                    recorded_by=ward_nurse or admission_doctor,
                     encounter=inpat_enc,
                     recorded_at=day_dt,
                     **vd,
@@ -1618,7 +2447,7 @@ class Command(BaseCommand):
                 manifest.add("VitalSigns", vs.pk)
 
             # Admission note
-            if doctor:
+            if admission_doctor:
                 adm_note_data = {
                     "subjective": f"Admitted with {adm.admission_notes}",
                     "objective": "On admission: see nursing obs chart.",
@@ -1630,16 +2459,38 @@ class Command(BaseCommand):
                     patient=patient,
                     facility=facility,
                     encounter=inpat_enc,
-                    practitioner=doctor,
+                    practitioner=admission_doctor,
                     data=adm_note_data,
                 )
                 ne.save()
                 manifest.add("NoteEntry", ne.pk)
 
             # Labs during admission
-            if doctor:
+            if admission_doctor:
                 self._seed_lab_order(
-                    ctx, patient, inpat_enc, doctor, lab_tech, adm_dt, archetype, manifest
+                    ctx, patient, inpat_enc, admission_doctor, lab_tech, adm_dt, archetype, manifest
+                )
+                self._seed_inpatient_nursing_and_medication_workflow(
+                    ctx=ctx,
+                    patient=patient,
+                    admission=adm,
+                    encounter=inpat_enc,
+                    doctor=admission_doctor,
+                    nurse=ward_nurse,
+                    start_dt=adm_dt,
+                    status=status,
+                    manifest=manifest,
+                )
+                self._seed_discharge_workflow(
+                    ctx=ctx,
+                    patient=patient,
+                    admission=adm,
+                    encounter=inpat_enc,
+                    doctor=admission_doctor,
+                    nurse=ward_nurse,
+                    status=status,
+                    seed_user=seed_user,
+                    manifest=manifest,
                 )
 
             # Inpatient billing
@@ -1658,7 +2509,428 @@ class Command(BaseCommand):
                         is_admission=True,
                         admission=adm,
                         unit_price_override=adm.daily_rate,
+                        patient_insurance=patient_insurance,
                     )
+
+    # ------------------------------------------------------------------
+    # OPERATIONAL WORKFLOW LINKS
+    # ------------------------------------------------------------------
+
+    def _maybe_seed_patient_insurance(
+        self,
+        ctx: FacilityContext,
+        patient: PatientProfile,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> Optional[PatientInsurance]:
+        if not ctx.nhis_plan or not self._feature_enabled(ctx.facility, "insurance_claims"):
+            return None
+        if _rng.random() > 0.35:
+            return None
+        policy_number = f"NHIS-{ctx.facility.code}-{str(patient.pk)[:8].upper()}"
+        insurance, created = PatientInsurance.objects.get_or_create(
+            patient=patient,
+            plan=ctx.nhis_plan,
+            policy_number=policy_number,
+            defaults={
+                "valid_from": timezone.localdate() - timedelta(days=365),
+                "valid_until": timezone.localdate() + timedelta(days=365),
+                "is_active": True,
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("PatientInsurance", insurance.pk)
+        return insurance
+
+    def _select_medication(self) -> dict:
+        return _rng.choice(MEDICATION_CATALOG)
+
+    def _seed_prescription(
+        self,
+        *,
+        ctx: FacilityContext,
+        patient: PatientProfile,
+        encounter: Encounter,
+        doctor: PractitionerProfile,
+        start_dt,
+        manifest: SeedManifest,
+        medication: Optional[dict] = None,
+    ) -> Prescription:
+        med = medication or self._select_medication()
+        prescription = Prescription.objects.create(
+            patient=patient,
+            facility=ctx.facility,
+            prescribed_by=doctor,
+            medication_name=med["name"],
+            dosage=med["dosage"],
+            route=med["route"],
+            frequency=med["frequency"],
+            duration_days=_rng.randint(3, 14),
+            start_date=start_dt.date() if hasattr(start_dt, "date") else timezone.localdate(),
+            instructions="Take as prescribed. Return if symptoms worsen.",
+            reason="Seeded treatment plan.",
+            status="active",
+            encounter=encounter,
+        )
+        manifest.add("Prescription", prescription.pk)
+        return prescription
+
+    def _seed_admission_workflow(
+        self,
+        *,
+        ctx: FacilityContext,
+        patient: PatientProfile,
+        admission: Admission,
+        encounter: Encounter,
+        ward: Optional[Ward],
+        bed: Optional[Bed],
+        doctor: Optional[PractitionerProfile],
+        status: str,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        if not self._feature_enabled(ctx.facility, "inpatient_admissions"):
+            return
+        case_status = AdmissionCase.Status.COMPLETED
+        completed_at = admission.admission_date + timedelta(hours=2)
+        case, created = AdmissionCase.objects.get_or_create(
+            admission=admission,
+            defaults={
+                "facility": ctx.facility,
+                "patient": patient,
+                "source_encounter": encounter,
+                "requested_ward": ward,
+                "requested_bed": bed,
+                "admitting_practitioner": doctor,
+                "primary_team": admission.primary_team,
+                "status": case_status,
+                "admission_source": encounter.admission_source or "",
+                "urgency": "urgent" if admission.admission_type == "emergency" else "routine",
+                "requested_admission_type": admission.admission_type,
+                "requested_for_at": admission.admission_date,
+                "ready_for_activation_at": admission.admission_date - timedelta(minutes=30),
+                "activated_at": admission.admission_date,
+                "completed_at": completed_at,
+                "requested_by": seed_user,
+                "expected_length_of_stay": max(
+                    1,
+                    int(((admission.expected_discharge_date or admission.admission_date) - admission.admission_date).days or 1),
+                ),
+            },
+        )
+        if created:
+            manifest.add("AdmissionCase", case.pk)
+
+        if bed:
+            reservation, reservation_created = BedReservation.objects.get_or_create(
+                case=case,
+                bed=bed,
+                status=BedReservation.Status.CONSUMED,
+                defaults={
+                    "expires_at": admission.admission_date + timedelta(hours=4),
+                    "released_at": admission.admission_date,
+                    "created_by": seed_user,
+                    "updated_by": seed_user,
+                },
+            )
+            if reservation_created:
+                manifest.add("BedReservation", reservation.pk)
+
+        task_specs = [
+            (AdmissionTask.TaskType.MEDICAL_ADMISSION_ORDER, AdmissionTask.Phase.PRE_ACTIVATION, "doctor", True),
+            (AdmissionTask.TaskType.PLACEMENT, AdmissionTask.Phase.PRE_ACTIVATION, "bed_manager", True),
+            (AdmissionTask.TaskType.NURSING_INTAKE, AdmissionTask.Phase.POST_ACTIVATION, "nurse", False),
+            (AdmissionTask.TaskType.BASELINE_LAB_FOLLOWUP, AdmissionTask.Phase.POST_ACTIVATION, "lab_technician", False),
+        ]
+        for task_type, phase, role, blocking in task_specs:
+            task_status = AdmissionTask.Status.COMPLETED
+            if status in ("admitted", "pending_discharge") and task_type == AdmissionTask.TaskType.BASELINE_LAB_FOLLOWUP:
+                task_status = AdmissionTask.Status.PENDING
+            task, task_created = AdmissionTask.objects.get_or_create(
+                case=case,
+                task_type=task_type,
+                defaults={
+                    "phase": phase,
+                    "assigned_role": role,
+                    "blocking": blocking,
+                    "status": task_status,
+                    "notes": "Seeded admission workflow task.",
+                    "completed_by": seed_user if task_status == AdmissionTask.Status.COMPLETED else None,
+                    "completed_at": completed_at if task_status == AdmissionTask.Status.COMPLETED else None,
+                    "created_by": seed_user,
+                },
+            )
+            if task_created:
+                manifest.add("AdmissionTask", task.pk)
+
+    def _seed_consulting_team(
+        self,
+        *,
+        ctx: FacilityContext,
+        encounter: Encounter,
+        primary_team: Optional[ClinicalUnit],
+        archetype: str,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        if archetype not in {"chronic_complex", "surgical", "maternity", "infectious"}:
+            return
+        candidates = [
+            team for name, team in ctx.team_units.items()
+            if team.pk != getattr(primary_team, "pk", None)
+        ]
+        if not candidates:
+            return
+        team = _rng.choice(candidates)
+        assignment, created = EncounterCareTeam.objects.get_or_create(
+            encounter=encounter,
+            team=team,
+            defaults={
+                "role": "consulting",
+                "status": "active" if encounter.status == "in-progress" else "completed",
+                "consult_reason": "Seeded cross-specialty review.",
+                "consult_requested_at": encounter.start_time + timedelta(hours=2),
+                "consult_accepted_at": encounter.start_time + timedelta(hours=3),
+                "consult_completed_at": encounter.end_time if encounter.status == "finished" else None,
+                "is_active": encounter.status == "in-progress",
+                "created_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("EncounterCareTeam", assignment.pk)
+
+    def _seed_inpatient_nursing_and_medication_workflow(
+        self,
+        *,
+        ctx: FacilityContext,
+        patient: PatientProfile,
+        admission: Admission,
+        encounter: Encounter,
+        doctor: PractitionerProfile,
+        nurse: Optional[PractitionerProfile],
+        start_dt,
+        status: str,
+        manifest: SeedManifest,
+    ) -> None:
+        if not self._feature_enabled(ctx.facility, "nursing_workflows"):
+            return
+        med = self._select_medication()
+        prescription = self._seed_prescription(
+            ctx=ctx,
+            patient=patient,
+            encounter=encounter,
+            doctor=doctor,
+            start_dt=start_dt,
+            manifest=manifest,
+            medication=med,
+        )
+        inventory_item = ctx.inventory_items.get(med["name"])
+        pharmacy = ctx.storage_locations.get("pharmacy")
+        dispensing_user = ctx.pharmacists[0].user if ctx.pharmacists else ctx.seed_user
+        treatment = TreatmentSheetEntry.objects.create(
+            patient=patient,
+            facility=ctx.facility,
+            admission=admission,
+            encounter=encounter,
+            medication_name=med["name"],
+            dosage=med["dosage"],
+            route=med["route"],
+            frequency=med["frequency"],
+            start_datetime=start_dt + timedelta(hours=2),
+            duration_days=5,
+            status="active" if status != "discharged" else "completed",
+            ordered_by=doctor,
+            total_doses_ordered=10,
+            total_doses_dispensed=6 if status != "discharged" else 10,
+            total_doses_administered=2 if status != "discharged" else 10,
+            inventory_item=inventory_item,
+            prescription=prescription,
+            created_by=ctx.seed_user,
+        )
+        manifest.add("TreatmentSheetEntry", treatment.pk)
+
+        now = timezone.now()
+        dose_specs = [
+            (now - timedelta(hours=6), "administered"),
+            (now - timedelta(hours=1), "scheduled" if status != "discharged" else "administered"),
+            (now + timedelta(hours=1), "scheduled" if status != "discharged" else "administered"),
+        ]
+        for scheduled_time, med_status in dose_specs:
+            administered_time = scheduled_time + timedelta(minutes=10) if med_status == "administered" else None
+            med_admin = MedicationAdministration.objects.create(
+                patient=patient,
+                facility=ctx.facility,
+                medication_name=med["name"],
+                dosage=med["dosage"],
+                route=med["route"],
+                frequency=med["frequency"],
+                scheduled_time=scheduled_time,
+                administered_time=administered_time,
+                status=med_status,
+                administered_by=nurse if med_status == "administered" else None,
+                prescribed_by=doctor,
+                prescription=prescription,
+                treatment_entry=treatment,
+                is_dispensed=True,
+                dispensed_at=start_dt + timedelta(hours=3),
+                dispensed_by=dispensing_user,
+                inventory_item=inventory_item,
+                dispensing_location=pharmacy,
+                created_by=ctx.seed_user,
+            )
+            manifest.add("MedicationAdministration", med_admin.pk)
+
+        supply_request = SupplyRequest.objects.create(
+            treatment_entry=treatment,
+            facility=ctx.facility,
+            quantity_requested=12,
+            quantity_dispensed=6 if status != "discharged" else 12,
+            status="pending" if status != "discharged" else "dispensed",
+            requested_by=nurse or doctor,
+            dispensed_by=None if status != "discharged" else dispensing_user,
+            dispensed_at=None if status != "discharged" else start_dt + timedelta(hours=4),
+            notes="Seeded ward medication supply request.",
+        )
+        manifest.add("SupplyRequest", supply_request.pk)
+
+        task_specs = [
+            ("vitals", "Record four-hourly observations", now - timedelta(minutes=30), "high"),
+            ("medication", f"Administer {med['name']} dose", now + timedelta(hours=1), "medium"),
+            ("assessment", "Complete shift assessment", now + timedelta(hours=2), "medium"),
+        ]
+        if status == "pending_discharge":
+            task_specs.append(("discharge", "Prepare nursing discharge checklist", now + timedelta(hours=1), "high"))
+        for task_type, description, scheduled_time, priority in task_specs:
+            task = NursingTask.objects.create(
+                patient=patient,
+                facility=ctx.facility,
+                task_type=task_type,
+                description=description,
+                scheduled_time=scheduled_time,
+                assigned_to=nurse,
+                priority=priority,
+                status="pending",
+                created_by=ctx.seed_user,
+            )
+            manifest.add("NursingTask", task.pk)
+
+        if status != "discharged":
+            alert = NursingAlert.objects.create(
+                patient=patient,
+                facility=ctx.facility,
+                alert_type="task_overdue",
+                severity="high",
+                message="Seeded high-priority nursing follow-up for active admission.",
+            )
+            manifest.add("NursingAlert", alert.pk)
+
+        handoff = ShiftHandoff.objects.create(
+            patient=patient,
+            facility=ctx.facility,
+            shift_date=timezone.localdate(),
+            shift_type=_rng.choice(["day", "evening", "night"]),
+            from_nurse=nurse,
+            to_nurse=nurse,
+            patient_condition="Stable with ongoing inpatient monitoring.",
+            ongoing_issues="Medication schedule and lab follow-up pending.",
+            pending_tasks="Review observations and medication administration record.",
+            medication_changes=f"{med['name']} started during admission.",
+            key_events="Seeded admission workflow activity.",
+            care_plan_updates="Continue monitoring and reassess during ward round.",
+            created_by=ctx.seed_user,
+        )
+        manifest.add("ShiftHandoff", handoff.pk)
+
+        for entry_type, category, volume in (("intake", "oral", 600), ("output", "urine", 450)):
+            fluid = FluidBalance.objects.create(
+                patient=patient,
+                facility=ctx.facility,
+                admission=admission,
+                entry_type=entry_type,
+                category=category,
+                subcategory="Water" if entry_type == "intake" else "Spontaneous void",
+                volume_ml=volume,
+                recorded_at=now - timedelta(hours=2),
+                recorded_by=nurse,
+                notes="Seeded fluid balance entry.",
+                colour="clear" if entry_type == "output" else None,
+                created_by=ctx.seed_user,
+            )
+            manifest.add("FluidBalance", fluid.pk)
+
+    def _seed_discharge_workflow(
+        self,
+        *,
+        ctx: FacilityContext,
+        patient: PatientProfile,
+        admission: Admission,
+        encounter: Encounter,
+        doctor: PractitionerProfile,
+        nurse: Optional[PractitionerProfile],
+        status: str,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        if status not in ("pending_discharge", "discharged"):
+            return
+        if not self._feature_enabled(ctx.facility, "discharge_workflows"):
+            return
+        medical_ready_at = admission.expected_discharge_date or timezone.now()
+        nursing_task = NursingTask.objects.create(
+            patient=patient,
+            facility=ctx.facility,
+            task_type="discharge",
+            description="Finalize discharge education and nursing documentation.",
+            scheduled_time=medical_ready_at - timedelta(hours=2),
+            assigned_to=nurse,
+            priority="high",
+            status="completed" if status == "discharged" else "pending",
+            completed_by=nurse if status == "discharged" else None,
+            completed_time=medical_ready_at if status == "discharged" else None,
+            created_by=seed_user,
+        )
+        manifest.add("NursingTask", nursing_task.pk)
+
+        case = DischargeCase.objects.create(
+            facility=ctx.facility,
+            patient=patient,
+            admission=admission,
+            encounter=encounter,
+            nursing_task=nursing_task,
+            medical_ready_at=medical_ready_at,
+            billing_cutoff_at=medical_ready_at + timedelta(hours=1),
+            finalized_at=admission.actual_discharge_date if status == "discharged" else None,
+            status=(
+                DischargeCase.Status.FINALIZED
+                if status == "discharged"
+                else DischargeCase.Status.AWAITING_CLEARANCE
+            ),
+            discharge_disposition="home",
+            submitted_by=seed_user,
+        )
+        manifest.add("DischargeCase", case.pk)
+
+        for task_type, role, blocking in (
+            (DischargeTask.TaskType.BILLING_CLEARANCE, "billing", True),
+            (DischargeTask.TaskType.NURSING_FINALIZATION, "nurse", True),
+            (DischargeTask.TaskType.PHARMACY_FOLLOWUP, "pharmacist", False),
+            (DischargeTask.TaskType.LAB_FOLLOWUP, "lab_technician", False),
+        ):
+            task_status = DischargeTask.Status.COMPLETED if status == "discharged" else DischargeTask.Status.PENDING
+            task = DischargeTask.objects.create(
+                case=case,
+                task_type=task_type,
+                assigned_role=role,
+                blocking=blocking,
+                status=task_status,
+                notes="Seeded discharge workflow task.",
+                completed_by=seed_user if task_status == DischargeTask.Status.COMPLETED else None,
+                completed_at=case.finalized_at if task_status == DischargeTask.Status.COMPLETED else None,
+                created_by=seed_user,
+            )
+            manifest.add("DischargeTask", task.pk)
 
     # ------------------------------------------------------------------
     # LAB ORDER
@@ -1677,6 +2949,18 @@ class Command(BaseCommand):
 
         order_date = order_dt.date() if hasattr(order_dt, "date") else order_dt
         order_num = self._reserve_lab_order_number(order_date)
+        if order_dt >= timezone.now() - timedelta(days=2):
+            order_status = _rng.choices(
+                ["ordered", "collected", "received", "processing", "completed"],
+                weights=[20, 20, 20, 20, 20],
+                k=1,
+            )[0]
+        else:
+            order_status = "completed"
+
+        collected_at = order_dt + timedelta(minutes=30) if order_status != "ordered" else None
+        received_at = order_dt + timedelta(hours=1) if order_status in ("received", "processing", "completed") else None
+        completed_at = order_dt + timedelta(hours=selected[0].tat_hours if selected else 4) if order_status == "completed" else None
 
         lab_order = LabOrder(
             order_number=order_num,
@@ -1685,30 +2969,39 @@ class Command(BaseCommand):
             encounter=enc,
             ordering_provider=doctor,
             priority="routine",
-            status="completed",
+            status=order_status,
             ordered_at=order_dt,
-            collected_at=order_dt + timedelta(minutes=30),
-            received_at=order_dt + timedelta(hours=1),
-            completed_at=order_dt + timedelta(hours=selected[0].tat_hours if selected else 4),
+            collected_at=collected_at,
+            received_at=received_at,
+            completed_at=completed_at,
         )
         lab_order.save()
         manifest.add("LabOrder", lab_order.pk)
 
         # Specimen
-        barcode = f"SPX-{order_date.strftime('%Y%m%d')}-{_rng.randint(100000, 999999)}"
-        specimen = LabSpecimen(
-            barcode=barcode,
-            order=lab_order,
-            facility=ctx.facility,
-            specimen_type=selected[0].specimen_type,
-            container_type=selected[0].container_type,
-            collected_at=order_dt + timedelta(minutes=30),
-            collected_by=lab_tech,
-            received_at=order_dt + timedelta(hours=1),
-            status="stored",
-        )
-        specimen.save()
-        manifest.add("LabSpecimen", specimen.pk)
+        specimen = None
+        if order_status != "ordered":
+            barcode = f"SPX-{order_date.strftime('%Y%m%d')}-{_rng.randint(100000, 999999)}"
+            specimen_status = {
+                "collected": "collected",
+                "received": "received",
+                "processing": "processing",
+                "completed": "stored",
+            }[order_status]
+            specimen = LabSpecimen(
+                barcode=barcode,
+                order=lab_order,
+                facility=ctx.facility,
+                specimen_type=selected[0].specimen_type,
+                container_type=selected[0].container_type,
+                collected_at=collected_at,
+                collected_by=lab_tech,
+                received_by=lab_tech if received_at else None,
+                received_at=received_at,
+                status=specimen_status,
+            )
+            specimen.save()
+            manifest.add("LabSpecimen", specimen.pk)
 
         # Order tests + results
         for test in selected:
@@ -1716,10 +3009,12 @@ class Command(BaseCommand):
                 order=lab_order,
                 facility=ctx.facility,
                 test=test,
-                status="completed",
+                status=order_status,
             )
             ot.save()
             manifest.add("LabOrderTest", ot.pk)
+            if order_status != "completed":
+                continue
 
             test_cfg = next((t for t in LAB_TESTS_CONFIG if t["code"] == test.code), None)
             if not test_cfg:
@@ -1752,7 +3047,8 @@ class Command(BaseCommand):
                       invoice_dt, seed_user, manifest: SeedManifest,
                       quantity: int = 1, is_admission: bool = False,
                       admission: Optional[Admission] = None,
-                      unit_price_override: Optional[Decimal] = None) -> Optional[Invoice]:
+                      unit_price_override: Optional[Decimal] = None,
+                      patient_insurance: Optional[PatientInsurance] = None) -> Optional[Invoice]:
         inv_num = f"SED-{_rng.randint(100000000000, 999999999999)}"
         unit_price = unit_price_override if unit_price_override is not None else service.base_price
         total = unit_price * quantity
@@ -1769,6 +3065,7 @@ class Command(BaseCommand):
             facility=ctx.facility,
             encounter=enc,
             admission=admission if is_admission else None,
+            patient_insurance=patient_insurance,
             invoice_date=dt,
             due_date=dt + timedelta(days=30),
             subtotal=total,
@@ -1795,15 +3092,26 @@ class Command(BaseCommand):
         )
         item.save()
         manifest.add("InvoiceItem", item.pk)
+        inv.refresh_from_db()
+        if inv.insurance_amount > 0:
+            self._seed_claim_for_invoice(ctx, inv, seed_user, manifest)
 
         # Payment (if paid)
         if status == "paid":
             method = _rng.choices(PAYMENT_METHODS, weights=PAYMENT_WEIGHTS, k=1)[0]
+            payer = "patient"
+            payment_amount = inv.patient_responsibility
+            if payment_amount <= 0:
+                payer = "insurance"
+                method = "insurance"
+                payment_amount = inv.insurance_amount
+            elif method == "insurance":
+                method = "mobile_money"
             pay = Payment(
                 invoice=inv,
                 payment_date=dt,
-                amount=total,
-                payer="patient",
+                amount=payment_amount,
+                payer=payer,
                 status="posted",
                 payment_method=method,
                 reference_number=f"REF-{_rng.randint(100000, 999999)}",
@@ -1812,6 +3120,49 @@ class Command(BaseCommand):
             manifest.add("Payment", pay.pk)
 
         return inv
+
+    def _seed_claim_for_invoice(
+        self,
+        ctx: FacilityContext,
+        invoice: Invoice,
+        seed_user: User,
+        manifest: SeedManifest,
+    ) -> None:
+        if not self._feature_enabled(ctx.facility, "insurance_claims"):
+            return
+        period_start = invoice.invoice_date.replace(day=1)
+        period_end = (period_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        batch, batch_created = NHISClaimBatch.objects.get_or_create(
+            facility=ctx.facility,
+            period_start=period_start,
+            period_end=period_end,
+            defaults={
+                "status": "draft",
+                "notes": "Seeded NHIS claim batch.",
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if batch_created:
+            manifest.add("NHISClaimBatch", batch.pk)
+        claim, created = Claim.objects.get_or_create(
+            invoice=invoice,
+            defaults={
+                "claim_number": f"CLM-{invoice.invoice_date.strftime('%Y%m%d')}-{str(invoice.pk)[:8].upper()}",
+                "batch": batch,
+                "submitted_at": timezone.now(),
+                "submitted_by": seed_user,
+                "submission_reference": f"NHIS-{_rng.randint(100000, 999999)}",
+                "submission_date": invoice.invoice_date,
+                "status": _rng.choice(["submitted", "in_review", "approved"]),
+                "claimed_amount": invoice.insurance_amount,
+                "approved_amount": invoice.insurance_amount if _rng.random() < 0.35 else Decimal("0.00"),
+                "created_by": seed_user,
+                "updated_by": seed_user,
+            },
+        )
+        if created:
+            manifest.add("Claim", claim.pk)
 
     # ------------------------------------------------------------------
     # ROLLBACK
@@ -1829,26 +3180,54 @@ class Command(BaseCommand):
 
         # Delete in reverse dependency order
         ORDER = [
+            ("Claim",             Claim),
             ("Payment",           Payment),
             ("InvoiceItem",       InvoiceItem),
             ("Invoice",           Invoice),
+            ("NHISClaimBatch",    NHISClaimBatch),
+            ("PatientInsurance",  PatientInsurance),
             ("LabResult",         LabResult),
             ("LabOrderTest",      LabOrderTest),
             ("LabSpecimen",       LabSpecimen),
             ("LabOrder",          LabOrder),
+            ("DischargeTask",     DischargeTask),
+            ("DischargeCase",     DischargeCase),
+            ("SupplyRequest",     SupplyRequest),
+            ("MedicationAdministration", MedicationAdministration),
+            ("TreatmentSheetEntry", TreatmentSheetEntry),
+            ("Prescription",      Prescription),
             ("NoteEntry",         NoteEntry),
+            ("NursingAlert",      NursingAlert),
+            ("NursingTask",       NursingTask),
+            ("ShiftHandoff",      ShiftHandoff),
+            ("FluidBalance",      FluidBalance),
             ("VitalSigns",        VitalSigns),
             ("BedAllocationLog",  BedAllocationLog),
             ("OutpatientVisit",   OutpatientVisit),
+            ("EncounterCareTeam", EncounterCareTeam),
             ("Encounter",         Encounter),
+            ("BedReservation",    BedReservation),
+            ("AdmissionTask",     AdmissionTask),
+            ("AdmissionCase",     AdmissionCase),
             ("Admission",         Admission),
             ("Appointment",       Appointment),
             ("PatientSearchIndex",PatientSearchIndex),
             ("PatientProfile",    PatientProfile),
+            ("WardStaffAssignment", WardStaffAssignment),
+            ("StaffUnitAssignment", StaffUnitAssignment),
+            ("UnitMemberAssignment", UnitMemberAssignment),
             ("PractitionerProfile", PractitionerProfile),
             ("Staff",             Staff),
+            ("LocationStock",     LocationStock),
+            ("InventoryItem",     InventoryItem),
+            ("InventoryCategory", InventoryCategory),
+            ("StorageLocation",   StorageLocation),
             ("Bed",               Bed),
+            ("UnitWardAllocation", UnitWardAllocation),
+            ("RosterEntry",       RosterEntry),
+            ("DepartmentDutyType", DepartmentDutyType),
             ("Ward",              Ward),
+            ("ClinicSchedule",    ClinicSchedule),
             ("Clinic",            Clinic),
             ("ClinicalUnit",      ClinicalUnit),
             ("NoteTemplate",      NoteTemplate),
@@ -1856,6 +3235,8 @@ class Command(BaseCommand):
             ("Service",           Service),
             ("ServiceCategory",   ServiceCategory),
             ("AppointmentType",   AppointmentType),
+            ("InsurancePlan",     InsurancePlan),
+            ("InsuranceProvider", InsuranceProvider),
             ("Department",        Department),
             ("Facility",          Facility),
             ("User",              User),
