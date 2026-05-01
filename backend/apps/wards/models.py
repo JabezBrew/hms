@@ -2,6 +2,7 @@ import uuid
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.indexes import GinIndex
 from django.utils import timezone
 from datetime import timedelta
 from ..users.models import PatientProfile, PractitionerProfile
@@ -920,3 +921,71 @@ class WardSection(models.Model):
     def effective_rate(self):
         """Calculate the effective base rate for this section (ward base rate * section multiplier)."""
         return self.ward.base_rate_per_night * self.rate_multiplier
+
+
+class WardSearchIndex(models.Model):
+    """
+    Compact projection table for ward search lookups in omni-search.
+    """
+    ward = models.OneToOneField(
+        Ward,
+        on_delete=models.CASCADE,
+        related_name='search_projection',
+        primary_key=True,
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='ward_search_indexes',
+    )
+    search_document = models.TextField(blank=True)
+    ward_type = models.CharField(max_length=20, blank=True)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['facility', 'is_active'], name='ward_search_idx_fac_active_idx'),
+            GinIndex(
+                name='ward_search_idx_doc_trgm',
+                fields=['search_document'],
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Search index for ward {self.ward_id}"
+
+
+class AdmissionSearchIndex(models.Model):
+    """
+    Compact projection table for admission search lookups in omni-search.
+    """
+    admission = models.OneToOneField(
+        Admission,
+        on_delete=models.CASCADE,
+        related_name='search_projection',
+        primary_key=True,
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='admission_search_indexes',
+    )
+    search_document = models.TextField(blank=True)
+    status = models.CharField(max_length=20, blank=True)
+    admission_date = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['facility', 'status'], name='adm_search_idx_fac_status_idx'),
+            GinIndex(
+                name='adm_search_idx_doc_trgm',
+                fields=['search_document'],
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Search index for admission {self.admission_id}"

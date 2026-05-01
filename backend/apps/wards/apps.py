@@ -3,10 +3,10 @@ from importlib import import_module
 from django.apps import AppConfig
 
 
-class EncountersConfig(AppConfig):
+class WardsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.encounters'
-    verbose_name = 'Encounters'
+    name = 'apps.wards'
+    verbose_name = 'Wards'
 
     def ready(self):
         import_module(f'{self.name}.signals')

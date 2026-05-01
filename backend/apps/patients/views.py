@@ -834,7 +834,7 @@ class PatientViewSet(viewsets.ViewSet):
             search_index_ready = bool(cache.get(facility_cache_key('patient_search_index_ready')))
             if query:
                 if search_index_ready:
-                    local_patients_qs, _normalized_query = apply_search_index_filter(
+                    local_patients_qs, _normalized_query, _match_reasons = apply_search_index_filter(
                         local_patients_qs,
                         facility=facility,
                         query=query,

@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
@@ -532,3 +533,37 @@ class UserSession(models.Model):
 
     def __str__(self):
         return f"Session for {self.user.email}"
+
+
+class StaffSearchIndex(models.Model):
+    """
+    Compact projection table for staff search lookups in omni-search.
+    """
+    staff = models.OneToOneField(
+        Staff,
+        on_delete=models.CASCADE,
+        related_name='search_projection',
+        primary_key=True,
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='staff_search_indexes',
+    )
+    search_document = models.TextField(blank=True)
+    employee_id = models.CharField(max_length=40, blank=True)
+    department = models.CharField(max_length=100, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['facility'], name='staff_search_idx_facility_idx'),
+            GinIndex(
+                name='staff_search_idx_doc_trgm',
+                fields=['search_document'],
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Search index for staff {self.staff_id}"

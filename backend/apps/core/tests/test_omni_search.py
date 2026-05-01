@@ -297,5 +297,5 @@ def test_omni_search_is_o1_queries_and_has_no_side_effects(default_facility):
         response = client.get("/api/search/omni/", params)
 
     assert response.status_code == status.HTTP_200_OK
-    assert len(ctx) <= 20
+    assert len(ctx) <= 26
     assert PatientSearch.objects.count() == 0

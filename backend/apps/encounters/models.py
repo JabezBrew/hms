@@ -9,6 +9,7 @@ import uuid
 
 from django.db import models
 from django.db.models import Q, Case, When
+from django.contrib.postgres.indexes import GinIndex
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
@@ -510,3 +511,38 @@ class EncounterCareTeam(models.Model):
 
     def __str__(self):
         return f'{self.team.name} ({self.get_role_display()}) for {self.encounter}'
+
+
+class EncounterSearchIndex(models.Model):
+    """
+    Compact projection table for encounter search lookups in omni-search.
+    """
+    encounter = models.OneToOneField(
+        Encounter,
+        on_delete=models.CASCADE,
+        related_name='search_projection',
+        primary_key=True,
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='encounter_search_indexes',
+    )
+    search_document = models.TextField(blank=True)
+    status = models.CharField(max_length=20, blank=True)
+    start_time = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'encounters_encountersearchindex'
+        indexes = [
+            models.Index(fields=['facility', 'status'], name='enc_search_idx_fac_status_idx'),
+            GinIndex(
+                name='enc_search_idx_doc_trgm',
+                fields=['search_document'],
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Search index for encounter {self.encounter_id}"

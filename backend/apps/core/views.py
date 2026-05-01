@@ -753,33 +753,76 @@ def omni_search(request):
     effective_types_set = set(effective_types)
 
     if 'patients' in effective_types_set:
+        from apps.core.cache_utils import facility_cache_key
+        from apps.patients.models import PatientSearchIndex
+        from apps.patients.search_index import apply_search_index_filter
+        from django.core.cache import cache as _cache
         patients_qs = _get_patient_base_queryset(user, facility)
-        patients_qs = patients_qs.filter(
-            Q(user__first_name__icontains=query)
-            | Q(user__last_name__icontains=query)
-            | Q(medical_record_number__icontains=query)
-            | Q(nhis_id__icontains=query)
-        ).order_by('user__last_name', 'user__first_name', 'id')[:limit]
+        match_reasons = {}
+        search_index_ready = bool(_cache.get(facility_cache_key('patient_search_index_ready')))
+        if not search_index_ready:
+            search_index_ready = PatientSearchIndex.objects.filter(facility=facility).exists()
+            if search_index_ready:
+                _cache.set(facility_cache_key('patient_search_index_ready'), '1', timeout=300)
+        if search_index_ready:
+            patients_qs, _, match_reasons = apply_search_index_filter(
+                patients_qs,
+                facility=facility,
+                query=query,
+                limit=limit,
+                user=user,
+            )
+        else:
+            patients_qs = patients_qs.filter(
+                Q(user__first_name__icontains=query)
+                | Q(user__last_name__icontains=query)
+                | Q(medical_record_number__icontains=query)
+                | Q(nhis_id__icontains=query)
+            ).order_by('user__last_name', 'user__first_name', 'id')[:limit]
         serializer_class = _patient_result_serializer_class(user)
-        groups['patients'] = serializer_class(patients_qs, many=True).data
+        patient_rows = list(serializer_class(patients_qs, many=True).data)
+        for row in patient_rows:
+            row['match_reason'] = match_reasons.get(row.get('id'), 'text_match')
+        groups['patients'] = patient_rows
 
     if 'wards' in effective_types_set:
-        from apps.wards.models import Ward
+        from apps.wards.models import Ward, WardSearchIndex
         from apps.wards.serializers import WardSearchSerializer
+        from apps.core.search_projections import OMNI_TRIGRAM_THRESHOLD, projection_ready
+        from django.contrib.postgres.search import TrigramWordSimilarity
 
-        wards_qs = Ward.objects.select_related('department').filter(
-            department__facility=facility,
-            is_active=True,
-        ).filter(
-            Q(name__icontains=query) | Q(ward_type__icontains=query)
-        ).order_by('name')[:limit]
-        groups['wards'] = WardSearchSerializer(wards_qs, many=True).data
+        normalized_q = " ".join(query.split()).lower()
+        if projection_ready('wards', facility, WardSearchIndex):
+            ward_ids = list(
+                WardSearchIndex.objects.filter(facility=facility, is_active=True)
+                .annotate(sim=TrigramWordSimilarity(normalized_q, 'search_document'))
+                .filter(Q(search_document__icontains=normalized_q) | Q(sim__gte=OMNI_TRIGRAM_THRESHOLD))
+                .order_by('-sim')
+                .values_list('ward_id', flat=True)[:limit]
+            )
+            wards_qs = Ward.objects.select_related('department').filter(
+                pk__in=ward_ids,
+                is_active=True,
+            ).order_by('name')[:limit]
+        else:
+            wards_qs = Ward.objects.select_related('department').filter(
+                department__facility=facility,
+                is_active=True,
+            ).filter(
+                Q(name__icontains=query) | Q(ward_type__icontains=query)
+            ).order_by('name')[:limit]
+        ward_rows = list(WardSearchSerializer(wards_qs, many=True).data)
+        for row in ward_rows:
+            row['match_reason'] = 'text_match'
+        groups['wards'] = ward_rows
 
     if 'encounters' in effective_types_set:
-        from apps.encounters.models import Encounter
+        from apps.encounters.models import Encounter, EncounterSearchIndex
         from apps.encounters.serializers import EncounterListSerializer
+        from apps.core.search_projections import OMNI_TRIGRAM_THRESHOLD, projection_ready
+        from django.contrib.postgres.search import TrigramWordSimilarity
 
-        encounters_qs = Encounter.objects.select_related(
+        base_encounters_qs = Encounter.objects.select_related(
             'patient',
             'patient__user',
             'practitioner',
@@ -792,30 +835,45 @@ def omni_search(request):
         ).filter(facility=facility)
 
         if user_type == 'patient':
-            encounters_qs = encounters_qs.filter(patient__user=user)
+            base_encounters_qs = base_encounters_qs.filter(patient__user=user)
         elif user_type in OMNI_CLINICAL_USER_TYPES:
             accessible_patients = get_accessible_patients_for_clinician(user)
-            encounters_qs = encounters_qs.filter(patient__in=accessible_patients)
+            base_encounters_qs = base_encounters_qs.filter(patient__in=accessible_patients)
         elif user_type == 'admin' or is_cross_facility_admin(user):
             pass
         elif user_type == 'receptionist':
             pass
         else:
-            encounters_qs = Encounter.objects.none()
+            base_encounters_qs = Encounter.objects.none()
 
-        encounters_qs = encounters_qs.filter(
-            Q(patient__user__first_name__icontains=query)
-            | Q(patient__user__last_name__icontains=query)
-            | Q(reason__icontains=query)
-            | Q(location__icontains=query)
-        ).order_by('-start_time')[:limit]
-        groups['encounters'] = EncounterListSerializer(encounters_qs, many=True).data
+        normalized_q = " ".join(query.split()).lower()
+        if projection_ready('encounters', facility, EncounterSearchIndex):
+            enc_ids = (
+                EncounterSearchIndex.objects.filter(facility=facility)
+                .annotate(sim=TrigramWordSimilarity(normalized_q, 'search_document'))
+                .filter(Q(search_document__icontains=normalized_q) | Q(sim__gte=OMNI_TRIGRAM_THRESHOLD))
+                .values_list('encounter_id', flat=True)
+            )
+            encounters_qs = base_encounters_qs.filter(pk__in=enc_ids).order_by('-start_time')[:limit]
+        else:
+            encounters_qs = base_encounters_qs.filter(
+                Q(patient__user__first_name__icontains=query)
+                | Q(patient__user__last_name__icontains=query)
+                | Q(reason__icontains=query)
+                | Q(location__icontains=query)
+            ).order_by('-start_time')[:limit]
+        enc_rows = list(EncounterListSerializer(encounters_qs, many=True).data)
+        for row in enc_rows:
+            row['match_reason'] = 'text_match'
+        groups['encounters'] = enc_rows
 
     if 'appointments' in effective_types_set:
-        from apps.appointments.models import Appointment
+        from apps.appointments.models import Appointment, AppointmentSearchIndex
         from apps.appointments.serializers import AppointmentListSerializer
+        from apps.core.search_projections import OMNI_TRIGRAM_THRESHOLD, projection_ready
+        from django.contrib.postgres.search import TrigramWordSimilarity
 
-        appointments_qs = Appointment.objects.select_related(
+        base_appointments_qs = Appointment.objects.select_related(
             'patient',
             'patient__user',
             'practitioner',
@@ -825,24 +883,38 @@ def omni_search(request):
             'appointment_type',
         ).filter(facility=facility)
 
-        # Match LocalAppointmentViewSet: clinicians see only their own schedule.
         if user_type in OMNI_CLINICAL_USER_TYPES:
-            appointments_qs = appointments_qs.filter(practitioner__staff__user=user)
+            base_appointments_qs = base_appointments_qs.filter(practitioner__staff__user=user)
         elif user_type not in {'admin', 'receptionist'} and not is_cross_facility_admin(user):
-            appointments_qs = Appointment.objects.none()
+            base_appointments_qs = Appointment.objects.none()
 
-        appointments_qs = appointments_qs.filter(
-            Q(patient__user__first_name__icontains=query)
-            | Q(patient__user__last_name__icontains=query)
-            | Q(patient__medical_record_number__icontains=query)
-        ).order_by('start_time')[:limit]
-        groups['appointments'] = AppointmentListSerializer(appointments_qs, many=True).data
+        normalized_q = " ".join(query.split()).lower()
+        if projection_ready('appointments', facility, AppointmentSearchIndex):
+            appt_ids = (
+                AppointmentSearchIndex.objects.filter(facility=facility)
+                .annotate(sim=TrigramWordSimilarity(normalized_q, 'search_document'))
+                .filter(Q(search_document__icontains=normalized_q) | Q(sim__gte=OMNI_TRIGRAM_THRESHOLD))
+                .values_list('appointment_id', flat=True)
+            )
+            appointments_qs = base_appointments_qs.filter(pk__in=appt_ids).order_by('start_time')[:limit]
+        else:
+            appointments_qs = base_appointments_qs.filter(
+                Q(patient__user__first_name__icontains=query)
+                | Q(patient__user__last_name__icontains=query)
+                | Q(patient__medical_record_number__icontains=query)
+            ).order_by('start_time')[:limit]
+        appt_rows = list(AppointmentListSerializer(appointments_qs, many=True).data)
+        for row in appt_rows:
+            row['match_reason'] = 'text_match'
+        groups['appointments'] = appt_rows
 
     if 'admissions' in effective_types_set:
-        from apps.wards.models import Admission
+        from apps.wards.models import Admission, AdmissionSearchIndex
         from apps.wards.serializers import AdmissionListSerializer
+        from apps.core.search_projections import OMNI_TRIGRAM_THRESHOLD, projection_ready
+        from django.contrib.postgres.search import TrigramWordSimilarity
 
-        admissions_qs = Admission.objects.select_related(
+        base_admissions_qs = Admission.objects.select_related(
             'patient',
             'patient__user',
             'bed',
@@ -854,26 +926,37 @@ def omni_search(request):
 
         if user_type in OMNI_CLINICAL_USER_TYPES:
             accessible_patients = get_accessible_patients_for_clinician(user)
-            admissions_qs = admissions_qs.filter(patient__in=accessible_patients)
+            base_admissions_qs = base_admissions_qs.filter(patient__in=accessible_patients)
         elif user_type not in {'admin', 'receptionist'} and not is_cross_facility_admin(user):
-            admissions_qs = Admission.objects.none()
+            base_admissions_qs = Admission.objects.none()
 
-        admissions_qs = admissions_qs.filter(
-            Q(patient__user__first_name__icontains=query)
-            | Q(patient__user__last_name__icontains=query)
-            | Q(patient__medical_record_number__icontains=query)
-            | Q(bed__ward__name__icontains=query)
-            | Q(bed__bed_number__icontains=query)
-        ).order_by('-admission_date')[:limit]
-        groups['admissions'] = AdmissionListSerializer(admissions_qs, many=True).data
+        normalized_q = " ".join(query.split()).lower()
+        if projection_ready('admissions', facility, AdmissionSearchIndex):
+            adm_ids = (
+                AdmissionSearchIndex.objects.filter(facility=facility)
+                .annotate(sim=TrigramWordSimilarity(normalized_q, 'search_document'))
+                .filter(Q(search_document__icontains=normalized_q) | Q(sim__gte=OMNI_TRIGRAM_THRESHOLD))
+                .values_list('admission_id', flat=True)
+            )
+            admissions_qs = base_admissions_qs.filter(pk__in=adm_ids).order_by('-admission_date')[:limit]
+        else:
+            admissions_qs = base_admissions_qs.filter(
+                Q(patient__user__first_name__icontains=query)
+                | Q(patient__user__last_name__icontains=query)
+                | Q(patient__medical_record_number__icontains=query)
+                | Q(bed__ward__name__icontains=query)
+                | Q(bed__bed_number__icontains=query)
+            ).order_by('-admission_date')[:limit]
+        adm_rows = list(AdmissionListSerializer(admissions_qs, many=True).data)
+        for row in adm_rows:
+            row['match_reason'] = 'text_match'
+        groups['admissions'] = adm_rows
 
     if 'staff' in effective_types_set and (user_type == 'admin' or is_cross_facility_admin(user)):
-        from apps.users.models import Staff
+        from apps.users.models import Staff, StaffSearchIndex
         from apps.users.serializers import StaffSearchSerializer
-
-        staff_qs = Staff.objects.select_related('user', 'practitioner_profile').filter(
-            primary_facility=facility
-        )
+        from apps.core.search_projections import OMNI_TRIGRAM_THRESHOLD, projection_ready
+        from django.contrib.postgres.search import TrigramWordSimilarity
 
         normalized_query = (
             query
@@ -881,27 +964,54 @@ def omni_search(request):
             .replace('\u2014', '-')
             .replace('\u2212', '-')
         )
-        is_id_query = bool(re.fullmatch(r"[A-Za-z0-9\\-]+", normalized_query)) and any(
-            char.isdigit() for char in normalized_query
-        )
-        if is_id_query:
-            staff_qs = staff_qs.filter(employee_id__istartswith=normalized_query).order_by('employee_id')
-        else:
-            tokens = [token for token in normalized_query.split() if token]
-            if len(tokens) >= 2:
-                first, second = tokens[0], tokens[1]
-                staff_qs = staff_qs.filter(
-                    Q(user__first_name__icontains=first, user__last_name__icontains=second)
-                    | Q(user__first_name__icontains=second, user__last_name__icontains=first)
-                )
-            else:
-                token = tokens[0] if tokens else normalized_query
-                staff_qs = staff_qs.filter(
-                    Q(user__first_name__icontains=token) | Q(user__last_name__icontains=token)
-                )
-            staff_qs = staff_qs.order_by('user__last_name', 'user__first_name')
 
-        groups['staff'] = StaffSearchSerializer(staff_qs[:limit], many=True).data
+        normalized_q = " ".join(normalized_query.split()).lower()
+        is_id_query = bool(re.fullmatch(r"[A-Za-z0-9\-]+", normalized_q)) and any(
+            char.isdigit() for char in normalized_q
+        )
+
+        if projection_ready('staff', facility, StaffSearchIndex):
+            staff_index_qs = StaffSearchIndex.objects.filter(facility=facility)
+            if is_id_query:
+                matched = staff_index_qs.filter(
+                    employee_id__istartswith=normalized_q
+                ).values_list('staff_id', flat=True)
+            else:
+                matched = (
+                    staff_index_qs
+                    .annotate(sim=TrigramWordSimilarity(normalized_q, 'search_document'))
+                    .filter(Q(search_document__icontains=normalized_q) | Q(sim__gte=OMNI_TRIGRAM_THRESHOLD))
+                    .order_by('-sim')
+                    .values_list('staff_id', flat=True)
+                )
+            staff_qs = Staff.objects.select_related('user', 'practitioner_profile').filter(
+                pk__in=matched
+            ).order_by('user__last_name', 'user__first_name')
+        else:
+            staff_qs = Staff.objects.select_related('user', 'practitioner_profile').filter(
+                primary_facility=facility
+            )
+            if is_id_query:
+                staff_qs = staff_qs.filter(employee_id__istartswith=normalized_q).order_by('employee_id')
+            else:
+                tokens = [t for t in normalized_q.split() if t]
+                if len(tokens) >= 2:
+                    first, second = tokens[0], tokens[1]
+                    staff_qs = staff_qs.filter(
+                        Q(user__first_name__icontains=first, user__last_name__icontains=second)
+                        | Q(user__first_name__icontains=second, user__last_name__icontains=first)
+                    )
+                else:
+                    token = tokens[0] if tokens else normalized_q
+                    staff_qs = staff_qs.filter(
+                        Q(user__first_name__icontains=token) | Q(user__last_name__icontains=token)
+                    )
+                staff_qs = staff_qs.order_by('user__last_name', 'user__first_name')
+
+        staff_rows = list(StaffSearchSerializer(staff_qs[:limit], many=True).data)
+        for row in staff_rows:
+            row['match_reason'] = 'employee_id' if is_id_query else 'text_match'
+        groups['staff'] = staff_rows
 
     return Response({
         'query': query,

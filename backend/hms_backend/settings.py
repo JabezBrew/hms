@@ -166,10 +166,10 @@ INSTALLED_APPS = [
     'apps.mpi.apps.MPIConfig',  # Control-plane MPI
     'apps.consent.apps.ConsentConfig',  # Control-plane consent
     'apps.fhir_client',
-    'apps.appointments',
+    'apps.appointments.apps.AppointmentsConfig',
     'apps.patients',
     'apps.admissions.apps.AdmissionsConfig',
-    'apps.wards',
+    'apps.wards.apps.WardsConfig',
     'apps.encounters.apps.EncountersConfig',  # Extracted from wards for cleaner architecture
     'apps.inventory',
     'apps.billing',

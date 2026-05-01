@@ -4,6 +4,7 @@ import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from ..users.models import PractitionerProfile, PatientProfile
 from ..organization.models import Clinic
 
@@ -352,3 +353,37 @@ class BlockedTime(models.Model):
         if self.is_all_day:
             return f"{self.practitioner} - {self.date} (All Day): {self.reason}"
         return f"{self.practitioner} - {self.date} {self.start_time}-{self.end_time}: {self.reason}"
+
+
+class AppointmentSearchIndex(models.Model):
+    """
+    Compact projection table for appointment search lookups in omni-search.
+    """
+    appointment = models.OneToOneField(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name='search_projection',
+        primary_key=True,
+    )
+    facility = models.ForeignKey(
+        'core.Facility',
+        on_delete=models.CASCADE,
+        related_name='appointment_search_indexes',
+    )
+    search_document = models.TextField(blank=True)
+    status = models.CharField(max_length=20, blank=True)
+    start_time = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['facility', 'status'], name='appt_search_idx_fac_status_idx'),
+            GinIndex(
+                name='appt_search_idx_doc_trgm',
+                fields=['search_document'],
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Search index for appointment {self.appointment_id}"
