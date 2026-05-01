@@ -5,9 +5,8 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import Star from 'lucide-react/dist/esm/icons/star.js';
 import Pin from 'lucide-react/dist/esm/icons/pin.js';
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useMyPatients,
   useRemoveFromMyPatients,
@@ -24,7 +23,6 @@ import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import {
   prefetchMyPatientsRoute,
-  prefetchPatientChronicleData,
   prefetchPatientRegistryRoute,
 } from "@/features/patients/prefetch";
 
@@ -40,7 +38,6 @@ import {
  */
 const MyPatientsPage = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const pageMeta = usePageMeta({
     title: 'My Patients | Hospital Management System',
@@ -49,11 +46,6 @@ const MyPatientsPage = () => {
       { label: 'My Patients', path: '/patients/my-patients' },
     ],
   });
-
-  const prefetchPatientById = useCallback((patientId, mode = 'hover') => {
-    if (!patientId) return;
-    prefetchPatientChronicleData(queryClient, patientId, { mode });
-  }, [queryClient]);
 
   useEffect(() => {
     prefetchMyPatientsRoute();
@@ -104,21 +96,6 @@ const MyPatientsPage = () => {
 
     return patientList;
   }, [myPatientsData, searchQuery]);
-
-  useEffect(() => {
-    const topPatientId = patients[0]?.id || patients[0]?.patient_profile || patients[0]?.local_data?.id;
-    if (!topPatientId) return;
-
-    const prefetch = () => prefetchPatientById(topPatientId, 'navigation');
-
-    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-      const idleId = window.requestIdleCallback(prefetch, { timeout: 1200 });
-      return () => window.cancelIdleCallback?.(idleId);
-    }
-
-    const timeoutId = window.setTimeout(prefetch, 300);
-    return () => window.clearTimeout(timeoutId);
-  }, [patients, prefetchPatientById]);
 
   // Stats
   const stats = useMemo(() => {

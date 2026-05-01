@@ -141,15 +141,22 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
       return
     }
     prefetchState.hoverPrefetched = true
-  } else {
-    if (prefetchState.navigationPrefetched) {
-      return
-    }
-    prefetchState.hoverPrefetched = true
-    prefetchState.navigationPrefetched = true
+    prefetchPatientDetailRoute()
+    return
   }
 
-  // Warm route chunks and tier-1 chronicle data to reduce time-to-interaction.
+  if (prefetchState.navigationPrefetched) {
+    return
+  }
+  prefetchState.hoverPrefetched = true
+  prefetchState.navigationPrefetched = true
+
+  if (
+    typeof document !== 'undefined' && document.visibilityState !== 'visible'
+  ) {
+    return
+  }
+
   prefetchPatientDetailRoute()
 
   void queryClient.prefetchQuery({
@@ -160,13 +167,6 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
 
   void prefetchChronicleContext(queryClient, patientId)
 
-  // Hover prefetch intentionally excludes heavy timeline/encounter detail to avoid
-  // accidental request storms while cursoring through table rows.
-  if (mode === PREFETCH_MODE.HOVER) {
-    return
-  }
-
-  // Navigation-intent prefetch warms tier-2 chronicle data for faster patient open.
   void prefetchTimelineFirstPage(queryClient, patientId)
   void queryClient.prefetchQuery({
     queryKey: encounterKeys.forPatient(patientId),

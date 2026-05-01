@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import PatientChronicleListPage from '../PatientChronicleListPage'
 import { usePatientSearch } from '@/features/patients/hooks/usePatientQueries'
+import { prefetchPatientChronicleData } from '@/features/patients/prefetch'
 
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
   usePatientSearch: vi.fn(),
@@ -183,5 +184,82 @@ describe('PatientChronicleListPage registry scope behavior', () => {
 
     await user.hover(clinicCellTrigger)
     expect(await screen.findByRole('tooltip', { name: 'Clinic A, Clinic B, Clinic C' })).toBeInTheDocument()
+  })
+})
+
+const mockPrefetchPatientChronicleData = vi.mocked(prefetchPatientChronicleData)
+
+describe('PatientChronicleListPage PHI prefetch gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUsePatientSearch.mockReturnValue({
+      data: createSearchResponse(1, [
+        {
+          id: 'p1',
+          created_at: '2026-01-01T00:00:00Z',
+          medical_record_number: 'MRN-001',
+          name: 'Test Patient',
+          date_of_birth: '1990-06-15',
+          gender: 'female',
+          registry_status: 'active',
+        },
+      ]),
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+  })
+
+  it('does NOT call prefetchPatientChronicleData on mouseenter', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const row = await screen.findByRole('row', { name: /Test Patient/i })
+    await user.hover(row)
+    expect(mockPrefetchPatientChronicleData).not.toHaveBeenCalled()
+  })
+
+  it('does NOT call prefetchPatientChronicleData on focus', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const row = await screen.findByRole('row', { name: /Test Patient/i })
+    await user.tab()
+    row.focus()
+    expect(mockPrefetchPatientChronicleData).not.toHaveBeenCalled()
+  })
+
+  it('calls prefetchPatientChronicleData with mode navigation on pointerdown', async () => {
+    renderPage()
+    const row = await screen.findByRole('row', { name: /Test Patient/i })
+    fireEvent.pointerDown(row)
+    expect(mockPrefetchPatientChronicleData).toHaveBeenCalledWith(
+      expect.anything(),
+      'p1',
+      { mode: 'navigation' }
+    )
+  })
+
+  it('calls prefetchPatientChronicleData with mode navigation on Enter key', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const row = await screen.findByRole('row', { name: /Test Patient/i })
+    row.focus()
+    await user.keyboard('{Enter}')
+    expect(mockPrefetchPatientChronicleData).toHaveBeenCalledWith(
+      expect.anything(),
+      'p1',
+      { mode: 'navigation' }
+    )
+  })
+
+  it('calls prefetchPatientChronicleData with mode navigation on Space key', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const row = await screen.findByRole('row', { name: /Test Patient/i })
+    row.focus()
+    await user.keyboard('{ }')
+    expect(mockPrefetchPatientChronicleData).toHaveBeenCalledWith(
+      expect.anything(),
+      'p1',
+      { mode: 'navigation' }
+    )
   })
 })

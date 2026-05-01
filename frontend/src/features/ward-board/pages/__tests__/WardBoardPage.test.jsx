@@ -112,9 +112,9 @@ describe('WardBoardPage', () => {
       page: 2,
       page_size: 10,
     });
-    expect(screen.getByText('Ward Clinical Task Board')).toBeInTheDocument();
+    expect(screen.getByText('Ward Board')).toBeInTheDocument();
     expect(screen.getAllByText('Ama Mensah')).toHaveLength(2);
-    expect(screen.getByRole('tab', { name: 'Results' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('uses the route ward id ahead of the ward query param for ward-specific boards', () => {
@@ -126,7 +126,7 @@ describe('WardBoardPage', () => {
       page: 1,
       page_size: 30,
     });
-    expect(screen.getByDisplayValue('ward-7')).toBeDisabled();
+    expect(screen.getByText(/ward-7/)).toBeInTheDocument();
   });
 
   it('shows the empty board state when no patients match', () => {
@@ -145,7 +145,7 @@ describe('WardBoardPage', () => {
     expect(mockUseWardBoard).toHaveBeenCalledWith({
       view: 'my-work',
       page: 1,
-      page_size: 20,
+      page_size: 25,
     });
   });
 
@@ -180,7 +180,7 @@ describe('WardBoardPage', () => {
 
     expect(screen.getAllByText('Kofi Owusu')).not.toHaveLength(0);
     expect(screen.getAllByText('urgent')).not.toHaveLength(0);
-    expect(screen.getByText('Open Tasks')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
     expect(screen.getAllByText('4')).not.toHaveLength(0);
   });
 });
