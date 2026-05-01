@@ -201,11 +201,11 @@ export const inventoryApi = {
    * @param {boolean} params.is_active - Filter by active status
    * @returns {Promise<Object>} Paginated storage locations
    */
-  getStorageLocations: async (params = {}) => {
+  getStorageLocations: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/locations/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch storage locations'));
     }
@@ -305,11 +305,11 @@ export const inventoryApi = {
    * @param {number} params.page_size - Page size
    * @returns {Promise<Object>} Paginated inventory items
    */
-  getInventoryItems: async (params = {}) => {
+  getInventoryItems: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch inventory items'));
     }
@@ -890,11 +890,11 @@ export const inventoryApi = {
    * @param {string} params.requesting_location - Filter by requesting location
    * @returns {Promise<Object>} Paginated internal requisitions
    */
-  getInternalRequisitions: async (params = {}) => {
+  getInternalRequisitions: async (params = {}, options = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/internal-requisitions/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch internal requisitions'));
     }
@@ -905,9 +905,9 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Internal requisition data
    */
-  getInternalRequisition: async (id) => {
+  getInternalRequisition: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/inventory/internal-requisitions/${id}/`);
+      return await apiClient.get(`/inventory/internal-requisitions/${id}/`, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch internal requisition'));
     }
@@ -944,9 +944,9 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  approveInternalRequisition: async (id) => {
+  approveInternalRequisition: async (id, data) => {
     try {
-      return await apiClient.post(`/inventory/internal-requisitions/${id}/approve/`);
+      return await apiClient.post(`/inventory/internal-requisitions/${id}/approve/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to approve internal requisition'));
     }
@@ -971,9 +971,9 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  fulfillInternalRequisition: async (id) => {
+  fulfillInternalRequisition: async (id, data) => {
     try {
-      return await apiClient.post(`/inventory/internal-requisitions/${id}/fulfill/`);
+      return await apiClient.post(`/inventory/internal-requisitions/${id}/fulfill/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fulfill internal requisition'));
     }

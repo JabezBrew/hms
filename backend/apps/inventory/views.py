@@ -89,6 +89,94 @@ from apps.core.security import (
 )
 
 
+INTERNAL_REQUISITION_OPERATOR_ROLES = {'admin', 'pharmacist', 'pharmacy_tech', 'store_keeper'}
+WARD_STOCK_REQUESTER_ROLES = {'nurse', 'head_nurse', 'nurse_practitioner'}
+WARD_STOCK_REQUEST_ACTIONS = {'list', 'retrieve', 'create', 'submit', 'cancel'}
+
+
+def _user_type(user):
+    return getattr(user, 'user_type', None)
+
+
+def _is_internal_requisition_operator(user):
+    return _user_type(user) in INTERNAL_REQUISITION_OPERATOR_ROLES
+
+
+def _is_ward_stock_requester(user):
+    return _user_type(user) in WARD_STOCK_REQUESTER_ROLES
+
+
+def _assigned_ward_ids_for_user(user):
+    cache_attr = '_inventory_assigned_ward_ids'
+    if hasattr(user, cache_attr):
+        return getattr(user, cache_attr)
+
+    try:
+        practitioner = user.staff_profile.practitioner_profile
+    except AttributeError:
+        ward_ids = []
+    else:
+        from apps.wards.models import WardStaffAssignment
+
+        ward_ids = list(
+            WardStaffAssignment.objects.filter(
+                practitioner=practitioner,
+                is_active=True,
+            ).values_list('ward_id', flat=True)
+        )
+
+    setattr(user, cache_attr, ward_ids)
+    return ward_ids
+
+
+def _can_access_ward_requisition(user, requisition):
+    if requisition.requested_by_id == user.id:
+        return True
+
+    assigned_ward_ids = _assigned_ward_ids_for_user(user)
+    if not assigned_ward_ids:
+        return False
+
+    return requisition.requesting_location.ward_id in assigned_ward_ids
+
+
+class InternalRequisitionPermission(permissions.BasePermission):
+    """
+    Inventory operators process all internal requisitions; nursing staff may
+    create and track ward stock requests without approval/fulfillment powers.
+    """
+    message = "You do not have permission to manage internal requisitions."
+
+    def has_permission(self, request, view):
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+
+        if _is_internal_requisition_operator(user):
+            return True
+
+        if _is_ward_stock_requester(user):
+            return getattr(view, 'action', None) in WARD_STOCK_REQUEST_ACTIONS
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if _is_internal_requisition_operator(user):
+            return True
+
+        if not _is_ward_stock_requester(user):
+            return False
+
+        if getattr(view, 'action', None) == 'retrieve':
+            return _can_access_ward_requisition(user, obj)
+
+        if getattr(view, 'action', None) in {'submit', 'cancel'}:
+            return obj.requested_by_id == user.id
+
+        return False
+
+
 # =============================================================================
 # Storage Location ViewSets (Phase 1: Multi-Location)
 # =============================================================================
@@ -115,9 +203,19 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             return StorageLocation.objects.none()
-        return StorageLocation.objects.filter(
+        queryset = StorageLocation.objects.filter(
             facility=facility
         ).select_related('parent', 'ward', 'department')
+
+        location_type = self.request.query_params.get('location_type')
+        if location_type:
+            queryset = queryset.filter(location_type=location_type)
+
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() in {'1', 'true', 'yes'})
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -1425,7 +1523,7 @@ class InternalRequisitionViewSet(viewsets.ModelViewSet):
     - POST /internal-requisitions/{id}/fulfill/ - Fulfill requisition (issue stock)
     """
     queryset = InternalRequisition.objects.all()
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
+    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, InternalRequisitionPermission]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['requisition_number', 'justification', 'notes']
@@ -1442,7 +1540,18 @@ class InternalRequisitionViewSet(viewsets.ModelViewSet):
         ).select_related(
             'requested_by', 'approved_by', 'fulfilled_by',
             'requesting_location', 'fulfilling_location', 'standing_order'
-        ).prefetch_related('items__item')
+        )
+
+        user = self.request.user
+        if not _is_internal_requisition_operator(user):
+            if not _is_ward_stock_requester(user):
+                return InternalRequisition.objects.none()
+
+            accessible_filter = Q(requested_by=user)
+            assigned_ward_ids = _assigned_ward_ids_for_user(user)
+            if assigned_ward_ids:
+                accessible_filter |= Q(requesting_location__ward_id__in=assigned_ward_ids)
+            queryset = queryset.filter(accessible_filter)
 
         # Filter by status
         status_filter = self.request.query_params.get('status')
@@ -1459,6 +1568,11 @@ class InternalRequisitionViewSet(viewsets.ModelViewSet):
         if fulfilling_id:
             queryset = queryset.filter(fulfilling_location_id=fulfilling_id)
 
+        if self.action == 'list':
+            queryset = queryset.annotate(items_count=Count('items'))
+        else:
+            queryset = queryset.prefetch_related('items__item')
+
         return queryset
 
     def get_serializer_class(self):
@@ -1472,11 +1586,46 @@ class InternalRequisitionViewSet(viewsets.ModelViewSet):
         facility = get_user_facility(self.request)
         if not facility:
             raise PermissionDenied("Facility context is required.")
+
+        self._validate_create_scope(serializer, facility)
         serializer.save(
             facility=facility,
             requested_by=self.request.user,
             requisition_number=InternalLogisticsService.generate_internal_requisition_number(facility),
         )
+
+    def _validate_create_scope(self, serializer, facility):
+        requesting_location = serializer.validated_data.get('requesting_location')
+        fulfilling_location = serializer.validated_data.get('fulfilling_location')
+
+        if requesting_location.facility_id != facility.id:
+            raise ValidationError({'requesting_location': 'Requesting location is outside the active facility.'})
+
+        if fulfilling_location.facility_id != facility.id:
+            raise ValidationError({'fulfilling_location': 'Fulfilling location is outside the active facility.'})
+
+        if requesting_location.id == fulfilling_location.id:
+            raise ValidationError({'fulfilling_location': 'Fulfilling location must differ from requesting location.'})
+
+        for index, item_data in enumerate(serializer.validated_data.get('items', []), start=1):
+            item = item_data.get('item')
+            if item.facility_id != facility.id:
+                raise ValidationError({'items': f'Line {index} item is outside the active facility.'})
+            if item_data.get('quantity_requested', 0) < 1:
+                raise ValidationError({'items': f'Line {index} quantity must be at least 1.'})
+
+        user = self.request.user
+        if _is_internal_requisition_operator(user):
+            return
+
+        if requesting_location.location_type != 'ward_store':
+            raise ValidationError({
+                'requesting_location': 'Ward stock requests must use a ward store as the requesting location.'
+            })
+
+        assigned_ward_ids = _assigned_ward_ids_for_user(user)
+        if assigned_ward_ids and requesting_location.ward_id not in assigned_ward_ids:
+            raise PermissionDenied("You can only request ward stock for wards assigned to you.")
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
@@ -1538,6 +1687,11 @@ class InternalRequisitionViewSet(viewsets.ModelViewSet):
     def cancel(self, request, pk=None):
         """Cancel internal requisition."""
         requisition = self.get_object()
+        if (
+            not _is_internal_requisition_operator(request.user)
+            and requisition.status not in ('draft', 'pending_approval')
+        ):
+            raise PermissionDenied("Ward stock requests can only be cancelled before approval.")
         if requisition.status in ('fulfilled', 'partially_fulfilled', 'cancelled'):
             return Response(
                 {'error': f'Cannot cancel requisition in {requisition.status} status'},

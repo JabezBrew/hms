@@ -274,6 +274,15 @@ const globalSections = [
       exact: true,
     }),
     item({
+      key: 'ward-stock-requests',
+      label: 'Ward Stock',
+      href: '/nursing/ward-stock-requests',
+      icon: Package,
+      roles: ROLE_GROUPS.NURSING_DASHBOARD,
+      features: ['nursing_workflows', 'inventory'],
+      exact: true,
+    }),
+    item({
       key: 'laboratory',
       label: 'Laboratory',
       icon: FlaskConical,

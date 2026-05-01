@@ -288,7 +288,7 @@ export function useUpdateSupplier() {
 export function useStorageLocations(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.locationList(filters),
-    queryFn: () => inventoryApi.getStorageLocations(filters),
+    queryFn: ({ signal }) => inventoryApi.getStorageLocations(filters, { signal }),
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -392,7 +392,7 @@ export function useDeleteStorageLocation() {
 export function useInventoryItems(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.itemList(filters),
-    queryFn: () => inventoryApi.getInventoryItems(filters),
+    queryFn: ({ signal }) => inventoryApi.getInventoryItems(filters, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1060,7 +1060,7 @@ export function useAcceptGRN() {
 export function useInternalRequisitions(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.internalRequisitionList(filters),
-    queryFn: () => inventoryApi.getInternalRequisitions(filters),
+    queryFn: ({ signal }) => inventoryApi.getInternalRequisitions(filters, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1073,7 +1073,7 @@ export function useInternalRequisitions(filters = {}) {
 export function useInternalRequisition(id) {
   return useQuery({
     queryKey: inventoryKeys.internalRequisitionDetail(id),
-    queryFn: () => inventoryApi.getInternalRequisition(id),
+    queryFn: ({ signal }) => inventoryApi.getInternalRequisition(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });
@@ -1119,9 +1119,14 @@ export function useApproveInternalRequisition() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => inventoryApi.approveInternalRequisition(id),
+    mutationFn: (variables) => {
+      const id = typeof variables === 'object' ? variables.id : variables;
+      const data = typeof variables === 'object' ? variables.data : undefined;
+      return inventoryApi.approveInternalRequisition(id, data);
+    },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: inventoryKeys.internalRequisitionDetail(variables) });
+      const id = typeof variables === 'object' ? variables.id : variables;
+      queryClient.invalidateQueries({ queryKey: inventoryKeys.internalRequisitionDetail(id) });
       queryClient.invalidateQueries({ queryKey: inventoryKeys.internalRequisitions() });
     },
   });
@@ -1151,9 +1156,14 @@ export function useFulfillInternalRequisition() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => inventoryApi.fulfillInternalRequisition(id),
+    mutationFn: (variables) => {
+      const id = typeof variables === 'object' ? variables.id : variables;
+      const data = typeof variables === 'object' ? variables.data : undefined;
+      return inventoryApi.fulfillInternalRequisition(id, data);
+    },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: inventoryKeys.internalRequisitionDetail(variables) });
+      const id = typeof variables === 'object' ? variables.id : variables;
+      queryClient.invalidateQueries({ queryKey: inventoryKeys.internalRequisitionDetail(id) });
       queryClient.invalidateQueries({ queryKey: inventoryKeys.internalRequisitions() });
       queryClient.invalidateQueries({ queryKey: inventoryKeys.items() });
       queryClient.invalidateQueries({ queryKey: inventoryKeys.locations() });

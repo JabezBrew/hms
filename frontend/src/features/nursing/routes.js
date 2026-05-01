@@ -5,6 +5,7 @@ import { ROLE_GROUPS } from '@/shared/constants/roles'
 const NursingDashboardPage = lazy(() => import('./pages/NursingDashboardPage'))
 const ShiftHandoffPage = lazy(() => import('./pages/ShiftHandoffPage'))
 const NursingTasksPage = lazy(() => import('./pages/NursingTasksPage'))
+const WardStockRequestsPage = lazy(() => import('./pages/WardStockRequestsPage'))
 const NursingDischargesPage = lazy(() => import('@/features/discharge/pages/NursingDischargesPage'))
 
 const NURSING_BREADCRUMB = { label: 'Nursing', path: '/nursing/dashboard' }
@@ -33,6 +34,15 @@ export const nursingRoutes = [
     layout: ROUTE_LAYOUTS.BARE,
     title: 'Nursing Tasks | Hospital Management System',
     breadcrumbs: [NURSING_BREADCRUMB, { label: 'Tasks', path: '/nursing/tasks' }],
+  },
+  {
+    path: '/nursing/ward-stock-requests',
+    component: WardStockRequestsPage,
+    roles: ROLE_GROUPS.NURSING_DASHBOARD,
+    features: ['nursing_workflows', 'inventory'],
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'Ward Stock Requests | Hospital Management System',
+    breadcrumbs: [NURSING_BREADCRUMB, { label: 'Ward Stock Requests', path: '/nursing/ward-stock-requests' }],
   },
   {
     path: '/nursing/discharges',

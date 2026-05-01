@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,10 +25,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useInternalRequisitions, useStorageLocations } from '@/features/inventory/hooks';
+import { InternalRequisitionDetailDialog } from '@/components/inventory/InternalRequisitionDetailDialog';
 import { useDebounce } from '@/hooks/use-debounce';
 import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
-import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
@@ -47,15 +47,25 @@ import Repeat from 'lucide-react/dist/esm/icons/repeat.js';
 
 const STATUS_TABS = [
   { value: 'all', label: 'All' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'pending_approval', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
+  { value: 'in_progress', label: 'In Progress' },
   { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'partially_fulfilled', label: 'Partial' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
 const STATUS_CONFIG = {
-  pending: {
-    label: 'Pending',
+  draft: {
+    label: 'Draft',
+    bgColor: 'bg-muted',
+    textColor: 'text-muted-foreground',
+    borderColor: 'border-border',
+  },
+  pending_approval: {
+    label: 'Pending Approval',
     bgColor: 'bg-amber-500/10',
     textColor: 'text-amber-500',
     borderColor: 'border-amber-500/30',
@@ -66,11 +76,29 @@ const STATUS_CONFIG = {
     textColor: 'text-sky-500',
     borderColor: 'border-sky-500/30',
   },
+  in_progress: {
+    label: 'In Progress',
+    bgColor: 'bg-indigo-500/10',
+    textColor: 'text-indigo-500',
+    borderColor: 'border-indigo-500/30',
+  },
   fulfilled: {
     label: 'Fulfilled',
     bgColor: 'bg-emerald-500/10',
     textColor: 'text-emerald-500',
     borderColor: 'border-emerald-500/30',
+  },
+  partially_fulfilled: {
+    label: 'Partially Fulfilled',
+    bgColor: 'bg-teal-500/10',
+    textColor: 'text-teal-500',
+    borderColor: 'border-teal-500/30',
+  },
+  rejected: {
+    label: 'Rejected',
+    bgColor: 'bg-rose-500/10',
+    textColor: 'text-rose-500',
+    borderColor: 'border-rose-500/30',
   },
   cancelled: {
     label: 'Cancelled',
@@ -88,7 +116,7 @@ const PRIORITY_CONFIG = {
 };
 
 function getStatusConfig(status) {
-  return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.pending;
+  return STATUS_CONFIG[status?.toLowerCase()] || STATUS_CONFIG.draft;
 }
 
 function getPriorityConfig(priority) {
@@ -108,8 +136,8 @@ function InternalRequisitionCard({
   const statusConfig = getStatusConfig(requisition.status);
   const priorityConfig = getPriorityConfig(requisition.priority);
 
-  const canApprove = requisition.status === 'pending';
-  const canFulfill = requisition.status === 'approved';
+  const canApprove = requisition.status === 'pending_approval';
+  const canFulfill = ['approved', 'in_progress'].includes(requisition.status);
 
   return (
     <Card
@@ -224,10 +252,10 @@ function InternalRequisitionCard({
  * InternalRequisitionsPage - Internal department requisitions page
  */
 export default function InternalRequisitionsPage() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
   const status = searchParams.get('status') || 'all';
   const location = searchParams.get('location') || '';
   const page = parseInt(searchParams.get('page') || '1', 10);
@@ -300,10 +328,9 @@ export default function InternalRequisitionsPage() {
 
   const hasActiveFilters = debouncedSearch || status !== 'all' || location;
 
-  const handleClick = (id) => navigate(`/inventory/internal-requisitions/${id}`);
-  const handleApprove = (id) => navigate(`/inventory/internal-requisitions/${id}?action=approve`);
-  const handleFulfill = (id) => navigate(`/inventory/internal-requisitions/${id}?action=fulfill`);
-  const handleCreate = () => navigate('/inventory/internal-requisitions?action=create');
+  const handleClick = (id) => setSelectedRequisitionId(id);
+  const handleApprove = (id) => setSelectedRequisitionId(id);
+  const handleFulfill = (id) => setSelectedRequisitionId(id);
 
   const requisitionColumns = [
     {
@@ -363,11 +390,22 @@ export default function InternalRequisitionsPage() {
       width: '180px',
       render: (req) => (
         <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleApprove(req.id); }}>
-            Approve
-          </Button>
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleFulfill(req.id); }}>
-            Fulfill
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (req.status === 'pending_approval') handleApprove(req.id);
+              else if (['approved', 'in_progress'].includes(req.status)) handleFulfill(req.id);
+              else handleClick(req.id);
+            }}
+          >
+            {req.status === 'pending_approval'
+              ? 'Review'
+              : ['approved', 'in_progress'].includes(req.status)
+              ? 'Issue'
+              : 'View'}
           </Button>
         </div>
       ),
@@ -419,10 +457,6 @@ export default function InternalRequisitionsPage() {
             <Button variant="outline" onClick={() => refetch()}>
               <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
-            </Button>
-            <Button onClick={handleCreate}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Request
             </Button>
           </div>
         )}
@@ -490,14 +524,8 @@ export default function InternalRequisitionsPage() {
           <ClipboardList className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
           <h3 className="font-display text-xl mb-2">No Requisitions Found</h3>
           <p className="text-muted-foreground text-sm mb-4">
-            {hasActiveFilters ? 'Try adjusting your filters' : 'Create your first internal requisition'}
+            {hasActiveFilters ? 'Try adjusting your filters' : 'Ward stock requests will appear here after submission'}
           </p>
-          {!hasActiveFilters && (
-            <Button onClick={handleCreate}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Request
-            </Button>
-          )}
         </div>
       )}
 
@@ -519,6 +547,15 @@ export default function InternalRequisitionsPage() {
         </div>
       )}
       </div>
+
+      <InternalRequisitionDetailDialog
+        requisitionId={selectedRequisitionId}
+        open={!!selectedRequisitionId}
+        onOpenChange={(open) => {
+          if (!open) setSelectedRequisitionId(null);
+        }}
+        mode="inventory"
+      />
     </PageShell>
   );
 }

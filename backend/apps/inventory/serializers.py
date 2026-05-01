@@ -878,7 +878,7 @@ class InternalRequisitionListSerializer(serializers.ModelSerializer):
     fulfilling_location_name = serializers.CharField(
         source='fulfilling_location.name', read_only=True
     )
-    items_count = serializers.SerializerMethodField()
+    items_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = InternalRequisition
@@ -887,9 +887,6 @@ class InternalRequisitionListSerializer(serializers.ModelSerializer):
             'requested_by_name', 'requesting_location_name', 'fulfilling_location_name',
             'date_required', 'items_count', 'created_at'
         ]
-
-    def get_items_count(self, obj):
-        return obj.items.count()
 
 
 class InternalRequisitionSerializer(serializers.ModelSerializer):
@@ -946,9 +943,11 @@ class InternalRequisitionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InternalRequisition
         fields = [
+            'id', 'requisition_number', 'requested_by', 'status',
             'requesting_location', 'fulfilling_location',
             'date_required', 'priority', 'justification', 'notes', 'items'
         ]
+        read_only_fields = ['id', 'requisition_number', 'requested_by', 'status']
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
