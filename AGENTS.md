@@ -133,6 +133,9 @@ favor correctness, least privilege, and predictable performance.
 - Document new dependencies or IAM needs in `docs/`.
 
 ## Deployment Notes
+- HMS is no longer deployed on Railway. Do not use Railway CLI for HMS deploy,
+  log, or production-debug workflows unless explicitly asked to investigate a
+  legacy Railway artifact.
 - HMS deploys one client per Hetzner VPS with Docker Compose. Use the runbook in
   `ops/hetzner-client-vps/README.md`.
 - The reusable client Compose profile is `ops/hetzner-client-vps/compose.yml`.
