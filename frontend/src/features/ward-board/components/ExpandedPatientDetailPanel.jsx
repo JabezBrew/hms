@@ -1,8 +1,6 @@
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
-import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useWardBoardPatient } from '@/features/ward-board/hooks';
@@ -11,114 +9,138 @@ import { TaskActionControls } from './TaskActionControls';
 import {
   TASK_STATUS_STYLES,
   URGENCY_STYLES,
+  formatTime,
   formatTimestamp,
-  getPatientDischargeCount,
   getPatientDischargeItems,
   getPatientEvents,
   getPatientId,
-  getPatientResultCount,
   getPatientResults,
-  getPatientTaskCount,
   getPatientTasks,
+  getTaskCategory,
+  getTaskOwner,
   getTaskStatus,
   getTaskTitle,
   getTaskUrgency,
+  isAcknowledged,
+  isTerminalTask,
   patientChronicleHref,
 } from './wardBoardUtils';
 
-function DetailSection({ title, count, children }) {
-  return (
-    <section className="min-w-0 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-heading text-sm font-semibold text-foreground">{title}</h3>
-        <span className="font-mono text-[11px] text-muted-foreground">{count}</span>
-      </div>
-      {children}
-    </section>
-  );
-}
+const ACK_STYLES = {
+  acked: 'font-mono text-[10px] text-sky-600',
+  unacked: 'font-mono text-[10px] text-rose-600',
+  seen: 'font-mono text-[10px] text-muted-foreground',
+};
 
-function EmptyLine({ children }) {
-  return (
-    <div className="rounded-lg border border-dashed border-border bg-background/70 px-3 py-4 text-sm text-muted-foreground">
-      {children}
-    </div>
-  );
-}
-
-function TaskList({ tasks, taskCount, patientId, onTaskAction, pendingAction }) {
+function TaskTable({ tasks, patientId, onTaskAction, pendingAction }) {
   if (tasks.length === 0) {
     return (
-      <EmptyLine>
-        {taskCount > 0 ? `${taskCount} operational items are tracked in source workflows.` : 'No active operational tasks'}
-      </EmptyLine>
+      <p className="px-1 py-3 font-mono text-xs text-muted-foreground">No active operational tasks</p>
     );
   }
-
   return (
-    <div className="space-y-2">
-      {tasks.slice(0, 5).map((task, index) => {
-        const status = getTaskStatus(task);
-        const urgency = getTaskUrgency(task);
-        return (
-          <div key={task?.id ?? task?.task_id ?? index} className="rounded-lg border border-border bg-background/70 p-3">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-foreground">{getTaskTitle(task)}</p>
-                  <Badge variant="outline" className={cn('font-mono text-[10px]', TASK_STATUS_STYLES[status] ?? URGENCY_STYLES[urgency] ?? TASK_STATUS_STYLES.pending)}>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[600px] border-collapse text-left text-xs">
+        <thead>
+          <tr className="border-b border-border bg-muted/30">
+            {['Category', 'Task / Action', 'Priority', 'Owner', 'Due', 'Status', 'Ack', 'Actions'].map((h) => (
+              <th key={h} className="px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.slice(0, 8).map((task, index) => {
+            const status = getTaskStatus(task);
+            const urgency = getTaskUrgency(task);
+            const acked = isAcknowledged(task);
+            const terminal = isTerminalTask(task);
+            const isOverdue = status === 'overdue' || Boolean(task?.is_overdue);
+            return (
+              <tr
+                key={task?.id ?? task?.task_id ?? index}
+                className={cn(
+                  'border-b border-border/50 transition-colors last:border-0',
+                  isOverdue ? 'bg-rose-50/40 dark:bg-rose-950/10' : 'hover:bg-muted/30'
+                )}
+              >
+                <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                  {getTaskCategory(task) ?? '—'}
+                </td>
+                <td className="px-3 py-2">
+                  <span className="text-sm font-medium text-foreground">{getTaskTitle(task)}</span>
+                </td>
+                <td className="px-3 py-2">
+                  <Badge
+                    variant="outline"
+                    className={cn('font-mono text-[10px] capitalize', URGENCY_STYLES[urgency] ?? URGENCY_STYLES.pending)}
+                  >
+                    {urgency}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                  {getTaskOwner(task) ?? '—'}
+                </td>
+                <td className="px-3 py-2">
+                  <span className={cn('font-mono text-[11px]', isOverdue ? 'text-rose-600' : 'text-muted-foreground')}>
+                    {formatTime(task?.due_at ?? task?.due_time ?? task?.target_time) ?? '—'}
+                    {isOverdue ? <span className="ml-1 block text-[10px] font-medium">Overdue</span> : null}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <Badge
+                    variant="outline"
+                    className={cn('font-mono text-[10px] capitalize', TASK_STATUS_STYLES[status] ?? TASK_STATUS_STYLES.pending)}
+                  >
                     {status}
                   </Badge>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-2 font-mono text-[11px] text-muted-foreground">
-                  <span>{formatTimestamp(task?.due_at ?? task?.due_time ?? task?.target_time)}</span>
-                  {task?.assignee_name || task?.assigned_to || task?.owner_role ? (
-                    <span>{task.assignee_name ?? task.assigned_to ?? task.owner_role}</span>
-                  ) : null}
-                </div>
-              </div>
-              <TaskActionControls
-                task={task}
-                patientId={patientId}
-                onAction={onTaskAction}
-                pendingAction={pendingAction}
-                className="xl:justify-end"
-              />
-            </div>
-          </div>
-        );
-      })}
+                </td>
+                <td className="px-3 py-2">
+                  {terminal ? null : (
+                    <span className={cn(acked ? ACK_STYLES.acked : ACK_STYLES.unacked)}>
+                      {acked ? '● Acked' : '● Unacked'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <TaskActionControls
+                    task={task}
+                    patientId={patientId}
+                    onAction={onTaskAction}
+                    pendingAction={pendingAction}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function ResultList({ results, resultCount }) {
+function ResultRows({ results }) {
   if (results.length === 0) {
-    return (
-      <EmptyLine>
-        {resultCount > 0 ? `${resultCount} pending result summaries are tracked in source workflows.` : 'No pending result summaries'}
-      </EmptyLine>
-    );
+    return <p className="px-1 py-2 font-mono text-xs text-muted-foreground">No pending result summaries</p>;
   }
-
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {results.slice(0, 4).map((result, index) => {
         const status = String(result?.status ?? result?.state ?? 'pending').toLowerCase();
-        const tone = result?.is_critical || status === 'critical' ? URGENCY_STYLES.critical : URGENCY_STYLES.info;
+        const isCritical = result?.is_critical || status === 'critical';
         return (
-          <div key={result?.id ?? index} className="rounded-lg border border-border bg-background/70 p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-foreground">
-                {result?.name ?? result?.test_name ?? result?.panel ?? 'Result summary'}
-              </p>
-              <Badge variant="outline" className={cn('font-mono text-[10px]', tone)}>
-                {status}
-              </Badge>
-            </div>
-            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-              {formatTimestamp(result?.reported_at ?? result?.created_at ?? result?.ordered_at)}
-            </p>
+          <div key={result?.id ?? index} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-1.5">
+            <span className={cn('h-2 w-2 rounded-full shrink-0', isCritical ? 'bg-rose-500' : 'bg-sky-400')} aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+              {result?.name ?? result?.test_name ?? result?.panel ?? 'Result'}
+            </span>
+            <Badge variant="outline" className={cn('shrink-0 font-mono text-[10px]', isCritical ? URGENCY_STYLES.critical : URGENCY_STYLES.info)}>
+              {status}
+            </Badge>
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              {formatTimestamp(result?.reported_at ?? result?.created_at)}
+            </span>
           </div>
         );
       })}
@@ -126,31 +148,22 @@ function ResultList({ results, resultCount }) {
   );
 }
 
-function DischargeList({ items, dischargeCount }) {
+function DischargeRows({ items }) {
   if (items.length === 0) {
-    return (
-      <EmptyLine>
-        {dischargeCount > 0 ? `${dischargeCount} discharge items are tracked in source workflows.` : 'No discharge blockers listed'}
-      </EmptyLine>
-    );
+    return <p className="px-1 py-2 font-mono text-xs text-muted-foreground">No discharge blockers listed</p>;
   }
-
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {items.slice(0, 4).map((item, index) => (
-        <div key={item?.id ?? item?.key ?? index} className="rounded-lg border border-border bg-background/70 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">
-              {item?.title ?? item?.label ?? item?.summary ?? 'Discharge item'}
-            </p>
-            <Badge variant="outline" className={cn('font-mono text-[10px]', URGENCY_STYLES[String(item?.status ?? 'pending').toLowerCase()] ?? URGENCY_STYLES.moderate)}>
-              {item?.status ?? 'pending'}
-            </Badge>
-          </div>
-          {item?.owner || item?.due_at ? (
-            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-              {[item.owner, item.due_at ? formatTimestamp(item.due_at) : null].filter(Boolean).join(' - ')}
-            </p>
+        <div key={item?.id ?? item?.key ?? index} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+            {item?.title ?? item?.label ?? item?.summary ?? 'Discharge item'}
+          </span>
+          <Badge variant="outline" className={cn('shrink-0 font-mono text-[10px]', URGENCY_STYLES[String(item?.status ?? 'pending').toLowerCase()] ?? URGENCY_STYLES.moderate)}>
+            {item?.status ?? 'pending'}
+          </Badge>
+          {item?.owner ? (
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.owner}</span>
           ) : null}
         </div>
       ))}
@@ -166,62 +179,63 @@ export function ExpandedPatientDetailPanel({ patient, onTaskAction, pendingActio
   const results = getPatientResults(detail);
   const dischargeItems = getPatientDischargeItems(detail);
   const events = getPatientEvents(detail);
-  const taskCount = getPatientTaskCount(detail);
-  const resultCount = getPatientResultCount(detail);
-  const dischargeCount = getPatientDischargeCount(detail);
 
   return (
-    <div className="border-t border-border bg-muted/20 px-4 py-4 sm:px-5">
+    <div className="border-t border-border bg-muted/10">
       {isLoading ? (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Skeleton className="h-28 rounded-lg" />
-          <Skeleton className="h-28 rounded-lg" />
-          <Skeleton className="h-28 rounded-lg" />
+        <div className="space-y-2 p-4">
+          <Skeleton className="h-8 w-full rounded" />
+          <Skeleton className="h-8 w-full rounded" />
+          <Skeleton className="h-8 w-3/4 rounded" />
         </div>
       ) : null}
 
       {isError ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+        <div className="px-4 py-3 font-mono text-xs text-rose-600">
           {error?.message || 'Unable to load patient board details.'}
         </div>
       ) : null}
 
       {!isLoading ? (
-        <div className="space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="min-w-0 space-y-4 p-4">
             <div>
-              <p className="font-mono text-[11px] uppercase text-muted-foreground">Operational view</p>
-              <p className="text-sm text-muted-foreground">Task, result, and discharge summaries only.</p>
-            </div>
-            <Button asChild variant="outline" size="sm" className="w-fit font-mono text-xs">
-              <Link to={patientChronicleHref(detail)}>
-                Patient Chronicle
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              </Link>
-            </Button>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-3">
-            <DetailSection title="Tasks" count={taskCount}>
-              <TaskList
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="font-heading text-sm font-semibold text-foreground">
+                  Active Tasks for this patient
+                </h3>
+                <Link
+                  to={patientChronicleHref(detail)}
+                  className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-amber-700"
+                >
+                  Patient Chronicle
+                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </Link>
+              </div>
+              <TaskTable
                 tasks={tasks}
-                taskCount={taskCount}
                 patientId={patientId}
                 onTaskAction={onTaskAction}
                 pendingAction={pendingAction}
               />
-            </DetailSection>
-            <DetailSection title="Results" count={resultCount}>
-              <ResultList results={results} resultCount={resultCount} />
-            </DetailSection>
-            <DetailSection title="Discharge" count={dischargeCount}>
-              <DischargeList items={dischargeItems} dischargeCount={dischargeCount} />
-            </DetailSection>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <h3 className="mb-2 font-heading text-sm font-semibold text-foreground">Pending Results</h3>
+                <ResultRows results={results} />
+              </div>
+              <div>
+                <h3 className="mb-2 font-heading text-sm font-semibold text-foreground">Discharge Blockers</h3>
+                <DischargeRows items={dischargeItems} />
+              </div>
+            </div>
           </div>
 
-          <DetailSection title="Audit Timeline" count={events.length}>
+          <div className="border-t border-border/60 p-4 lg:border-l lg:border-t-0">
+            <h3 className="mb-3 font-heading text-sm font-semibold text-foreground">Audit Trail</h3>
             <AuditEventTimeline events={events} />
-          </DetailSection>
+          </div>
         </div>
       ) : null}
     </div>

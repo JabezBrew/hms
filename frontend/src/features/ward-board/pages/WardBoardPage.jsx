@@ -1,11 +1,11 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
+import Wifi from 'lucide-react/dist/esm/icons/wifi.js';
+import WifiOff from 'lucide-react/dist/esm/icons/wifi-off.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { TablePagination } from '@/components/ui/table-pagination';
-import { PageHeader } from '@/shared/components/page/PageHeader';
-import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -17,6 +17,7 @@ import {
   DEFAULT_PAGE_SIZE,
   MetricStrip,
   PatientRow,
+  PatientTableHeader,
   WatchlistPanel,
   BOARD_VIEWS,
   compactParams,
@@ -43,10 +44,6 @@ const URGENCY_ORDER = {
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function getViewLabel(value) {
-  return BOARD_VIEWS.find((view) => view.value === value)?.label ?? BOARD_VIEWS[0].label;
 }
 
 function orderRowsForView(rows, view) {
@@ -79,7 +76,7 @@ export default function WardBoardPage() {
   const debouncedSearch = useDebounce(searchDraft, 300);
 
   const pageMeta = usePageMeta({
-    title: 'Ward Clinical Task Board | Hospital Management System',
+    title: 'Ward Board | Hospital Management System',
     breadcrumbs: fixedWard
       ? [
           { label: 'Wards', path: '/wards' },
@@ -141,7 +138,6 @@ export default function WardBoardPage() {
   const summary = useMemo(() => getBoardSummary(boardData, patients), [boardData, patients]);
   const watchlist = useMemo(() => getWatchlist(boardData, patients), [boardData, patients]);
   const totalCount = boardData?.count ?? patients.length;
-  const viewLabel = getViewLabel(view);
   const taskMutation = useWardBoardTaskAction();
   const { isConnected: isLiveConnected } = useWardBoardLiveUpdates({
     enabled: !isLoading,
@@ -196,21 +192,29 @@ export default function WardBoardPage() {
   }
 
   return (
-    <PageShell className="bg-[oklch(0.98_0.005_60)] text-foreground dark:bg-[oklch(0.14_0.01_50)]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[oklch(0.98_0.005_60)] text-foreground dark:bg-[oklch(0.14_0.01_50)]">
       {pageMeta}
-      <PageHeader
-        title="Ward Clinical Task Board"
-        meta={effectiveWard ? `WARD ${effectiveWard}` : 'ALL WARDS'}
-        description={`${viewLabel} view with ${totalCount} matching patients`}
-        actions={(
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background/70 px-3 py-2 font-mono text-[11px] text-muted-foreground">
-            <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{isFetching ? 'Refreshing' : isLiveConnected ? 'Live board' : 'Refresh fallback'}</span>
+
+      <header className="shrink-0 border-b border-border bg-card/80 px-6 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl text-foreground">Ward Board</h1>
+            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+              {effectiveWard ? `${effectiveWard} · ` : ''}Live clinical task board
+            </p>
           </div>
-        )}
-      >
-        <MetricStrip summary={summary} className="mt-5" />
-      </PageHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+              {isLiveConnected
+                ? <Wifi className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+                : <WifiOff className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
+              <span>{isFetching ? 'Refreshing…' : isLiveConnected ? 'Live' : 'Fallback'}</span>
+            </div>
+          </div>
+        </div>
+
+        <MetricStrip summary={summary} className="mt-4" />
+      </header>
 
       <BoardToolbar
         view={view}
@@ -219,19 +223,20 @@ export default function WardBoardPage() {
         fixedWard={fixedWard}
         pageSize={pageSize}
         isFetching={isFetching}
+        summary={summary}
         onViewChange={(nextView) => updateParams({ view: nextView }, { resetPage: true })}
         onSearchChange={setSearchDraft}
         onWardChange={(nextWard) => updateParams({ ward: nextWard.trim() }, { resetPage: true })}
         onPageSizeChange={(nextPageSize) => updateParams({ page_size: nextPageSize }, { resetPage: true })}
         onClearFilters={handleClearFilters}
         onRefresh={() => refetch()}
-        onOpenSummary={() => setSummaryOpen(true)}
+        onOpenSummary={() => setSummaryOpen((v) => !v)}
       />
 
-      <main className="grid min-h-[520px] lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <section className="min-w-0 p-4 sm:p-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           {isError ? (
-            <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
               {error?.message || 'Ward board refresh failed.'}
             </div>
           ) : null}
@@ -243,23 +248,26 @@ export default function WardBoardPage() {
               description="No operational ward tasks match the current filters."
               icon={ClipboardList}
               fullHeight={false}
-              className="min-h-[360px] rounded-lg border border-dashed border-border bg-card/50"
+              className="m-4 min-h-[360px] rounded-lg border border-dashed border-border bg-card/50"
             />
           ) : (
-            <div className="space-y-3">
-              {orderedPatients.map((patient, index) => {
-                const patientId = patient?.patient_id ?? patient?.id ?? patient?.patient?.id ?? index;
-                return (
-                  <PatientRow
-                    key={patientId}
-                    patient={patient}
-                    expanded={expandedPatientId === patientId}
-                    onToggle={() => handleTogglePatient(patientId)}
-                    onTaskAction={handleTaskAction}
-                    pendingAction={pendingAction}
-                  />
-                );
-              })}
+            <div className="min-w-0">
+              <PatientTableHeader />
+              <div role="list" aria-label="Patient list">
+                {orderedPatients.map((patient, index) => {
+                  const patientId = patient?.patient_id ?? patient?.id ?? patient?.patient?.id ?? index;
+                  return (
+                    <PatientRow
+                      key={patientId}
+                      patient={patient}
+                      expanded={expandedPatientId === patientId}
+                      onToggle={() => handleTogglePatient(patientId)}
+                      onTaskAction={handleTaskAction}
+                      pendingAction={pendingAction}
+                    />
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -271,22 +279,23 @@ export default function WardBoardPage() {
             hasNextPage={Boolean(boardData?.next)}
             hasPrevPage={Boolean(boardData?.previous) || page > 1}
             itemLabel="patients"
-            className={cn('mt-4 px-0', orderedPatients.length === 0 && 'hidden')}
+            className={cn('shrink-0 border-t border-border px-4 py-3', orderedPatients.length === 0 && 'hidden')}
           />
-        </section>
+        </main>
 
-        <WatchlistPanel patients={watchlist} />
-      </main>
+        <WatchlistPanel
+          patients={watchlist}
+          boardData={boardData}
+          className="hidden w-72 shrink-0 overflow-hidden xl:flex xl:flex-col"
+        />
+      </div>
 
       <BoardSummaryDrawer
         open={summaryOpen}
         onOpenChange={setSummaryOpen}
         summary={summary}
-        viewLabel={viewLabel}
-        ward={effectiveWard}
-        search={debouncedSearch.trim()}
-        count={orderedPatients.length}
+        patients={orderedPatients}
       />
-    </PageShell>
+    </div>
   );
 }

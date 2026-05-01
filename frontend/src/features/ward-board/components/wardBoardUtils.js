@@ -7,8 +7,8 @@ export const BOARD_VIEWS = [
 ];
 
 export const DEFAULT_BOARD_VIEW = BOARD_VIEWS[0].value;
-export const DEFAULT_PAGE_SIZE = 20;
-export const PAGE_SIZE_OPTIONS = [10, 20, 30, 50];
+export const DEFAULT_PAGE_SIZE = 25;
+export const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 export const URGENCY_STYLES = {
   critical: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300',
@@ -29,6 +29,7 @@ export const TASK_STATUS_STYLES = {
   escalated: URGENCY_STYLES.critical,
   active: URGENCY_STYLES.moderate,
   pending: URGENCY_STYLES.moderate,
+  open: URGENCY_STYLES.moderate,
   acknowledged: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300',
   completed: URGENCY_STYLES.stable,
   cancelled: 'border-border bg-muted text-muted-foreground',
@@ -67,9 +68,11 @@ export function getBoardSummary(boardData, patients) {
   let critical = 0;
   let pendingResults = 0;
   let dischargeReady = 0;
+  let overdue = 0;
 
   patients.forEach((patient) => {
     openTasks += getPatientTaskCount(patient);
+    overdue += asCount(patient?.overdue_task_count ?? patient?.overdue_tasks);
     if (['critical', 'urgent', 'high'].includes(getPatientUrgency(patient))) {
       critical += 1;
     }
@@ -83,10 +86,11 @@ export function getBoardSummary(boardData, patients) {
     totalPatients: summary.total_patients ?? summary.patients ?? boardData?.count ?? visiblePatients,
     visiblePatients,
     openTasks: summary.open_tasks ?? summary.tasks_open ?? openTasks,
+    overdue: summary.overdue ?? summary.overdue_tasks ?? overdue,
     critical: summary.critical ?? summary.urgent ?? critical,
     pendingResults: summary.pending_results ?? summary.results_pending ?? pendingResults,
-    dischargeReady: summary.discharge_ready ?? summary.discharges ?? dischargeReady,
-    myWork: summary.my_work ?? summary.assigned_to_me ?? 0,
+    dischargeReady: summary.discharge_blockers ?? summary.discharge_ready ?? summary.discharges ?? dischargeReady,
+    myWork: summary.reviews ?? summary.my_work ?? summary.assigned_to_me ?? 0,
     lastUpdated: summary.last_updated ?? boardData?.last_updated ?? boardData?.generated_at,
   };
 }
@@ -111,8 +115,31 @@ export function getWardLabel(patient) {
   return patient?.ward_name ?? patient?.ward?.name ?? patient?.ward_label ?? patient?.unit_name ?? patient?.location;
 }
 
+export function getPatientAge(patient) {
+  return patient?.age ?? patient?.patient?.age ?? null;
+}
+
+export function getPatientSex(patient) {
+  const raw = patient?.sex ?? patient?.gender ?? patient?.patient?.sex ?? patient?.patient?.gender;
+  if (!raw) return null;
+  const s = String(raw).toLowerCase();
+  if (s === 'male' || s === 'm') return 'M';
+  if (s === 'female' || s === 'f') return 'F';
+  return raw;
+}
+
+export function getPatientProblems(patient) {
+  const p = patient?.problem_summary ?? patient?.active_problems ?? patient?.diagnosis ?? patient?.chief_complaint;
+  if (Array.isArray(p)) return p.slice(0, 3).join(', ');
+  return p ?? null;
+}
+
+export function getPatientOwner(patient) {
+  return patient?.owner ?? patient?.attending ?? patient?.primary_doctor ?? patient?.responsible_doctor ?? patient?.doctor_name ?? null;
+}
+
 export function getPatientUrgency(patient) {
-  const supplied = patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.status;
+  const supplied = patient?.urgency ?? patient?.priority ?? patient?.risk_level ?? patient?.risk ?? patient?.status;
   if (supplied) {
     return String(supplied).toLowerCase();
   }
@@ -150,7 +177,11 @@ export function getPatientResults(patient) {
 
 export function getPatientResultCount(patient) {
   const results = getPatientResults(patient);
-  return results.length > 0 ? results.length : asCount(patient?.open_lab_order_count);
+  return results.length > 0 ? results.length : asCount(patient?.pending_results_count ?? patient?.open_lab_order_count);
+}
+
+export function getPatientReviewCount(patient) {
+  return asCount(patient?.reviews_due_count ?? patient?.reviews ?? 0);
 }
 
 export function getPatientDischargeItems(patient) {
@@ -181,6 +212,32 @@ export function getWatchlist(boardData, patients) {
   return patients.filter((patient) => ['critical', 'urgent', 'high'].includes(getPatientUrgency(patient))).slice(0, 6);
 }
 
+export function getOverdueTaskList(boardData, patients) {
+  const supplied = asArray(boardData?.overdue_tasks);
+  if (supplied.length > 0) return supplied;
+  const list = [];
+  patients.forEach((p) => {
+    const tasks = getPatientTasks(p).filter((t) => getTaskStatus(t) === 'overdue');
+    tasks.slice(0, 2).forEach((t) => {
+      list.push({ ...t, _patient_name: getPatientName(p), _bed: getPatientBed(p) });
+    });
+  });
+  return list.slice(0, 7);
+}
+
+export function getAbnormalResults(boardData, patients) {
+  const supplied = asArray(boardData?.abnormal_results);
+  if (supplied.length > 0) return supplied;
+  const list = [];
+  patients.forEach((p) => {
+    const results = getPatientResults(p).filter((r) => r?.is_critical || r?.is_abnormal || r?.flag === 'critical');
+    results.slice(0, 2).forEach((r) => {
+      list.push({ ...r, _bed: getPatientBed(p), _patient_name: getPatientName(p) });
+    });
+  });
+  return list.slice(0, 5);
+}
+
 export function getTaskId(task) {
   return task?.id ?? task?.task_id ?? task?.uuid;
 }
@@ -197,13 +254,25 @@ export function getTaskUrgency(task) {
   return String(task?.urgency ?? task?.priority ?? task?.risk_level ?? getTaskStatus(task)).toLowerCase();
 }
 
+export function getTaskCategory(task) {
+  return task?.category ?? task?.task_category ?? task?.type ?? null;
+}
+
+export function getTaskOwner(task) {
+  return task?.assignee_name ?? task?.assigned_to ?? task?.owner_role ?? task?.owner ?? null;
+}
+
 export function isTerminalTask(task) {
   return ['completed', 'cancelled', 'done', 'closed'].includes(getTaskStatus(task));
 }
 
+export function isAcknowledged(task) {
+  return task?.acknowledged === true || task?.ack === true || Boolean(task?.acknowledged_at);
+}
+
 export function formatTimestamp(value) {
   if (!value) {
-    return 'Not timed';
+    return null;
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -215,6 +284,13 @@ export function formatTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+export function formatTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
 export function patientChronicleHref(patient) {
