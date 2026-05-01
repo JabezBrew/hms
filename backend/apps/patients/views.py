@@ -82,7 +82,11 @@ PATIENT_CHRONICLE_FEATURE = 'patient_chronicle'
 
 def _patient_search_serializer_class(user):
     user_type = getattr(user, 'user_type', None)
-    if user_type == 'patient' or user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES:
+    if (
+        user_type == 'patient'
+        or user_type in CLINICAL_PATIENT_ACCESS_USER_TYPES
+        or user_type in {'admin', 'receptionist'}
+    ):
         return PatientSearchListSerializer
     return PatientDirectorySearchListSerializer
 

@@ -675,7 +675,6 @@ class TestPatientViewSet:
         assert first_page.data.get('page_size') == 2
         assert len(first_page.data.get('results', [])) == 2
         assert first_page.data.get('next') is not None
-        assert 'admission_status' not in first_page.data['results'][0]
 
         second_page = client.get('/api/patients/search/', {
             'query': 'Paged',
@@ -1155,7 +1154,7 @@ class TestPatientViewSet:
         assert str(assigned_patient.id) in ids
         assert str(unassigned_patient.id) not in ids
 
-    def test_facility_admin_patient_search_uses_directory_projection(self, db):
+    def test_facility_admin_patient_search_uses_full_projection(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility
         patient = PatientProfileFactory(
@@ -1170,10 +1169,10 @@ class TestPatientViewSet:
         assert response.status_code == status.HTTP_200_OK
         result = response.data['results'][0]
         assert result['id'] == str(patient.id)
-        assert 'current_ward' not in result
-        assert 'patient_location' not in result
-        assert 'active_clinic_names' not in result
-        assert 'admission_status' not in result
+        assert 'current_ward' in result
+        assert 'patient_location' in result
+        assert 'active_clinic_names' in result
+        assert 'admission_status' in result
 
     @patch('apps.patients.tasks.log_patient_search.delay')
     def test_search_query_count(self, mock_log_task, db):
