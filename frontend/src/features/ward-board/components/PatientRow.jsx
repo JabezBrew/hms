@@ -38,7 +38,7 @@ function DischargeCell({ patient }) {
 
   const styleClass = DISCHARGE_STATUS_STYLES[status] ?? 'border-border bg-muted text-foreground';
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', styleClass)}>
         {status || 'pending'}
       </Badge>
@@ -96,139 +96,137 @@ export function PatientRow({ patient, expanded, onToggle, onTaskAction, pendingA
   const isCritical = ['critical', 'urgent', 'high'].includes(urgency);
 
   return (
-    <article
-      className={cn(
-        'group overflow-hidden border-b border-border last:border-b-0 transition-colors',
-        isCritical ? 'bg-rose-50/30 dark:bg-rose-950/10' : 'bg-card hover:bg-muted/20'
-      )}
-    >
-      <button
-        type="button"
+    <>
+      <tr
+        className={cn(
+          'group cursor-pointer border-b border-border transition-colors last:border-b-0',
+          isCritical ? 'bg-rose-50/30 dark:bg-rose-950/10' : 'bg-card hover:bg-muted/20'
+        )}
         onClick={onToggle}
-        className="grid w-full items-center gap-0 text-left"
-        style={{
-          gridTemplateColumns: 'auto minmax(0,1.8fr) 5.5rem minmax(0,1.2fr) 7rem 7rem 6rem 7rem minmax(0,1fr) 5rem 2.5rem',
-        }}
         aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
       >
-        <div className="flex w-16 shrink-0 flex-col items-start px-3 py-3">
-          <span className="font-mono text-[9px] uppercase text-muted-foreground">Bed</span>
-          <span className="font-mono text-sm font-medium text-foreground">{bed ?? '—'}</span>
-        </div>
-
-        <div className="min-w-0 px-2 py-3">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h2 className="min-w-0 truncate font-display text-base leading-tight text-foreground">{name}</h2>
+        <td className="px-3 py-3 align-middle">
+          <div className="flex flex-col">
+            <span className="font-mono text-[9px] uppercase leading-none text-muted-foreground">Bed</span>
+            <span className="font-mono text-sm font-medium leading-tight text-foreground">{bed ?? '—'}</span>
           </div>
-          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-            {[mrn, age != null ? `${age} Y` : null, sex].filter(Boolean).join(' · ')}
-          </p>
-        </div>
+        </td>
 
-        <div className="px-2 py-3">
+        <td className="px-3 py-3 align-middle">
+          <div className="min-w-0">
+            <p className="truncate font-display text-base leading-tight text-foreground">{name}</p>
+            <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+              {[mrn, age != null ? `${age} Y` : null, sex].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+        </td>
+
+        <td className="px-3 py-3 align-middle">
           <Badge variant="outline" className={cn('font-mono text-[10px] capitalize', urgencyClassName)}>
             {urgency}
           </Badge>
-        </div>
+        </td>
 
-        <div className="min-w-0 px-2 py-3">
-          <p className="truncate text-xs text-foreground">{problems || <span className="text-muted-foreground">—</span>}</p>
-        </div>
+        <td className="px-3 py-3 align-middle">
+          <p className="truncate text-xs text-foreground">
+            {problems ?? <span className="text-muted-foreground">—</span>}
+          </p>
+        </td>
 
-        <div className="px-2 py-3">
+        <td className="px-3 py-3 align-middle">
           <ResultCell patient={patient} />
-        </div>
+        </td>
 
-        <div className="px-2 py-3">
+        <td className="px-3 py-3 align-middle">
           {(patient?.reviews_due_count ?? 0) > 0 ? (
             <Badge variant="outline" className="border-amber-200 bg-amber-50 font-mono text-[10px] text-amber-700">
-              1 due soon
+              Due soon
             </Badge>
           ) : (
             <span className="font-mono text-[11px] text-muted-foreground">—</span>
           )}
-        </div>
+        </td>
 
-        <div className="px-2 py-3">
+        <td className="px-3 py-3 align-middle">
           <TaskCell patient={patient} />
-        </div>
+        </td>
 
-        <div className="px-2 py-3">
+        <td className="px-3 py-3 align-middle">
           <DischargeCell patient={patient} />
-        </div>
+        </td>
 
-        <div className="min-w-0 px-2 py-3">
+        <td className="px-3 py-3 align-middle">
           <p className="truncate font-mono text-[11px] text-foreground">{owner ?? '—'}</p>
-        </div>
+        </td>
 
-        <div className="px-2 py-3">
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {lastEvent ? formatTimestamp(lastEvent) : '—'}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-center px-2 py-3">
-          <ChevronDown
-            className={cn('h-4 w-4 text-muted-foreground transition-transform duration-150', expanded && 'rotate-180')}
-            aria-hidden="true"
-          />
-        </div>
-      </button>
+        <td className="px-3 py-3 align-middle">
+          <div className="flex items-center justify-between gap-1">
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {lastEvent ? formatTimestamp(lastEvent) : '—'}
+            </span>
+            <Link
+              to={patientChronicleHref(patient)}
+              onClick={(e) => e.stopPropagation()}
+              className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+              tabIndex={-1}
+              aria-label={`Open Chronicle for ${name}`}
+            >
+              <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-amber-700" />
+            </Link>
+            <ChevronDown
+              className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150', expanded && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </div>
+        </td>
+      </tr>
 
       {expanded ? (
-        <ExpandedPatientDetailPanel
-          patient={patient}
-          onTaskAction={onTaskAction}
-          pendingAction={pendingAction}
-        />
+        <tr>
+          <td colSpan={10} className="p-0">
+            <ExpandedPatientDetailPanel
+              patient={patient}
+              onTaskAction={onTaskAction}
+              pendingAction={pendingAction}
+            />
+          </td>
+        </tr>
       ) : null}
-
-      {!expanded ? (
-        <div className="flex items-center justify-end border-t border-border/0 px-4 pb-0 pt-0 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true">
-          <Link
-            to={patientChronicleHref(patient)}
-            onClick={(e) => e.stopPropagation()}
-            className="flex h-6 items-center gap-1 rounded px-2 font-mono text-[10px] text-muted-foreground hover:text-amber-700"
-            tabIndex={-1}
-          >
-            Chronicle <ExternalLink className="h-3 w-3" />
-          </Link>
-        </div>
-      ) : null}
-    </article>
+    </>
   );
 }
 
-export function PatientTableHeader() {
-  const cols = [
-    { label: 'Bed', width: 'w-16 shrink-0' },
-    { label: 'Patient', width: 'flex-1 min-w-0' },
-    { label: 'Risk', width: 'w-[5.5rem] shrink-0' },
-    { label: 'Active Problems', width: 'flex-1 min-w-0' },
-    { label: 'Pending Results', width: 'w-28 shrink-0' },
-    { label: 'Reviews', width: 'w-28 shrink-0' },
-    { label: 'Tasks', width: 'w-24 shrink-0' },
-    { label: 'Discharge', width: 'w-28 shrink-0' },
-    { label: 'Owner', width: 'flex-1 min-w-0' },
-    { label: 'Updated', width: 'w-20 shrink-0' },
-    { label: '', width: 'w-10 shrink-0' },
-  ];
+export function PatientTable({ children }) {
   return (
-    <div
-      className="flex items-center border-b border-border bg-muted/40 px-0"
-      role="row"
-      aria-label="Patient table columns"
-    >
-      {cols.map((col) => (
-        <div
-          key={col.label}
-          role="columnheader"
-          className={cn('px-2 py-2 font-mono text-[10px] uppercase tracking-wide text-muted-foreground', col.width)}
-        >
-          {col.label}
-        </div>
-      ))}
-    </div>
+    <table className="w-full min-w-[900px] border-collapse text-left">
+      <colgroup>
+        <col className="w-16" />
+        <col className="w-48" />
+        <col className="w-24" />
+        <col className="w-48" />
+        <col className="w-32" />
+        <col className="w-24" />
+        <col className="w-24" />
+        <col className="w-28" />
+        <col className="w-36" />
+        <col />
+      </colgroup>
+      <thead className="sticky top-0 z-10">
+        <tr className="border-b border-border bg-muted/80 backdrop-blur-sm">
+          {['Bed', 'Patient', 'Risk', 'Active Problems', 'Pending Results', 'Reviews', 'Tasks', 'Discharge', 'Owner', 'Updated'].map((col) => (
+            <th
+              key={col}
+              scope="col"
+              className="px-3 py-2 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              {col}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {children}
+      </tbody>
+    </table>
   );
 }

@@ -17,7 +17,7 @@ import {
   DEFAULT_PAGE_SIZE,
   MetricStrip,
   PatientRow,
-  PatientTableHeader,
+  PatientTable,
   WatchlistPanel,
   BOARD_VIEWS,
   compactParams,
@@ -234,7 +234,7 @@ export default function WardBoardPage() {
       />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <main className="flex min-w-0 flex-1 flex-col overflow-auto">
           {isError ? (
             <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
               {error?.message || 'Ward board refresh failed.'}
@@ -251,24 +251,21 @@ export default function WardBoardPage() {
               className="m-4 min-h-[360px] rounded-lg border border-dashed border-border bg-card/50"
             />
           ) : (
-            <div className="min-w-0">
-              <PatientTableHeader />
-              <div role="list" aria-label="Patient list">
-                {orderedPatients.map((patient, index) => {
-                  const patientId = patient?.patient_id ?? patient?.id ?? patient?.patient?.id ?? index;
-                  return (
-                    <PatientRow
-                      key={patientId}
-                      patient={patient}
-                      expanded={expandedPatientId === patientId}
-                      onToggle={() => handleTogglePatient(patientId)}
-                      onTaskAction={handleTaskAction}
-                      pendingAction={pendingAction}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+            <PatientTable>
+              {orderedPatients.map((patient, index) => {
+                const patientId = patient?.patient_id ?? patient?.id ?? patient?.patient?.id ?? index;
+                return (
+                  <PatientRow
+                    key={patientId}
+                    patient={patient}
+                    expanded={expandedPatientId === patientId}
+                    onToggle={() => handleTogglePatient(patientId)}
+                    onTaskAction={handleTaskAction}
+                    pendingAction={pendingAction}
+                  />
+                );
+              })}
+            </PatientTable>
           )}
 
           <TablePagination
