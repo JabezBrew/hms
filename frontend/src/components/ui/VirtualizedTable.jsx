@@ -197,29 +197,34 @@ export function VirtualizedTable({
             <div
               key={key}
               ref={virtualizer.measureElement}
-              role="row"
-              className={cn("grid border-t border-border/50", resolveRowClassName(row, virtualRow.index))}
+              data-index={virtualRow.index}
+              role="presentation"
               style={{
-                gridTemplateColumns,
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 width: '100%',
                 transform: `translateY(${virtualRow.start - virtualScrollMargin}px)`,
               }}
-              onClick={isRowClickable ? () => onRowClick(row, virtualRow.index) : undefined}
-              onKeyDown={(event) => handleRowKeyDown(event, row, virtualRow.index)}
-              tabIndex={isRowClickable ? 0 : undefined}
             >
-              {columnMetrics.map((column) => (
-                <div
-                  key={column.key}
-                  role="cell"
-                  className={cn("min-w-0 px-3 py-2 text-sm", column.cellClassName)}
-                >
-                  {column.render ? column.render(row, virtualRow.index) : row[column.key]}
-                </div>
-              ))}
+              <div
+                role="row"
+                className={cn("grid border-t border-border/50", resolveRowClassName(row, virtualRow.index))}
+                style={{ gridTemplateColumns }}
+                onClick={isRowClickable ? () => onRowClick(row, virtualRow.index) : undefined}
+                onKeyDown={(event) => handleRowKeyDown(event, row, virtualRow.index)}
+                tabIndex={isRowClickable ? 0 : undefined}
+              >
+                {columnMetrics.map((column) => (
+                  <div
+                    key={column.key}
+                    role="cell"
+                    className={cn("min-w-0 px-3 py-2 text-sm", column.cellClassName)}
+                  >
+                    {column.render ? column.render(row, virtualRow.index) : row[column.key]}
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })}

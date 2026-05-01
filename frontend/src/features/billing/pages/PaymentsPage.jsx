@@ -10,7 +10,6 @@ import Filter from 'lucide-react/dist/esm/icons/funnel.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import { useState, useMemo, useCallback } from 'react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,6 +39,8 @@ const PAYMENT_METHODS = [
   { value: 'insurance', label: 'Insurance' },
 ];
 
+const PAYMENTS_PAGE_SIZE = 20;
+
 export default function PaymentsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -58,7 +59,7 @@ export default function PaymentsPage() {
 
   // Build filters object for API
   const filters = useMemo(() => {
-    const params = { page: currentPage };
+    const params = { page: currentPage, page_size: PAYMENTS_PAGE_SIZE };
     if (debouncedSearch) params.search = debouncedSearch;
     if (paymentMethod && paymentMethod !== 'all') params.payment_method = paymentMethod;
     if (dateFrom) params.date_from = dateFrom;
@@ -228,8 +229,7 @@ export default function PaymentsPage() {
   // Pagination calculations
   const payments = paymentsData?.results || [];
   const totalCount = paymentsData?.count || 0;
-  const pageSize = 20;
-  const totalPages = Math.ceil(totalCount / pageSize);
+  const totalPages = Math.ceil(totalCount / PAYMENTS_PAGE_SIZE);
   const hasNext = !!paymentsData?.next;
   const hasPrev = !!paymentsData?.previous;
 
@@ -394,10 +394,7 @@ export default function PaymentsPage() {
                 columns={columns}
                 className="min-w-[920px]"
                 headerClassName="font-mono text-xs uppercase tracking-wider text-muted-foreground"
-                rowClassName={cn(
-                  "hover:bg-muted/20 transition-colors",
-                  "animate-chronicle-enter"
-                )}
+                rowClassName="hover:bg-muted/20 transition-colors"
               />
             </div>
           )}

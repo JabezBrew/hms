@@ -80,7 +80,33 @@ describe('VirtualizedTable', () => {
       />
     )
 
-    const row = screen.getByText('Visible row').closest('[role="row"]')
-    expect(row).toHaveStyle({ transform: 'translateY(60px)' })
+    const measuredRow = screen.getByText('Visible row').closest('[data-index="0"]')
+    expect(measuredRow).toHaveStyle({ transform: 'translateY(60px)' })
+  })
+
+  it('keeps row styling classes off the measured positioning wrapper', () => {
+    useWindowVirtualizer.mockReturnValue({
+      getVirtualItems: () => [{ index: 0, start: 240 }],
+      getTotalSize: () => 320,
+      measureElement: vi.fn(),
+      options: { scrollMargin: 180 },
+    })
+
+    render(
+      <VirtualizedTable
+        rows={[{ id: 1, name: 'Visible row' }]}
+        columns={[{ key: 'name', header: 'Name' }]}
+        rowKey={(row) => row.id}
+        rowClassName="animate-chronicle-enter hover:bg-muted/20"
+        threshold={1}
+      />
+    )
+
+    const measuredRow = screen.getByText('Visible row').closest('[data-index="0"]')
+    const styledRow = screen.getByText('Visible row').closest('[role="row"]')
+
+    expect(measuredRow).toHaveAttribute('role', 'presentation')
+    expect(measuredRow).not.toHaveClass('animate-chronicle-enter')
+    expect(styledRow).toHaveClass('animate-chronicle-enter')
   })
 })
