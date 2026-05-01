@@ -99,7 +99,7 @@ class WardViewSet(ActionFeatureGateMixin, viewsets.ModelViewSet):
     For high-traffic deployments, consider implementing cache versioning
     or using a cache key that includes a version number stored in Redis.
     """
-    queryset = Ward.objects.prefetch_related('beds').all()
+    queryset = Ward.objects.all()
     serializer_class = WardSerializer
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdminOrOwner]
     action_required_features = {
@@ -123,7 +123,20 @@ class WardViewSet(ActionFeatureGateMixin, viewsets.ModelViewSet):
         if not facility:
             return Ward.objects.none()
 
-        queryset = super().get_queryset().filter(department__facility=facility)
+        queryset = super().get_queryset().select_related('department').filter(
+            department__facility=facility
+        )
+        if self.action == 'list':
+            queryset = queryset.select_related('head_nurse__staff__user').annotate(
+                _available_beds_count=Count(
+                    'beds',
+                    filter=Q(beds__status='available'),
+                ),
+                _occupied_beds_count=Count(
+                    'beds',
+                    filter=Q(beds__status='occupied'),
+                ),
+            )
         search_query = self.request.query_params.get('search', None)
 
         if search_query:
@@ -133,7 +146,7 @@ class WardViewSet(ActionFeatureGateMixin, viewsets.ModelViewSet):
                 models.Q(ward_type__icontains=search_query)
             )
 
-        return queryset
+        return queryset.order_by('name', 'id')
 
     @action(detail=False, methods=['get'])
     def search(self, request):

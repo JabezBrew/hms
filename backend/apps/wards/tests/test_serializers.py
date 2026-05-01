@@ -26,7 +26,7 @@ from .factories import (
     WardFactory, BedFactory, AdmissionFactory, WardSectionFactory,
     BedAmenityFactory, EncounterFactory
 )
-from apps.users.tests.factories import PatientProfileFactory
+from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
 
 
 @pytest.mark.tier1
@@ -60,6 +60,31 @@ class TestWardSerializer:
         assert 'name' in data
         assert 'ward_type' in data
         assert 'is_active' in data
+
+    def test_ward_list_serialization_with_head_nurse(self, db):
+        """Test ward list serialization resolves practitioner user names."""
+        head_nurse = PractitionerProfileFactory(
+            staff__user__first_name='Ama',
+            staff__user__last_name='Mensah'
+        )
+        ward = WardFactory(head_nurse=head_nurse)
+
+        serializer = WardListSerializer(ward)
+        data = serializer.data
+
+        assert data['head_nurse_name'] == 'Ama Mensah'
+
+    def test_ward_list_serialization_uses_annotated_counts(self, db):
+        """Test ward list serialization can use list queryset count annotations."""
+        ward = WardFactory(total_beds=10)
+        ward._available_beds_count = 7
+        ward._occupied_beds_count = 3
+
+        serializer = WardListSerializer(ward)
+        data = serializer.data
+
+        assert data['available_beds_count'] == 7
+        assert data['occupancy_rate'] == 30.0
 
     def test_ward_deserialization_valid(self, db):
         """Test valid ward data deserialization."""

@@ -41,6 +41,26 @@ class TestWardViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['count'] == 3
 
+    def test_list_wards_with_head_nurse(self, admin_client, db):
+        """Test listing wards with assigned head nurses."""
+        head_nurse = PractitionerProfileFactory(
+            staff__user__first_name='Ama',
+            staff__user__last_name='Mensah'
+        )
+        ward = WardFactory(head_nurse=head_nurse, total_beds=3)
+        BedFactory(ward=ward, status='available')
+        BedFactory(ward=ward, status='available')
+        BedFactory(ward=ward, status='occupied')
+
+        response = admin_client.get(f'{BASE_URL}/wards/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        result = response.data['results'][0]
+        assert result['head_nurse_name'] == 'Ama Mensah'
+        assert result['available_beds_count'] == 2
+        assert result['occupancy_rate'] == pytest.approx(100 / 3)
+
     def test_list_wards_filter_by_type(self, admin_client, db):
         """Test filtering wards by type."""
         WardFactory(ward_type='general')

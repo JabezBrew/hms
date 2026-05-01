@@ -438,6 +438,8 @@ class WardListSerializer(serializers.ModelSerializer):
 
     Payload reduction: ~50% (8 fields vs full nested details)
     """
+    available_beds_count = serializers.SerializerMethodField()
+    occupancy_rate = serializers.SerializerMethodField()
     head_nurse_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -448,9 +450,26 @@ class WardListSerializer(serializers.ModelSerializer):
             'head_nurse_name'
         ]
 
+    def get_available_beds_count(self, obj):
+        annotated_count = getattr(obj, '_available_beds_count', None)
+        if annotated_count is not None:
+            return annotated_count
+        return obj.available_beds_count
+
+    def get_occupancy_rate(self, obj):
+        occupied_count = getattr(obj, '_occupied_beds_count', None)
+        if occupied_count is not None:
+            total_beds = obj.total_beds or 0
+            if total_beds == 0:
+                return 0
+            return (occupied_count / total_beds) * 100
+        return obj.occupancy_rate
+
     def get_head_nurse_name(self, obj):
-        if obj.head_nurse and obj.head_nurse.user:
-            return obj.head_nurse.user.get_full_name()
+        staff = getattr(obj.head_nurse, 'staff', None) if obj.head_nurse else None
+        user = getattr(staff, 'user', None) if staff else None
+        if user:
+            return user.get_full_name()
         return None
 
 
