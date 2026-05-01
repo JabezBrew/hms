@@ -626,6 +626,25 @@ class TestPatientViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert 'query or filter is required' in response.data['error'].lower()
 
+    def test_facility_admin_registry_scope_all_can_browse_paginated_registry(self, db):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+
+        patient = PatientProfileFactory(
+            facility=facility,
+            user=PatientUserFactory(first_name='Registry', last_name='Browse', primary_facility=facility),
+        )
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.get('/api/patients/search/', {
+            'registry_scope': 'all',
+            'page_size': 10,
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item['id'] for item in response.data.get('results', [])}
+        assert str(patient.id) in ids
+
     def test_search_supports_pagination_metadata(self, db):
         admin = AdminUserFactory()
         facility = admin.primary_facility

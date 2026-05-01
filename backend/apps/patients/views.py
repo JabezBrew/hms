@@ -575,7 +575,8 @@ class PatientViewSet(viewsets.ViewSet):
         include_total = request.query_params.get('include_total', '').lower() == 'true'
         my_patients = request.query_params.get('my_patients', '').lower() == 'true'
         include_fhir = request.query_params.get('include_fhir', '').lower() == 'true'
-        registry_scope = request.query_params.get('registry_scope', 'all').strip().lower() or 'all'
+        registry_scope_param = request.query_params.get('registry_scope')
+        registry_scope = (registry_scope_param or 'all').strip().lower() or 'all'
 
         ordering_field_map = {
             'created_at': ('created_at',),
@@ -648,10 +649,12 @@ class PatientViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        has_explicit_registry_scope = registry_scope_param is not None
         has_other_filters = bool(
             ward_id or admission_start or admission_end or department_id or admission_status or
             admission_type or encounter_type or attending_id or age_min_value is not None or
-            age_max_value is not None or my_patients or registry_scope != 'all'
+            age_max_value is not None or my_patients or has_explicit_registry_scope or
+            registry_scope != 'all'
         )
 
         user_type = request.user.user_type
