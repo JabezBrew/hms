@@ -137,6 +137,8 @@ class WardViewSet(ActionFeatureGateMixin, viewsets.ModelViewSet):
                     filter=Q(beds__status='occupied'),
                 ),
             )
+        elif self.action in {'retrieve', 'update', 'partial_update'}:
+            queryset = queryset.select_related('head_nurse__staff__user')
         search_query = self.request.query_params.get('search', None)
 
         if search_query:

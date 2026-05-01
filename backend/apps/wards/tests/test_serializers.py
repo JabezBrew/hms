@@ -51,6 +51,28 @@ class TestWardSerializer:
         assert 'available_beds_count' in data
         assert 'occupancy_rate' in data
 
+    def test_ward_serialization_with_head_nurse_details(self, db):
+        """Test ward detail serialization handles practitioner head nurses."""
+        head_nurse = PractitionerProfileFactory(
+            staff__user__first_name='Ama',
+            staff__user__last_name='Mensah',
+            staff__employee_id='HN-001',
+            staff__position='Head Nurse',
+            specialization='Critical Care Nursing',
+            qualification='BSc Nursing',
+        )
+        ward = WardFactory(head_nurse=head_nurse)
+
+        serializer = WardSerializer(ward)
+        data = serializer.data
+
+        assert str(data['head_nurse']) == str(head_nurse.id)
+        assert data['head_nurse_details']['id'] == str(head_nurse.id)
+        assert data['head_nurse_details']['full_name'] == 'Ama Mensah'
+        assert data['head_nurse_details']['employee_id'] == 'HN-001'
+        assert data['head_nurse_details']['position'] == 'Head Nurse'
+        assert data['head_nurse_details']['specialization'] == 'Critical Care Nursing'
+
     def test_ward_list_serialization(self, db):
         """Test ward list serialization is lightweight."""
         ward = WardFactory()

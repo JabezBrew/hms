@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from apps.core.security import ACTIVE_ADMISSION_STATUSES
 from .models import Ward, Bed, Admission, BedAllocationLog, WardTransfer, Encounter, WardSection, BedAmenity, StaffRole, WardStaffAssignment
-from ..users.serializers import PatientProfileSerializer, StaffSerializer, UserSerializer, PractitionerProfileSerializer
+from ..users.models import PractitionerProfile
+from ..users.serializers import PatientProfileSerializer, UserSerializer, PractitionerProfileSerializer
 
 
 # ============================================================================
@@ -145,13 +146,37 @@ class BedAmenitySerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
+class WardHeadNurseDetailsSerializer(serializers.ModelSerializer):
+    """
+    Minimal details for the practitioner assigned as a ward head nurse.
+    """
+    full_name = serializers.SerializerMethodField()
+    staff_id = serializers.UUIDField(source='staff.id', read_only=True)
+    employee_id = serializers.CharField(source='staff.employee_id', read_only=True)
+    position = serializers.CharField(source='staff.position', read_only=True)
+
+    class Meta:
+        model = PractitionerProfile
+        fields = [
+            'id', 'staff_id', 'full_name', 'employee_id',
+            'position', 'specialization', 'qualification'
+        ]
+
+    def get_full_name(self, obj):
+        staff = getattr(obj, 'staff', None)
+        user = getattr(staff, 'user', None) if staff else None
+        if not user:
+            return None
+        return user.get_full_name()
+
+
 class WardSerializer(serializers.ModelSerializer):
     """
     Serializer for the Ward model.
     """
     available_beds_count = serializers.ReadOnlyField()
     occupancy_rate = serializers.ReadOnlyField()
-    head_nurse_details = StaffSerializer(source='head_nurse', read_only=True)
+    head_nurse_details = WardHeadNurseDetailsSerializer(source='head_nurse', read_only=True)
     auto_create_beds = serializers.BooleanField(default=True, write_only=True, required=False,
                                                help_text="Automatically create beds when ward is created")
 

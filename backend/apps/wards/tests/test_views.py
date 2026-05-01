@@ -116,6 +116,25 @@ class TestWardViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['name'] == 'Test Ward'
 
+    def test_retrieve_ward_with_head_nurse(self, admin_client, db):
+        """Test retrieving a ward with an assigned head nurse."""
+        head_nurse = PractitionerProfileFactory(
+            staff__user__first_name='Ama',
+            staff__user__last_name='Mensah',
+            staff__employee_id='HN-001',
+            staff__position='Head Nurse',
+            specialization='Critical Care Nursing',
+        )
+        ward = WardFactory(name='Test Ward', head_nurse=head_nurse)
+
+        response = admin_client.get(f'{BASE_URL}/wards/{ward.id}/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['name'] == 'Test Ward'
+        assert str(response.data['head_nurse']) == str(head_nurse.id)
+        assert response.data['head_nurse_details']['full_name'] == 'Ama Mensah'
+        assert response.data['head_nurse_details']['employee_id'] == 'HN-001'
+
     def test_update_ward(self, admin_client, db):
         """Test updating a ward."""
         ward = WardFactory(name='Old Name')
