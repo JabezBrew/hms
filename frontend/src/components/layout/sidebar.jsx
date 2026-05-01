@@ -335,13 +335,6 @@ const globalSections = [
           icon: Pill,
           exact: true,
         }),
-        item({
-          key: 'pharmacy-supply-queue',
-          label: 'Supply Queue',
-          href: '/pharmacy/supply-queue',
-          icon: ClipboardList,
-          exact: true,
-        }),
       ],
     }),
     item({
@@ -535,7 +528,6 @@ const laboratorySections = [
 const pharmacySections = [
   section('pharmacy', 'Pharmacy', [
     item({ key: 'pharmacy-dispensing', label: 'Dispensing', href: '/pharmacy/dispensing', icon: Pill, roles: ROLE_GROUPS.PHARMACY, features: ['pharmacy'], exact: true }),
-    item({ key: 'pharmacy-supply-queue', label: 'Supply Queue', href: '/pharmacy/supply-queue', icon: ClipboardList, roles: ROLE_GROUPS.PHARMACY, features: ['pharmacy'], exact: true }),
   ]),
 ]
 
