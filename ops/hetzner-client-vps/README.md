@@ -217,6 +217,14 @@ docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/
 Expected healthy services: `db`, `redis`, `frontend`, `api`, `worker`, `beat`,
 and `caddy`.
 
+Network model:
+
+- `edge`: public reverse-proxy path for Caddy, frontend, and API ingress.
+- `egress`: outbound-only internet access for API and worker integrations such
+  as SendGrid.
+- `internal`: isolated database/Redis network. It is marked `internal: true`,
+  so containers attached only to this network cannot reach the internet.
+
 Check the public health endpoint:
 
 ```bash
