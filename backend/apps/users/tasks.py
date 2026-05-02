@@ -1,3 +1,7 @@
+import hashlib
+import logging
+from email.utils import parseaddr
+
 from celery import shared_task
 from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives
@@ -5,8 +9,6 @@ from django.template.loader import render_to_string
 from django.conf import settings
 from django.utils import timezone
 from django.db import models
-import hashlib
-import logging
 
 from apps.core.retry import EMAIL_CONFIG
 from apps.core.cache_utils import facility_cache_key
@@ -22,6 +24,37 @@ from apps.fhir_client.utils import (
 from .models import PractitionerFHIRMapping, PractitionerProfile, User
 
 logger = logging.getLogger(__name__)
+
+
+def _configured_sender_domain():
+    domain = getattr(settings, 'EMAIL_SENDER_DOMAIN', '').strip()
+    if domain:
+        return domain
+
+    _display_name, address = parseaddr(settings.DEFAULT_FROM_EMAIL)
+    if '@' not in address:
+        return ''
+    return address.rsplit('@', 1)[1]
+
+
+def _sender_address(local_part_setting, override_setting):
+    override = getattr(settings, override_setting, '').strip()
+    if override:
+        return override
+
+    local_part = getattr(settings, local_part_setting, '').strip()
+    domain = _configured_sender_domain()
+    if not local_part or not domain:
+        return settings.DEFAULT_FROM_EMAIL
+    return f"{local_part}@{domain}"
+
+
+def _welcome_from_email():
+    return _sender_address('EMAIL_WELCOME_LOCAL_PART', 'WELCOME_FROM_EMAIL')
+
+
+def _security_from_email():
+    return _sender_address('EMAIL_SECURITY_LOCAL_PART', 'SECURITY_FROM_EMAIL')
 
 
 def _send_staff_onboarding_email(
@@ -55,7 +88,7 @@ def _send_staff_onboarding_email(
     email = EmailMultiAlternatives(
         subject='Welcome to HMS - Set Up Your Password',
         body=text_content,
-        from_email=settings.DEFAULT_FROM_EMAIL,
+        from_email=_welcome_from_email(),
         to=[user_email],
     )
     email.attach_alternative(html_content, 'text/html')
@@ -84,7 +117,7 @@ def send_password_reset_email(self, user_id, token, user_email, user_name):
         email = EmailMultiAlternatives(
             subject='Password Reset Request - HMS',
             body=text_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
+            from_email=_security_from_email(),
             to=[user_email],
         )
         email.attach_alternative(html_content, 'text/html')
@@ -155,7 +188,7 @@ def send_admin_force_reset_email(self, user_id, temp_password, user_email, user_
         email = EmailMultiAlternatives(
             subject='Your Password Has Been Reset - HMS',
             body=text_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
+            from_email=_security_from_email(),
             to=[user_email],
         )
         email.attach_alternative(html_content, 'text/html')

@@ -88,6 +88,9 @@ def test_generates_valid_profile_env_files(tmp_path, profile, expected_multi_fac
     assert values['EMAIL_PROVIDER'] == 'unosend'
     assert values['UNOSEND_API_KEY'] == 'CHANGE_ME_unosend_api_key'
     assert values['RESEND_API_KEY'] == ''
+    assert values['EMAIL_SENDER_DOMAIN'] == 'acme.thehms.systems'
+    assert values['EMAIL_WELCOME_LOCAL_PART'] == 'welcome'
+    assert values['EMAIL_SECURITY_LOCAL_PART'] == 'security'
     assert values['BACKUP_RETENTION_DAYS'] == '30'
     assert values['RESTIC_REPOSITORY'].startswith('CHANGE_ME')
 
@@ -106,6 +109,11 @@ def test_preserves_security_values_from_existing_env(tmp_path):
                 'EMAIL_PROVIDER=resend',
                 'UNOSEND_API_KEY=old-unosend-key',
                 'RESEND_API_KEY=old-resend-key',
+                'EMAIL_SENDER_DOMAIN=emailing.acme.thehms.systems',
+                'EMAIL_WELCOME_LOCAL_PART=hello',
+                'EMAIL_SECURITY_LOCAL_PART=accounts',
+                'WELCOME_FROM_EMAIL=hello@emailing.acme.thehms.systems',
+                'SECURITY_FROM_EMAIL=accounts@emailing.acme.thehms.systems',
             ]
         ),
         encoding='utf-8',
@@ -132,6 +140,11 @@ def test_preserves_security_values_from_existing_env(tmp_path):
     assert values['EMAIL_PROVIDER'] == 'resend'
     assert values['UNOSEND_API_KEY'] == 'old-unosend-key'
     assert values['RESEND_API_KEY'] == 'old-resend-key'
+    assert values['EMAIL_SENDER_DOMAIN'] == 'emailing.acme.thehms.systems'
+    assert values['EMAIL_WELCOME_LOCAL_PART'] == 'hello'
+    assert values['EMAIL_SECURITY_LOCAL_PART'] == 'accounts'
+    assert values['WELCOME_FROM_EMAIL'] == 'hello@emailing.acme.thehms.systems'
+    assert values['SECURITY_FROM_EMAIL'] == 'accounts@emailing.acme.thehms.systems'
 
 
 @pytest.mark.parametrize(
