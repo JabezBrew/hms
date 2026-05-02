@@ -185,6 +185,12 @@ FEATURE_MANIFEST = {
         'profile_default': True,
         'api_prefixes': ['/api/charts/', '/api/clinical-notes/'],
     },
+    'problem_list': {
+        'label': 'Problem list',
+        'kind': 'module',
+        'profile_default': True,
+        'api_prefixes': ['/api/problems/'],
+    },
     'audit': {
         'label': 'Audit logs',
         'kind': 'platform',
@@ -315,6 +321,11 @@ FEATURE_CONTRACT = {
         'sellable': True,
         'toggleable': True,
     },
+    'problem_list': {
+        'contract': 'sellable_module',
+        'sellable': True,
+        'toggleable': True,
+    },
 
     # Sellable add-ons
     'outpatient_active_clinic_required': {
@@ -407,6 +418,7 @@ FEATURE_DEPENDENCIES = {
     'pharmacy': ('patient_chronicle',),
     'referrals': ('patient_registration',),
     'clinical_notes': ('patient_chronicle',),
+    'problem_list': ('patient_chronicle',),
     'ai_omni_nl': ('patient_chronicle',),
     'ai_chronicle_copilot': ('patient_chronicle', 'clinical_notes'),
 }

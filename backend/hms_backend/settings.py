@@ -188,6 +188,7 @@ INSTALLED_APPS = [
     'apps.interop.apps.InteropConfig',  # Cross-facility record exchange
     'apps.notifications.apps.NotificationsConfig',
     'apps.ai.apps.AIConfig',
+    'apps.problems.apps.ProblemsConfig',
 ]
 
 if _module_available('apps.ward_board'):

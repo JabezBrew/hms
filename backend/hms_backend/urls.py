@@ -98,6 +98,7 @@ urlpatterns = [
     path('api/consent/', include('apps.consent.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
     path('api/ai/', include('apps.ai.urls')),
+    path('api/problems/', include('apps.problems.urls')),
     path('api/ward-board/', _ward_board_urlconf()),
     path('api/', include('apps.workflows.urls')),
     path('api/', include('apps.dashboards.urls')),

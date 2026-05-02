@@ -44,6 +44,7 @@ import { usePatientInsurance } from "@/features/billing/hooks";
 import { patientsApi } from '@/features/patients/api';
 import { DischargeCasePanel } from "@/features/discharge/components/DischargeCasePanel";
 import ChronicleWorkspaceHost from "@/features/patients/components/ChronicleWorkspaceHost";
+import { ProblemListSidebar } from "@/features/problems";
 import {
   getInitialExpandedEncounterIds,
   getInitialExpandedNoteIds,
@@ -470,7 +471,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Use chronicle context data directly - no more legacy fallback needed
   const medications = chronicleContext?.active_medications || [];
   const parsedAllergies = chronicleContext?.allergies || [];
-  const problems = chronicleContext?.active_problems || [];
 
   // Get latest vitals from context
   const latestVitals = chronicleContext?.latest_vitals;
@@ -1396,21 +1396,28 @@ const PatientChroniclePage = ({ defaultAction }) => {
             ? "lg:mr-[34rem]"
             : isAnySlideOverOpen && "lg:mr-[50%]"
         )}>
-          {/* Clinical Summary Sidebar */}
-          <ClinicalSummarySidebar
-            patient={patient}
-            problems={problems}
-            medications={medications}
-            allergies={allergies}
-            labResults={labResults}
-            onViewVitalsTrends={() => handleViewTrends('vitals')}
-            onViewFluidTrends={() => handleViewTrends('fluids')}
+          {/* Clinical Summary Sidebar — meds/allergies/labs from chronicle context.
+              Problems are sourced from the dedicated Problem List feature
+              (feature_key=problem_list) rendered above. */}
+          <div
             className={cn(
-              "hidden lg:block",
-              isAnySlideOverOpen && "lg:hidden" // Hide sidebar when any panel is open
+              'hidden lg:flex lg:flex-col',
+              isAnySlideOverOpen && 'lg:hidden',
             )}
-          />
-
+          >
+            <div className="w-80 border-r border-border bg-muted/20 p-6">
+              <ProblemListSidebar patientId={id} />
+            </div>
+            <ClinicalSummarySidebar
+              patient={patient}
+              problems={[]}
+              medications={medications}
+              allergies={allergies}
+              labResults={labResults}
+              onViewVitalsTrends={() => handleViewTrends('vitals')}
+              onViewFluidTrends={() => handleViewTrends('fluids')}
+            />
+          </div>
           {/* Timeline Chronicle */}
           <main className="flex-1 p-6 transition-all duration-300">
           <div className="min-w-0 max-w-4xl mx-auto">
