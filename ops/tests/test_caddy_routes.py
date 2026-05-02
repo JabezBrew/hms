@@ -16,3 +16,10 @@ def test_public_admin_routes_are_served_by_spa_not_django_admin():
     assert '/admin/*' not in caddyfile
     assert "path('django-admin/', admin.site.urls)" in urls
     assert "path('admin/', admin.site.urls)" not in urls
+
+
+def test_caddy_disables_http3_until_udp_edge_is_supported():
+    caddyfile = CADDYFILE.read_text(encoding='utf-8')
+
+    assert 'protocols h1 h2' in caddyfile
+    assert 'protocols h1 h2 h3' not in caddyfile
