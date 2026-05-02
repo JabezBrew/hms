@@ -20,7 +20,7 @@ FACILITY_CONTEXT_OPTIONAL_PATH_PREFIXES = (
     '/api/auth/',
     '/api/facilities/',
     '/api/settings/deployment-capabilities/',
-    '/admin/',
+    '/django-admin/',
     '/static/',
     '/media/',
 )
@@ -309,7 +309,7 @@ class OffSiteDetectionMiddleware(MiddlewareMixin):
             return None
 
         # Skip checks for certain endpoints
-        skip_paths = ['/api/auth/', '/admin/', '/static/', '/media/', '/api/users/me/']
+        skip_paths = ['/api/auth/', '/django-admin/', '/static/', '/media/', '/api/users/me/']
         if any(request.path.startswith(path) for path in skip_paths):
             return None
 
@@ -415,7 +415,7 @@ class JWTUserTypeValidationMiddleware(MiddlewareMixin):
 
     def process_request(self, request):
         # Skip validation for certain endpoints
-        skip_paths = ['/api/auth/', '/admin/', '/static/', '/media/']
+        skip_paths = ['/api/auth/', '/django-admin/', '/static/', '/media/']
         if any(request.path.startswith(path) for path in skip_paths):
             return None
 
@@ -482,7 +482,7 @@ class PasswordChangeRequiredMiddleware(MiddlewareMixin):
             '/api/users/users/change_password',
             '/api/users/users/me/',
             '/api/users/sessions/',
-            '/admin/',
+            '/django-admin/',
             '/static/',
             '/media/',
         ]

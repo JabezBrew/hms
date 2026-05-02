@@ -13,7 +13,7 @@
 		-Server
 	}
 
-	@backend path /api/* /admin/* /static/* /media/* /ws/*
+	@backend path /api/* /django-admin/* /static/* /media/* /ws/*
 	reverse_proxy @backend api:8000
 
 	reverse_proxy frontend:80

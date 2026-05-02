@@ -52,7 +52,7 @@ urlpatterns = [
     path('api/health/started/', core_views.health_started, name='health_started'),
     path('api/metrics/', core_views.metrics_view, name='metrics'),
 
-    path('admin/', admin.site.urls),
+    path('django-admin/', admin.site.urls),
 
     # Authentication endpoints
     path('api/auth/login/', LoginView.as_view(), name='login'),
