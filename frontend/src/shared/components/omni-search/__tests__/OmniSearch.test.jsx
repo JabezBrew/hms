@@ -338,6 +338,104 @@ describe('Omni Search', () => {
     })
   })
 
+  it('shows patient identifiers and confirms duplicate-name selections', async () => {
+    const user = userEvent.setup()
+    useAuth.mockReturnValue({
+      user: { id: 'u1', role: 'doctor' },
+      facilityCode: 'TEST',
+    })
+
+    server.use(
+      http.get('/api/search/omni/', ({ request }) => {
+        const url = new URL(request.url)
+        const q = (url.searchParams.get('q') || '').trim()
+        if (!q) {
+          return HttpResponse.json({
+            query: q,
+            types: [],
+            limit: 8,
+            groups: {
+              recent_patients: [],
+              patients: [],
+              wards: [],
+              encounters: [],
+              appointments: [],
+              admissions: [],
+              staff: [],
+            },
+          })
+        }
+
+        return HttpResponse.json({
+          query: q,
+          types: ['patients'],
+          limit: 8,
+          groups: {
+            recent_patients: [],
+            patients: [
+              {
+                id: 'p1',
+                medical_record_number: 'A1042',
+                name: 'John Mensah',
+                date_of_birth: '1984-03-12',
+                gender: 'M',
+                created_at: new Date().toISOString(),
+                current_ward: 'Surgical Ward',
+                admission_status: 'admitted',
+                admission_date: null,
+                match_reason: 'name_token',
+              },
+              {
+                id: 'p2',
+                medical_record_number: 'B2042',
+                name: 'John Mensah',
+                date_of_birth: '1991-08-04',
+                gender: 'M',
+                created_at: new Date().toISOString(),
+                current_ward: 'OPD',
+                admission_status: null,
+                admission_date: null,
+                match_reason: 'name_token',
+              },
+            ],
+            wards: [],
+            encounters: [],
+            appointments: [],
+            admissions: [],
+            staff: [],
+          },
+        })
+      })
+    )
+
+    renderWithProviders(
+      <OmniSearchProvider>
+        <LocationDisplay />
+      </OmniSearchProvider>
+    )
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('Type a command or search...')
+    await user.type(input, '# john')
+
+    await waitFor(() => {
+      expect(screen.getAllByText('John Mensah')).toHaveLength(2)
+    })
+    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward/)).toBeInTheDocument()
+    expect(screen.getAllByText('2 same-name matches')).toHaveLength(2)
+
+    await user.click(screen.getAllByText('John Mensah')[0])
+
+    expect(await screen.findByText('Confirm Patient Identity')).toBeInTheDocument()
+    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/patients/p1')
+    })
+  })
+
   it('stores only static routes in recent pages', async () => {
     const user = userEvent.setup()
     useAuth.mockReturnValue({

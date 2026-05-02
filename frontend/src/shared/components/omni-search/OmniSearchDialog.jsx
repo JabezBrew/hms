@@ -259,6 +259,76 @@ function confidenceLabel(band) {
   return 'Needs Review'
 }
 
+function normalizeNameKey(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function buildPatientNameCounts(patients) {
+  const counts = new Map()
+  for (const patient of patients || []) {
+    const key = normalizeNameKey(patient?.name)
+    if (!key) continue
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  return counts
+}
+
+function formatPatientDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toISOString().slice(0, 10)
+}
+
+function formatPatientGender(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const lower = raw.toLowerCase()
+  if (lower === 'm' || lower === 'male') return 'Male'
+  if (lower === 'f' || lower === 'female') return 'Female'
+  return raw
+}
+
+function getPatientDuplicateCount(patient, nameCounts) {
+  const key = normalizeNameKey(patient?.name)
+  if (!key) return 0
+  return nameCounts.get(key) || 0
+}
+
+function buildPatientIdentityParts(patient) {
+  const mrn = patient?.medical_record_number ? `MRN ${patient.medical_record_number}` : null
+  const dob = formatPatientDate(patient?.date_of_birth)
+  const gender = formatPatientGender(patient?.gender)
+  const ward = patient?.current_ward || patient?.patient_location
+  const admissionStatus = patient?.admission_status
+
+  return [
+    mrn,
+    dob ? `DOB ${dob}` : null,
+    gender,
+    ward,
+    admissionStatus && !ward ? admissionStatus : null,
+  ].filter(Boolean)
+}
+
+function buildPatientIdentityWarnings(patient, duplicateCount) {
+  const warnings = []
+  if (duplicateCount > 1) warnings.push(`${duplicateCount} same-name matches`)
+  if (!patient?.medical_record_number || !patient?.date_of_birth) {
+    warnings.push('Identity needs verification')
+  }
+  if (patient?.match_reason === 'name_fuzzy') warnings.push('Fuzzy match')
+  return warnings
+}
+
+function shouldConfirmPatientSelection(patient, { action, duplicateCount }) {
+  if (!patient?.id) return false
+  if (duplicateCount > 1) return true
+  if (!patient?.medical_record_number || !patient?.date_of_birth) return true
+  if (patient?.match_reason === 'name_fuzzy') return true
+  return Boolean(action && patient?.match_reason && !['id_exact', 'id_prefix'].includes(patient.match_reason))
+}
+
 export function OmniSearchDialog() {
   const inputRef = React.useRef(null)
   const navigate = useNavigate()
@@ -404,6 +474,11 @@ export function OmniSearchDialog() {
     }
   }, [closeConfirmation, navigate, pendingExecution?.href])
 
+  const patientNameCounts = React.useMemo(
+    () => buildPatientNameCounts([...(groups.recent_patients || []), ...(groups.patients || [])]),
+    [groups.patients, groups.recent_patients]
+  )
+
   const handleRunAiPreview = React.useCallback(async () => {
     if (!serverQuery || serverQuery.length < 2) return
     if (aiIntentFallback) {
@@ -499,12 +574,13 @@ export function OmniSearchDialog() {
 
   const renderPatientItem = (patient, { action } = {}) => {
     const name = patient?.name || 'Patient'
-    const mrn = patient?.medical_record_number
-    const ward = patient?.current_ward
     const id = patient?.id
     if (!id) return null
 
     const destination = action ? `/patients/${id}?action=${action}` : `/patients/${id}`
+    const duplicateCount = getPatientDuplicateCount(patient, patientNameCounts)
+    const identityParts = buildPatientIdentityParts(patient)
+    const identityWarnings = buildPatientIdentityWarnings(patient, duplicateCount)
     const actionLabel =
       action === 'add_note'
         ? 'Note'
@@ -519,24 +595,52 @@ export function OmniSearchDialog() {
     return (
       <CommandItem
         key={`patient:${id}:${action || 'view'}`}
-        value={`${name} ${mrn || ''}`.trim()}
-        onSelect={() => onSelectAndClose(destination)}
+        value={`${name} ${patient?.medical_record_number || ''} ${patient?.date_of_birth || ''}`.trim()}
+        onSelect={() => {
+          if (shouldConfirmPatientSelection(patient, { action, duplicateCount })) {
+            setOpen(false)
+            setPendingExecution({
+              kind: 'patient_identity',
+              href: destination,
+              patient,
+              actionLabel,
+              duplicateCount,
+              identityParts,
+              identityWarnings,
+            })
+            setConfirmOpen(true)
+            return
+          }
+          onSelectAndClose(destination)
+        }}
         className={COMMAND_ITEM_CLASSNAME}
       >
         <div className="flex min-w-0 items-start gap-3">
           <LeadingIcon Icon={UserRound} tone="sky" />
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="truncate font-display text-base text-foreground">{name}</span>
               {actionLabel && (
                 <span className="shrink-0 rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
                   {actionLabel}
                 </span>
               )}
+              {identityWarnings.map((warning) => (
+                <span
+                  key={`${id}:${warning}`}
+                  className={cn(
+                    "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                    warning === 'Fuzzy match'
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-rose-200 bg-rose-50 text-rose-700"
+                  )}
+                >
+                  {warning}
+                </span>
+              ))}
             </div>
-            <div className="truncate font-mono text-[10px] text-muted-foreground">
-              {mrn ? `MRN ${mrn}` : 'MRN unavailable'}
-              {ward ? `  ·  ${ward}` : ''}
+            <div className="break-words font-mono text-[10px] text-muted-foreground">
+              {identityParts.length > 0 ? identityParts.join('  ·  ') : 'No verified identifiers available'}
             </div>
           </div>
         </div>
@@ -1074,36 +1178,75 @@ export function OmniSearchDialog() {
         <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display text-xl">
-              Confirm Sensitive Action
+              {pendingExecution?.kind === 'patient_identity' ? 'Confirm Patient Identity' : 'Confirm Sensitive Action'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              AI command preview indicates this navigation requires confirmation.
+              {pendingExecution?.kind === 'patient_identity'
+                ? 'Verify the identifiers before opening this chart.'
+                : 'AI command preview indicates this navigation requires confirmation.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="rounded-lg border bg-muted/40 p-4">
-            <div className="flex items-center gap-2 text-sm">
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 font-mono text-[10px]",
-                  confidenceClass(pendingExecution?.confidenceBand)
+          {pendingExecution?.kind === 'patient_identity' ? (
+            <div className="rounded-lg border bg-muted/40 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-display text-lg text-foreground">
+                  {pendingExecution?.patient?.name || 'Patient'}
+                </span>
+                {pendingExecution?.actionLabel && (
+                  <span className="rounded-full border border-[oklch(0.75_0.18_55_/_0.25)] bg-[oklch(0.75_0.18_55_/_0.10)] px-2 py-0.5 font-mono text-[10px] text-[oklch(0.75_0.18_55)]">
+                    {pendingExecution.actionLabel}
+                  </span>
                 )}
-              >
-                {confidenceLabel(pendingExecution?.confidenceBand)}
-              </span>
-              <span className="font-heading font-semibold text-foreground">
-                {formatIntentLabel(pendingExecution?.intent?.intent_type)}
-              </span>
-            </div>
-            <div className="mt-2 font-mono text-xs text-muted-foreground">
-              {pendingExecution?.href}
-            </div>
-            {(pendingExecution?.preview?.denial_reasons || []).length > 0 && (
-              <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 p-2 font-mono text-xs text-rose-700">
-                {(pendingExecution?.preview?.denial_reasons || [])[0]}
               </div>
-            )}
-          </div>
+              <div className="mt-2 break-words font-mono text-xs text-muted-foreground">
+                {(pendingExecution?.identityParts || []).length > 0
+                  ? pendingExecution.identityParts.join('  ·  ')
+                  : 'No verified identifiers available'}
+              </div>
+              {(pendingExecution?.identityWarnings || []).length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {pendingExecution.identityWarnings.map((warning) => (
+                    <span
+                      key={`confirm:${warning}`}
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                        warning === 'Fuzzy match'
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-rose-200 bg-rose-50 text-rose-700"
+                      )}
+                    >
+                      {warning}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border bg-muted/40 p-4">
+              <div className="flex items-center gap-2 text-sm">
+                <span
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                    confidenceClass(pendingExecution?.confidenceBand)
+                  )}
+                >
+                  {confidenceLabel(pendingExecution?.confidenceBand)}
+                </span>
+                <span className="font-heading font-semibold text-foreground">
+                  {formatIntentLabel(pendingExecution?.intent?.intent_type)}
+                </span>
+              </div>
+              <div className="mt-2 font-mono text-xs text-muted-foreground">
+                {pendingExecution?.href}
+              </div>
+              {(pendingExecution?.preview?.denial_reasons || []).length > 0 && (
+                <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 p-2 font-mono text-xs text-rose-700">
+                  {(pendingExecution?.preview?.denial_reasons || [])[0]}
+                </div>
+              )}
+            </div>
+          )}
 
           <AlertDialogFooter>
             <AlertDialogCancel onClick={closeConfirmation}>Cancel</AlertDialogCancel>
