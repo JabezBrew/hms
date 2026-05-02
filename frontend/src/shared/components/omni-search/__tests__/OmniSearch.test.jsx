@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
@@ -60,6 +60,19 @@ function renderWithProviders(ui, { route = '/' } = {}) {
 }
 
 describe('Omni Search', () => {
+  beforeEach(() => {
+    server.use(
+      http.get('/api/settings/deployment-capabilities/', () =>
+        HttpResponse.json({
+          deployment_profile: 'hospital',
+          facility_code: 'TEST',
+          features: { ai_omni_nl: false },
+          capabilities: {},
+        })
+      )
+    )
+  })
+
   it('toggles open with Ctrl+K and closes with Esc (clears query)', async () => {
     const user = userEvent.setup()
     useAuth.mockReturnValue({
@@ -479,5 +492,69 @@ describe('Omni Search', () => {
       const recents = safeStorage.getJSON('omni_recent_pages', [])
       expect(recents.some((p) => p.path === '/patients/123')).toBe(false)
     })
+  })
+
+  it('does not call AI omni parse when the feature is disabled', async () => {
+    const user = userEvent.setup()
+    useAuth.mockReturnValue({
+      user: { id: 'u1', role: 'doctor' },
+      facilityCode: 'TEST',
+    })
+
+    const parseRequests = []
+    server.use(
+      http.get('/api/search/omni/', ({ request }) => {
+        const url = new URL(request.url)
+        const q = (url.searchParams.get('q') || '').trim()
+        return HttpResponse.json({
+          query: q,
+          types: ['patients'],
+          limit: 8,
+          groups: {
+            recent_patients: [],
+            patients: q
+              ? [
+                  {
+                    id: 'p1',
+                    medical_record_number: 'MRN1',
+                    name: 'John Doe',
+                    date_of_birth: '1990-01-01',
+                    gender: 'M',
+                    created_at: new Date().toISOString(),
+                    current_ward: null,
+                    admission_status: null,
+                    admission_date: null,
+                  },
+                ]
+              : [],
+            wards: [],
+            encounters: [],
+            appointments: [],
+            admissions: [],
+            staff: [],
+          },
+        })
+      }),
+      http.post('/api/ai/omni/parse/', ({ request }) => {
+        parseRequests.push(request)
+        return HttpResponse.json({ detail: 'Unexpected AI parse call' }, { status: 500 })
+      })
+    )
+
+    renderWithProviders(
+      <OmniSearchProvider>
+        <div />
+      </OmniSearchProvider>
+    )
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('Type a command or search...')
+    await user.type(input, 'john')
+
+    await waitFor(() => {
+      expect(screen.getByText('John Doe')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('AI Intent Preview')).not.toBeInTheDocument()
+    expect(parseRequests).toHaveLength(0)
   })
 })

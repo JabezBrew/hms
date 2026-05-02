@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { useSystemCapabilities } from '@/hooks/useSystemQueries'
 import { ROLE_GROUPS, ROLES } from '@/shared/constants/roles'
 import {
   buildOmniTargetHref,
@@ -342,6 +343,8 @@ export function OmniSearchDialog() {
   const [rawQuery, setRawQuery] = React.useState('')
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [pendingExecution, setPendingExecution] = React.useState(null)
+  const { data: deploymentCapabilities } = useSystemCapabilities({ enabled: Boolean(user && open) })
+  const aiOmniEnabled = deploymentCapabilities?.features?.ai_omni_nl === true
 
   const parsed = React.useMemo(
     () => parseQuery(rawQuery, { isAdmin, isClinical }),
@@ -400,7 +403,7 @@ export function OmniSearchDialog() {
   })
 
   const groups = data?.groups || EMPTY_GROUPS
-  const aiIntentEnabled = serverEnabled && !isDebouncing && mode === 'all'
+  const aiIntentEnabled = aiOmniEnabled && serverEnabled && !isDebouncing && mode === 'all'
   const {
     data: aiIntentData,
     isLoading: isAiIntentLoading,
@@ -651,7 +654,7 @@ export function OmniSearchDialog() {
   const hasQuery = rawQuery.trim().length > 0
   const serverQueryReady = effectiveQuery.length === 0 || effectiveQuery.length >= 2
   const isSearching = isLoading || isDebouncing
-  const showAiIntentPreview = hasQuery && mode === 'all' && serverEnabled && serverQueryReady && serverQuery.length >= 2
+  const showAiIntentPreview = aiOmniEnabled && hasQuery && mode === 'all' && serverEnabled && serverQueryReady && serverQuery.length >= 2
   const aiIntentDisabled = aiIntentFallback || aiIntentBlocked || executePreviewMutation.isPending
   const hasAiIntentContent =
     showAiIntentPreview && (isAiIntentLoading || isAiIntentError || Boolean(aiIntentResult))
