@@ -25,6 +25,7 @@ def test_patient_search_list_serializer_inpatient_location_and_status(db):
 
     data = PatientSearchListSerializer(patient).data
     assert data['current_ward'] == 'Medical Ward'
+    assert data['bed_number'] == bed.bed_number
     assert data['patient_location'] == 'Medical Ward'
     assert data['admission_status'] == 'admitted'
     assert data['registry_status'] == 'admitted'

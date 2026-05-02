@@ -19,7 +19,7 @@ from apps.users.tests.factories import (
     PractitionerProfileFactory,
     StaffFactory,
 )
-from apps.wards.tests.factories import WardFactory, AdmissionFactory
+from apps.wards.tests.factories import BedFactory, WardFactory, AdmissionFactory
 from apps.encounters.tests.factories import EncounterFactory
 from apps.billing.tests.factories import InvoiceFactory
 
@@ -241,7 +241,9 @@ def test_omni_facility_admin_patient_results_use_directory_projection(default_fa
         user__last_name="Directory",
         user__primary_facility=default_facility,
     )
-    AdmissionFactory(patient=patient, facility=default_facility)
+    ward = WardFactory(department__facility=default_facility, name="Medical Ward")
+    bed = BedFactory(ward=ward, facility=default_facility, bed_number="B-12")
+    AdmissionFactory(patient=patient, facility=default_facility, bed=bed)
 
     client = _auth_client(admin, facility=default_facility)
     response = client.get("/api/search/omni/", {"q": "Alpha", "types": "patients"})
@@ -249,8 +251,10 @@ def test_omni_facility_admin_patient_results_use_directory_projection(default_fa
     assert response.status_code == status.HTTP_200_OK
     result = response.data["groups"]["patients"][0]
     assert result["id"] == str(patient.id)
-    assert "current_ward" not in result
-    assert "admission_status" not in result
+    assert result["current_ward"] == "Medical Ward"
+    assert result["patient_location"] == "Medical Ward"
+    assert result["bed_number"] == "B-12"
+    assert result["admission_status"] == "admitted"
 
 
 @pytest.mark.django_db

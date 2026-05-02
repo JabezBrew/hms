@@ -401,6 +401,7 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
     gender = serializers.CharField(source='user.gender', read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     current_ward = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
     patient_location = serializers.SerializerMethodField()
     active_clinic_names = serializers.SerializerMethodField()
     admission_status = serializers.SerializerMethodField()
@@ -417,6 +418,7 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
             'gender',
             'created_at',
             'current_ward',
+            'bed_number',
             'patient_location',
             'active_clinic_names',
             'admission_status',
@@ -504,6 +506,12 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
                 return admission.bed.ward.name
             return "Admitted (No Bed)"
         return None
+
+    def get_bed_number(self, obj):
+        """Get active bed number from prefetched active_admissions_list."""
+        admission = self._get_active_admission(obj)
+        bed = getattr(admission, 'bed', None) if admission else None
+        return getattr(bed, 'bed_number', None) if bed else None
 
     def get_patient_location(self, obj):
         """
@@ -594,12 +602,17 @@ class PatientSearchListSerializer(serializers.ModelSerializer):
 class PatientDirectorySearchListSerializer(serializers.ModelSerializer):
     """
     Minimal patient directory projection for broad non-clinical search surfaces.
-    Excludes ward, admission, clinic, and registry-state details.
+    Includes current inpatient placement for same-name disambiguation, but
+    excludes clinic lists and detailed clinical state.
     """
     name = serializers.SerializerMethodField()
     date_of_birth = serializers.DateField(source='user.date_of_birth', read_only=True)
     gender = serializers.CharField(source='user.gender', read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
+    current_ward = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
+    patient_location = serializers.SerializerMethodField()
+    admission_status = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientProfile
@@ -610,10 +623,44 @@ class PatientDirectorySearchListSerializer(serializers.ModelSerializer):
             'date_of_birth',
             'gender',
             'created_at',
+            'current_ward',
+            'bed_number',
+            'patient_location',
+            'admission_status',
         ]
 
     def get_name(self, obj):
         return obj.user.get_full_name()
+
+    def _get_active_admission(self, obj):
+        if hasattr(obj, 'active_admissions_list'):
+            return obj.active_admissions_list[0] if obj.active_admissions_list else None
+        if hasattr(obj, '_prefetched_objects_cache') and 'admissions' in obj._prefetched_objects_cache:
+            return next(
+                (a for a in obj.admissions.all() if a.status in ACTIVE_ADMISSION_STATUSES),
+                None
+            )
+        return obj.admissions.filter(status__in=ACTIVE_ADMISSION_STATUSES).select_related('bed', 'bed__ward').first()
+
+    def get_current_ward(self, obj):
+        admission = self._get_active_admission(obj)
+        if not admission:
+            return None
+        if admission.bed:
+            return admission.bed.ward.name
+        return "Admitted (No Bed)"
+
+    def get_bed_number(self, obj):
+        admission = self._get_active_admission(obj)
+        bed = getattr(admission, 'bed', None) if admission else None
+        return getattr(bed, 'bed_number', None) if bed else None
+
+    def get_patient_location(self, obj):
+        return self.get_current_ward(obj)
+
+    def get_admission_status(self, obj):
+        admission = self._get_active_admission(obj)
+        return admission.status if admission else None
 
 
 class PractitionerFHIRMappingListSerializer(serializers.ModelSerializer):

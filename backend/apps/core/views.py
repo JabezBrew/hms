@@ -584,6 +584,7 @@ def _allowed_omni_types_for_user(user):
 def _get_patient_base_queryset(user, facility):
     from apps.users.models import PatientProfile
     from apps.core.security import ACTIVE_ADMISSION_STATUSES
+    from apps.encounters.models import Encounter
     from apps.wards.models import Admission
 
     qs = PatientProfile.objects.select_related('user').filter(facility=facility)
@@ -599,6 +600,14 @@ def _get_patient_base_queryset(user, facility):
                 status__in=ACTIVE_ADMISSION_STATUSES,
             ).select_related('bed', 'bed__ward').order_by('-admission_date'),
             to_attr='active_admissions_list',
+        ),
+        Prefetch(
+            'encounters',
+            queryset=Encounter.objects.filter(
+                facility=facility,
+                status__in=['planned', 'in-progress'],
+            ).select_related('clinic', 'outpatient_visit').order_by('-start_time', '-id'),
+            to_attr='active_encounters_list',
         )
     )
 
@@ -606,6 +615,7 @@ def _get_patient_base_queryset(user, facility):
 def _get_recent_patients_queryset(user, facility, *, limit):
     from apps.patients.models import RecentPatient
     from apps.core.security import ACTIVE_ADMISSION_STATUSES
+    from apps.encounters.models import Encounter
     from apps.wards.models import Admission
 
     return RecentPatient.objects.filter(
@@ -622,6 +632,14 @@ def _get_recent_patients_queryset(user, facility, *, limit):
                 status__in=ACTIVE_ADMISSION_STATUSES,
             ).select_related('bed', 'bed__ward').order_by('-admission_date'),
             to_attr='active_admissions_list',
+        ),
+        Prefetch(
+            'patient_profile__encounters',
+            queryset=Encounter.objects.filter(
+                facility=facility,
+                status__in=['planned', 'in-progress'],
+            ).select_related('clinic', 'outpatient_visit').order_by('-start_time', '-id'),
+            to_attr='active_encounters_list',
         )
     ).order_by('-access_date')[:limit]
 
@@ -692,6 +710,7 @@ def omni_search(request):
             )
             created_at = serializers.DateTimeField(source='patient_profile.created_at', read_only=True)
             current_ward = serializers.SerializerMethodField()
+            bed_number = serializers.SerializerMethodField()
             admission_status = serializers.SerializerMethodField()
             admission_date = serializers.SerializerMethodField()
             last_accessed_at = serializers.DateTimeField(source='access_date', read_only=True)
@@ -716,6 +735,11 @@ def omni_search(request):
                 if admission.bed and admission.bed.ward:
                     return admission.bed.ward.name
                 return "Admitted (No Bed)"
+
+            def get_bed_number(self, obj):
+                admission = self._get_active_admission(obj)
+                bed = getattr(admission, 'bed', None) if admission else None
+                return getattr(bed, 'bed_number', None) if bed else None
 
             def get_admission_status(self, obj):
                 admission = self._get_active_admission(obj)

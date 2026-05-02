@@ -394,6 +394,8 @@ describe('Omni Search', () => {
                 gender: 'M',
                 created_at: new Date().toISOString(),
                 current_ward: 'Surgical Ward',
+                bed_number: 'B-12',
+                patient_location: 'Surgical Ward',
                 admission_status: 'admitted',
                 admission_date: null,
                 match_reason: 'name_token',
@@ -405,7 +407,9 @@ describe('Omni Search', () => {
                 date_of_birth: '1991-08-04',
                 gender: 'M',
                 created_at: new Date().toISOString(),
-                current_ward: 'OPD',
+                current_ward: null,
+                bed_number: null,
+                patient_location: null,
                 admission_status: null,
                 admission_date: null,
                 match_reason: 'name_token',
@@ -434,13 +438,14 @@ describe('Omni Search', () => {
     await waitFor(() => {
       expect(screen.getAllByText('John Mensah')).toHaveLength(2)
     })
-    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward/)).toBeInTheDocument()
+    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward.*Bed B-12/)).toBeInTheDocument()
+    expect(screen.getByText(/MRN B2042.*DOB 1991-08-04.*Male.*Not currently admitted/)).toBeInTheDocument()
     expect(screen.getAllByText('2 same-name matches')).toHaveLength(2)
 
     await user.click(screen.getAllByText('John Mensah')[0])
 
     expect(await screen.findByText('Confirm Patient Identity')).toBeInTheDocument()
-    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward/)).toBeInTheDocument()
+    expect(screen.getByText(/MRN A1042.*DOB 1984-03-12.*Male.*Surgical Ward.*Bed B-12/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 

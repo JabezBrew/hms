@@ -290,6 +290,29 @@ function formatPatientGender(value) {
   return raw
 }
 
+function formatPatientStatus(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  return raw
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function getPatientLocationLabel(patient) {
+  const ward = patient?.current_ward || null
+  const bedNumber = patient?.bed_number || patient?.current_bed || null
+  const patientLocation = patient?.patient_location || null
+  const admissionStatus = formatPatientStatus(patient?.admission_status)
+
+  if (ward && bedNumber) return `${ward} · Bed ${bedNumber}`
+  if (ward) return ward
+  if (patientLocation) return patientLocation
+  if (admissionStatus) return admissionStatus
+  return 'Not currently admitted'
+}
+
 function getPatientDuplicateCount(patient, nameCounts) {
   const key = normalizeNameKey(patient?.name)
   if (!key) return 0
@@ -300,15 +323,13 @@ function buildPatientIdentityParts(patient) {
   const mrn = patient?.medical_record_number ? `MRN ${patient.medical_record_number}` : null
   const dob = formatPatientDate(patient?.date_of_birth)
   const gender = formatPatientGender(patient?.gender)
-  const ward = patient?.current_ward || patient?.patient_location
-  const admissionStatus = patient?.admission_status
+  const location = getPatientLocationLabel(patient)
 
   return [
     mrn,
     dob ? `DOB ${dob}` : null,
     gender,
-    ward,
-    admissionStatus && !ward ? admissionStatus : null,
+    location,
   ].filter(Boolean)
 }
 
