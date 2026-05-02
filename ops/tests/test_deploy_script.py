@@ -30,3 +30,14 @@ def test_deploy_script_shell_syntax_is_valid():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_deploy_script_recreates_caddy_after_starting_services():
+    script = DEPLOY_SCRIPT.read_text(encoding='utf-8')
+
+    start_index = script.index("step 'Starting application services'")
+    caddy_index = script.index("compose up -d --no-deps --force-recreate caddy")
+    health_index = script.index("step 'Checking public readiness endpoint'")
+
+    assert start_index < caddy_index < health_index
+    assert 'wait_for_service caddy "$HEALTH_TIMEOUT"' in script

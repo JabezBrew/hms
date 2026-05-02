@@ -196,6 +196,11 @@ compose run --rm api python /app/run_migrations.py
 
 step 'Starting application services'
 compose up -d
+
+step 'Refreshing edge proxy'
+compose up -d --no-deps --force-recreate caddy
+wait_for_service caddy "$HEALTH_TIMEOUT"
+
 wait_for_service frontend "$HEALTH_TIMEOUT"
 wait_for_service api "$HEALTH_TIMEOUT"
 
