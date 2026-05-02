@@ -3,7 +3,7 @@ Tests for appointments app models.
 
 Tests cover:
 - AppointmentType model (creation, validation, string representation)
-- RecurringSchedule model (creation, days_of_week, breaks)
+- PractitionerAvailabilityRule model (creation, days_of_week, breaks)
 - BlockedTime model (creation, all-day blocking)
 - RecurringAppointmentRule model (recurrence patterns)
 - ScheduleFHIRMapping model
@@ -14,12 +14,12 @@ from datetime import time, date, timedelta
 
 from apps.appointments.models import (
     AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
-    ScheduleFHIRMapping, RecurringSchedule, BlockedTime
+    ScheduleFHIRMapping, PractitionerAvailabilityRule, BlockedTime
 )
 from .factories import (
     AppointmentTypeFactory, AppointmentFHIRMappingFactory,
     RecurringAppointmentRuleFactory, ScheduleFHIRMappingFactory,
-    RecurringScheduleFactory, BlockedTimeFactory
+    PractitionerAvailabilityRuleFactory, BlockedTimeFactory
 )
 from apps.users.tests.factories import PractitionerProfileFactory
 
@@ -59,13 +59,13 @@ class TestAppointmentTypeModel:
 
 
 @pytest.mark.tier1
-class TestRecurringScheduleModel:
-    """Tests for the RecurringSchedule model."""
+class TestPractitionerAvailabilityRuleModel:
+    """Tests for the PractitionerAvailabilityRule model."""
 
-    def test_create_recurring_schedule(self, db):
-        """Test basic recurring schedule creation."""
+    def test_create_personal_calendar(self, db):
+        """Test basic personal calendar rule creation."""
         practitioner = PractitionerProfileFactory()
-        schedule = RecurringScheduleFactory(
+        schedule = PractitionerAvailabilityRuleFactory(
             name='Morning Clinic',
             practitioner=practitioner,
             days_of_week=[0, 1, 2, 3, 4],  # Mon-Fri
@@ -78,14 +78,14 @@ class TestRecurringScheduleModel:
         assert schedule.days_of_week == [0, 1, 2, 3, 4]
         assert schedule.slot_duration == 30
 
-    def test_recurring_schedule_str(self, db):
-        """Test recurring schedule string representation."""
-        schedule = RecurringScheduleFactory(name='Test Schedule')
+    def test_personal_calendar_str(self, db):
+        """Test personal calendar rule string representation."""
+        schedule = PractitionerAvailabilityRuleFactory(name='Test Schedule')
         assert 'Test Schedule' in str(schedule)
 
-    def test_recurring_schedule_with_breaks(self, db):
-        """Test recurring schedule with break times."""
-        schedule = RecurringScheduleFactory(
+    def test_personal_calendar_with_breaks(self, db):
+        """Test personal calendar rule with break times."""
+        schedule = PractitionerAvailabilityRuleFactory(
             start_time=time(9, 0),
             end_time=time(17, 0),
             breaks=[
@@ -97,25 +97,25 @@ class TestRecurringScheduleModel:
         assert schedule.breaks[0]['start'] == '12:00'
         assert schedule.breaks[0]['end'] == '13:00'
 
-    def test_recurring_schedule_all_days(self, db):
-        """Test recurring schedule for all days of the week."""
-        schedule = RecurringScheduleFactory(days_of_week=[0, 1, 2, 3, 4, 5, 6])
+    def test_personal_calendar_all_days(self, db):
+        """Test personal calendar rule for all days of the week."""
+        schedule = PractitionerAvailabilityRuleFactory(days_of_week=[0, 1, 2, 3, 4, 5, 6])
         assert len(schedule.days_of_week) == 7
 
-    def test_recurring_schedule_active_dates(self, db):
-        """Test recurring schedule with active date range."""
+    def test_personal_calendar_active_dates(self, db):
+        """Test personal calendar rule with active date range."""
         start = date.today()
         end = date.today() + timedelta(days=90)
-        schedule = RecurringScheduleFactory(
+        schedule = PractitionerAvailabilityRuleFactory(
             active_from=start,
             active_to=end
         )
         assert schedule.active_from == start
         assert schedule.active_to == end
 
-    def test_recurring_schedule_inactive(self, db):
-        """Test inactive recurring schedule."""
-        schedule = RecurringScheduleFactory(is_active=False)
+    def test_personal_calendar_inactive(self, db):
+        """Test inactive personal calendar rule."""
+        schedule = PractitionerAvailabilityRuleFactory(is_active=False)
         assert schedule.is_active is False
 
 

@@ -963,16 +963,6 @@ if (
         'schedule': timedelta(days=1),
     }
 
-if DEPLOYMENT_FEATURES.get('appointments', False):
-    CELERY_BEAT_SCHEDULE['generate-slots-weekly'] = {
-        'task': 'apps.appointments.tasks.generate_slots_weekly',
-        'schedule': timedelta(days=7),  # Run once a week
-        'args': (14,),  # Generate slots for the next 14 days
-        'options': {
-            'expires': 3600,  # Task expires after 1 hour
-        },
-    }
-
 if AI_ENABLED:
     CELERY_BEAT_SCHEDULE['ai-mark-stale-sessions'] = {
         'task': 'apps.ai.tasks.batch_mark_stale_sessions_failed',

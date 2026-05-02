@@ -7,7 +7,7 @@ from rest_framework import serializers
 from .models import (
     Appointment,
     AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
-    ScheduleFHIRMapping, RecurringSchedule, BlockedTime
+    ScheduleFHIRMapping, PractitionerAvailabilityRule, BlockedTime
 )
 from ..users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
 from ..users.models import PractitionerProfile
@@ -15,7 +15,7 @@ from apps.core.security import get_user_facility
 from apps.organization.models import Clinic
 
 
-RECURRING_SLOT_DURATION_ERROR = 'Slot duration must be a positive integer.'
+AVAILABILITY_SLOT_DURATION_ERROR = 'Slot duration must be a positive integer.'
 
 
 class AppointmentTypeSerializer(serializers.ModelSerializer):
@@ -83,7 +83,13 @@ class AppointmentSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             facility = get_user_facility(request) if request else None
             exclude_id = str(instance.id) if instance else None
-            if not AvailabilityService.is_slot_available(practitioner, start_time, end_time, facility=facility):
+            if not AvailabilityService.is_slot_available(
+                practitioner,
+                start_time,
+                end_time,
+                facility=facility,
+                clinic=clinic,
+            ):
                 raise serializers.ValidationError({'start_time': 'Practitioner is not available for that time.'})
             if not ConflictPreventionService.check_practitioner_availability(
                 practitioner.id, start_time, end_time, exclude_appointment_id=exclude_id
@@ -208,13 +214,13 @@ class ScheduleFHIRMappingSerializer(serializers.ModelSerializer):
         return "Unknown"
 
 
-class RecurringScheduleSerializer(serializers.ModelSerializer):
+class PractitionerAvailabilityRuleSerializer(serializers.ModelSerializer):
     """
-    Serializer for the RecurringSchedule model.
+    Serializer for practitioner-owned personal availability.
     """
     slot_duration = serializers.IntegerField(
         min_value=1,
-        error_messages={'min_value': RECURRING_SLOT_DURATION_ERROR}
+        error_messages={'min_value': AVAILABILITY_SLOT_DURATION_ERROR}
     )
     practitioner_name = serializers.SerializerMethodField()
     practitioners = serializers.ListField(
@@ -222,13 +228,13 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False,
         allow_empty=False,
-        help_text="Optional list of practitioners to clone this schedule to"
+        help_text="Optional list of practitioners to clone this availability rule to"
     )
 
     class Meta:
-        model = RecurringSchedule
+        model = PractitionerAvailabilityRule
         fields = [
-            'id', 'name', 'practitioner', 'practitioner_name', 'days_of_week',
+            'id', 'name', 'practitioner', 'practitioner_name', 'clinic', 'days_of_week',
             'start_time', 'end_time', 'slot_duration', 'active_from', 'active_to',
             'breaks', 'is_active', 'template_key', 'template_name', 'practitioners',
             'created_at', 'updated_at', 'created_by', 'updated_by'
@@ -251,22 +257,27 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             overlap_filter &= Q(active_from__lte=end_date)
         return overlap_filter
 
-    def _validate_overlapping_recurring_schedules(
+    def _validate_overlapping_personal_rules(
         self,
         practitioner,
+        clinic,
         days_of_week,
         start_time,
         end_time,
         active_from,
         active_to,
     ):
-        conflicting = RecurringSchedule.objects.filter(
+        conflicting = PractitionerAvailabilityRule.objects.filter(
             practitioner=practitioner,
             is_active=True,
             days_of_week__overlap=days_of_week,
             start_time__lt=end_time,
             end_time__gt=start_time,
         ).filter(self._date_range_overlap_filter(active_from, active_to))
+        if clinic:
+            conflicting = conflicting.filter(Q(clinic=clinic) | Q(clinic__isnull=True))
+        else:
+            conflicting = conflicting.filter(clinic__isnull=True)
 
         if self.instance:
             conflicting = conflicting.exclude(id=self.instance.id)
@@ -274,7 +285,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
         if conflicting.exists():
             raise serializers.ValidationError({
                 'start_time': (
-                    'This schedule overlaps with another active recurring schedule '
+                    'This availability rule overlaps with another active personal calendar rule '
                     f'for {practitioner.staff.user.get_full_name()}.'
                 )
             })
@@ -326,7 +337,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             if duty_type.is_24_hour:
                 raise serializers.ValidationError({
                     'start_time': (
-                        'This schedule clashes with a published 24-hour clinic roster '
+                        'This availability rule clashes with a published 24-hour clinic roster '
                         f'entry on {entry.date.isoformat()}.'
                     )
                 })
@@ -342,7 +353,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             clinic_name = duty_type.clinic.name if duty_type.clinic else duty_type.name
             raise serializers.ValidationError({
                 'start_time': (
-                    'This schedule clashes with a published clinic roster entry on '
+                    'This availability rule clashes with a published clinic roster entry on '
                     f'{entry.date.isoformat()} ({clinic_name} {entry_start.strftime("%H:%M")}-'
                     f'{entry_end.strftime("%H:%M")}).'
                 )
@@ -364,7 +375,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
 
         slot_duration = attrs.get('slot_duration', getattr(self.instance, 'slot_duration', None))
         if slot_duration is not None and slot_duration <= 0:
-            raise serializers.ValidationError({'slot_duration': RECURRING_SLOT_DURATION_ERROR})
+            raise serializers.ValidationError({'slot_duration': AVAILABILITY_SLOT_DURATION_ERROR})
 
         facility = get_user_facility(request) if request else None
 
@@ -409,7 +420,7 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
                     })
                 if any(practitioner_id != own_practitioner_id for practitioner_id in unique_ids):
                     raise serializers.ValidationError({
-                        'practitioners': 'You can only create recurring schedules for yourself.'
+                        'practitioners': 'You can only create personal calendar rules for yourself.'
                     })
 
             practitioners_to_validate = [practitioner_map[practitioner_id] for practitioner_id in unique_ids]
@@ -429,10 +440,12 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             active_to = attrs.get('active_to', getattr(self.instance, 'active_to', None))
             start_time = attrs.get('start_time', getattr(self.instance, 'start_time', None))
             end_time = attrs.get('end_time', getattr(self.instance, 'end_time', None))
+            clinic = attrs.get('clinic', getattr(self.instance, 'clinic', None))
 
             for practitioner in practitioners_to_validate:
-                self._validate_overlapping_recurring_schedules(
+                self._validate_overlapping_personal_rules(
                     practitioner=practitioner,
+                    clinic=clinic,
                     days_of_week=days_of_week,
                     start_time=start_time,
                     end_time=end_time,
@@ -468,33 +481,33 @@ class RecurringScheduleSerializer(serializers.ModelSerializer):
             shared_template_name = validated_data.get('name')
 
         template_key = uuid.uuid4() if apply_as_shared_template else None
-        created_schedules = []
+        created_rules = []
 
         for practitioner in resolved_practitioners:
-            schedule = RecurringSchedule.objects.create(
+            rule = PractitionerAvailabilityRule.objects.create(
                 practitioner=practitioner,
                 template_key=template_key,
                 template_name=shared_template_name,
                 **validated_data,
             )
-            created_schedules.append(schedule)
+            created_rules.append(rule)
 
-        self.created_schedules = created_schedules
-        self.created_count = len(created_schedules)
+        self.created_rules = created_rules
+        self.created_count = len(created_rules)
         self.created_template_key = str(template_key) if template_key else None
-        return created_schedules[0]
+        return created_rules[0]
 
 
-class RecurringScheduleSlotPreviewSerializer(serializers.Serializer):
+class AvailabilityRuleSlotPreviewSerializer(serializers.Serializer):
     """
-    Validates recurring schedule slot preview inputs before loop-based generation.
+    Validates personal availability slot preview inputs before loop-based generation.
     """
     start_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'])
     end_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'])
     slot_duration = serializers.IntegerField(
         min_value=1,
         default=30,
-        error_messages={'min_value': RECURRING_SLOT_DURATION_ERROR}
+        error_messages={'min_value': AVAILABILITY_SLOT_DURATION_ERROR}
     )
     breaks = serializers.ListField(
         child=serializers.DictField(),

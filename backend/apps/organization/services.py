@@ -1178,8 +1178,7 @@ class RosterAvailabilityService:
     for practitioner scheduling. It derives appointment slots from RosterEntry
     records where the duty_type.category='clinic'.
 
-    This replaces the RecurringSchedule-based approach during the migration period,
-    with dual-mode support in AvailabilityService.
+    Practitioner personal calendars are merged by AvailabilityService.
     """
 
     @staticmethod
@@ -1524,7 +1523,7 @@ class RosterAvailabilityService:
         Check if a practitioner has any roster-based availability in the date range.
 
         This is a fast check used to determine whether to use roster-based or
-        RecurringSchedule-based availability.
+        personal calendar availability.
 
         Returns:
             Boolean indicating if roster entries exist for this practitioner

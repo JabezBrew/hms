@@ -541,7 +541,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                       <ExternalLink className="h-3 w-3 ml-2" />
                     </Button>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Configure recurring schedules, blocked times, and appointment slots
+                      Configure personal calendars, blocked times, and appointment slots
                     </p>
                   </div>
                 )}

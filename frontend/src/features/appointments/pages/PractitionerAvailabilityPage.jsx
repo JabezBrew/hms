@@ -45,14 +45,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 import {
-  useRecurringSchedules,
-  useDeleteRecurringSchedule,
+  useAvailabilityRules,
+  useDeleteAvailabilityRule,
   useBlockedTimes,
   useDeleteBlockedTime
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import { useSearchPractitioners } from '@/features/encounters/hooks/useEncounterQueries';
 import { usePractitioner } from '@/features/staff/hooks';
-import RecurringScheduleForm from '@/features/appointments/components/RecurringScheduleForm';
+import PersonalCalendarForm from '@/features/appointments/components/PersonalCalendarForm';
 import BlockedTimeForm from '@/features/appointments/components/BlockedTimeForm';
 import DoctorAvailabilityCalendar from '@/features/appointments/components/DoctorAvailabilityCalendar';
 import { SearchBar } from '@/components/ui/search-bar';
@@ -113,11 +113,11 @@ const PractitionerAvailabilityPage = () => {
   }, [desiredSelectedPractitioner]);
 
   // Dialog states
-  const [isCreateRecurringDialogOpen, setIsCreateRecurringDialogOpen] = useState(false);
-  const [isEditRecurringDialogOpen, setIsEditRecurringDialogOpen] = useState(false);
-  const [isDeleteRecurringDialogOpen, setIsDeleteRecurringDialogOpen] = useState(false);
-  const [selectedRecurringSchedule, setSelectedRecurringSchedule] = useState(null);
-  const [recurringToDelete, setRecurringToDelete] = useState(null);
+  const [isCreateAvailabilityDialogOpen, setIsCreateAvailabilityDialogOpen] = useState(false);
+  const [isEditAvailabilityDialogOpen, setIsEditAvailabilityDialogOpen] = useState(false);
+  const [isDeleteAvailabilityDialogOpen, setIsDeleteAvailabilityDialogOpen] = useState(false);
+  const [selectedAvailabilityRule, setSelectedAvailabilityRule] = useState(null);
+  const [availabilityToDelete, setAvailabilityToDelete] = useState(null);
 
   const [isCreateBlockedTimeDialogOpen, setIsCreateBlockedTimeDialogOpen] = useState(false);
   const [isEditBlockedTimeDialogOpen, setIsEditBlockedTimeDialogOpen] = useState(false);
@@ -134,15 +134,15 @@ const PractitionerAvailabilityPage = () => {
     return {};
   }, [selectedPractitioner]);
 
-  // Fetch data - pass filters so doctors only see their own schedules
+  // Fetch data - pass filters so doctors only see their own personal calendar rules
   // and the query key matches what DoctorAvailabilityCalendar uses
   const {
-    data: recurringSchedules = [],
-    isLoading: recurringLoading,
-    isError: isRecurringError,
-    error: recurringError,
-    refetch: refetchRecurring
-  } = useRecurringSchedules(scheduleFilters);
+    data: availabilityRules = [],
+    isLoading: availabilityLoading,
+    isError: isAvailabilityError,
+    error: availabilityError,
+    refetch: refetchAvailability
+  } = useAvailabilityRules(scheduleFilters);
 
   const {
     data: blockedTimes = [],
@@ -238,47 +238,47 @@ const PractitionerAvailabilityPage = () => {
   }, [practitioners, selectedPractitioner, selectedPractitionerLabel]);
 
   // Mutations
-  const deleteRecurringMutation = useDeleteRecurringSchedule();
+  const deleteAvailabilityMutation = useDeleteAvailabilityRule();
   const deleteBlockedTimeMutation = useDeleteBlockedTime();
 
   // Calculate stats
   const stats = useMemo(() => {
-    const activeSchedules = recurringSchedules.filter(s => s.is_active).length;
-    const totalSchedules = recurringSchedules.length;
+    const activeSchedules = availabilityRules.filter(s => s.is_active).length;
+    const totalSchedules = availabilityRules.length;
     const activeBlocks = blockedTimes.filter(b => {
       const endDate = new Date(b.end_date || b.date);
       return endDate >= new Date();
     }).length;
     return { activeSchedules, totalSchedules, activeBlocks, totalBlocks: blockedTimes.length };
-  }, [recurringSchedules, blockedTimes]);
+  }, [availabilityRules, blockedTimes]);
 
   // Error handling
-  if (isRecurringError) {
-    toast.error(recurringError?.message || 'Failed to load schedules');
+  if (isAvailabilityError) {
+    toast.error(availabilityError?.message || 'Failed to load personal calendar rules');
   }
   if (isBlockedTimesError) {
     toast.error(blockedTimesError?.message || 'Failed to load blocked times');
   }
 
   // Handlers
-  const handleCreateRecurringSuccess = () => {
-    setIsCreateRecurringDialogOpen(false);
-    toast.success('Schedule created successfully');
+  const handleCreateAvailabilitySuccess = () => {
+    setIsCreateAvailabilityDialogOpen(false);
+    toast.success('Personal calendar rule created successfully');
   };
 
-  const handleUpdateRecurringSuccess = () => {
-    setIsEditRecurringDialogOpen(false);
-    toast.success('Schedule updated successfully');
+  const handleUpdateAvailabilitySuccess = () => {
+    setIsEditAvailabilityDialogOpen(false);
+    toast.success('Personal calendar rule updated successfully');
   };
 
-  const handleDeleteRecurring = (scheduleId) => {
-    deleteRecurringMutation.mutate(scheduleId, {
+  const handleDeleteAvailability = (scheduleId) => {
+    deleteAvailabilityMutation.mutate(scheduleId, {
       onSuccess: () => {
-        setIsDeleteRecurringDialogOpen(false);
-        toast.success('Schedule deleted successfully');
+        setIsDeleteAvailabilityDialogOpen(false);
+        toast.success('Personal calendar rule deleted successfully');
       },
       onError: (_error) => {
-        toast.error('Failed to delete schedule');
+        toast.error('Failed to delete personal calendar rule');
       }
     });
   };
@@ -308,7 +308,7 @@ const PractitionerAvailabilityPage = () => {
   const getPractitionerName = (item) => item.practitioner_name || 'Unknown';
 
   // Loading state
-  if (recurringLoading && blockedTimesLoading) {
+  if (availabilityLoading && blockedTimesLoading) {
     return (
       <PageState variant="loading">
         {pageMeta}
@@ -336,8 +336,8 @@ const PractitionerAvailabilityPage = () => {
             title={isDoctor ? 'My Availability' : 'Practitioner Availability'}
             description={
               isDoctor
-                ? 'View your schedule, calendar, and blocked time'
-                : 'Manage schedules, view calendars, and block time off'
+                ? 'View your calendar and blocked time'
+                : 'Manage personal calendars and blocked time'
             }
             actions={(
               <div className="flex gap-2">
@@ -351,10 +351,10 @@ const PractitionerAvailabilityPage = () => {
                 </Button>
                 <Button
                   className="bg-amber-600 hover:bg-amber-700 font-mono text-xs"
-                  onClick={() => setIsCreateRecurringDialogOpen(true)}
+                  onClick={() => setIsCreateAvailabilityDialogOpen(true)}
                 >
                   <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  New Schedule
+                  New Rule
                 </Button>
               </div>
             )}
@@ -364,7 +364,7 @@ const PractitionerAvailabilityPage = () => {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard
               icon={CalendarClock}
-              label="Active Schedules"
+              label="Active Rules"
               value={stats.activeSchedules}
               sublabel={`of ${stats.totalSchedules} total`}
               color="amber"
@@ -431,7 +431,6 @@ const PractitionerAvailabilityPage = () => {
               ) : (
                 <DoctorAvailabilityCalendar
                   practitionerId={selectedPractitioner}
-                  useRoster={false}
                   onSlotSelect={(slot) => {
                     toast.info(`Selected: ${new Date(slot.start).toLocaleTimeString()} - ${new Date(slot.end).toLocaleTimeString()}`);
                   }}
@@ -453,7 +452,7 @@ const PractitionerAvailabilityPage = () => {
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Schedules
+                Personal Calendar
               </button>
               <button
                 onClick={() => setActiveTab('blocked')}
@@ -468,53 +467,53 @@ const PractitionerAvailabilityPage = () => {
               </button>
             </div>
 
-            {/* Schedules List */}
+            {/* Personal calendar rules list */}
             {activeTab === 'schedules' && (
               <div className="bg-card rounded-xl border border-border/50">
                 <div className="p-4 border-b border-border/50 flex items-center justify-between">
-                  <h3 className="font-heading text-sm font-semibold text-foreground">Recurring Schedules</h3>
+                  <h3 className="font-heading text-sm font-semibold text-foreground">Personal Calendar</h3>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => refetchRecurring()}
+                    onClick={() => refetchAvailability()}
                     className="h-7 w-7 p-0"
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
                 </div>
                 <ScrollArea className="h-[400px]">
-                  {recurringLoading ? (
+                  {availabilityLoading ? (
                     <div className="p-4 space-y-3">
                       {[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}
                     </div>
-                  ) : recurringSchedules.length === 0 ? (
+                  ) : availabilityRules.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                       <div className="p-3 rounded-full bg-muted/50 mb-3">
                         <Clock className="h-6 w-6 text-muted-foreground" />
                       </div>
-                      <p className="text-xs text-muted-foreground">No schedules configured</p>
+                      <p className="text-xs text-muted-foreground">No personal calendar rules configured</p>
                       <Button
                         variant="outline"
                         size="sm"
                         className="mt-3 font-mono text-xs"
-                        onClick={() => setIsCreateRecurringDialogOpen(true)}
+                        onClick={() => setIsCreateAvailabilityDialogOpen(true)}
                       >
-                        Create Schedule
+                        Create Rule
                       </Button>
                     </div>
                   ) : (
                     <div className="p-2">
-                      {recurringSchedules.map((schedule) => (
+                      {availabilityRules.map((schedule) => (
                         <ScheduleCard
                           key={schedule.id}
                           schedule={schedule}
                           onEdit={() => {
-                            setSelectedRecurringSchedule(schedule);
-                            setIsEditRecurringDialogOpen(true);
+                            setSelectedAvailabilityRule(schedule);
+                            setIsEditAvailabilityDialogOpen(true);
                           }}
                           onDelete={() => {
-                            setRecurringToDelete(schedule);
-                            setIsDeleteRecurringDialogOpen(true);
+                            setAvailabilityToDelete(schedule);
+                            setIsDeleteAvailabilityDialogOpen(true);
                           }}
                         />
                       ))}
@@ -584,7 +583,7 @@ const PractitionerAvailabilityPage = () => {
       </div>
 
       {/* Dialogs */}
-      <Dialog open={isCreateRecurringDialogOpen} onOpenChange={setIsCreateRecurringDialogOpen}>
+      <Dialog open={isCreateAvailabilityDialogOpen} onOpenChange={setIsCreateAvailabilityDialogOpen}>
         <DialogContent className="sm:max-w-[550px] p-0 gap-0 z-[300]">
           <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
             <div className="flex items-center gap-3">
@@ -592,7 +591,7 @@ const PractitionerAvailabilityPage = () => {
                 <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
-                <DialogTitle className="font-display text-lg">Create Recurring Schedule</DialogTitle>
+                <DialogTitle className="font-display text-lg">Create Personal Calendar Rule</DialogTitle>
                 <DialogDescription className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   {isDoctor ? 'Your availability' : 'Practitioner availability'}
                 </DialogDescription>
@@ -601,13 +600,13 @@ const PractitionerAvailabilityPage = () => {
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="px-6 py-5">
-              <RecurringScheduleForm onSuccess={handleCreateRecurringSuccess} />
+              <PersonalCalendarForm onSuccess={handleCreateAvailabilitySuccess} />
             </div>
           </ScrollArea>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isEditRecurringDialogOpen} onOpenChange={setIsEditRecurringDialogOpen}>
+      <Dialog open={isEditAvailabilityDialogOpen} onOpenChange={setIsEditAvailabilityDialogOpen}>
         <DialogContent className="sm:max-w-[550px] p-0 gap-0 z-[300]">
           <DialogHeader className="px-6 pt-5 pb-4 border-b border-border">
             <div className="flex items-center gap-3">
@@ -615,19 +614,19 @@ const PractitionerAvailabilityPage = () => {
                 <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
-                <DialogTitle className="font-display text-lg">Edit Schedule</DialogTitle>
+                <DialogTitle className="font-display text-lg">Edit Personal Calendar Rule</DialogTitle>
                 <DialogDescription className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Update schedule details
+                  Update calendar details
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="px-6 py-5">
-              {selectedRecurringSchedule && (
-                <RecurringScheduleForm
-                  initialData={selectedRecurringSchedule}
-                  onSuccess={handleUpdateRecurringSuccess}
+              {selectedAvailabilityRule && (
+                <PersonalCalendarForm
+                  initialData={selectedAvailabilityRule}
+                  onSuccess={handleUpdateAvailabilitySuccess}
                 />
               )}
             </div>
@@ -690,18 +689,18 @@ const PractitionerAvailabilityPage = () => {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={isDeleteRecurringDialogOpen} onOpenChange={setIsDeleteRecurringDialogOpen}>
+      <AlertDialog open={isDeleteAvailabilityDialogOpen} onOpenChange={setIsDeleteAvailabilityDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Schedule?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Personal Calendar Rule?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this recurring schedule. This action cannot be undone.
+              This will permanently delete this personal calendar rule. This action cannot be undone.
             </AlertDialogDescription>
-            {recurringToDelete && (
+            {availabilityToDelete && (
               <div className="mt-2 p-3 bg-muted/50 rounded-lg">
-                <p className="font-medium">{recurringToDelete.name}</p>
+                <p className="font-medium">{availabilityToDelete.name}</p>
                 <p className="text-sm text-muted-foreground">
-                  {getPractitionerName(recurringToDelete)}
+                  {getPractitionerName(availabilityToDelete)}
                 </p>
               </div>
             )}
@@ -709,7 +708,7 @@ const PractitionerAvailabilityPage = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => handleDeleteRecurring(recurringToDelete?.id)}
+              onClick={() => handleDeleteAvailability(availabilityToDelete?.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
@@ -798,7 +797,7 @@ function StatCard({ icon: Icon, label, value, sublabel, color = 'amber' }) {
 }
 
 /**
- * ScheduleCard - Chronicle-style recurring schedule display
+ * ScheduleCard - Chronicle-style personal calendar rule display
  */
 function ScheduleCard({ schedule, onEdit, onDelete }) {
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

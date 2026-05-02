@@ -708,21 +708,20 @@ class TestClinicAvailabilityService:
 
 @pytest.mark.django_db
 class TestAvailabilityServiceIntegration:
-    """Integration tests for AvailabilityService with roster fallback."""
+    """Integration tests for AvailabilityService with unified availability."""
 
-    def test_roster_takes_precedence_over_recurring_schedule(
+    def test_roster_and_personal_calendar_slots_are_combined(
         self, published_clinic_entry, practitioner, facility
     ):
-        """Test that roster-based availability takes precedence."""
+        """Test that roster and personal calendar availability are both returned."""
         from apps.appointments.services import AvailabilityService
-        from apps.appointments.models import RecurringSchedule
+        from apps.appointments.models import PractitionerAvailabilityRule
 
         tomorrow = timezone.now().date() + timedelta(days=1)
         today = timezone.now().date()
 
-        # Create a recurring schedule (legacy) for same practitioner
-        RecurringSchedule.objects.create(
-            name='Legacy Schedule',
+        PractitionerAvailabilityRule.objects.create(
+            name='Personal Afternoon Calendar',
             facility=facility,
             practitioner=practitioner,
             days_of_week=[tomorrow.weekday()],
@@ -742,26 +741,23 @@ class TestAvailabilityServiceIntegration:
             end_date=end_date,
         )
 
-        # Slots should be from roster (morning), not recurring schedule (afternoon)
-        for slot in slots:
-            slot_start = datetime.fromisoformat(slot['start'])
-            assert slot_start.time() < time(12, 0), \
-                "Slots should be from roster (morning), not recurring schedule"
-            assert slot.get('source') == 'roster', \
-                "Slots should indicate roster as source"
+        assert {'roster', 'personal_calendar'} == {slot.get('source') for slot in slots}
+        slot_hours = {datetime.fromisoformat(slot['start']).hour for slot in slots}
+        assert 9 in slot_hours
+        assert 14 in slot_hours
 
-    def test_fallback_to_recurring_schedule_when_no_roster(
+    def test_personal_calendar_when_no_roster(
         self, practitioner, facility
     ):
-        """Test fallback to RecurringSchedule when no roster entries exist."""
+        """Test fallback to PractitionerAvailabilityRule when no roster entries exist."""
         from apps.appointments.services import AvailabilityService
-        from apps.appointments.models import RecurringSchedule
+        from apps.appointments.models import PractitionerAvailabilityRule
 
         tomorrow = timezone.now().date() + timedelta(days=1)
         today = timezone.now().date()
 
-        # Create only a recurring schedule (no roster)
-        RecurringSchedule.objects.create(
+        # Create only a personal calendar rule (no roster)
+        PractitionerAvailabilityRule.objects.create(
             name='Only Schedule',
             facility=facility,
             practitioner=practitioner,
@@ -782,9 +778,9 @@ class TestAvailabilityServiceIntegration:
             end_date=end_date,
         )
 
-        # Should get slots from recurring schedule
+        # Should get slots from personal calendar rule
         assert len(slots) > 0
         for slot in slots:
-            # Slots from recurring schedule have different source
-            assert slot.get('source') == 'recurring_schedule', \
-                "Slots should indicate recurring_schedule as source"
+            # Slots from personal calendar rule have different source
+            assert slot.get('source') == 'personal_calendar', \
+                "Slots should indicate personal_calendar as source"

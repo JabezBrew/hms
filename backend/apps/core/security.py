@@ -269,7 +269,7 @@ def resolve_object_facility(obj):
         ('inventory_item', 'facility'),
         ('audit', 'facility'),
         ('schedule', 'facility'),
-        ('recurring_schedule', 'facility'),
+        ('availability_rule', 'facility'),
         ('blocked_time', 'facility'),
     ):
         value = obj

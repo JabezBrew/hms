@@ -26,7 +26,6 @@ import isWithinInterval from 'date-fns/isWithinInterval';
 
 import {
   useAvailableSlots,
-  useRecurringSchedules,
   useBlockedTimes
 } from '@/features/appointments/hooks/useAppointmentQueries';
 
@@ -41,7 +40,6 @@ import {
 const DoctorAvailabilityCalendar = ({
   clinicId,
   practitionerId,
-  useRoster,
   onSlotSelect,
 }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -63,37 +61,24 @@ const DoctorAvailabilityCalendar = ({
 
     if (hasPractitioner) {
       params.practitioner_id = practitionerId;
-      if (typeof useRoster === 'boolean') {
-        params.use_roster = useRoster ? 'true' : 'false';
+      if (hasClinic) {
+        params.clinic_id = clinicId;
       }
     } else if (hasClinic) {
       params.clinic_id = clinicId;
     }
 
     return params;
-  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId, useRoster]);
+  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId]);
 
   // Fetch slots with server-side filtering by practitioner or clinic
   const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams, {
     enabled: hasPractitioner || hasClinic,
   });
 
-  const { data: recurringSchedulesData, isLoading: recurringLoading } = useRecurringSchedules(
-    practitionerId ? { practitioner: practitionerId } : {},
-    { enabled: hasPractitioner }
-  );
-
   const { data: blockedTimesData, isLoading: blockedLoading } = useBlockedTimes(
     practitionerId ? { practitioner: practitionerId } : {},
     { enabled: hasPractitioner }
-  );
-
-  // Normalize data to arrays
-  const recurringSchedules = useMemo(
-    () => (Array.isArray(recurringSchedulesData)
-      ? recurringSchedulesData
-      : recurringSchedulesData?.results || []),
-    [recurringSchedulesData]
   );
 
   const blockedTimes = useMemo(
@@ -103,7 +88,7 @@ const DoctorAvailabilityCalendar = ({
     [blockedTimesData]
   );
 
-  const isLoading = slotsLoading || recurringLoading || blockedLoading;
+  const isLoading = slotsLoading || blockedLoading;
 
   // Process availability
   const { availableDates, unavailableDates, availabilityMap } = useMemo(() => {
@@ -121,23 +106,6 @@ const DoctorAvailabilityCalendar = ({
       });
     };
 
-    const isScheduled = (date) => {
-      const dayOfWeek = date.getDay();
-      const backendDay = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-
-      return recurringSchedules.some(schedule => {
-        if (!schedule.is_active) return false;
-
-        const activeFrom = parseISO(schedule.active_from);
-        const activeTo = schedule.active_to ? parseISO(schedule.active_to) : null;
-
-        if (isBefore(date, startOfDay(activeFrom))) return false;
-        if (activeTo && isBefore(startOfDay(activeTo), date)) return false;
-
-        return schedule.days_of_week?.includes(backendDay);
-      });
-    };
-
     // Get slots from API response
     const slots = slotsData?.slots || (Array.isArray(slotsData) ? slotsData : []);
 
@@ -150,38 +118,20 @@ const DoctorAvailabilityCalendar = ({
       map[dateStr].push(slot);
     });
 
-    // Check if we have any recurring schedules configured
-    const hasRecurringSchedules = recurringSchedules.length > 0;
-
     // Iterate through visible days
     let iterDate = startOfDay(calendarStart);
     const endDate = startOfDay(calendarEnd);
 
     while (iterDate <= endDate) {
       const isPast = isBefore(iterDate, startOfDay(new Date()));
-      const scheduled = isScheduled(iterDate);
       const blocked = isBlocked(iterDate);
       const dateStr = format(iterDate, 'yyyy-MM-dd');
       const hasSlots = map[dateStr]?.some(s => s.status === 'free' || !s.status);
 
-      // If there are recurring schedules, use them to determine availability
-      if (hasRecurringSchedules) {
-        if (scheduled) {
-          if (isPast || blocked) {
-            unavailable.push(new Date(iterDate));
-          } else if (hasSlots) {
-            available.push(new Date(iterDate));
-          } else {
-            unavailable.push(new Date(iterDate));
-          }
-        }
-      } else {
-        // No recurring schedules - fall back to just checking for slots
-        if (!isPast && !blocked && hasSlots) {
-          available.push(new Date(iterDate));
-        } else if (hasSlots) {
-          unavailable.push(new Date(iterDate));
-        }
+      if (!isPast && !blocked && hasSlots) {
+        available.push(new Date(iterDate));
+      } else if (hasSlots || blocked) {
+        unavailable.push(new Date(iterDate));
       }
 
       iterDate = new Date(iterDate);
@@ -189,7 +139,7 @@ const DoctorAvailabilityCalendar = ({
     }
 
     return { availableDates: available, unavailableDates: unavailable, availabilityMap: map };
-  }, [slotsData, recurringSchedules, blockedTimes, calendarStart, calendarEnd, isLoading]);
+  }, [slotsData, blockedTimes, calendarStart, calendarEnd, isLoading]);
 
   const isDayAvailable = (day) => availableDates.some(d => isSameDay(d, day));
 

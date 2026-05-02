@@ -1,13 +1,7 @@
 """
 Factory Boy factories for the appointments app.
 
-Provides factories for:
-- AppointmentType
-- AppointmentFHIRMapping
-- RecurringAppointmentRule
-- ScheduleFHIRMapping
-- RecurringSchedule
-- BlockedTime
+Provides factories for appointment-related test models.
 """
 import factory
 from factory.django import DjangoModelFactory
@@ -16,7 +10,7 @@ from datetime import time, date, timedelta
 
 from apps.appointments.models import (
     AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
-    ScheduleFHIRMapping, RecurringSchedule, BlockedTime
+    ScheduleFHIRMapping, PractitionerAvailabilityRule, BlockedTime
 )
 from apps.users.tests.factories import UserFactory, PractitionerProfileFactory
 
@@ -93,15 +87,16 @@ class ScheduleFHIRMappingFactory(DjangoModelFactory):
     created_by = factory.SubFactory(UserFactory, user_type='admin')
 
 
-class RecurringScheduleFactory(DjangoModelFactory):
-    """Factory for creating RecurringSchedule instances."""
+class PractitionerAvailabilityRuleFactory(DjangoModelFactory):
+    """Factory for creating practitioner personal availability rules."""
 
     class Meta:
-        model = RecurringSchedule
+        model = PractitionerAvailabilityRule
 
-    name = factory.Sequence(lambda n: f'Schedule {n}')
+    name = factory.Sequence(lambda n: f'Availability Rule {n}')
     practitioner = factory.SubFactory(PractitionerProfileFactory)
     facility = factory.SelfAttribute('practitioner.staff.primary_facility')
+    clinic = None
     days_of_week = [0, 1, 2, 3, 4]  # Monday to Friday
     start_time = time(9, 0)
     end_time = time(17, 0)

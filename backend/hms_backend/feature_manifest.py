@@ -136,7 +136,6 @@ FEATURE_MANIFEST = {
         'kind': 'module',
         'profile_default': True,
         'api_prefixes': ['/api/appointments/'],
-        'celery_beat_jobs': ['generate-slots-weekly'],
     },
     'billing': {
         'label': 'Billing',

@@ -233,13 +233,10 @@ class ScheduleFHIRMapping(models.Model):
         return f"Schedule {self.fhir_schedule_id} for {self.practitioner}"
 
 
-class RecurringSchedule(models.Model):
+class PractitionerAvailabilityRule(models.Model):
     """
-    Model for defining recurring practitioner availability schedules.
-
-    DEPRECATION NOTE: This model is being deprecated in favor of roster-based availability
-    via RosterEntry + DepartmentDutyType with category='clinic'. During the migration period,
-    both systems will be supported, with roster taking precedence.
+    Practitioner-owned availability for direct appointment booking.
+    Department-owned clinic sessions are represented by published roster entries.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(
@@ -247,11 +244,23 @@ class RecurringSchedule(models.Model):
         on_delete=models.PROTECT,
         null=False,
         blank=False,
-        related_name='recurring_schedules',
-        help_text="Facility where this schedule applies"
+        related_name='practitioner_availability_rules',
+        help_text="Facility where this availability applies"
     )
     name = models.CharField(max_length=100)
-    practitioner = models.ForeignKey(PractitionerProfile, on_delete=models.CASCADE, related_name='recurring_schedules')
+    practitioner = models.ForeignKey(
+        PractitionerProfile,
+        on_delete=models.CASCADE,
+        related_name='availability_rules'
+    )
+    clinic = models.ForeignKey(
+        Clinic,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='practitioner_availability_rules',
+        help_text='Optional clinic this personal availability applies to'
+    )
     days_of_week = ArrayField(models.IntegerField(), help_text="List of days (0=Monday, 6=Sunday)")
     start_time = models.TimeField()
     end_time = models.TimeField()
@@ -264,48 +273,29 @@ class RecurringSchedule(models.Model):
         null=True,
         blank=True,
         db_index=True,
-        help_text="Shared template key when this schedule was cloned to multiple practitioners"
+        help_text="Shared template key when this rule was cloned to multiple practitioners"
     )
     template_name = models.CharField(
         max_length=120,
         null=True,
         blank=True,
-        help_text="Optional display name for the shared recurring schedule template"
-    )
-
-    # Migration tracking fields (for deprecation)
-    migrated_to_roster = models.BooleanField(
-        default=False,
-        help_text='Whether this schedule has been migrated to roster-based availability'
-    )
-    migrated_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text='When this schedule was migrated to roster-based availability'
-    )
-    roster_duty_type = models.ForeignKey(
-        'organization.DepartmentDutyType',
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name='migrated_schedules',
-        help_text='The duty type this schedule was migrated to'
+        help_text="Optional display name for the shared personal calendar template"
     )
 
     # Audit fields
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_recurring_schedules')
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_recurring_schedules')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_availability_rules')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='updated_availability_rules')
 
     class Meta:
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['facility', 'is_active']),
+            models.Index(fields=['clinic', 'is_active']),
             models.Index(fields=['practitioner', 'is_active', 'active_from']),
             models.Index(fields=['facility', 'template_key']),
             models.Index(fields=['days_of_week']),
-            models.Index(fields=['migrated_to_roster']),
         ]
 
     def __str__(self):
@@ -315,7 +305,7 @@ class RecurringSchedule(models.Model):
 class BlockedTime(models.Model):
     """
     Model for one-off blocked times (vacations, emergencies, closures, etc.).
-    Used to block specific time ranges that override recurring schedules.
+    Used to block specific time ranges that override roster and personal availability.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     facility = models.ForeignKey(

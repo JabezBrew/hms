@@ -13,13 +13,13 @@ from django.utils.dateparse import parse_datetime
 from .models import (
     Appointment,
     AppointmentType, AppointmentFHIRMapping, RecurringAppointmentRule,
-    ScheduleFHIRMapping, RecurringSchedule, BlockedTime
+    ScheduleFHIRMapping, PractitionerAvailabilityRule, BlockedTime
 )
 from .serializers import (
     AppointmentTypeSerializer, AppointmentFHIRMappingSerializer,
     AppointmentListSerializer, AppointmentSerializer,
     RecurringAppointmentRuleSerializer, ScheduleFHIRMappingSerializer,
-    RecurringScheduleSerializer, RecurringScheduleSlotPreviewSerializer,
+    PractitionerAvailabilityRuleSerializer, AvailabilityRuleSlotPreviewSerializer,
     BlockedTimeSerializer
 )
 from .proxies import AppointmentProxy, SlotProxy, ScheduleProxy
@@ -99,21 +99,6 @@ def _flatten_error_messages(detail):
         return messages
     messages.append(str(detail))
     return messages
-
-
-def _parse_optional_bool_param(raw_value, param_name):
-    """Parse optional boolean query params and return None when omitted."""
-    if raw_value is None:
-        return None
-
-    value = str(raw_value).strip().lower()
-    if value in {'1', 'true', 'yes', 'on'}:
-        return True
-    if value in {'0', 'false', 'no', 'off'}:
-        return False
-    raise ValueError(
-        f"Invalid value for '{param_name}'. Use true/false."
-    )
 
 
 class WalkInCheckInSerializer(serializers.Serializer):
@@ -688,30 +673,21 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
     def available_slots(self, request):
         """
         Get available slots for scheduling using just-in-time computation.
-        This computes slots on-demand from recurring schedules without pre-generation.
+        This computes slots on-demand from roster and personal calendar availability.
         """
         practitioner_id = request.query_params.get('practitioner_id')
         clinic_id = request.query_params.get('clinic_id')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         appointment_type_id = request.query_params.get('appointment_type_id')
-        use_roster_raw = request.query_params.get('use_roster')
 
         if not all([start_date, end_date]) or (not practitioner_id and not clinic_id):
             return Response(
                 {"error": "Missing required parameters: start_date, end_date, and practitioner_id or clinic_id"},
                 status=status.HTTP_400_BAD_REQUEST
-            )
+        )
 
         try:
-            try:
-                use_roster = _parse_optional_bool_param(use_roster_raw, 'use_roster')
-            except ValueError as exc:
-                return Response(
-                    {"error": str(exc)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
             facility = get_user_facility(request)
             practitioners = []
             mode = None
@@ -746,7 +722,7 @@ class LocalAppointmentViewSet(viewsets.ModelViewSet):
                     end_date=end_date,
                     appointment_type_id=appointment_type_id,
                     facility=facility,
-                    use_roster=use_roster,
+                    clinic_id=clinic_id,
                 )
 
             status_filter = request.query_params.get('status')
@@ -1038,7 +1014,7 @@ class AppointmentViewSet(viewsets.ViewSet):
     def available_slots(self, request):
         """
         Get available slots for scheduling using just-in-time computation.
-        This computes slots on-demand from recurring schedules without pre-generation.
+        This computes slots on-demand from roster and personal calendar availability.
         """
         practitioner_id = request.query_params.get('practitioner_id')
         start_date = request.query_params.get('start_date')
@@ -1488,28 +1464,28 @@ class RecurringAppointmentRuleViewSet(viewsets.ModelViewSet):
             )
 
 
-class RecurringScheduleViewSet(viewsets.ModelViewSet):
+class PractitionerAvailabilityRuleViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for managing recurring schedules.
+    ViewSet for managing practitioner personal calendar availability rules.
     """
-    queryset = RecurringSchedule.objects.all()
-    serializer_class = RecurringScheduleSerializer
+    queryset = PractitionerAvailabilityRule.objects.all()
+    serializer_class = PractitionerAvailabilityRuleSerializer
     permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor]
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         """
-        Filter schedules by practitioner and active status.
-        Doctors/nurses automatically see only their own schedules.
+        Filter availability rules by practitioner and active status.
+        Doctors/nurses automatically see only their own calendar rules.
         """
         facility = get_user_facility(self.request)
         if not facility:
-            return RecurringSchedule.objects.none()
-        queryset = RecurringSchedule.objects.filter(facility=facility)
+            return PractitionerAvailabilityRule.objects.none()
+        queryset = PractitionerAvailabilityRule.objects.filter(facility=facility)
         practitioner_id = self.request.query_params.get('practitioner')
         is_active = self.request.query_params.get('is_active')
+        clinic_id = self.request.query_params.get('clinic')
 
-        # Auto-filter for doctors/nurses to only see their own schedules
         if not practitioner_id and self.request.user.user_type in ['doctor', 'nurse']:
             try:
                 practitioner_profile = self.request.user.staff_profile.practitioner_profile
@@ -1520,12 +1496,13 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
 
         if practitioner_id:
             queryset = queryset.filter(practitioner_id=practitioner_id)
-
+        if clinic_id:
+            queryset = queryset.filter(clinic_id=clinic_id)
         if is_active is not None:
             active_bool = is_active.lower() == 'true'
             queryset = queryset.filter(is_active=active_bool)
 
-        return queryset
+        return queryset.select_related('practitioner', 'practitioner__staff__user', 'clinic')
 
     def perform_create(self, serializer):
         facility = get_user_facility(self.request)
@@ -1545,16 +1522,16 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
 
-        created_schedules = getattr(serializer, 'created_schedules', None)
+        created_rules = getattr(serializer, 'created_rules', None)
         created_count = getattr(serializer, 'created_count', 1)
-        if created_schedules and created_count > 1:
-            output_serializer = self.get_serializer(created_schedules, many=True)
+        if created_rules and created_count > 1:
+            output_serializer = self.get_serializer(created_rules, many=True)
             return Response(
                 {
                     "created_count": created_count,
                     "template_key": getattr(serializer, 'created_template_key', None),
-                    "template_name": created_schedules[0].template_name,
-                    "created_schedules": output_serializer.data,
+                    "template_name": created_rules[0].template_name,
+                    "created_rules": output_serializer.data,
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -1565,9 +1542,9 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def preview_slots(self, request):
         """
-        Preview slots for a given schedule configuration.
+        Preview slots for a given personal calendar configuration.
         """
-        preview_serializer = RecurringScheduleSlotPreviewSerializer(data=request.data)
+        preview_serializer = AvailabilityRuleSlotPreviewSerializer(data=request.data)
         preview_serializer.is_valid(raise_exception=True)
         preview_data = preview_serializer.validated_data
 
@@ -1576,118 +1553,50 @@ class RecurringScheduleViewSet(viewsets.ModelViewSet):
             end_time = preview_data['end_time']
             slot_duration = preview_data['slot_duration']
             breaks = preview_data['breaks']
-            
-            # Generate preview slots
+
             slots = []
             current_time = start_time
-            
+
             while current_time < end_time:
-                # Calculate slot end time
-                # We need a dummy date to do time arithmetic
                 dummy_date = datetime.date.today()
                 slot_end_datetime = datetime.datetime.combine(dummy_date, current_time) + datetime.timedelta(minutes=slot_duration)
                 slot_end_time = slot_end_datetime.time()
 
-                # Ensure slot doesn't go beyond the schedule end time
                 if slot_end_time > end_time:
                     break
 
-                # Check if slot overlaps with any break
                 is_break_time = False
                 for break_period in breaks:
                     break_start = datetime.datetime.strptime(break_period['start'], '%H:%M').time()
                     break_end = datetime.datetime.strptime(break_period['end'], '%H:%M').time()
-                    
+
                     if current_time < break_end and slot_end_time > break_start:
                         is_break_time = True
-                        if slot_end_time < break_end:
+                        if current_time >= break_start or slot_end_time < break_end:
                             current_time = break_end
-                        else:
-                            if current_time >= break_start:
-                                current_time = break_end
                         break
-                
+
                 if not is_break_time:
                     slots.append({
                         "start": current_time.strftime('%H:%M'),
                         "end": slot_end_time.strftime('%H:%M')
                     })
                     current_time = slot_end_time
-            
+
             return Response({"slots": slots})
 
         except Exception as e:
-            logger.error(f"Failed to preview slots: {str(e)}")
+            logger.error(f"Failed to preview availability slots: {str(e)}")
             return Response(
                 {"error": "Failed to preview slots. Please try again."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
 
-class BatchGenerationViewSet(viewsets.ViewSet):
-    """
-    ViewSet for batch generation of slots.
-
-    DEPRECATED: This endpoint is deprecated as of the new just-in-time slot computation.
-    Slots are now computed on-demand when requested via the available_slots endpoint.
-    This approach is more efficient and doesn't require pre-generation.
-
-    This endpoint is kept for backwards compatibility but will be removed in a future version.
-    """
-    permission_classes = [permissions.IsAuthenticated, FacilityScopedPermission, IsAdmin | IsDoctor]
-
-    @action(detail=False, methods=['post'])
-    def generate_slots(self, request):
-        """
-        Generate slots for all practitioners with active recurring schedules.
-
-        DEPRECATED: Use the just-in-time computation approach instead.
-        """
-        import warnings
-        warnings.warn(
-            "Batch slot generation is deprecated. Slots are now computed on-demand.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        try:
-            days = request.data.get('days', 14)
-
-            # Validate days parameter
-            try:
-                days = int(days)
-                if days <= 0:
-                    return Response(
-                        {"error": "Days parameter must be a positive integer"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            except (ValueError, TypeError):
-                return Response(
-                    {"error": "Days parameter must be a valid integer"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Call the service to generate slots
-            facility = get_user_facility(request)
-            result = AvailabilityService.batch_generate_slots_for_next_n_days(
-                days=days,
-                user=request.user,
-                facility=facility,
-            )
-
-            return Response(result)
-
-        except Exception as e:
-            logger.error(f"Failed to batch generate slots: {str(e)}")
-            return Response(
-                {"error": "Failed to batch generate slots. Please try again."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
 class BlockedTimeViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing blocked times (one-off schedule exceptions).
-    Blocked times override recurring schedules for specific dates/times.
+    Blocked times override roster and personal calendar availability for specific dates/times.
     """
     queryset = BlockedTime.objects.all()
     serializer_class = BlockedTimeSerializer

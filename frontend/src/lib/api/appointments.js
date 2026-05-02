@@ -226,7 +226,7 @@ export const appointmentsApi = {
    */
   checkInAppointment: async (id) => {
     try {
-      return await apiClient.post(`/appointments/appointments/${id}/check-in/`);
+      return await apiClient.post(`/appointments/appointments/${id}/start_visit/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to check in appointment'));
     }
@@ -261,98 +261,83 @@ export const appointmentsApi = {
   },
 
   /**
-   * Get all recurring schedules
+   * Get all practitioner personal availability rules
    * @param {Object} params - Query parameters for filtering
-   * @returns {Promise<Array>} List of recurring schedules
+   * @returns {Promise<Array>} List of availability rules
    */
-  getRecurringSchedules: async (params = {}) => {
+  getAvailabilityRules: async (params = {}) => {
     try {
       const queryString = new URLSearchParams(params).toString();
-      const endpoint = `/appointments/recurring-schedules/${queryString ? `?${queryString}` : ''}`;
+      const endpoint = `/appointments/availability-rules/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to fetch recurring schedules'));
+      throw new Error(handleApiError(error, 'Failed to fetch availability rules'));
     }
   },
 
   /**
-   * Get a single recurring schedule by ID
-   * @param {string} id - Recurring schedule ID
-   * @returns {Promise<Object>} Recurring schedule data
+   * Get a single availability rule by ID
+   * @param {string} id - Availability rule ID
+   * @returns {Promise<Object>} Availability rule data
    */
-  getRecurringSchedule: async (id) => {
+  getAvailabilityRule: async (id) => {
     try {
-      return await apiClient.get(`/appointments/recurring-schedules/${id}/`);
+      return await apiClient.get(`/appointments/availability-rules/${id}/`);
     } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to fetch recurring schedule'));
+      throw new Error(handleApiError(error, 'Failed to fetch availability rule'));
     }
   },
 
   /**
-   * Create a new recurring schedule
-   * @param {Object} data - Recurring schedule data
-   * @returns {Promise<Object>} Created recurring schedule data
+   * Create a new availability rule
+   * @param {Object} data - Availability rule data
+   * @returns {Promise<Object>} Created availability rule data
    */
-  createRecurringSchedule: async (data) => {
+  createAvailabilityRule: async (data) => {
     try {
-      return await apiClient.post('/appointments/recurring-schedules/', data);
+      return await apiClient.post('/appointments/availability-rules/', data);
     } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to create recurring schedule'));
+      throw new Error(handleApiError(error, 'Failed to create availability rule'));
     }
   },
 
   /**
-   * Update a recurring schedule
-   * @param {string} id - Recurring schedule ID
-   * @param {Object} data - Recurring schedule data to update
-   * @returns {Promise<Object>} Updated recurring schedule data
+   * Update an availability rule
+   * @param {string} id - Availability rule ID
+   * @param {Object} data - Availability rule data to update
+   * @returns {Promise<Object>} Updated availability rule data
    */
-  updateRecurringSchedule: async (id, data) => {
+  updateAvailabilityRule: async (id, data) => {
     try {
-      return await apiClient.put(`/appointments/recurring-schedules/${id}/`, data);
+      return await apiClient.put(`/appointments/availability-rules/${id}/`, data);
     } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to update recurring schedule'));
+      throw new Error(handleApiError(error, 'Failed to update availability rule'));
     }
   },
 
   /**
-   * Delete a recurring schedule
-   * @param {string} id - Recurring schedule ID
+   * Delete an availability rule
+   * @param {string} id - Availability rule ID
    * @returns {Promise<void>}
    */
-  deleteRecurringSchedule: async (id) => {
+  deleteAvailabilityRule: async (id) => {
     try {
-      return await apiClient.delete(`/appointments/recurring-schedules/${id}/`);
+      return await apiClient.delete(`/appointments/availability-rules/${id}/`);
     } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to delete recurring schedule'));
+      throw new Error(handleApiError(error, 'Failed to delete availability rule'));
     }
   },
 
   /**
-   * Preview slots for a recurring schedule configuration
+   * Preview slots for an availability rule configuration
    * @param {Object} data - Configuration data (start_time, end_time, slot_duration, breaks)
    * @returns {Promise<Object>} Preview result with slots
    */
   previewSlots: async (data) => {
     try {
-      return await apiClient.post('/appointments/recurring-schedules/preview_slots/', data);
+      return await apiClient.post('/appointments/availability-rules/preview_slots/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to preview slots'));
-    }
-  },
-
-  /**
-   * @deprecated This method is deprecated. Use just-in-time computation via getAvailableSlots instead.
-   * Batch generate slots for all practitioners with active recurring schedules
-   * @param {Object} params - Parameters including days (number of days to generate)
-   * @returns {Promise<Object>} Result of batch generation
-   */
-  batchGenerateSlots: async (params = {}) => {
-    console.warn('batchGenerateSlots is deprecated. Use getAvailableSlots for just-in-time computation.');
-    try {
-      return await apiClient.post('/appointments/batch-generate-slots/generate_slots/', params);
-    } catch (error) {
-      throw new Error(handleApiError(error, 'Failed to batch generate slots'));
     }
   },
 

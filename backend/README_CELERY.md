@@ -8,14 +8,11 @@ Celery is used for two main purposes in this project:
 1. Running background tasks asynchronously
 2. Scheduling periodic tasks (using Celery Beat)
 
-The main scheduled task is the weekly generation of appointment slots for practitioners with active recurring schedules.
-
 ## Configuration
 
 The Celery configuration is in the following files:
 - `hms_backend/celery.py`: Main Celery app configuration
 - `hms_backend/settings.py`: Celery settings and task schedule
-- `apps/appointments/tasks.py`: Task definitions
 
 ## Running Celery
 
@@ -91,29 +88,8 @@ celery -A hms_backend worker --beat --loglevel=info
 
 ## Scheduled Tasks
 
-### Weekly Slot Generation
-
-The system automatically generates appointment slots for practitioners with active recurring schedules. This task runs once a week and generates slots for the next 14 days.
-
-Configuration in `settings.py`:
-```python
-CELERY_BEAT_SCHEDULE = {
-    'generate-slots-weekly': {
-        'task': 'apps.appointments.tasks.generate_slots_weekly',
-        'schedule': timedelta(days=7),  # Run once a week
-        'args': (14,),  # Generate slots for the next 14 days
-    },
-}
-```
-
-## Manual Testing
-
-You can manually trigger the slot generation task for testing:
-
-```bash
-cd backend
-python test_celery_task.py
-```
+Appointment slots are computed on demand from roster sessions and practitioner
+personal calendars. There is no scheduled appointment slot generation task.
 
 ## Monitoring
 

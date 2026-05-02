@@ -12,8 +12,8 @@ export const appointmentKeys = {
   type: (id) => [...appointmentKeys.types(), id],
   availableSlots: (params) => [...appointmentKeys.all, 'availableSlots', params],
   scheduleSlots: (scheduleId, params) => [...appointmentKeys.all, 'scheduleSlots', scheduleId, params],
-  recurringSchedules: () => [...appointmentKeys.all, 'recurringSchedules'],
-  recurringSchedule: (id) => [...appointmentKeys.recurringSchedules(), id],
+  availabilityRules: () => [...appointmentKeys.all, 'availabilityRules'],
+  availabilityRule: (id) => [...appointmentKeys.availabilityRules(), id],
   scheduleMappings: () => [...appointmentKeys.all, 'scheduleMappings'],
   blockedTimes: (params) => [...appointmentKeys.all, 'blockedTimes', params],
   upcoming: () => [...appointmentKeys.all, 'upcoming'],
@@ -330,28 +330,28 @@ export function useScheduleSlots(scheduleId, params = {}) {
 }
 
 /**
- * Get recurring schedules
+ * Get practitioner availability rules
  * @param {Object} params - Query parameters
  * @returns {Object} Query result
  */
-export function useRecurringSchedules(params = {}, options = {}) {
+export function useAvailabilityRules(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: [...appointmentKeys.recurringSchedules(), params],
-    queryFn: () => appointmentsApi.getRecurringSchedules(params),
+    queryKey: [...appointmentKeys.availabilityRules(), params],
+    queryFn: () => appointmentsApi.getAvailabilityRules(params),
     enabled,
   });
 }
 
 /**
- * Get a single recurring schedule by ID
- * @param {string} id - Recurring schedule ID
+ * Get a single availability rule by ID
+ * @param {string} id - Availability rule ID
  * @returns {Object} Query result
  */
-export function useRecurringSchedule(id) {
+export function useAvailabilityRule(id) {
   return useQuery({
-    queryKey: appointmentKeys.recurringSchedule(id),
-    queryFn: () => appointmentsApi.getRecurringSchedule(id),
+    queryKey: appointmentKeys.availabilityRule(id),
+    queryFn: () => appointmentsApi.getAvailabilityRule(id),
     enabled: !!id,
   });
 }
@@ -457,55 +457,54 @@ export function useDeleteAppointmentType() {
 }
 
 /**
- * Create a new recurring schedule
+ * Create a new availability rule
  * @returns {Object} Mutation result
  */
-export function useCreateRecurringSchedule() {
+export function useCreateAvailabilityRule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data) => appointmentsApi.createRecurringSchedule(data),
+    mutationFn: (data) => appointmentsApi.createAvailabilityRule(data),
     onSuccess: () => {
-      // Invalidate the recurring schedules list query to refetch
-      queryClient.invalidateQueries({ queryKey: appointmentKeys.recurringSchedules() });
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.availabilityRules() });
     },
   });
 }
 
 /**
- * Update an existing recurring schedule
+ * Update an existing availability rule
  * @returns {Object} Mutation result
  */
-export function useUpdateRecurringSchedule() {
+export function useUpdateAvailabilityRule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }) => appointmentsApi.updateRecurringSchedule(id, data),
+    mutationFn: ({ id, data }) => appointmentsApi.updateAvailabilityRule(id, data),
 
     // Optimistic update - immediately update UI before server responds
     onMutate: async ({ id, data }) => {
       // Cancel any outgoing refetches so they don't overwrite our optimistic update
-      await queryClient.cancelQueries({ queryKey: appointmentKeys.recurringSchedule(id) });
+      await queryClient.cancelQueries({ queryKey: appointmentKeys.availabilityRule(id) });
 
       // Snapshot the previous value
-      const previousRecurringSchedule = queryClient.getQueryData(appointmentKeys.recurringSchedule(id));
+      const previousAvailabilityRule = queryClient.getQueryData(appointmentKeys.availabilityRule(id));
 
       // Optimistically update to the new value
-      queryClient.setQueryData(appointmentKeys.recurringSchedule(id), (old) => ({
+      queryClient.setQueryData(appointmentKeys.availabilityRule(id), (old) => ({
         ...old,
         ...data,
       }));
 
       // Return context with the previous value for potential rollback
-      return { previousRecurringSchedule, id };
+      return { previousAvailabilityRule, id };
     },
 
     // If mutation fails, rollback to the previous value
     onError: (err, variables, context) => {
-      if (context?.previousRecurringSchedule) {
+      if (context?.previousAvailabilityRule) {
         queryClient.setQueryData(
-          appointmentKeys.recurringSchedule(context.id),
-          context.previousRecurringSchedule
+          appointmentKeys.availabilityRule(context.id),
+          context.previousAvailabilityRule
         );
       }
     },
@@ -513,32 +512,30 @@ export function useUpdateRecurringSchedule() {
     // Always refetch after error or success to ensure consistency
     onSettled: (data, error, variables) => {
       queryClient.invalidateQueries({
-        queryKey: appointmentKeys.recurringSchedule(variables.id)
+        queryKey: appointmentKeys.availabilityRule(variables.id)
       });
       queryClient.invalidateQueries({
-        queryKey: appointmentKeys.recurringSchedules()
+        queryKey: appointmentKeys.availabilityRules()
       });
     },
   });
 }
 
 /**
- * Delete a recurring schedule
+ * Delete an availability rule
  * @returns {Object} Mutation result
  */
-export function useDeleteRecurringSchedule() {
+export function useDeleteAvailabilityRule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id) => appointmentsApi.deleteRecurringSchedule(id),
+    mutationFn: (id) => appointmentsApi.deleteAvailabilityRule(id),
     onSuccess: (data, variables) => {
-      // Invalidate the recurring schedule detail query
       queryClient.invalidateQueries({
-        queryKey: appointmentKeys.recurringSchedule(variables)
+        queryKey: appointmentKeys.availabilityRule(variables)
       });
-      // Also invalidate the list to reflect changes
       queryClient.invalidateQueries({
-        queryKey: appointmentKeys.recurringSchedules()
+        queryKey: appointmentKeys.availabilityRules()
       });
     },
   });

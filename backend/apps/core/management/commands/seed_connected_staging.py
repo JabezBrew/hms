@@ -24,7 +24,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.appointments.models import AppointmentType, RecurringSchedule
+from apps.appointments.models import AppointmentType, PractitionerAvailabilityRule
 from apps.clinical_notes.models import NoteTemplate
 from apps.core.models import Department, Facility
 from apps.encounters.models import Encounter
@@ -782,7 +782,7 @@ class Command(BaseCommand):
         if not practitioner:
             raise CommandError("Doctor practitioner profile not found.")
 
-        exists = RecurringSchedule.objects.filter(
+        exists = PractitionerAvailabilityRule.objects.filter(
             facility=facility,
             practitioner=practitioner,
             is_active=True,
@@ -802,7 +802,7 @@ class Command(BaseCommand):
             "breaks": [],
             "is_active": True,
         }
-        api.post("/api/appointments/recurring-schedules/", user=admin_user, data=payload, expected=(201,))
+        api.post("/api/appointments/availability-rules/", user=admin_user, data=payload, expected=(201,))
 
     def _ensure_note_template(self, *, api: FacilityApi, admin_user: User, facility: Facility) -> NoteTemplate:
         template = NoteTemplate.objects.filter(facility=facility, title=NOTE_TEMPLATE_TITLE).first()

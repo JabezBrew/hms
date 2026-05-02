@@ -3,7 +3,7 @@ Tests for appointments app API views.
 
 Tests cover:
 - AppointmentTypeViewSet (CRUD)
-- RecurringScheduleViewSet (CRUD, preview_slots)
+- PractitionerAvailabilityRuleViewSet (CRUD, preview_slots)
 - BlockedTimeViewSet (CRUD)
 
 Note: FHIR-dependent endpoints are mocked.
@@ -16,10 +16,10 @@ from unittest.mock import patch, MagicMock
 from rest_framework import status
 
 from apps.appointments.models import (
-    Appointment, AppointmentType, RecurringSchedule, BlockedTime
+    Appointment, AppointmentType, PractitionerAvailabilityRule, BlockedTime
 )
 from .factories import (
-    AppointmentTypeFactory, RecurringScheduleFactory, BlockedTimeFactory
+    AppointmentTypeFactory, PractitionerAvailabilityRuleFactory, BlockedTimeFactory
 )
 from apps.users.tests.factories import PractitionerProfileFactory, PatientProfileFactory
 from apps.core.tests.factories import DefaultFacilityFactory
@@ -193,18 +193,18 @@ class TestAppointmentTypeViewSet:
 
 
 @pytest.mark.tier1
-class TestRecurringScheduleViewSet:
-    """Tests for RecurringScheduleViewSet API endpoints."""
+class TestPractitionerAvailabilityRuleViewSet:
+    """Tests for PractitionerAvailabilityRuleViewSet API endpoints."""
 
-    def test_list_recurring_schedules(self, admin_client, db):
-        """Test listing all recurring schedules."""
-        RecurringScheduleFactory.create_batch(3)
-        response = admin_client.get(f'{BASE_URL}/recurring-schedules/')
+    def test_list_personal_calendars(self, admin_client, db):
+        """Test listing all personal calendar rules."""
+        PractitionerAvailabilityRuleFactory.create_batch(3)
+        response = admin_client.get(f'{BASE_URL}/availability-rules/')
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 3
 
-    def test_create_recurring_schedule(self, admin_client, default_facility, db):
-        """Test creating a new recurring schedule."""
+    def test_create_personal_calendar(self, admin_client, default_facility, db):
+        """Test creating a new personal calendar rule."""
         practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
         data = {
             'name': 'Morning Clinic',
@@ -217,14 +217,14 @@ class TestRecurringScheduleViewSet:
             'breaks': []
         }
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/',
+            f'{BASE_URL}/availability-rules/',
             data,
             format='json'
         )
         assert response.status_code == status.HTTP_201_CREATED
-        assert RecurringSchedule.objects.filter(name='Morning Clinic').exists()
+        assert PractitionerAvailabilityRule.objects.filter(name='Morning Clinic').exists()
 
-    def test_create_recurring_schedule_rejects_non_positive_slot_duration(
+    def test_create_personal_calendar_rejects_non_positive_slot_duration(
         self, admin_client, default_facility, db
     ):
         practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
@@ -240,7 +240,7 @@ class TestRecurringScheduleViewSet:
         }
 
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/',
+            f'{BASE_URL}/availability-rules/',
             data,
             format='json',
         )
@@ -248,7 +248,7 @@ class TestRecurringScheduleViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert 'slot_duration' in response.data
 
-    def test_create_shared_recurring_schedule_for_multiple_practitioners(self, admin_client, default_facility, db):
+    def test_create_shared_personal_calendar_for_multiple_practitioners(self, admin_client, default_facility, db):
         """Creating with practitioners should clone one schedule per practitioner."""
         practitioner_a = PractitionerProfileFactory(staff__primary_facility=default_facility)
         practitioner_b = PractitionerProfileFactory(staff__primary_facility=default_facility)
@@ -265,7 +265,7 @@ class TestRecurringScheduleViewSet:
             'breaks': [],
         }
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/',
+            f'{BASE_URL}/availability-rules/',
             data,
             format='json'
         )
@@ -274,10 +274,10 @@ class TestRecurringScheduleViewSet:
         assert response.data['created_count'] == 2
         assert response.data['template_name'] == 'Internal Medicine Shared AM'
         assert response.data['template_key']
-        assert len(response.data['created_schedules']) == 2
+        assert len(response.data['created_rules']) == 2
 
         template_key = response.data['template_key']
-        created = RecurringSchedule.objects.filter(
+        created = PractitionerAvailabilityRule.objects.filter(
             template_key=template_key
         ).order_by('practitioner_id')
         assert created.count() == 2
@@ -285,10 +285,10 @@ class TestRecurringScheduleViewSet:
             practitioner_a.id, practitioner_b.id
         }
 
-    def test_doctor_cannot_create_recurring_schedule_for_other_practitioners(
+    def test_doctor_cannot_create_personal_calendar_for_other_practitioners(
         self, doctor_client, doctor_user, default_facility, db
     ):
-        """Doctors can only create recurring schedules for themselves."""
+        """Doctors can only create personal calendar rules for themselves."""
         staff = Staff.objects.create(
             user=doctor_user,
             employee_id='DOC-SHARE-001',
@@ -316,14 +316,14 @@ class TestRecurringScheduleViewSet:
         }
 
         response = doctor_client.post(
-            f'{BASE_URL}/recurring-schedules/',
+            f'{BASE_URL}/availability-rules/',
             data,
             format='json'
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert 'practitioners' in response.data
 
-    def test_create_recurring_schedule_rejects_clash_with_published_roster_clinic(
+    def test_create_personal_calendar_rejects_clash_with_published_roster_clinic(
         self, admin_client, default_facility, db
     ):
         clinic = create_clinic(
@@ -372,7 +372,7 @@ class TestRecurringScheduleViewSet:
             'breaks': [],
         }
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/',
+            f'{BASE_URL}/availability-rules/',
             payload,
             format='json',
         )
@@ -381,21 +381,21 @@ class TestRecurringScheduleViewSet:
         assert 'start_time' in response.data
         assert 'clashes' in str(response.data['start_time'][0]).lower()
 
-    def test_retrieve_recurring_schedule(self, admin_client, db):
-        """Test retrieving a single recurring schedule."""
-        schedule = RecurringScheduleFactory(name='Test Schedule')
+    def test_retrieve_personal_calendar(self, admin_client, db):
+        """Test retrieving a single personal calendar rule."""
+        schedule = PractitionerAvailabilityRuleFactory(name='Test Schedule')
         response = admin_client.get(
-            f'{BASE_URL}/recurring-schedules/{schedule.id}/'
+            f'{BASE_URL}/availability-rules/{schedule.id}/'
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data['name'] == 'Test Schedule'
 
-    def test_update_recurring_schedule(self, admin_client, db):
-        """Test updating a recurring schedule."""
-        schedule = RecurringScheduleFactory(slot_duration=30)
+    def test_update_personal_calendar(self, admin_client, db):
+        """Test updating a personal calendar rule."""
+        schedule = PractitionerAvailabilityRuleFactory(slot_duration=30)
         data = {'slot_duration': 45}
         response = admin_client.patch(
-            f'{BASE_URL}/recurring-schedules/{schedule.id}/',
+            f'{BASE_URL}/availability-rules/{schedule.id}/',
             data,
             format='json'
         )
@@ -403,17 +403,17 @@ class TestRecurringScheduleViewSet:
         schedule.refresh_from_db()
         assert schedule.slot_duration == 45
 
-    def test_delete_recurring_schedule(self, admin_client, db):
-        """Test deleting a recurring schedule."""
-        schedule = RecurringScheduleFactory()
+    def test_delete_personal_calendar(self, admin_client, db):
+        """Test deleting a personal calendar rule."""
+        schedule = PractitionerAvailabilityRuleFactory()
         response = admin_client.delete(
-            f'{BASE_URL}/recurring-schedules/{schedule.id}/'
+            f'{BASE_URL}/availability-rules/{schedule.id}/'
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert not RecurringSchedule.objects.filter(id=schedule.id).exists()
+        assert not PractitionerAvailabilityRule.objects.filter(id=schedule.id).exists()
 
     def test_preview_slots_action(self, admin_client, db):
-        """Test preview_slots action for recurring schedule."""
+        """Test preview_slots action for personal calendar rule."""
         data = {
             'start_time': '09:00',
             'end_time': '17:00',
@@ -421,7 +421,7 @@ class TestRecurringScheduleViewSet:
             'breaks': [{'start': '12:00', 'end': '13:00'}]
         }
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/preview_slots/',
+            f'{BASE_URL}/availability-rules/preview_slots/',
             data,
             format='json'
         )
@@ -439,7 +439,7 @@ class TestRecurringScheduleViewSet:
             'breaks': []
         }
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/preview_slots/',
+            f'{BASE_URL}/availability-rules/preview_slots/',
             data,
             format='json'
         )
@@ -456,7 +456,7 @@ class TestRecurringScheduleViewSet:
         }
 
         response = admin_client.post(
-            f'{BASE_URL}/recurring-schedules/preview_slots/',
+            f'{BASE_URL}/availability-rules/preview_slots/',
             data,
             format='json',
         )
@@ -592,7 +592,7 @@ class TestAppointmentViewSet:
         practitioner = PractitionerProfileFactory()
         apt_type = AppointmentTypeFactory()
 
-        RecurringScheduleFactory(
+        PractitionerAvailabilityRuleFactory(
             practitioner=practitioner,
             facility=facility,
             days_of_week=[date.today().weekday()],
@@ -627,7 +627,7 @@ class TestAppointmentViewSet:
         practitioner = PractitionerProfileFactory()
         apt_type = AppointmentTypeFactory()
 
-        RecurringScheduleFactory(
+        PractitionerAvailabilityRuleFactory(
             practitioner=practitioner,
             facility=facility,
             days_of_week=[date.today().weekday()],
@@ -961,17 +961,17 @@ class TestAppointmentViewSet:
         assert response.data.get('clinic_mode') == Clinic.BookingMode.CLINIC_POOL
         assert response.data.get('total', 0) > 0
 
-    def test_available_slots_can_force_practitioner_schedule_only(self, admin_client, default_facility, db):
+    def test_available_slots_returns_roster_and_personal_calendar_sources(self, admin_client, default_facility, db):
         clinic = create_clinic(
             default_facility,
             booking_mode=Clinic.BookingMode.PRACTITIONER_DIRECT,
             assignment_timing=Clinic.AssignmentTiming.BOOKING,
         )
-        practitioner = PractitionerProfileFactory()
+        practitioner = PractitionerProfileFactory(staff__primary_facility=default_facility)
 
         tomorrow = timezone.localtime(timezone.now()).date() + timedelta(days=1)
 
-        RecurringScheduleFactory(
+        PractitionerAvailabilityRuleFactory(
             practitioner=practitioner,
             facility=default_facility,
             days_of_week=[tomorrow.weekday()],
@@ -979,7 +979,6 @@ class TestAppointmentViewSet:
             end_time=time(15, 0),
             slot_duration=30,
             active_from=tomorrow - timedelta(days=1),
-            migrated_to_roster=False,
         )
 
         duty_type = DepartmentDutyType.objects.create(
@@ -1015,16 +1014,15 @@ class TestAppointmentViewSet:
                 'start_date': tomorrow.isoformat(),
                 'end_date': tomorrow.isoformat(),
                 'status': 'free',
-                'use_roster': 'false',
             }
         )
 
         assert response.status_code == status.HTTP_200_OK
         slots = response.data.get('slots') or []
         assert slots
-        assert all(slot.get('source') == 'recurring_schedule' for slot in slots)
+        assert {slot.get('source') for slot in slots} == {'roster', 'personal_calendar'}
         slot_hours = {datetime.datetime.fromisoformat(slot['start']).hour for slot in slots}
-        assert slot_hours == {14}
+        assert slot_hours == {9, 14}
 
     def test_pool_clinic_bookings_decrement_capacity_even_when_unassigned(self, admin_client, default_facility, db):
         """

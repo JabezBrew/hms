@@ -9,7 +9,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.tests.factories import PatientProfileFactory, PractitionerProfileFactory
 from apps.organization.models import Clinic, ClinicalUnit, UnitTypeConfig
-from apps.appointments.tests.factories import AppointmentTypeFactory, RecurringScheduleFactory
+from apps.appointments.tests.factories import AppointmentTypeFactory, PractitionerAvailabilityRuleFactory
 from apps.appointments.models import Appointment
 from apps.encounters.models import Encounter, OutpatientVisit, TriageQueue
 
@@ -253,7 +253,7 @@ class TestTriageQueueFlow:
         practitioner = PractitionerProfileFactory()
         appointment_type = AppointmentTypeFactory()
 
-        RecurringScheduleFactory(
+        PractitionerAvailabilityRuleFactory(
             practitioner=practitioner,
             facility=facility,
             days_of_week=[timezone.now().weekday()],

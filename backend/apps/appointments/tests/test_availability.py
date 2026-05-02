@@ -2,12 +2,11 @@ from django.test import TestCase
 from django.utils import timezone
 from datetime import datetime, timedelta, date, time
 from apps.appointments.services import AvailabilityService
-from apps.appointments.models import RecurringSchedule, ScheduleFHIRMapping
+from apps.appointments.models import PractitionerAvailabilityRule
 from apps.users.models import PractitionerProfile, User
 from apps.core.models import Facility
 from rest_framework.test import APIClient
 
-from unittest.mock import patch, MagicMock
 
 class AvailabilityServiceTest(TestCase):
     def setUp(self):
@@ -54,18 +53,12 @@ class AvailabilityServiceTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.client.credentials(HTTP_X_FACILITY_CODE=self.facility.code)
 
-    @patch('apps.appointments.services.SlotProxy')
-    @patch('apps.appointments.services.ScheduleProxy')
-    def test_generate_slots_with_breaks(self, mock_schedule_proxy, mock_slot_proxy):
-        # Mock ScheduleProxy.create
-        mock_schedule_proxy.create.return_value = {"id": "schedule-123"}
-        
-        # Create a recurring schedule with a break
-        schedule = RecurringSchedule.objects.create(
+    def test_compute_personal_calendar_slots_with_breaks(self):
+        PractitionerAvailabilityRule.objects.create(
             name="Test Schedule",
             practitioner=self.practitioner,
             facility=self.facility,
-            days_of_week=[0, 1, 2, 3, 4, 5, 6],  # All days
+            days_of_week=[0, 1, 2, 3, 4, 5, 6],
             start_time=time(9, 0),
             end_time=time(17, 0),
             slot_duration=30,
@@ -73,23 +66,25 @@ class AvailabilityServiceTest(TestCase):
             breaks=[{"start": "12:00", "end": "13:00"}]
         )
 
-        # Generate slots for today
         target_date = date.today()
-        result = AvailabilityService.generate_slots_for_date(
+        result = AvailabilityService.compute_available_slots(
             practitioner_id=str(self.practitioner.id),
-            target_date=target_date,
-            user=self.user
+            start_date=target_date.isoformat(),
+            end_date=target_date.isoformat(),
+            facility=self.facility,
         )
 
-        # Verify slots count
-        # 9-12 (3 hours = 6 slots) + 13-17 (4 hours = 8 slots) = 14 slots
-        self.assertEqual(result['slots_created'], 14)
-        
-        # Verify SlotProxy.create was called 14 times
-        self.assertEqual(mock_slot_proxy.create.call_count, 14)
+        free_slots = [slot for slot in result if slot['status'] == 'free']
+        start_times = [datetime.fromisoformat(slot['start']).time() for slot in free_slots]
+        self.assertEqual(len(free_slots), 14)
+        self.assertIn(time(9, 0), start_times)
+        self.assertIn(time(11, 30), start_times)
+        self.assertNotIn(time(12, 0), start_times)
+        self.assertNotIn(time(12, 30), start_times)
+        self.assertIn(time(13, 0), start_times)
 
     def test_preview_slots_endpoint(self):
-        url = '/api/appointments/recurring-schedules/preview_slots/'
+        url = '/api/appointments/availability-rules/preview_slots/'
         data = {
             'start_time': '09:00',
             'end_time': '17:00',
@@ -112,16 +107,8 @@ class AvailabilityServiceTest(TestCase):
         self.assertNotIn('12:30', start_times)
         self.assertIn('13:00', start_times)
 
-    @patch('apps.appointments.services.SlotProxy')
-    @patch('apps.appointments.services.ScheduleProxy')
-    def test_generate_slots_overlapping_break(self, mock_schedule_proxy, mock_slot_proxy):
-        # Mock ScheduleProxy.create
-        mock_schedule_proxy.create.return_value = {"id": "schedule-123"}
-
-        # Test where a slot would partially overlap a break
-        # 9:00 - 10:00, 30 min slots. Break 9:15 - 9:45.
-        
-        schedule = RecurringSchedule.objects.create(
+    def test_compute_personal_calendar_slots_skip_overlapping_break(self):
+        PractitionerAvailabilityRule.objects.create(
             name="Overlap Test",
             practitioner=self.practitioner,
             facility=self.facility,
@@ -134,15 +121,11 @@ class AvailabilityServiceTest(TestCase):
         )
 
         target_date = date.today()
-        result = AvailabilityService.generate_slots_for_date(
+        result = AvailabilityService.compute_available_slots(
             practitioner_id=str(self.practitioner.id),
-            target_date=target_date,
-            user=self.user
+            start_date=target_date.isoformat(),
+            end_date=target_date.isoformat(),
+            facility=self.facility,
         )
 
-        # Slot 1: 9:00-9:30. Overlaps break. Skip.
-        # Next attempt: 9:45 (end of break).
-        # Slot 2: 9:45-10:15. Ends after schedule end (10:00). Skip.
-        
-        self.assertEqual(result['slots_created'], 0)
-        self.assertEqual(mock_slot_proxy.create.call_count, 0)
+        self.assertEqual([slot for slot in result if slot['status'] == 'free'], [])

@@ -1669,7 +1669,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             practitioner_ids.update(team_practitioner_ids)
         return practitioner_ids
 
-    def _build_recurring_conflict_map(
+    def _build_personal_availability_conflict_map(
         self,
         practitioner_ids,
         entry_date,
@@ -1680,9 +1680,9 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         if not practitioner_ids or not duty_type or duty_type.category != 'clinic':
             return {}
 
-        from apps.appointments.models import RecurringSchedule
+        from apps.appointments.models import PractitionerAvailabilityRule
 
-        recurring_qs = RecurringSchedule.objects.filter(
+        availability_qs = PractitionerAvailabilityRule.objects.filter(
             practitioner_id__in=practitioner_ids,
             is_active=True,
             active_from__lte=entry_date,
@@ -1694,11 +1694,11 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         effective_start = start_time or duty_type.start_time
         effective_end = end_time or duty_type.end_time
         if duty_type.is_24_hour:
-            conflicts = recurring_qs
+            conflicts = availability_qs
         elif not effective_start or not effective_end:
             return {}
         else:
-            conflicts = recurring_qs.filter(
+            conflicts = availability_qs.filter(
                 start_time__lt=effective_end,
                 end_time__gt=effective_start,
             )
@@ -1708,7 +1708,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             conflict_map.setdefault(conflict.practitioner_id, conflict)
         return conflict_map
 
-    def _validate_entry_against_recurring_schedules(
+    def _validate_entry_against_personal_availability(
         self,
         team,
         practitioner,
@@ -1718,7 +1718,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
         end_time=None,
     ):
         practitioner_ids = self._resolve_entry_practitioner_ids(team, practitioner, entry_date)
-        conflict_map = self._build_recurring_conflict_map(
+        conflict_map = self._build_personal_availability_conflict_map(
             practitioner_ids=practitioner_ids,
             entry_date=entry_date,
             duty_type=duty_type,
@@ -1734,7 +1734,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 return
             practitioner_name = conflict.practitioner.staff.user.get_full_name()
             raise ValidationError(
-                f"Roster entry conflicts with recurring schedule '{conflict.name}' for "
+                f"Roster entry conflicts with personal calendar rule '{conflict.name}' for "
                 f"{practitioner_name} ({conflict.start_time.strftime('%H:%M')}-"
                 f"{conflict.end_time.strftime('%H:%M')})."
             )
@@ -1745,7 +1745,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
             if assigned_ids and assigned_ids.issubset(conflicting_ids):
                 sample_conflict = next(iter(conflict_map.values()))
                 raise ValidationError(
-                    "Roster team entry conflicts with recurring schedules for all assigned "
+                    "Roster team entry conflicts with personal calendar rules for all assigned "
                     f"practitioners (for example: {sample_conflict.name})."
                 )
 
@@ -1775,7 +1775,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
         if duty_type and entry_date:
-            self._validate_entry_against_recurring_schedules(
+            self._validate_entry_against_personal_availability(
                 team=team,
                 practitioner=serializer.validated_data.get('practitioner'),
                 entry_date=entry_date,
@@ -1827,7 +1827,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
         if duty_type and entry_date:
-            self._validate_entry_against_recurring_schedules(
+            self._validate_entry_against_personal_availability(
                 team=team,
                 practitioner=practitioner,
                 entry_date=entry_date,
@@ -1984,7 +1984,7 @@ class RosterEntryViewSet(viewsets.ModelViewSet):
                 if back_to_back_error:
                     raise ValidationError('Cannot assign back-to-back 24-hour shifts.')
 
-            self._validate_entry_against_recurring_schedules(
+            self._validate_entry_against_personal_availability(
                 team=team,
                 practitioner=practitioner,
                 entry_date=entry['date'],

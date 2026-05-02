@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework_simplejwt.tokens import AccessToken
 
-from apps.appointments.models import RecurringSchedule
+from apps.appointments.models import PractitionerAvailabilityRule
 from apps.organization.models import (
     ClinicalUnit,
     Clinic,
@@ -340,10 +340,10 @@ def test_bulk_roster_supports_practitioner_entries(admin_api_client, department,
 
 
 @pytest.mark.django_db
-def test_roster_create_rejects_conflict_with_recurring_schedule(
+def test_roster_create_rejects_conflict_with_personal_calendar(
     admin_api_client, department, default_facility
 ):
-    """A clinic roster entry cannot overlap an active recurring schedule for the same practitioner."""
+    """A clinic roster entry cannot overlap an active personal calendar rule for the same practitioner."""
     practitioner = PractitionerProfileFactory(
         staff__primary_facility=default_facility,
         staff__user__primary_facility=default_facility,
@@ -359,7 +359,7 @@ def test_roster_create_rejects_conflict_with_recurring_schedule(
     )
 
     target_date = date(2026, 3, 7)
-    RecurringSchedule.objects.create(
+    PractitionerAvailabilityRule.objects.create(
         facility=default_facility,
         name='Direct Clinic Schedule',
         practitioner=practitioner,
@@ -405,14 +405,14 @@ def test_roster_create_rejects_conflict_with_recurring_schedule(
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert 'conflicts with recurring schedule' in str(response.data).lower()
+    assert 'conflicts with personal calendar rule' in str(response.data).lower()
 
 
 @pytest.mark.django_db
-def test_roster_bulk_rejects_team_conflict_with_recurring_schedule(
+def test_roster_bulk_rejects_team_conflict_with_personal_calendar(
     admin_api_client, department, team, default_facility
 ):
-    """Bulk roster creation should block team entries that overlap assigned doctors' recurring schedules."""
+    """Bulk roster creation should block team entries that overlap assigned doctors' personal calendar rules."""
     practitioner = PractitionerProfileFactory(
         staff__primary_facility=default_facility,
         staff__user__primary_facility=default_facility,
@@ -429,9 +429,9 @@ def test_roster_bulk_rejects_team_conflict_with_recurring_schedule(
     )
 
     target_date = date(2026, 3, 8)
-    RecurringSchedule.objects.create(
+    PractitionerAvailabilityRule.objects.create(
         facility=default_facility,
-        name='Recurring Team Member Slot',
+        name='Personal Team Member Slot',
         practitioner=practitioner,
         days_of_week=[target_date.weekday()],
         start_time=time(14, 0),
@@ -487,7 +487,7 @@ def test_roster_bulk_rejects_team_conflict_with_recurring_schedule(
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert 'conflicts with recurring schedule' in str(response.data).lower()
+    assert 'conflicts with personal calendar rule' in str(response.data).lower()
 
 
 @pytest.mark.django_db
@@ -524,7 +524,7 @@ def test_roster_bulk_allows_team_entry_when_at_least_one_assigned_practitioner_i
     )
 
     target_date = date(2026, 3, 10)
-    RecurringSchedule.objects.create(
+    PractitionerAvailabilityRule.objects.create(
         facility=default_facility,
         name='Conflicting Solo Schedule',
         practitioner=conflicted_practitioner,
@@ -586,10 +586,10 @@ def test_roster_bulk_allows_team_entry_when_at_least_one_assigned_practitioner_i
 
 
 @pytest.mark.django_db
-def test_roster_update_rejects_conflict_with_recurring_schedule(
+def test_roster_update_rejects_conflict_with_personal_calendar(
     admin_api_client, department, default_facility
 ):
-    """Updating an existing clinic roster entry must also enforce recurring schedule conflicts."""
+    """Updating an existing clinic roster entry must also enforce personal calendar rule conflicts."""
     practitioner = PractitionerProfileFactory(
         staff__primary_facility=default_facility,
         staff__user__primary_facility=default_facility,
@@ -604,7 +604,7 @@ def test_roster_update_rejects_conflict_with_recurring_schedule(
         is_active=True,
     )
     target_date = date(2026, 3, 9)
-    RecurringSchedule.objects.create(
+    PractitionerAvailabilityRule.objects.create(
         facility=default_facility,
         name='Update Conflict Schedule',
         practitioner=practitioner,
@@ -655,7 +655,7 @@ def test_roster_update_rejects_conflict_with_recurring_schedule(
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert 'conflicts with recurring schedule' in str(response.data).lower()
+    assert 'conflicts with personal calendar rule' in str(response.data).lower()
 
 
 @pytest.mark.django_db

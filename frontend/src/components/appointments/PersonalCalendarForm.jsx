@@ -44,8 +44,8 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 
 import {
-  useCreateRecurringSchedule,
-  useUpdateRecurringSchedule
+  useCreateAvailabilityRule,
+  useUpdateAvailabilityRule
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import {
   useSearchPractitioners
@@ -87,7 +87,7 @@ const formSchema = z.object({
   })).optional(),
 });
 
-const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
+const PersonalCalendarForm = ({ initialData = null, onSuccess }) => {
   const { user } = useAuth();
   const isDoctor = user?.role === 'doctor';
   const isAdmin = user?.role === 'admin';
@@ -102,7 +102,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   const [selectedSharedPractitioner, setSelectedSharedPractitioner] = useState(null);
   const isEditing = !!initialData;
 
-  // Determine if practitioner should be auto-filled (doctor creating their own schedule)
+  // Determine if practitioner should be auto-filled (doctor creating their own rule)
   const shouldAutoFillPractitioner = isDoctor && currentUserPractitionerId && !isEditing;
 
   // Use React Query hooks for data fetching - only enable search when not auto-filling
@@ -117,8 +117,8 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   });
 
   // Create and update mutations
-  const createRecurringScheduleMutation = useCreateRecurringSchedule();
-  const updateRecurringScheduleMutation = useUpdateRecurringSchedule();
+  const createAvailabilityRuleMutation = useCreateAvailabilityRule();
+  const updateAvailabilityRuleMutation = useUpdateAvailabilityRule();
 
   // Show error toast if query fails
   useEffect(() => {
@@ -174,7 +174,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   ];
 
   // Initialize form with default values or initial data
-  // Auto-fill practitioner for doctors creating their own schedule
+  // Auto-fill practitioner for doctors creating their own rule
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -298,19 +298,19 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
       }
 
       if (isEditing) {
-        // Update existing schedule using mutation
-        updateRecurringScheduleMutation.mutate(
+        // Update existing rule using mutation
+        updateAvailabilityRuleMutation.mutate(
           { id: initialData.id, data: formattedData },
           {
             onSuccess: (result) => {
-              toast.success("Recurring schedule updated successfully");
+              toast.success("Personal calendar rule updated successfully");
               if (onSuccess) {
                 onSuccess(result);
               }
             },
             onError: (error) => {
-              console.error('Error updating recurring schedule:', error);
-              toast.error(error.message || 'Failed to update recurring schedule');
+              console.error('Error updating personal calendar rule:', error);
+              toast.error(error.message || 'Failed to update personal calendar rule');
             },
             onSettled: () => {
               setSubmitting(false);
@@ -318,24 +318,24 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
           }
         );
       } else {
-        // Create new schedule using mutation
-        createRecurringScheduleMutation.mutate(
+        // Create new rule using mutation
+        createAvailabilityRuleMutation.mutate(
           formattedData,
           {
             onSuccess: (result) => {
               const createdCount = Number(result?.created_count || 0);
               if (createdCount > 1) {
-                toast.success(`Recurring schedule template applied to ${createdCount} practitioners`);
+                toast.success(`Personal calendar rule template applied to ${createdCount} practitioners`);
               } else {
-                toast.success("Recurring schedule created successfully");
+                toast.success("Personal calendar rule created successfully");
               }
               if (onSuccess) {
                 onSuccess(result);
               }
             },
             onError: (error) => {
-              console.error('Error creating recurring schedule:', error);
-              toast.error(error.message || 'Failed to create recurring schedule');
+              console.error('Error creating personal calendar rule:', error);
+              toast.error(error.message || 'Failed to create personal calendar rule');
             },
             onSettled: () => {
               setSubmitting(false);
@@ -344,8 +344,8 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
         );
       }
     } catch (error) {
-      console.error('Error preparing recurring schedule data:', error);
-      toast.error(error.message || 'Failed to prepare recurring schedule data');
+      console.error('Error preparing personal calendar rule data:', error);
+      toast.error(error.message || 'Failed to prepare personal calendar rule data');
       setSubmitting(false);
     }
   };
@@ -353,13 +353,13 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-        {/* Schedule Name */}
+        {/* Rule Name */}
         <FormField
           control={form.control}
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="font-heading text-sm font-medium">Schedule Name</FormLabel>
+              <FormLabel className="font-heading text-sm font-medium">Rule Name</FormLabel>
               <FormControl>
                 <Input
                   placeholder="e.g., Regular Office Hours"
@@ -369,14 +369,14 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                 />
               </FormControl>
               <FormDescription className="text-xs text-muted-foreground">
-                A descriptive name for this recurring schedule.
+                A descriptive name for this personal calendar rule.
               </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        {/* Practitioner Selection - Show read-only display for doctors creating their own schedule */}
+        {/* Practitioner Selection - Show read-only display for doctors creating their own rule */}
         {shouldAutoFillPractitioner ? (
           <FormItem>
             <FormLabel className="font-heading text-sm font-medium">Practitioner</FormLabel>
@@ -386,11 +386,11 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-display text-sm font-medium truncate">{currentUserName}</p>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Your Schedule</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Your Calendar</p>
               </div>
             </div>
             <FormDescription className="text-xs text-muted-foreground">
-              This schedule will be created for you.
+              This personal calendar rule will be created for you.
             </FormDescription>
           </FormItem>
         ) : (
@@ -415,7 +415,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                   />
                 </FormControl>
                 <FormDescription className="text-xs text-muted-foreground">
-                  The practitioner this schedule applies to. Search by name, employee ID, or license number.
+                  The practitioner this rule applies to. Search by name, employee ID, or license number.
                   {isEditing && " Practitioner cannot be changed after creation."}
                 </FormDescription>
                 <FormMessage />
@@ -429,7 +429,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
             <div className="space-y-1">
               <h4 className="font-heading text-sm font-medium">Share As Template</h4>
               <p className="text-xs text-muted-foreground">
-                Apply this same recurring schedule to multiple practitioners in one save.
+                Apply this same personal calendar rule to multiple practitioners in one save.
               </p>
             </div>
 
@@ -448,7 +448,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                     />
                   </FormControl>
                   <FormDescription className="text-xs text-muted-foreground">
-                    Used to label the shared schedule group.
+                    Used to label the shared calendar group.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -505,7 +505,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No additional practitioners selected. This will create a single schedule.
+                  No additional practitioners selected. This will create a single rule.
                 </p>
               )}
             </div>
@@ -586,7 +586,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                   })}
                 </div>
                 <FormDescription className="text-xs text-muted-foreground">
-                  Select the days of the week when this schedule applies.
+                  Select the days of the week when this rule applies.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -777,7 +777,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
                   </PopoverContent>
                 </Popover>
                 <FormDescription className="text-xs text-muted-foreground">
-                  When this schedule becomes active.
+                  When this rule becomes active.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -907,7 +907,7 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
             disabled={submitting}
             className="bg-amber-600 hover:bg-amber-700 font-mono text-xs"
           >
-            {submitting ? 'Saving...' : isEditing ? 'Update Schedule' : 'Create Schedule'}
+            {submitting ? 'Saving...' : isEditing ? 'Update Rule' : 'Create Rule'}
           </Button>
         </div>
       </form>
@@ -915,4 +915,4 @@ const RecurringScheduleForm = ({ initialData = null, onSuccess }) => {
   );
 };
 
-export default RecurringScheduleForm;
+export default PersonalCalendarForm;

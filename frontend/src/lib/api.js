@@ -22,14 +22,13 @@ export const updateAppointmentStatus = (id, status) => appointmentsApi.updateApp
 export const checkInAppointment = (id) => appointmentsApi.checkInAppointment(id);
 export const cancelAppointment = (id, reason) => appointmentsApi.cancelAppointment(id, reason);
 
-// Recurring Schedule API functions
-export const fetchRecurringSchedules = (params) => appointmentsApi.getRecurringSchedules(params);
-export const fetchRecurringSchedule = (id) => appointmentsApi.getRecurringSchedule(id);
-export const createRecurringSchedule = (data) => appointmentsApi.createRecurringSchedule(data);
-export const updateRecurringSchedule = (id, data) => appointmentsApi.updateRecurringSchedule(id, data);
-export const deleteRecurringSchedule = (id) => appointmentsApi.deleteRecurringSchedule(id);
+// Personal calendar API functions
+export const fetchAvailabilityRules = (params) => appointmentsApi.getAvailabilityRules(params);
+export const fetchAvailabilityRule = (id) => appointmentsApi.getAvailabilityRule(id);
+export const createAvailabilityRule = (data) => appointmentsApi.createAvailabilityRule(data);
+export const updateAvailabilityRule = (id, data) => appointmentsApi.updateAvailabilityRule(id, data);
+export const deleteAvailabilityRule = (id) => appointmentsApi.deleteAvailabilityRule(id);
 export const previewSlots = (data) => appointmentsApi.previewSlots(data);
-export const batchGenerateSlots = (days = 14) => appointmentsApi.batchGenerateSlots({ days });
 
 // Blocked Time API functions
 export const fetchBlockedTimes = (params) => appointmentsApi.getBlockedTimes(params);
