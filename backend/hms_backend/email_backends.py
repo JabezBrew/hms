@@ -1,26 +1,31 @@
 """
-Custom SendGrid email backend using the Web API.
+Django email backend for Unosend's REST API.
 """
 import base64
+
+import requests
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import (
-    Mail, Attachment, FileContent, FileName, FileType, Disposition
-)
 
 
-class SendGridEmailBackend(BaseEmailBackend):
+class UnosendEmailError(Exception):
+    """Raised when Unosend rejects or cannot process an email request."""
+
+
+class UnosendEmailBackend(BaseEmailBackend):
     """
-    Django email backend that uses SendGrid Web API.
+    Django email backend that sends messages through Unosend.
     """
 
     def __init__(self, fail_silently=False, **kwargs):
         super().__init__(fail_silently=fail_silently, **kwargs)
-        self.api_key = getattr(settings, 'SENDGRID_API_KEY', None)
+        self.api_key = getattr(settings, 'UNOSEND_API_KEY', None)
         if not self.api_key:
-            raise ValueError("SENDGRID_API_KEY setting is required")
-        self.client = SendGridAPIClient(self.api_key)
+            raise ValueError("UNOSEND_API_KEY setting is required")
+
+        base_url = getattr(settings, 'UNOSEND_API_BASE_URL', 'https://api.unosend.co')
+        self.endpoint_url = f"{base_url.rstrip('/')}/emails"
+        self.timeout = getattr(settings, 'UNOSEND_REQUEST_TIMEOUT_SECONDS', 10)
 
     def send_messages(self, email_messages):
         """
@@ -34,62 +39,102 @@ class SendGridEmailBackend(BaseEmailBackend):
             try:
                 if self._send(message):
                     num_sent += 1
-            except Exception as e:
+            except Exception:
                 if not self.fail_silently:
                     raise
         return num_sent
 
     def _send(self, message):
         """
-        Send a single EmailMessage using SendGrid API.
+        Send a single EmailMessage using Unosend's email API.
         """
         if not message.recipients():
             return False
 
-        # Build the SendGrid Mail object
-        mail = Mail(
-            from_email=message.from_email or settings.DEFAULT_FROM_EMAIL,
-            to_emails=message.to,
-            subject=message.subject,
+        payload = self._build_payload(message)
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+
+        response = requests.post(
+            self.endpoint_url,
+            json=payload,
+            headers=headers,
+            timeout=self.timeout,
         )
 
-        # Handle HTML and plain text content
-        if hasattr(message, 'alternatives') and message.alternatives:
-            # This is an EmailMultiAlternatives with HTML content
-            mail.add_content(message.body, 'text/plain')
-            for content, mimetype in message.alternatives:
-                if mimetype == 'text/html':
-                    mail.add_content(content, 'text/html')
-        else:
-            # Plain text only
-            content_type = getattr(message, 'content_subtype', 'plain')
-            mail.add_content(message.body, f'text/{content_type}')
+        if 200 <= response.status_code < 300:
+            return True
 
-        # Add CC recipients
+        raise UnosendEmailError(f"Unosend API returned HTTP {response.status_code}")
+
+    def _build_payload(self, message):
+        payload = {
+            'from': message.from_email or settings.DEFAULT_FROM_EMAIL,
+            'to': list(message.to),
+            'subject': message.subject,
+        }
+
+        text_body, html_body = self._extract_bodies(message)
+        if html_body:
+            payload['html'] = html_body
+        if text_body:
+            payload['text'] = text_body
+
         if message.cc:
-            for cc_email in message.cc:
-                mail.add_cc(cc_email)
-
-        # Add BCC recipients
+            payload['cc'] = list(message.cc)
         if message.bcc:
-            for bcc_email in message.bcc:
-                mail.add_bcc(bcc_email)
+            payload['bcc'] = list(message.bcc)
+        if getattr(message, 'reply_to', None):
+            payload['reply_to'] = message.reply_to[0]
+        if message.extra_headers:
+            payload['headers'] = dict(message.extra_headers)
 
-        # Handle attachments
-        if message.attachments:
-            for attachment in message.attachments:
-                if isinstance(attachment, tuple):
-                    filename, content, mimetype = attachment
-                    if isinstance(content, str):
-                        content = content.encode('utf-8')
-                    encoded = base64.b64encode(content).decode()
-                    mail.add_attachment(Attachment(
-                        FileContent(encoded),
-                        FileName(filename),
-                        FileType(mimetype or 'application/octet-stream'),
-                        Disposition('attachment')
-                    ))
+        attachments = self._build_attachments(message)
+        if attachments:
+            payload['attachments'] = attachments
 
-        # Send via SendGrid API
-        response = self.client.send(mail)
-        return response.status_code in [200, 201, 202]
+        return payload
+
+    def _extract_bodies(self, message):
+        content_subtype = getattr(message, 'content_subtype', 'plain')
+        text_body = message.body if content_subtype == 'plain' else ''
+        html_body = message.body if content_subtype == 'html' else ''
+
+        for content, mimetype in getattr(message, 'alternatives', []) or []:
+            if mimetype == 'text/html':
+                html_body = content
+            elif mimetype == 'text/plain' and not text_body:
+                text_body = content
+
+        return text_body, html_body
+
+    def _build_attachments(self, message):
+        attachments = []
+        for attachment in message.attachments:
+            normalized = self._normalize_attachment(attachment)
+            if normalized:
+                attachments.append(normalized)
+        return attachments
+
+    def _normalize_attachment(self, attachment):
+        if isinstance(attachment, tuple):
+            filename, content, mimetype = attachment
+        else:
+            filename = attachment.get_filename()
+            content = attachment.get_payload(decode=True)
+            mimetype = attachment.get_content_type()
+
+        if not filename or content is None:
+            return None
+
+        if isinstance(content, str):
+            content = content.encode('utf-8')
+
+        return {
+            'filename': filename,
+            'content': base64.b64encode(content).decode('ascii'),
+            'content_type': mimetype or 'application/octet-stream',
+        }

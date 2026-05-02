@@ -62,7 +62,7 @@ PRESERVED_FROM_ENV_KEYS = {
     'SESSION_HASH_SALT',
     'ADMIN_PASSWORD',
     'RESTIC_PASSWORD',
-    'SENDGRID_API_KEY',
+    'UNOSEND_API_KEY',
     'GOOGLE_APPLICATION_CREDENTIALS',
     'GOOGLE_CLOUD_PROJECT',
     'GOOGLE_HEALTHCARE_DATASET',
@@ -258,9 +258,9 @@ def generated_values(
         'WEBAUTHN_RP_ID': domain,
         'WEBAUTHN_ALLOWED_ORIGINS': secure_origin,
         'MFA_TOTP_ISSUER': f'HMS {name}',
-        'SENDGRID_API_KEY': 'CHANGE_ME_sendgrid_api_key'
+        'UNOSEND_API_KEY': 'CHANGE_ME_unosend_api_key'
         if is_production
-        else 'demo-dummy-sendgrid-disabled',
+        else 'demo-dummy-unosend-disabled',
         'DEFAULT_FROM_EMAIL': f'noreply@{domain}',
         'GOOGLE_APPLICATION_CREDENTIALS': '/dev/null',
         'GOOGLE_CLOUD_PROJECT': 'client-disabled',
@@ -348,7 +348,7 @@ ENV_SECTIONS = (
             'MFA_TOTP_ISSUER',
         ),
     ),
-    ('Email', ('SENDGRID_API_KEY', 'DEFAULT_FROM_EMAIL')),
+    ('Email', ('UNOSEND_API_KEY', 'DEFAULT_FROM_EMAIL')),
     (
         'Google Healthcare API',
         (

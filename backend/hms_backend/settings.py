@@ -701,9 +701,11 @@ CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG el
 TEAM_ACCESS_STRICT = env.bool('TEAM_ACCESS_STRICT', default=True)
 BREAK_GLASS_TTL_MINUTES = env.int('BREAK_GLASS_TTL_MINUTES', default=30)
 
-# Email settings - SendGrid Web API
-EMAIL_BACKEND = 'hms_backend.email_backends.SendGridEmailBackend'
-SENDGRID_API_KEY = env_required('SENDGRID_API_KEY')
+# Email settings - Unosend REST API
+EMAIL_BACKEND = 'hms_backend.email_backends.UnosendEmailBackend'
+UNOSEND_API_KEY = env_required('UNOSEND_API_KEY')
+UNOSEND_API_BASE_URL = env('UNOSEND_API_BASE_URL', default='https://api.unosend.co')
+UNOSEND_REQUEST_TIMEOUT_SECONDS = env.int('UNOSEND_REQUEST_TIMEOUT_SECONDS', default=10)
 DEFAULT_FROM_EMAIL = env_required('DEFAULT_FROM_EMAIL')
 
 # Google Cloud Healthcare API settings
