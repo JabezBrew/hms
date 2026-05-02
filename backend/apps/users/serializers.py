@@ -1147,12 +1147,13 @@ class StaffListSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     email = serializers.EmailField(source='user.email', read_only=True)
     user_type = serializers.CharField(source='user.user_type', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
 
     class Meta:
         model = Staff
         fields = [
             'id', 'name', 'email', 'user_type', 'employee_id',
-            'department', 'position', 'hire_date', 'user'
+            'department', 'position', 'hire_date', 'is_active', 'user'
         ]
 
     def get_name(self, obj):
@@ -1170,13 +1171,14 @@ class StaffSearchSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source='user.email', read_only=True)
     user_type = serializers.CharField(source='user.user_type', read_only=True)
     user_id = serializers.UUIDField(source='user.id', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
     practitioner_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Staff
         fields = [
             'id', 'user_id', 'name', 'email', 'user_type',
-            'employee_id', 'practitioner_id'
+            'employee_id', 'is_active', 'practitioner_id'
         ]
 
     def get_name(self, obj):

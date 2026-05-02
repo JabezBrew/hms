@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -23,6 +24,22 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { PageShell } from "@/shared/components/page/PageShell";
 import { useListFilters } from "@/shared/hooks/useListFilters";
+
+const getStaffUserType = (member) => {
+  return member?.user_type || member?.user_details?.user_type || '';
+};
+
+const getStaffIsActive = (member) => {
+  return member?.is_active ?? member?.user_details?.is_active ?? true;
+};
+
+const formatRoleLabel = (role) => {
+  if (!role) return '';
+  return role
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
 
 /**
  * StaffListPage - Chronicle-style staff directory
@@ -39,13 +56,19 @@ const StaffListPage = () => {
   const { search: searchQuery, updateSearch, hasActiveFilters: hasBaseFilters } = useListFilters();
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedDepartment, setSelectedDepartment] = useState("all");
+  const [includeInactive, setIncludeInactive] = useState(false);
+
+  const staffFilters = useMemo(
+    () => (includeInactive ? { include_inactive: 'true' } : {}),
+    [includeInactive]
+  );
 
   // Fetch staff
   const {
     data: staffData = [],
     isLoading,
     refetch
-  } = useStaff();
+  } = useStaff(staffFilters);
 
   // ============================================
   // Data processing
@@ -58,10 +81,6 @@ const StaffListPage = () => {
       : (staffData?.results || staffData?.staff || []);
     return Array.isArray(staff) ? staff : [];
   }, [staffData]);
-
-  const getStaffUserType = (member) => {
-    return member?.user_type || member?.user_details?.user_type || '';
-  };
 
   // Extract unique roles for filter
   const uniqueRoles = useMemo(() => {
@@ -92,7 +111,7 @@ const StaffListPage = () => {
         const name = member?.name?.toLowerCase() || '';
         const firstName = member?.user_details?.first_name?.toLowerCase() || '';
         const lastName = member?.user_details?.last_name?.toLowerCase() || '';
-        const email = member?.user_details?.email?.toLowerCase() || '';
+        const email = (member?.user_details?.email || member?.email || '').toLowerCase();
         const department = member?.department?.toLowerCase() || '';
         const position = member?.position?.toLowerCase() || '';
         const employeeId = member?.employee_id?.toLowerCase() || '';
@@ -125,12 +144,13 @@ const StaffListPage = () => {
   // Calculate stats
   const stats = useMemo(() => {
     const total = staffList.length;
-    const active = staffList.filter(s => s?.user_details?.is_active !== false).length;
+    const active = staffList.filter(getStaffIsActive).length;
+    const inactive = total - active;
     const practitioners = staffList.filter(s =>
       ['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(getStaffUserType(s))
     ).length;
 
-    return { total, active, practitioners };
+    return { total, active, inactive, practitioners };
   }, [staffList]);
 
   // ============================================
@@ -153,15 +173,6 @@ const StaffListPage = () => {
 
   const hasActiveFilters = hasBaseFilters || selectedRole !== "all" || selectedDepartment !== "all";
 
-  // Format role label
-  const formatRoleLabel = (role) => {
-    if (!role) return '';
-    return role
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
   const headerDescription = (
     <span>
       {stats.total} staff members
@@ -173,6 +184,11 @@ const StaffListPage = () => {
       {stats.active !== stats.total && (
         <span className="text-muted-foreground ml-2">
           · {stats.active} active
+        </span>
+      )}
+      {includeInactive && stats.inactive > 0 && (
+        <span className="text-amber-600 ml-2">
+          · {stats.inactive} inactive
         </span>
       )}
     </span>
@@ -245,19 +261,22 @@ const StaffListPage = () => {
       key: "status",
       header: "Status",
       width: "120px",
-      render: (member) => (
-        <Badge
-          variant="outline"
-          className={cn(
-            "text-xs",
-            member?.user_details?.is_active === false
-              ? "border-border text-muted-foreground"
-              : "border-emerald-200 bg-emerald-50 text-emerald-700"
-          )}
-        >
-          {member?.user_details?.is_active === false ? "Inactive" : "Active"}
-        </Badge>
-      ),
+      render: (member) => {
+        const isActive = getStaffIsActive(member);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-xs",
+              isActive
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-amber-200 bg-amber-50 text-amber-700"
+            )}
+          >
+            {isActive ? "Active" : "Inactive"}
+          </Badge>
+        );
+      },
     },
   ]), []);
 
@@ -334,6 +353,15 @@ const StaffListPage = () => {
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
+
+            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 font-mono text-xs text-muted-foreground">
+              <Switch
+                checked={includeInactive}
+                onCheckedChange={setIncludeInactive}
+                aria-label="Show inactive staff"
+              />
+              Show inactive
+            </label>
 
             {/* Clear Filters */}
             {hasActiveFilters && (

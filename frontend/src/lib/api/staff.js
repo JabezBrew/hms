@@ -86,6 +86,19 @@ export const staffApi = {
   },
 
   /**
+   * Reactivate a deprovisioned staff account and send a setup/reset link
+   * @param {string} staffId - Staff ID
+   * @returns {Promise<Object>} API response with mode, detail, and staff
+   */
+  reactivateStaff: async (staffId) => {
+    try {
+      return await apiClient.post(`/users/staff/${staffId}/reactivate/`);
+    } catch (error) {
+      throw new Error(handleApiError(error, 'Failed to reactivate staff account'));
+    }
+  },
+
+  /**
    * Resend account setup/reset link for an existing staff account
    * @param {string} staffId - Staff ID
    * @returns {Promise<Object>} API response with mode and detail

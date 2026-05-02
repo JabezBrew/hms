@@ -581,6 +581,73 @@ class StaffViewSet(viewsets.ModelViewSet):
         )
         return Response({"detail": detail, "mode": mode}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    def reactivate(self, request, pk=None):
+        """
+        Reactivate a deprovisioned staff account and send a setup/reset link.
+
+        This intentionally does not restore old ward/unit leadership assignments:
+        those grant operational access and must be reviewed explicitly after a
+        staff member returns.
+        """
+        staff = self.get_object()
+        user = getattr(staff, 'user', None)
+        if not user:
+            return Response({"detail": "Staff user account not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        if user.primary_facility_id and user.primary_facility_id != facility.id:
+            raise PermissionDenied("Staff user belongs to a different facility.")
+
+        with transaction.atomic():
+            update_fields = []
+            if not user.is_active:
+                user.is_active = True
+                update_fields.append('is_active')
+            if user.primary_facility_id is None:
+                user.primary_facility = facility
+                update_fields.append('primary_facility')
+            if update_fields:
+                user.save(update_fields=update_fields)
+            user.facilities.add(facility)
+
+            staff.updated_by = request.user
+            staff.save(update_fields=['updated_by', 'updated_at'])
+
+        try:
+            mode = self._dispatch_staff_setup_or_reset_email(staff=staff, initiated_by=request.user)
+        except Exception:
+            logger.exception(
+                "Failed to send setup link after staff reactivation",
+                extra={"staff_id": str(staff.id), "user_id": str(user.id)},
+            )
+            return Response(
+                {
+                    "detail": (
+                        "Staff account was reactivated, but the setup link could not be sent. "
+                        "Use Resend Setup Link from the staff profile."
+                    )
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        detail = (
+            "Staff account reactivated and account setup link sent."
+            if mode == "account_setup"
+            else "Staff account reactivated and password reset link sent."
+        )
+        staff.refresh_from_db()
+        return Response(
+            {
+                "detail": detail,
+                "mode": mode,
+                "staff": StaffSerializer(staff, context={'request': request}).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
     def _dispatch_staff_setup_or_reset_email(self, *, staff, initiated_by):
         """
         Queue the correct onboarding email variant for a staff user.

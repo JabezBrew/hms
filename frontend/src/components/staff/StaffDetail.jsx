@@ -22,6 +22,7 @@ import GraduationCap from 'lucide-react/dist/esm/icons/graduation-cap.js';
 import ExternalLink from 'lucide-react/dist/esm/icons/external-link.js';
 import KeyRound from 'lucide-react/dist/esm/icons/key-round.js';
 import History from 'lucide-react/dist/esm/icons/history.js';
+import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
@@ -29,7 +30,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import format from 'date-fns/format';
 import { cn } from '@/lib/utils';
-import { useUpdateStaff, useResendStaffSetupLink, staffKeys } from '@/features/staff/hooks';
+import { useUpdateStaff, useReactivateStaff, useResendStaffSetupLink, staffKeys } from '@/features/staff/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -90,6 +91,7 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
 
   // Update mutation
   const updateMutation = useUpdateStaff();
+  const reactivateMutation = useReactivateStaff();
   const resendSetupLinkMutation = useResendStaffSetupLink();
 
   // Form setup
@@ -235,12 +237,32 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
     try {
       setIsDeleting(true);
       await staffApi.deleteStaff(staff.id);
-      toast.success('Staff member deleted successfully');
+      toast.success('Staff account deactivated');
       if (onDeleted) onDeleted();
     } catch {
-      toast.error('Failed to delete staff member');
+      toast.error('Failed to deactivate staff account');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    try {
+      const response = await reactivateMutation.mutateAsync(staff.id);
+      const mode = response?.mode;
+      queryClient.invalidateQueries({ queryKey: staffKeys.detail(staff.id) });
+      queryClient.invalidateQueries({ queryKey: staffKeys.lists() });
+      if (mode === 'account_setup') {
+        toast.success('Staff reactivated and account setup link sent');
+        return;
+      }
+      if (mode === 'password_reset') {
+        toast.success('Staff reactivated and password reset link sent');
+        return;
+      }
+      toast.success(response?.detail || 'Staff account reactivated');
+    } catch (error) {
+      toast.error(error.message || 'Failed to reactivate staff account');
     }
   };
 
@@ -336,32 +358,46 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
               </>
             ) : (
               <>
+                {!isActive && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleReactivate}
+                    disabled={reactivateMutation.isPending}
+                    className="font-mono text-xs"
+                  >
+                    <UserCheck className="h-4 w-4 mr-2" />
+                    {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate'}
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
                   <Edit className="h-4 w-4 mr-2" />
                   <span className="hidden sm:inline">Edit</span>
                 </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                      <Trash2 className="h-4 w-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Delete</span>
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete {fullName}?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This action cannot be undone. This will permanently delete the staff member and remove their data from the system.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                        {isDeleting ? 'Deleting...' : 'Delete'}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                {isActive && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                        <Trash2 className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Deactivate</span>
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Deactivate {fullName}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will disable login, revoke active sessions, and remove active organization assignments while keeping the staff record for audit history.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                          {isDeleting ? 'Deactivating...' : 'Deactivate'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </>
             )}
           </div>
@@ -578,6 +614,17 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
         {!isEditing && (
           <section className="pt-4 border-t border-border">
             <div className="flex flex-wrap gap-2">
+              {!isActive && (
+                <Button
+                  size="sm"
+                  onClick={handleReactivate}
+                  disabled={reactivateMutation.isPending}
+                  className="font-mono text-xs"
+                >
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate'}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
                 <Edit className="h-4 w-4 mr-2" />
                 Edit Profile
@@ -588,50 +635,54 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
                   Schedule
                 </Button>
               )}
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <KeyRound className="h-4 w-4 mr-2" />
-                    Reset Password
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Reset Password for {fullName}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will send a password reset link to {email || 'the user\'s email'}.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleResetPassword} disabled={isResettingPassword}>
-                      {isResettingPassword ? 'Sending...' : 'Send Reset Email'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Mail className="h-4 w-4 mr-2" />
-                    Resend Setup Link
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Resend setup link to {fullName}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      A fresh account setup/reset link will be emailed to {email || 'the user\'s email'}.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleResendSetupLink} disabled={resendSetupLinkMutation.isPending}>
-                      {resendSetupLinkMutation.isPending ? 'Sending...' : 'Resend Link'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              {isActive && (
+                <>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <KeyRound className="h-4 w-4 mr-2" />
+                        Reset Password
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Reset Password for {fullName}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will send a password reset link to {email || 'the user\'s email'}.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleResetPassword} disabled={isResettingPassword}>
+                          {isResettingPassword ? 'Sending...' : 'Send Reset Email'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Mail className="h-4 w-4 mr-2" />
+                        Resend Setup Link
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Resend setup link to {fullName}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A fresh account setup/reset link will be emailed to {email || 'the user\'s email'}.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleResendSetupLink} disabled={resendSetupLinkMutation.isPending}>
+                          {resendSetupLinkMutation.isPending ? 'Sending...' : 'Resend Link'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              )}
             </div>
           </section>
         )}

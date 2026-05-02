@@ -173,6 +173,28 @@ export function useRegisterStaff() {
 }
 
 /**
+ * Reactivate a deprovisioned staff account
+ * @returns {Object} Mutation result
+ */
+export function useReactivateStaff() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (staffId) => staffApi.reactivateStaff(staffId),
+    onSuccess: (data, staffId) => {
+      queryClient.invalidateQueries({ queryKey: staffKeys.detail(staffId) });
+      queryClient.invalidateQueries({ queryKey: staffKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: staffKeys.practitioners() });
+
+      const reactivatedStaff = data?.staff;
+      if (reactivatedStaff?.id) {
+        queryClient.setQueryData(staffKeys.detail(reactivatedStaff.id), reactivatedStaff);
+      }
+    },
+  });
+}
+
+/**
  * Resend setup/reset link for an existing staff account
  * @returns {Object} Mutation result
  */

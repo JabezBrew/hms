@@ -115,4 +115,18 @@ describe('StaffListPage role filters', () => {
       expect(screen.getAllByTestId('staff-row')).toHaveLength(3)
     })
   })
+
+  it('requests inactive staff only when the inactive toggle is enabled', async () => {
+    const user = userEvent.setup()
+
+    renderStaffListPage()
+
+    expect(mockUseStaff).toHaveBeenLastCalledWith({})
+
+    await user.click(screen.getByRole('switch', { name: 'Show inactive staff' }))
+
+    await waitFor(() => {
+      expect(mockUseStaff).toHaveBeenLastCalledWith({ include_inactive: 'true' })
+    })
+  })
 })

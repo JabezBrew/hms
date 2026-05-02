@@ -422,6 +422,47 @@ class TestStaffViewSet:
         assert len(setup_calls) == 0
         assert len(reset_calls) == 1
 
+    def test_reactivate_staff_enables_account_and_sends_setup_link(self, db, monkeypatch):
+        admin = AdminUserFactory()
+        facility = admin.primary_facility
+        user = DoctorUserFactory(
+            primary_facility=facility,
+            email='reactivate.staff@test.com',
+            is_active=False,
+        )
+        user.set_unusable_password()
+        user.save(update_fields=['password'])
+        staff = StaffFactory(user=user, primary_facility=facility, created_by=admin, updated_by=admin)
+
+        setup_calls = []
+        reset_calls = []
+
+        def fake_setup_delay(**kwargs):
+            setup_calls.append(kwargs)
+            return {"status": "queued"}
+
+        def fake_reset_delay(**kwargs):
+            reset_calls.append(kwargs)
+            return {"status": "queued"}
+
+        monkeypatch.setattr('apps.users.tasks.send_account_setup_email.delay', fake_setup_delay)
+        monkeypatch.setattr('apps.users.tasks.send_password_reset_email.delay', fake_reset_delay)
+
+        client = get_authenticated_client(admin, facility=facility)
+        response = client.post(f'/api/users/staff/{staff.id}/reactivate/')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['mode'] == 'account_setup'
+        assert response.data['staff']['user_details']['is_active'] is True
+        assert len(setup_calls) == 1
+        assert len(reset_calls) == 0
+
+        user.refresh_from_db()
+        staff.refresh_from_db()
+        assert user.is_active is True
+        assert user.facilities.filter(id=facility.id).exists()
+        assert staff.updated_by_id == admin.id
+
     def test_register_staff_auto_assigns_practitioner_to_department_unit(self, db, monkeypatch):
         """Doctor/nurse registration should auto-create clinical department assignment."""
         admin = AdminUserFactory()
@@ -641,7 +682,8 @@ class TestStaffViewSet:
         list_inactive_response = client.get('/api/users/staff/?include_inactive=true')
         assert list_inactive_response.status_code == status.HTTP_200_OK
         list_inactive_results = list_inactive_response.data.get('results', list_inactive_response.data)
-        assert any(result['id'] == str(staff.id) for result in list_inactive_results)
+        inactive_result = next(result for result in list_inactive_results if result['id'] == str(staff.id))
+        assert inactive_result['is_active'] is False
 
     def test_register_existing_user_uses_reset_task_without_staff_kwargs(self, db, monkeypatch):
         """Reusing an existing user must call reset task with the correct signature."""
