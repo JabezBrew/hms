@@ -363,7 +363,7 @@ Billing includes provider-agnostic intent model + webhook handling.
 
 ### 11.3 Email
 
-Unosend backend configured through custom email backend path.
+Configurable REST email backend supports Unosend and Resend via `EMAIL_PROVIDER`.
 
 ## 12. Testing and Quality Gates
 

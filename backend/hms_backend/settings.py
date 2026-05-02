@@ -10,6 +10,7 @@ import importlib.util
 from pathlib import Path
 import environ
 import logging.config
+from django.core.exceptions import ImproperlyConfigured
 from urllib.parse import urlparse, parse_qs
 from kombu import Queue
 
@@ -701,11 +702,24 @@ CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True if not DEBUG el
 TEAM_ACCESS_STRICT = env.bool('TEAM_ACCESS_STRICT', default=True)
 BREAK_GLASS_TTL_MINUTES = env.int('BREAK_GLASS_TTL_MINUTES', default=30)
 
-# Email settings - Unosend REST API
-EMAIL_BACKEND = 'hms_backend.email_backends.UnosendEmailBackend'
-UNOSEND_API_KEY = env_required('UNOSEND_API_KEY')
+# Email settings
+EMAIL_PROVIDER = env('EMAIL_PROVIDER', default='unosend').strip().lower()
+_EMAIL_PROVIDER_BACKENDS = {
+    'unosend': 'hms_backend.email_backends.UnosendEmailBackend',
+    'resend': 'hms_backend.email_backends.ResendEmailBackend',
+}
+if EMAIL_PROVIDER not in _EMAIL_PROVIDER_BACKENDS:
+    supported_email_providers = ', '.join(sorted(_EMAIL_PROVIDER_BACKENDS))
+    raise ImproperlyConfigured(
+        f"EMAIL_PROVIDER must be one of: {supported_email_providers}"
+    )
+EMAIL_BACKEND = _EMAIL_PROVIDER_BACKENDS[EMAIL_PROVIDER]
+UNOSEND_API_KEY = env_required('UNOSEND_API_KEY') if EMAIL_PROVIDER == 'unosend' else env('UNOSEND_API_KEY', default='')
 UNOSEND_API_BASE_URL = env('UNOSEND_API_BASE_URL', default='https://api.unosend.co')
 UNOSEND_REQUEST_TIMEOUT_SECONDS = env.int('UNOSEND_REQUEST_TIMEOUT_SECONDS', default=10)
+RESEND_API_KEY = env_required('RESEND_API_KEY') if EMAIL_PROVIDER == 'resend' else env('RESEND_API_KEY', default='')
+RESEND_API_BASE_URL = env('RESEND_API_BASE_URL', default='https://api.resend.com')
+RESEND_REQUEST_TIMEOUT_SECONDS = env.int('RESEND_REQUEST_TIMEOUT_SECONDS', default=10)
 DEFAULT_FROM_EMAIL = env_required('DEFAULT_FROM_EMAIL')
 
 # Google Cloud Healthcare API settings

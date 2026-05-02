@@ -62,7 +62,9 @@ PRESERVED_FROM_ENV_KEYS = {
     'SESSION_HASH_SALT',
     'ADMIN_PASSWORD',
     'RESTIC_PASSWORD',
+    'EMAIL_PROVIDER',
     'UNOSEND_API_KEY',
+    'RESEND_API_KEY',
     'GOOGLE_APPLICATION_CREDENTIALS',
     'GOOGLE_CLOUD_PROJECT',
     'GOOGLE_HEALTHCARE_DATASET',
@@ -258,9 +260,11 @@ def generated_values(
         'WEBAUTHN_RP_ID': domain,
         'WEBAUTHN_ALLOWED_ORIGINS': secure_origin,
         'MFA_TOTP_ISSUER': f'HMS {name}',
+        'EMAIL_PROVIDER': 'unosend',
         'UNOSEND_API_KEY': 'CHANGE_ME_unosend_api_key'
         if is_production
         else 'demo-dummy-unosend-disabled',
+        'RESEND_API_KEY': '',
         'DEFAULT_FROM_EMAIL': f'noreply@{domain}',
         'GOOGLE_APPLICATION_CREDENTIALS': '/dev/null',
         'GOOGLE_CLOUD_PROJECT': 'client-disabled',
@@ -348,7 +352,7 @@ ENV_SECTIONS = (
             'MFA_TOTP_ISSUER',
         ),
     ),
-    ('Email', ('UNOSEND_API_KEY', 'DEFAULT_FROM_EMAIL')),
+    ('Email', ('EMAIL_PROVIDER', 'UNOSEND_API_KEY', 'RESEND_API_KEY', 'DEFAULT_FROM_EMAIL')),
     (
         'Google Healthcare API',
         (

@@ -85,7 +85,9 @@ def test_generates_valid_profile_env_files(tmp_path, profile, expected_multi_fac
     assert values['DEPLOYMENT_PROFILE'] == profile
     assert values['CLIENT_DOMAIN'] == 'acme.thehms.systems'
     assert values['MULTI_FACILITY_MODE'] == expected_multi_facility
+    assert values['EMAIL_PROVIDER'] == 'unosend'
     assert values['UNOSEND_API_KEY'] == 'CHANGE_ME_unosend_api_key'
+    assert values['RESEND_API_KEY'] == ''
     assert values['BACKUP_RETENTION_DAYS'] == '30'
     assert values['RESTIC_REPOSITORY'].startswith('CHANGE_ME')
 
@@ -101,7 +103,9 @@ def test_preserves_security_values_from_existing_env(tmp_path):
                 'RECORD_EXPORT_FERNET_KEY=old-export-key',
                 'SESSION_HASH_SALT=old-session-salt',
                 'ADMIN_PASSWORD=old-admin-password',
+                'EMAIL_PROVIDER=resend',
                 'UNOSEND_API_KEY=old-unosend-key',
+                'RESEND_API_KEY=old-resend-key',
             ]
         ),
         encoding='utf-8',
@@ -125,7 +129,9 @@ def test_preserves_security_values_from_existing_env(tmp_path):
     assert values['RECORD_EXPORT_FERNET_KEY'] == 'old-export-key'
     assert values['SESSION_HASH_SALT'] == 'old-session-salt'
     assert values['ADMIN_PASSWORD'] == 'old-admin-password'
+    assert values['EMAIL_PROVIDER'] == 'resend'
     assert values['UNOSEND_API_KEY'] == 'old-unosend-key'
+    assert values['RESEND_API_KEY'] == 'old-resend-key'
 
 
 @pytest.mark.parametrize(
