@@ -59,6 +59,20 @@ services:
     restart: unless-stopped
     logging: *monitoring-logging
 
+  metrics-proxy:
+    image: caddy:2-alpine
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    environment:
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
+    volumes:
+      - ./caddy/metrics-proxy.Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - hms_edge
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *monitoring-logging
+
   alloy:
     image: grafana/alloy:v1.7.5
     command:
@@ -84,9 +98,10 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
-    command:
+    entrypoint:
       - /bin/sh
       - -ec
+    command:
       - |
         : "$${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID}"
         sed "s/__TELEGRAM_CHAT_ID__/$${TELEGRAM_CHAT_ID}/g" /etc/alertmanager/alertmanager.yml.template > /tmp/alertmanager.yml

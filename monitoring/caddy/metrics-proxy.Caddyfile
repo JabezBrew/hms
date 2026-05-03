@@ -1,6 +1,9 @@
 :9188 {
-	@metrics path /api/metrics/
-	reverse_proxy @metrics api:8000
+	handle /api/metrics/ {
+		reverse_proxy hms-api:8000 {
+			header_up Host {$CLIENT_DOMAIN}
+		}
+	}
 
 	respond 404
 }

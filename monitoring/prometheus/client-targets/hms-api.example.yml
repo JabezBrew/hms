@@ -1,4 +1,6 @@
 # Copy to hms-api-<client>.targets.yml and replace the sample IP.
+# Port 9188 is the private Caddy metrics proxy. It sets a valid Host header
+# before forwarding to Django's /api/metrics/ endpoint.
 - targets:
     - 10.90.0.11:9188
   labels:

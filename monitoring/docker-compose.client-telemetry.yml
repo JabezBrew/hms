@@ -8,6 +8,8 @@ services:
   metrics-proxy:
     image: caddy:2-alpine
     command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    environment:
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN}
     volumes:
       - ./caddy/metrics-proxy.Caddyfile:/etc/caddy/Caddyfile:ro
     ports:

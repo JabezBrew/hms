@@ -61,9 +61,10 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
-    command:
+    entrypoint:
       - /bin/sh
       - -ec
+    command:
       - |
         : "$${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID}"
         sed "s/__TELEGRAM_CHAT_ID__/$${TELEGRAM_CHAT_ID}/g" /etc/alertmanager/alertmanager.yml.template > /tmp/alertmanager.yml

@@ -170,9 +170,13 @@ services:
     expose:
       - "8000"
     networks:
-      - edge
-      - internal
-      - egress
+      edge:
+        aliases:
+          - hms-api
+      internal:
+        aliases:
+          - hms-api
+      egress: {}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -H 'Host: ${CLIENT_DOMAIN}' http://127.0.0.1:8000/api/health/ready/ >/dev/null || exit 1"]
       interval: 30s
