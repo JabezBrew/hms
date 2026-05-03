@@ -113,8 +113,8 @@
   --sidebar-ring: oklch(0.75 0.18 55);
 
   /* Fonts */
-  --font-fraunces: 'Fraunces', Georgia, serif;
-  --font-dm-sans: 'DM Sans', system-ui, sans-serif;
+  --font-fraunces: 'Cormorant Garamond', Georgia, serif;
+  --font-dm-sans: 'Cormorant Garamond', Georgia, serif;
   --font-ibm-plex-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
