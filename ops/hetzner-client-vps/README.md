@@ -289,7 +289,22 @@ From `/opt/hms`:
 ops/hetzner-client-vps/deploy.sh
 ```
 
-## 9. Troubleshooting
+## 9. Observability
+
+Use the self-hosted monitoring bundle in `monitoring/`.
+
+- Demo/staging can run Grafana, Prometheus, Loki, Alertmanager, Alloy, and
+  exporters on the same VPS.
+- Production should use a small separate ops VPS plus per-client telemetry
+  sidecars over WireGuard.
+- Telegram alerts are diagnosis-oriented: they summarize what happened, why it
+  matters, likely cause, and first checks. They do not send raw log dumps.
+- Grafana, Prometheus, Loki, and Alertmanager are bound to localhost or the
+  private WireGuard interface by default; use SSH tunnels for dashboard access.
+
+See `monitoring/README.md` for setup commands and target-file examples.
+
+## 10. Troubleshooting
 
 Frontend health:
 

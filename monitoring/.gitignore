@@ -1,0 +1,5 @@
+alertmanager/secrets/*
+!alertmanager/secrets/.gitkeep
+prometheus/client-targets/*.targets.yml
+!prometheus/client-targets/.gitkeep
+!prometheus/client-targets/*.empty.targets.yml

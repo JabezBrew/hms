@@ -1,0 +1,6 @@
+:9188 {
+	@metrics path /api/metrics/
+	reverse_proxy @metrics api:8000
+
+	respond 404
+}

@@ -1,0 +1,104 @@
+x-telemetry-logging: &telemetry-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  metrics-proxy:
+    image: caddy:2-alpine
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - ./caddy/metrics-proxy.Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${CLIENT_WG_IP:?set CLIENT_WG_IP}:9188:9188"
+    networks:
+      - hms_edge
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging: *telemetry-logging
+
+  alloy:
+    image: grafana/alloy:v1.7.5
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy
+      - /etc/alloy/config.alloy
+    environment:
+      LOKI_WRITE_URL: ${LOKI_WRITE_URL:?set LOKI_WRITE_URL}
+      OBS_CLIENT_SLUG: ${CLIENT_SLUG:?set CLIENT_SLUG}
+      OBS_ENVIRONMENT: ${OBS_ENVIRONMENT:-production}
+      OBS_COMPOSE_PROJECT_REGEX: ${OBS_COMPOSE_PROJECT_REGEX:-.*}
+    volumes:
+      - ./alloy/docker-logs.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
+    restart: unless-stopped
+    logging: *telemetry-logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "${CLIENT_WG_IP:?set CLIENT_WG_IP}:9100:9100"
+    restart: unless-stopped
+    logging: *telemetry-logging
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    ports:
+      - "${CLIENT_WG_IP:?set CLIENT_WG_IP}:8080:8080"
+    restart: unless-stopped
+    logging: *telemetry-logging
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      DATA_SOURCE_NAME: user=${DB_USER:-hms} password=${DB_PASSWORD:?set DB_PASSWORD} host=db port=5432 dbname=${DB_NAME:-hms} sslmode=disable
+    ports:
+      - "${CLIENT_WG_IP:?set CLIENT_WG_IP}:9187:9187"
+    networks:
+      - hms_internal
+    restart: unless-stopped
+    logging: *telemetry-logging
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.63.0
+    command:
+      - --redis.addr=redis://redis:6379
+    ports:
+      - "${CLIENT_WG_IP:?set CLIENT_WG_IP}:9121:9121"
+    networks:
+      - hms_internal
+    restart: unless-stopped
+    logging: *telemetry-logging
+
+volumes:
+  alloy-data:
+
+networks:
+  hms_edge:
+    external: true
+    name: ${HMS_EDGE_NETWORK:-hms-client_edge}
+  hms_internal:
+    external: true
+    name: ${HMS_INTERNAL_NETWORK:-hms-client_internal}

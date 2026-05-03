@@ -1,0 +1,7 @@
+# Copy to redis-<client>.targets.yml and replace the sample IP.
+- targets:
+    - 10.90.0.11:9121
+  labels:
+    client: acme
+    environment: production
+    service: redis

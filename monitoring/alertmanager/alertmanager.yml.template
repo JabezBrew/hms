@@ -1,0 +1,25 @@
+global:
+  resolve_timeout: 5m
+
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+
+route:
+  receiver: telegram-hms
+  group_by:
+    - alertname
+    - client
+    - environment
+    - service
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: telegram-hms
+    telegram_configs:
+      - send_resolved: true
+        bot_token_file: /run/secrets/telegram_bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        parse_mode: HTML
+        message: '{{ template "hms.telegram.message" . }}'

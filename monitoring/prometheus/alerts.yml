@@ -1,20 +1,162 @@
 groups:
-  - name: hms-operability
+  - name: hms-readiness
     rules:
+      - alert: HMSApiMetricsTargetDown
+        expr: up{job="hms-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: HMS API metrics target is unreachable
+          what_happened: "Prometheus cannot scrape the HMS API metrics endpoint for this client."
+          why_it_matters: "Readiness, dependency, worker, and queue health may be invisible while the target is down."
+          likely_cause: "The API container is down, the private metrics proxy is down, the WireGuard route is broken, or /api/metrics/ is not reachable from the monitoring network."
+          first_checks: "Check docker compose ps on the client VPS, then curl the private metrics URL from the monitoring host, then inspect api and metrics-proxy logs."
+          runbook: "monitoring/README.md#troubleshooting"
+
       - alert: HMSApiNotReady
         expr: hms_health_ready == 0
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: HMS API is not ready
-          description: The API readiness probe has been failing for at least two minutes.
+          summary: HMS API readiness is failing
+          what_happened: "The API process is responding to metrics, but its readiness check reports unhealthy dependencies."
+          why_it_matters: "Users may see failed requests or unsafe latency because the API cannot reliably reach required services."
+          likely_cause: "Postgres, PgBouncer, Redis, or the API dependency check path is failing."
+          first_checks: "Open the readiness endpoint, check hms_dependency_ready by dependency in Grafana, then inspect api, pgbouncer, db, and redis logs."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSDependencyDown
+        expr: hms_dependency_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: HMS required dependency is down
+          what_happened: "The API readiness probe reports a required dependency as unavailable."
+          why_it_matters: "The API cannot be considered safe to serve clinical workflows while required dependencies are failing."
+          likely_cause: "A Postgres/PgBouncer/Redis container is down, overloaded, or unreachable from the API container."
+          first_checks: "Use the dependency label to identify the failing service, then check docker health, container logs, memory pressure, and disk availability."
+          runbook: "monitoring/README.md#troubleshooting"
+
+  - name: hms-workers
+    rules:
+      - alert: HMSCeleryWorkersMissing
+        expr: hms_celery_workers < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: HMS Celery worker is not visible
+          what_happened: "The API cannot see any Celery worker through Celery inspect."
+          why_it_matters: "Background clinical and operational tasks may stop running, including emails, async sync jobs, and scheduled refreshes."
+          likely_cause: "The worker container is stopped, cannot connect to Redis, is overloaded, or Celery inspect cannot reach it."
+          first_checks: "Check worker container health, Redis health, worker logs, and whether queues are growing."
+          runbook: "monitoring/README.md#troubleshooting"
 
       - alert: HMSCeleryQueueBacklog
-        expr: sum(hms_celery_queue_depth) > 100
+        expr: sum by (client, environment, queue) (hms_celery_queue_depth) > 100
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: Celery queue backlog is elevated
-          description: Total queue depth across HMS Celery queues has stayed above 100 for five minutes.
+          summary: HMS Celery queue backlog is elevated
+          what_happened: "A Celery queue has stayed above the backlog threshold for five minutes."
+          why_it_matters: "Time-sensitive async work may be delayed even if the API is still responding."
+          likely_cause: "Workers are down, worker concurrency is too low, Redis is slow, or a task type is failing/retrying repeatedly."
+          first_checks: "Check worker count, queue label, worker logs, Redis memory, and recent deploy/task changes."
+          runbook: "monitoring/README.md#troubleshooting"
+
+  - name: hms-infra
+    rules:
+      - alert: HMSExporterTargetDown
+        expr: up{job!="hms-api"} == 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS infrastructure exporter is unreachable
+          what_happened: "Prometheus cannot scrape one of the host, container, Postgres, or Redis exporters."
+          why_it_matters: "The application may still work, but operational visibility is incomplete."
+          likely_cause: "The exporter container is down, the WireGuard path is blocked, or the exporter port is not bound to the monitoring interface."
+          first_checks: "Use the job and instance labels, then check the exporter container and firewall/WireGuard rules."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSDiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|proc|sysfs|devtmpfs"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|proc|sysfs|devtmpfs"}
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: HMS VPS disk space is low
+          what_happened: "A persistent filesystem has less than 15 percent free space."
+          why_it_matters: "Low disk can break Postgres writes, Docker image pulls, backups, Loki storage, and deploys."
+          likely_cause: "Docker images/logs, Postgres data, local backups, or Loki/Prometheus retention are consuming disk."
+          first_checks: "Check df -h, docker system df, backup directory size, and monitoring volume sizes before deleting anything."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSHostMemoryPressure
+        expr: |
+          (
+            node_memory_MemAvailable_bytes
+            /
+            node_memory_MemTotal_bytes
+          ) < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS VPS memory pressure is high
+          what_happened: "Available host memory has stayed below 10 percent."
+          why_it_matters: "The API, worker, Postgres, or Redis may become slow or get killed under memory pressure."
+          likely_cause: "Traffic burst, heavy queries, worker load, too little swap, or monitoring storage pressure on a small VPS."
+          first_checks: "Check docker stats, top memory containers, Postgres memory, worker concurrency, and swap usage."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSContainerRestarting
+        expr: |
+          changes(container_start_time_seconds{
+            container_label_com_docker_compose_service=~"api|worker|beat|db|pgbouncer|redis|caddy|frontend"
+          }[15m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS container is restarting repeatedly
+          what_happened: "A core HMS container has restarted multiple times in the last 15 minutes."
+          why_it_matters: "Restart loops can hide deploy failures, dependency failures, memory kills, or configuration errors."
+          likely_cause: "Bad env/config, failed healthcheck, OOM kill, dependency outage, or recent deploy regression."
+          first_checks: "Use the service label, inspect docker compose ps, then check the last 120 log lines for that service."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSPostgresExporterDown
+        expr: up{job="postgres"} == 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS Postgres exporter is down
+          what_happened: "Prometheus cannot scrape Postgres exporter metrics."
+          why_it_matters: "Database health may be invisible even if the application is still serving traffic."
+          likely_cause: "The exporter is down, DB credentials are wrong, Postgres is unavailable, or the internal Docker network is broken."
+          first_checks: "Check postgres-exporter logs, db container health, and DATA_SOURCE_NAME credentials."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSRedisExporterDown
+        expr: up{job="redis"} == 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS Redis exporter is down
+          what_happened: "Prometheus cannot scrape Redis exporter metrics."
+          why_it_matters: "Cache, Channels, and Celery broker health may be invisible."
+          likely_cause: "The exporter is down, Redis is unavailable, or the internal Docker network is broken."
+          first_checks: "Check redis-exporter logs, redis container health, and Redis memory usage."
+          runbook: "monitoring/README.md#troubleshooting"

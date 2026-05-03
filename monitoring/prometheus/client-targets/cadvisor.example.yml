@@ -1,0 +1,7 @@
+# Copy to cadvisor-<client>.targets.yml and replace the sample IP.
+- targets:
+    - 10.90.0.11:8080
+  labels:
+    client: acme
+    environment: production
+    service: containers

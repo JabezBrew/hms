@@ -1,4 +1,4 @@
-auth_enabled: true
+auth_enabled: false
 
 server:
   http_listen_port: 3100
@@ -23,6 +23,16 @@ schema_config:
       index:
         prefix: index_
         period: 24h
+
+limits_config:
+  retention_period: 336h
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  delete_request_store: filesystem
 
 ruler:
   alertmanager_url: http://alertmanager:9093

@@ -1,0 +1,47 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    environment: ops
+    client: ops
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: hms-api
+    metrics_path: /api/metrics/
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/client-targets/hms-api*.targets.yml
+        refresh_interval: 1m
+
+  - job_name: node
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/client-targets/node*.targets.yml
+        refresh_interval: 1m
+
+  - job_name: cadvisor
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/client-targets/cadvisor*.targets.yml
+        refresh_interval: 1m
+
+  - job_name: postgres
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/client-targets/postgres*.targets.yml
+        refresh_interval: 1m
+
+  - job_name: redis
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/client-targets/redis*.targets.yml
+        refresh_interval: 1m

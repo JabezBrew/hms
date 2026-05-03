@@ -16,6 +16,9 @@
 		-Server
 	}
 
+	@publicMetrics path /api/metrics/
+	respond @publicMetrics 404
+
 	@backend path /api/* /django-admin/* /static/* /media/* /ws/*
 	reverse_proxy @backend api:8000
 

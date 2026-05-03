@@ -1,0 +1,7 @@
+# Copy to hms-api-<client>.targets.yml and replace the sample IP.
+- targets:
+    - 10.90.0.11:9188
+  labels:
+    client: acme
+    environment: production
+    service: api

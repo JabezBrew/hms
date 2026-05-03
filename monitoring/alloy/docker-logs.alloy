@@ -1,0 +1,53 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+discovery.docker "hms" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "hms_logs" {
+  targets = discovery.docker.hms.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = sys.env("OBS_COMPOSE_PROJECT_REGEX")
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    replacement   = "$1"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "hms" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.hms_logs.output
+  labels     = { job = "hms-docker" }
+  forward_to = [loki.write.hms.receiver]
+}
+
+loki.write "hms" {
+  endpoint {
+    url = sys.env("LOKI_WRITE_URL")
+  }
+
+  external_labels = {
+    client      = sys.env("OBS_CLIENT_SLUG"),
+    environment = sys.env("OBS_ENVIRONMENT"),
+  }
+}

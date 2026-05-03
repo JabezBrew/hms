@@ -1,0 +1,29 @@
+{{ define "hms.telegram.message" -}}
+{{- if eq .Status "firing" -}}
+<b>HMS alert firing</b>
+{{- else -}}
+<b>HMS alert resolved</b>
+{{- end }}
+
+<b>Alert:</b> {{ .CommonLabels.alertname }}
+<b>Severity:</b> {{ .CommonLabels.severity }}
+<b>Client:</b> {{ or .CommonLabels.client "unknown" }}
+<b>Environment:</b> {{ or .CommonLabels.environment "unknown" }}
+{{- if .CommonLabels.service }}
+<b>Service:</b> {{ .CommonLabels.service }}
+{{- end }}
+
+<b>What happened:</b> {{ or .CommonAnnotations.what_happened .CommonAnnotations.summary }}
+<b>Why it matters:</b> {{ or .CommonAnnotations.why_it_matters "Operational visibility or application availability may be degraded." }}
+<b>Likely cause:</b> {{ or .CommonAnnotations.likely_cause "Check the target, service health, and the most recent deploy." }}
+<b>First checks:</b> {{ or .CommonAnnotations.first_checks "Open Grafana, inspect the affected target, then check the specific service logs." }}
+<b>Runbook:</b> {{ or .CommonAnnotations.runbook "monitoring/README.md#troubleshooting" }}
+
+<b>Matching alerts:</b> {{ len .Alerts }}
+{{- range .Alerts }}
+{{- if .Labels.instance }}
+
+- instance={{ .Labels.instance }}{{ if .Labels.queue }} queue={{ .Labels.queue }}{{ end }}{{ if .Labels.dependency }} dependency={{ .Labels.dependency }}{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}

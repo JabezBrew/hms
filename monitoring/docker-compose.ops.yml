@@ -8,20 +8,19 @@ services:
   prometheus:
     image: prom/prometheus:v2.54.1
     command:
-      - --config.file=/etc/prometheus/prometheus.staging.yml
+      - --config.file=/etc/prometheus/prometheus.ops.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-30d}
-      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-6GB}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-12GB}
     volumes:
-      - ./prometheus/prometheus.staging.yml:/etc/prometheus/prometheus.staging.yml:ro
+      - ./prometheus/prometheus.ops.yml:/etc/prometheus/prometheus.ops.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/client-targets:/etc/prometheus/client-targets:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
     networks:
       - monitoring
-      - hms_edge
-      - hms_internal
     restart: unless-stopped
     logging: *monitoring-logging
 
@@ -54,29 +53,7 @@ services:
       - loki-data:/loki
     ports:
       - "127.0.0.1:3100:3100"
-    networks:
-      - monitoring
-    restart: unless-stopped
-    logging: *monitoring-logging
-
-  alloy:
-    image: grafana/alloy:v1.7.5
-    command:
-      - run
-      - --server.http.listen-addr=0.0.0.0:12345
-      - --storage.path=/var/lib/alloy
-      - /etc/alloy/config.alloy
-    environment:
-      LOKI_WRITE_URL: http://loki:3100/loki/api/v1/push
-      OBS_CLIENT_SLUG: ${CLIENT_SLUG:-staging}
-      OBS_ENVIRONMENT: ${OBS_ENVIRONMENT:-staging}
-      OBS_COMPOSE_PROJECT_REGEX: ${OBS_COMPOSE_PROJECT_REGEX:-.*}
-    volumes:
-      - ./alloy/docker-logs.alloy:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - alloy-data:/var/lib/alloy
-    depends_on:
-      - loki
+      - "${OPS_WG_IP:?set OPS_WG_IP}:3100:3100"
     networks:
       - monitoring
     restart: unless-stopped
@@ -105,71 +82,12 @@ services:
     restart: unless-stopped
     logging: *monitoring-logging
 
-  node-exporter:
-    image: prom/node-exporter:v1.8.2
-    command:
-      - --path.procfs=/host/proc
-      - --path.sysfs=/host/sys
-      - --path.rootfs=/rootfs
-      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-    pid: host
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    networks:
-      - monitoring
-    restart: unless-stopped
-    logging: *monitoring-logging
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    privileged: true
-    devices:
-      - /dev/kmsg:/dev/kmsg
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-    networks:
-      - monitoring
-    restart: unless-stopped
-    logging: *monitoring-logging
-
-  postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.15.0
-    environment:
-      DATA_SOURCE_NAME: user=${DB_USER:-hms} password=${DB_PASSWORD:?set DB_PASSWORD} host=db port=5432 dbname=${DB_NAME:-hms} sslmode=disable
-    networks:
-      - monitoring
-      - hms_internal
-    restart: unless-stopped
-    logging: *monitoring-logging
-
-  redis-exporter:
-    image: oliver006/redis_exporter:v1.63.0
-    command:
-      - --redis.addr=redis://redis:6379
-    networks:
-      - monitoring
-      - hms_internal
-    restart: unless-stopped
-    logging: *monitoring-logging
-
 volumes:
   prometheus-data:
   grafana-data:
   loki-data:
-  alloy-data:
   alertmanager-data:
 
 networks:
   monitoring:
     driver: bridge
-  hms_edge:
-    external: true
-    name: ${HMS_EDGE_NETWORK:-hms-client_edge}
-  hms_internal:
-    external: true
-    name: ${HMS_INTERNAL_NETWORK:-hms-client_internal}

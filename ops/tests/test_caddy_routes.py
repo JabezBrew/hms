@@ -23,3 +23,13 @@ def test_caddy_disables_http3_until_udp_edge_is_supported():
 
     assert 'protocols h1 h2' in caddyfile
     assert 'protocols h1 h2 h3' not in caddyfile
+
+
+def test_public_caddy_route_does_not_expose_prometheus_metrics():
+    caddyfile = CADDYFILE.read_text(encoding='utf-8')
+
+    metrics_index = caddyfile.index('@publicMetrics path /api/metrics/')
+    backend_index = caddyfile.index('@backend path /api/*')
+
+    assert metrics_index < backend_index
+    assert 'respond @publicMetrics 404' in caddyfile
