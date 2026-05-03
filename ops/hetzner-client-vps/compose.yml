@@ -250,7 +250,7 @@ services:
         max-file: "3"
 
   pgbouncer:
-    image: bitnami/pgbouncer:1.24.1
+    image: bitnamilegacy/pgbouncer:1.24.1-debian-12-r10
     environment:
       POSTGRESQL_HOST: db
       POSTGRESQL_PORT: "5432"
