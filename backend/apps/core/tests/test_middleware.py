@@ -52,6 +52,25 @@ def test_deployment_capabilities_endpoint_does_not_require_facility_context(sett
     assert request.facility_code is None
 
 
+def test_health_paths_bypass_facility_context_database_lookup(monkeypatch, settings):
+    settings.DEFAULT_FACILITY_CODE = 'MAIN'
+    settings.FACILITY_CONTEXT_REQUIRED = True
+
+    def fail_get_by_code(cls, code):
+        raise AssertionError("health checks must not resolve Facility rows in middleware")
+
+    monkeypatch.setattr('apps.core.models.Facility.get_by_code', classmethod(fail_get_by_code))
+
+    request = RequestFactory().get('/api/health/ready/')
+    middleware = FacilityContextMiddleware(lambda req: None)
+
+    response = middleware.process_request(request)
+
+    assert response is None
+    assert request.facility is None
+    assert request.facility_code is None
+
+
 @pytest.mark.django_db
 def test_deployment_capabilities_endpoint_allows_missing_context_for_multi_facility_user(
     monkeypatch, settings

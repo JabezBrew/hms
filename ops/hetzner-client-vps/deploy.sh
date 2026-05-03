@@ -175,9 +175,10 @@ step 'Validating Compose configuration'
 compose config -q
 
 step 'Ensuring database services are running'
-compose up -d db redis
+compose up -d db redis pgbouncer
 wait_for_service db "$HEALTH_TIMEOUT"
 wait_for_service redis "$HEALTH_TIMEOUT"
+wait_for_service pgbouncer "$HEALTH_TIMEOUT"
 
 if [ "$deployment_mode" = "production" ]; then
   if [ "$SKIP_BACKUP" = "true" ]; then
@@ -192,7 +193,7 @@ step 'Building application images'
 compose build
 
 step 'Running database migrations'
-compose run --rm api python /app/run_migrations.py
+compose run --rm -e DB_HOST=db -e DB_PORT=5432 -e DB_CONN_MAX_AGE=0 api python /app/run_migrations.py
 
 step 'Starting application services'
 compose up -d

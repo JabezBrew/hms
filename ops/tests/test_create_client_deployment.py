@@ -93,6 +93,10 @@ def test_generates_valid_profile_env_files(tmp_path, profile, expected_multi_fac
     assert values['EMAIL_SECURITY_LOCAL_PART'] == 'security'
     assert values['BACKUP_RETENTION_DAYS'] == '30'
     assert values['RESTIC_REPOSITORY'].startswith('CHANGE_ME')
+    assert values['DB_CONN_MAX_AGE'] == '0'
+    assert values['DB_DISABLE_SERVER_SIDE_CURSORS'] == 'True'
+    assert values['ASGI_THREADS'] == '4'
+    assert values['PGBOUNCER_DEFAULT_POOL_SIZE'] == '15'
 
 
 def test_preserves_security_values_from_existing_env(tmp_path):

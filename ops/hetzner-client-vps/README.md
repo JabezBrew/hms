@@ -1,8 +1,8 @@
 # HMS Client VPS Deployment Runbook
 
 This kit deploys one HMS client per Hetzner VPS with Docker Compose, Caddy,
-Postgres, Redis, the Django ASGI API, Celery worker/beat, and the Nginx-served
-React frontend.
+Postgres, PgBouncer, Redis, the Django ASGI API, Celery worker/beat, and the
+Nginx-served React frontend.
 
 Default model: one VPS per client, one subdomain per client, one private `.env`
 per client. Generated `.env` files and backup credentials are secrets and must
@@ -188,10 +188,10 @@ ops/hetzner-client-vps/deploy.sh --skip-backup
 
 Manual deployment is still available for debugging:
 
-Start Postgres and Redis first:
+Start Postgres, PgBouncer, and Redis first:
 
 ```bash
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml up -d db redis
+docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml up -d db redis pgbouncer
 docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml ps
 ```
 
@@ -204,7 +204,7 @@ docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/
 Run migrations:
 
 ```bash
-docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml run --rm api python /app/run_migrations.py
+docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml run --rm -e DB_HOST=db -e DB_PORT=5432 -e DB_CONN_MAX_AGE=0 api python /app/run_migrations.py
 ```
 
 Start everything:
@@ -214,16 +214,18 @@ docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/
 docker compose --env-file ops/hetzner-client-vps/.env -f ops/hetzner-client-vps/compose.yml ps
 ```
 
-Expected healthy services: `db`, `redis`, `frontend`, `api`, `worker`, `beat`,
-and `caddy`.
+Expected healthy services: `db`, `pgbouncer`, `redis`, `frontend`, `api`,
+`worker`, `beat`, and `caddy`.
 
 Network model:
 
 - `edge`: public reverse-proxy path for Caddy, frontend, and API ingress.
 - `egress`: outbound-only internet access for API and worker integrations such
   as Unosend.
-- `internal`: isolated database/Redis network. It is marked `internal: true`,
-  so containers attached only to this network cannot reach the internet.
+- `internal`: isolated database, PgBouncer, and Redis network. It is marked
+  `internal: true`, so containers attached only to this network cannot reach
+  the internet. Runtime app services connect to Postgres through PgBouncer;
+  migrations and backups connect directly to Postgres.
 
 Check the public health endpoint:
 

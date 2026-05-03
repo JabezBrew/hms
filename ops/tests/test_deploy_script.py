@@ -41,3 +41,14 @@ def test_deploy_script_recreates_caddy_after_starting_services():
 
     assert start_index < caddy_index < health_index
     assert 'wait_for_service caddy "$HEALTH_TIMEOUT"' in script
+
+
+def test_deploy_script_starts_pgbouncer_before_migrations():
+    script = DEPLOY_SCRIPT.read_text(encoding='utf-8')
+
+    services_index = script.index("compose up -d db redis pgbouncer")
+    pgbouncer_wait_index = script.index('wait_for_service pgbouncer "$HEALTH_TIMEOUT"')
+    migrations_index = script.index("step 'Running database migrations'")
+
+    assert services_index < pgbouncer_wait_index < migrations_index
+    assert 'compose run --rm -e DB_HOST=db -e DB_PORT=5432 -e DB_CONN_MAX_AGE=0 api' in script

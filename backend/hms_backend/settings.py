@@ -301,15 +301,18 @@ if not IS_BUILD:
 
 
 if not IS_BUILD:
-    # Add connection pooling and health checks
+    db_conn_max_age = env.int('DB_CONN_MAX_AGE', default=600)
+    db_conn_health_checks = env.bool('DB_CONN_HEALTH_CHECKS', default=True)
+    db_connect_timeout = env.int('DB_CONNECT_TIMEOUT_SECONDS', default=10)
+    DISABLE_SERVER_SIDE_CURSORS = env.bool('DB_DISABLE_SERVER_SIDE_CURSORS', default=False)
+
+    # Add connection lifecycle controls and health checks.
     DATABASES['default'].update({
-        # Connection pooling - persistent connections for 10 minutes
-        'CONN_MAX_AGE': 600,
+        'CONN_MAX_AGE': db_conn_max_age,
         # Health checks ensure stale connections are recycled (Django 4.1+)
-        'CONN_HEALTH_CHECKS': True,
+        'CONN_HEALTH_CHECKS': db_conn_health_checks,
         'OPTIONS': {
-            'connect_timeout': 10,
-            # Note: statement_timeout removed - incompatible with PgBouncer transaction pooling
+            'connect_timeout': db_connect_timeout,
         },
     })
 
@@ -324,10 +327,10 @@ if not IS_BUILD:
             'PASSWORD': env('DB_REPLICA_PASSWORD', default=env('DB_PASSWORD')),
             'HOST': DB_REPLICA_HOST,
             'PORT': env('DB_REPLICA_PORT', default=env('DB_PORT')),
-            'CONN_MAX_AGE': 600,
-            'CONN_HEALTH_CHECKS': True,
+            'CONN_MAX_AGE': db_conn_max_age,
+            'CONN_HEALTH_CHECKS': db_conn_health_checks,
             'OPTIONS': {
-                'connect_timeout': 10,
+                'connect_timeout': db_connect_timeout,
             },
         }
         DATABASE_ROUTERS = ['hms_backend.db_router.ReadReplicaRouter']

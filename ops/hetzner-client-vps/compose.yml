@@ -16,8 +16,11 @@ x-backend-image: &backend-image
     DB_NAME: ${DB_NAME:-hms}
     DB_USER: ${DB_USER:-hms}
     DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-client-vps/.env}
-    DB_HOST: db
-    DB_PORT: "5432"
+    DB_HOST: ${APP_DB_HOST:-pgbouncer}
+    DB_PORT: ${APP_DB_PORT:-6432}
+    DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-0}
+    DB_DISABLE_SERVER_SIDE_CURSORS: ${DB_DISABLE_SERVER_SIDE_CURSORS:-True}
+    ASGI_THREADS: ${ASGI_THREADS:-4}
     REDIS_URL: redis://redis:6379/0
     ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set ALLOWED_HOSTS in ops/hetzner-client-vps/.env}
     CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in ops/hetzner-client-vps/.env}
@@ -82,7 +85,7 @@ x-backend-image: &backend-image
     GOOGLE_DICOM_STORE: ${GOOGLE_DICOM_STORE:-client-disabled}
     GOOGLE_HL7V2_STORE: ${GOOGLE_HL7V2_STORE:-client-disabled}
   depends_on:
-    db:
+    pgbouncer:
       condition: service_healthy
     redis:
       condition: service_healthy
@@ -240,6 +243,45 @@ services:
       start_period: 20s
     mem_limit: 1200m
     cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  pgbouncer:
+    image: bitnami/pgbouncer:1.24.1
+    environment:
+      POSTGRESQL_HOST: db
+      POSTGRESQL_PORT: "5432"
+      POSTGRESQL_DATABASE: ${DB_NAME:-hms}
+      POSTGRESQL_USERNAME: ${DB_USER:-hms}
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-client-vps/.env}
+      PGBOUNCER_PORT: "6432"
+      PGBOUNCER_DATABASE: ${DB_NAME:-hms}
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-200}
+      PGBOUNCER_DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-15}
+      PGBOUNCER_RESERVE_POOL_SIZE: ${PGBOUNCER_RESERVE_POOL_SIZE:-5}
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    expose:
+      - "6432"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U $${POSTGRESQL_USERNAME} -d $${POSTGRESQL_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 128m
+    cpus: 0.25
     logging:
       driver: json-file
       options:

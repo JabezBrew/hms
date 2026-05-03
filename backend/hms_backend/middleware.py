@@ -25,6 +25,11 @@ FACILITY_CONTEXT_OPTIONAL_PATH_PREFIXES = (
     '/media/',
 )
 
+FACILITY_CONTEXT_BYPASS_PATH_PREFIXES = (
+    '/api/health/',
+    '/api/metrics/',
+)
+
 
 def _facility_context_required_applies(path):
     normalized_path = str(path or '')
@@ -168,6 +173,9 @@ class FacilityContextMiddleware(MiddlewareMixin):
 
         request.facility = None
         request.facility_code = None
+        if any(request.path.startswith(prefix) for prefix in FACILITY_CONTEXT_BYPASS_PATH_PREFIXES):
+            return None
+
         facility_context_required_applies = _facility_context_required_applies(request.path)
 
         header_name = getattr(settings, 'FACILITY_HEADER_NAME', 'X-Facility-Code')
