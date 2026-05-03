@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
@@ -149,3 +151,53 @@ class TestInboxViews:
         assert response.status_code == 200
         source_types = {item['source_type'] for item in response.data['results']}
         assert InboxItem.SourceType.DISCHARGE in source_types
+
+    def test_counts_endpoint_returns_sidebar_counts_in_one_request(
+        self,
+        api_client,
+        user_factory,
+        default_facility,
+    ):
+        billing_user = user_factory(user_type='billing', first_name='Bill', last_name='Counter')
+        billing_user.primary_facility = default_facility
+        billing_user.save(update_fields=['primary_facility'])
+        token = AccessToken.for_user(billing_user)
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_FACILITY_CODE=default_facility.code,
+        )
+        occurred_at = timezone.now()
+        InboxItem.objects.create(
+            facility=default_facility,
+            recipient_role='billing',
+            source_type=InboxItem.SourceType.DISCHARGE,
+            source_id=uuid.uuid4(),
+            title='Billing clearance',
+            priority=InboxItem.PriorityLevel.URGENT,
+            status=InboxItem.ItemStatus.UNREAD,
+            is_action_required=True,
+            occurred_at=occurred_at,
+            dedupe_key='billing-clearance',
+        )
+        InboxItem.objects.create(
+            facility=default_facility,
+            recipient_role='billing',
+            source_type=InboxItem.SourceType.ADMISSION,
+            source_id=uuid.uuid4(),
+            title='Admission review',
+            priority=InboxItem.PriorityLevel.NORMAL,
+            status=InboxItem.ItemStatus.READ,
+            is_action_required=False,
+            is_read=True,
+            occurred_at=occurred_at,
+            dedupe_key='admission-review',
+        )
+
+        response = api_client.get('/api/notifications/inbox/counts/?status=read')
+
+        assert response.status_code == 200
+        assert response.data == {
+            'total': 2,
+            'unread': 1,
+            'action_required': 1,
+        }

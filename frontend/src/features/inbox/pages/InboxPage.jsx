@@ -15,7 +15,7 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import format from 'date-fns/format';
 import isToday from 'date-fns/isToday';
 import isYesterday from 'date-fns/isYesterday';
-import { useInboxItems } from '@/features/inbox/hooks';
+import { useInboxCounts, useInboxItems } from '@/features/inbox/hooks';
 
 /**
  * Notification type configurations - Chronicle color palette
@@ -105,9 +105,7 @@ const InboxPage = () => {
   }, [activeFilter]);
 
   const { data: inboxData, isLoading, refetch: refetchInbox } = useInboxItems(inboxParams);
-  const { data: inboxCountData } = useInboxItems({ page_size: 1 });
-  const { data: unreadCountData } = useInboxItems({ status: 'unread', page_size: 1 });
-  const { data: actionCountData } = useInboxItems({ action_required: true, page_size: 1 });
+  const { data: inboxCountData, refetch: refetchCounts } = useInboxCounts();
 
   const inboxItems = inboxData?.results || [];
 
@@ -129,9 +127,9 @@ const InboxPage = () => {
     data: item,
   })), [inboxItems]);
 
-  const unreadCount = unreadCountData?.count ?? 0;
-  const actionCount = actionCountData?.count ?? 0;
-  const totalCount = inboxCountData?.count ?? allItems.length;
+  const unreadCount = inboxCountData?.unread ?? 0;
+  const actionCount = inboxCountData?.action_required ?? 0;
+  const totalCount = inboxCountData?.total ?? allItems.length;
 
   const resolvedTotalCount = Math.max(totalCount, unreadCount + actionCount);
 
@@ -149,6 +147,7 @@ const InboxPage = () => {
 
   const handleRefresh = () => {
     refetchInbox();
+    refetchCounts();
   };
 
   const filters = [

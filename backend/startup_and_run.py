@@ -401,7 +401,7 @@ log("=" * 50)
 asgi_threads = os.environ.get("ASGI_THREADS")
 if asgi_threads:
     os.environ["ASGI_THREADS"] = str(
-        parse_positive_int(asgi_threads, default=4, env_name="ASGI_THREADS")
+        parse_positive_int(asgi_threads, default=12, env_name="ASGI_THREADS")
     )
     log(f"ASGI_THREADS: {os.environ['ASGI_THREADS']}")
 

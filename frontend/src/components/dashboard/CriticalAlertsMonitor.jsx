@@ -1,6 +1,7 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import React, { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   useNurseDashboard,
   useAdminDashboard,
@@ -20,6 +21,7 @@ import { usePageVisibility } from '@/shared/hooks/usePageVisibility';
 export default function CriticalAlertsMonitor() {
   const { user } = useAuth();
   const { isPageActive } = usePageVisibility();
+  const location = useLocation();
   const previousAlertsRef = useRef(new Set());
 
   // Determine which dashboard to monitor based on role
@@ -33,6 +35,7 @@ export default function CriticalAlertsMonitor() {
   const isNurse = ['nurse', 'head_nurse', 'nurse_practitioner'].includes(userRole);
   const isInpatientDoctor = ['doctor', 'inpatient_doctor'].includes(userRole);
   const isAdmin = userRole === 'admin';
+  const isAdminDashboardRoute = location.pathname === '/dashboards/admin';
 
   // Poll appropriate dashboard based on role
   const { data: nurseDashboardData } = useNurseDashboard(
@@ -51,7 +54,7 @@ export default function CriticalAlertsMonitor() {
   });
 
   const { data: adminDashboardData } = useAdminDashboard({
-    enabled: shouldMonitor && isAdmin,
+    enabled: shouldMonitor && isAdmin && !isAdminDashboardRoute,
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });

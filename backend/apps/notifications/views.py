@@ -1,7 +1,7 @@
 from django.core.cache import cache
-from django.core.cache import cache
-from django.db.models import Q
+from django.db.models import Count, Q
 from rest_framework import permissions, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.cache_utils import facility_cache_key
@@ -27,7 +27,10 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
             f"inbox:{facility_code}:{user_id}:{role}:{page}:{page_size}:{status}:{action_required}"
         )
 
-    def get_queryset(self):
+    def _build_counts_cache_key(self, facility_code, user_id, role):
+        return facility_cache_key(f"inbox-counts:{facility_code}:{user_id}:{role}")
+
+    def _get_scoped_queryset(self):
         facility = get_user_facility(self.request)
         if not facility:
             return InboxItem.objects.none()
@@ -40,14 +43,6 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
         scoped_filters = base_filters & (user_filter | role_filter | default_scope)
 
         queryset = InboxItem.objects.filter(scoped_filters)
-
-        status = self.request.query_params.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
-
-        action_required = self.request.query_params.get('action_required')
-        if action_required is not None:
-            queryset = queryset.filter(is_action_required=action_required.lower() == 'true')
 
         patient_ids = self._get_patient_ids_for_user(user)
         if patient_ids is not None:
@@ -63,7 +58,21 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
                 | Q(source_type=InboxItem.SourceType.ADMISSION)
             )
 
-        return queryset.select_related('patient__user')
+        return queryset
+
+    def _apply_list_filters(self, queryset):
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        action_required = self.request.query_params.get('action_required')
+        if action_required is not None:
+            queryset = queryset.filter(is_action_required=action_required.lower() == 'true')
+
+        return queryset
+
+    def get_queryset(self):
+        return self._apply_list_filters(self._get_scoped_queryset()).select_related('patient__user')
 
     def list(self, request, *args, **kwargs):
         facility = get_user_facility(request)
@@ -91,3 +100,31 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
         response = super().list(request, *args, **kwargs)
         cache.set(cache_key, response.data, timeout=30)
         return response
+
+    @action(detail=False, methods=['get'], url_path='counts')
+    def counts(self, request):
+        facility = get_user_facility(request)
+        if not facility:
+            return Response({'total': 0, 'unread': 0, 'action_required': 0})
+
+        cache_key = self._build_counts_cache_key(
+            facility.code,
+            request.user.id,
+            request.user.user_type,
+        )
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        counts = self._get_scoped_queryset().aggregate(
+            total=Count('id'),
+            unread=Count('id', filter=Q(status=InboxItem.ItemStatus.UNREAD)),
+            action_required=Count('id', filter=Q(is_action_required=True)),
+        )
+        payload = {
+            'total': counts['total'] or 0,
+            'unread': counts['unread'] or 0,
+            'action_required': counts['action_required'] or 0,
+        }
+        cache.set(cache_key, payload, timeout=30)
+        return Response(payload)
