@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useTodayFluidBalance } from "@/features/nursing/hooks";
 import { InvoiceChronicleCard } from "@/components/billing";
+import { PatientCareTeamCompact } from "@/components/chronicle/PatientCareTeamCard";
 
 /**
  * ClinicalSummarySidebar - Always-visible patient context panel
@@ -28,6 +29,7 @@ const ClinicalSummarySidebar = ({
   problems = [],
   medications = [],
   labResults = [],
+  encounter,
   onViewVitalsTrends,
   onViewFluidTrends,
   className
@@ -51,6 +53,14 @@ const ClinicalSummarySidebar = ({
       "chronicle-scrollbar",
       className
     )}>
+      {/* Section: Care Team */}
+      {encounter && (
+        <>
+          <PatientCareTeamCompact encounter={encounter} />
+          <div className="divider-gradient" />
+        </>
+      )}
+
       {/* Section: Recent Vitals */}
       <LabResultsSection results={labResults} onViewTrends={onViewVitalsTrends} />
 
