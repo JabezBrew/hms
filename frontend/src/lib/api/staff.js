@@ -53,7 +53,7 @@ export const staffApi = {
    */
   updateStaff: async (id, data) => {
     try {
-      return await apiClient.put(`/users/staff/${id}/`, data);
+      return await apiClient.patch(`/users/staff/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update staff member'));
     }
