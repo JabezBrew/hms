@@ -52,7 +52,7 @@ export const referralsApi = {
 
   updateReferral: async (id, data) => {
     try {
-      return await apiClient.put(`/referrals/${id}/`, data);
+      return await apiClient.patch(`/referrals/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update referral'));
     }

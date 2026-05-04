@@ -124,7 +124,7 @@ export const drugSafetyApi = {
    */
   updateAllergy: async (id, data) => {
     try {
-      return await apiClient.put(`/drug-safety/allergies/${id}/`, data);
+      return await apiClient.patch(`/drug-safety/allergies/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update allergy'));
     }

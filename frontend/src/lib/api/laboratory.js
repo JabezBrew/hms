@@ -233,7 +233,7 @@ export const laboratoryApi = {
 
   updateLabOrder: async (id, data) => {
     try {
-      return await apiClient.put(`/laboratory/orders/${id}/`, data);
+      return await apiClient.patch(`/laboratory/orders/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update lab order'));
     }

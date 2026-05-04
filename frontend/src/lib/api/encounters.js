@@ -60,7 +60,7 @@ export const encountersApi = {
    */
   updateEncounter: async (id, data) => {
     try {
-      return await apiClient.put(`/encounters/${id}/`, data);
+      return await apiClient.patch(`/encounters/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update encounter'));
     }

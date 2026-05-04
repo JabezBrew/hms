@@ -124,7 +124,7 @@ export const inventoryApi = {
    */
   updateCategory: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/categories/${id}/`, data);
+      return await apiClient.patch(`/inventory/categories/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update category'));
     }
@@ -183,7 +183,7 @@ export const inventoryApi = {
    */
   updateSupplier: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/suppliers/${id}/`, data);
+      return await apiClient.patch(`/inventory/suppliers/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update supplier'));
     }
@@ -271,7 +271,7 @@ export const inventoryApi = {
    */
   updateStorageLocation: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/locations/${id}/`, data);
+      return await apiClient.patch(`/inventory/locations/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update storage location'));
     }
@@ -391,7 +391,7 @@ export const inventoryApi = {
    */
   updateInventoryItem: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/items/${id}/`, data);
+      return await apiClient.patch(`/inventory/items/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update inventory item'));
     }
@@ -630,7 +630,7 @@ export const inventoryApi = {
    */
   updateRequisition: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/requisitions/${id}/`, data);
+      return await apiClient.patch(`/inventory/requisitions/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update requisition'));
     }
@@ -745,7 +745,7 @@ export const inventoryApi = {
    */
   updatePurchaseOrder: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/purchase-orders/${id}/`, data);
+      return await apiClient.patch(`/inventory/purchase-orders/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update purchase order'));
     }
@@ -832,7 +832,7 @@ export const inventoryApi = {
    */
   updateGRN: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/grns/${id}/`, data);
+      return await apiClient.patch(`/inventory/grns/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update GRN'));
     }
@@ -847,7 +847,7 @@ export const inventoryApi = {
    */
   updateGRNItem: async (grnId, itemId, data) => {
     try {
-      return await apiClient.put(`/inventory/grns/${grnId}/items/${itemId}/`, data);
+      return await apiClient.patch(`/inventory/grns/${grnId}/items/${itemId}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update GRN item'));
     }
@@ -1046,7 +1046,7 @@ export const inventoryApi = {
    */
   updateStandingOrder: async (id, data) => {
     try {
-      return await apiClient.put(`/inventory/standing-orders/${id}/`, data);
+      return await apiClient.patch(`/inventory/standing-orders/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update standing order'));
     }

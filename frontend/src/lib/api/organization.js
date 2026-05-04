@@ -14,7 +14,7 @@ export const unitTypesApi = {
   list: (params = {}) => apiClient.get('/organization/unit-types/', { params }),
   get: (id) => apiClient.get(`/organization/unit-types/${id}/`),
   create: (data) => apiClient.post('/organization/unit-types/', data),
-  update: (id, data) => apiClient.put(`/organization/unit-types/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/unit-types/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/unit-types/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/unit-types/${id}/`),
 };
@@ -26,7 +26,7 @@ export const leadershipRolesApi = {
   list: (params = {}) => apiClient.get('/organization/leadership-roles/', { params }),
   get: (id) => apiClient.get(`/organization/leadership-roles/${id}/`),
   create: (data) => apiClient.post('/organization/leadership-roles/', data),
-  update: (id, data) => apiClient.put(`/organization/leadership-roles/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/leadership-roles/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/leadership-roles/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/leadership-roles/${id}/`),
 };
@@ -38,7 +38,7 @@ export const assignmentTypesApi = {
   list: (params = {}) => apiClient.get('/organization/assignment-types/', { params }),
   get: (id) => apiClient.get(`/organization/assignment-types/${id}/`),
   create: (data) => apiClient.post('/organization/assignment-types/', data),
-  update: (id, data) => apiClient.put(`/organization/assignment-types/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/assignment-types/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/assignment-types/${id}/`),
 };
 
@@ -53,7 +53,7 @@ export const clinicalUnitsApi = {
   list: (params = {}) => apiClient.get('/organization/units/', { params }),
   get: (id) => apiClient.get(`/organization/units/${id}/`),
   create: (data) => apiClient.post('/organization/units/', data),
-  update: (id, data) => apiClient.put(`/organization/units/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/units/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/units/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/units/${id}/`),
 
@@ -104,7 +104,7 @@ export const leadershipApi = {
   list: (params = {}) => apiClient.get('/organization/leadership/', { params }),
   get: (id) => apiClient.get(`/organization/leadership/${id}/`),
   create: (data) => apiClient.post('/organization/leadership/', data),
-  update: (id, data) => apiClient.put(`/organization/leadership/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/leadership/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/leadership/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/leadership/${id}/`),
 };
@@ -120,7 +120,7 @@ export const staffAssignmentsApi = {
   list: (params = {}) => apiClient.get('/organization/staff-assignments/', { params }),
   get: (id) => apiClient.get(`/organization/staff-assignments/${id}/`),
   create: (data) => apiClient.post('/organization/staff-assignments/', data),
-  update: (id, data) => apiClient.put(`/organization/staff-assignments/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/staff-assignments/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/staff-assignments/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/staff-assignments/${id}/`),
 };
@@ -132,7 +132,7 @@ export const unitMembersApi = {
   list: (params = {}) => apiClient.get('/organization/unit-members/', { params }),
   get: (id) => apiClient.get(`/organization/unit-members/${id}/`),
   create: (data) => apiClient.post('/organization/unit-members/', data),
-  update: (id, data) => apiClient.put(`/organization/unit-members/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/unit-members/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/unit-members/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/unit-members/${id}/`),
 };
@@ -148,7 +148,7 @@ export const crossCoverageApi = {
   list: (params = {}) => apiClient.get('/organization/cross-coverage/', { params }),
   get: (id) => apiClient.get(`/organization/cross-coverage/${id}/`),
   create: (data) => apiClient.post('/organization/cross-coverage/', data),
-  update: (id, data) => apiClient.put(`/organization/cross-coverage/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/cross-coverage/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/cross-coverage/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/cross-coverage/${id}/`),
 };
@@ -164,7 +164,7 @@ export const wardAllocationsApi = {
   list: (params = {}) => apiClient.get('/organization/ward-allocations/', { params }),
   get: (id) => apiClient.get(`/organization/ward-allocations/${id}/`),
   create: (data) => apiClient.post('/organization/ward-allocations/', data),
-  update: (id, data) => apiClient.put(`/organization/ward-allocations/${id}/`, data),
+  update: (id, data) => apiClient.patch(`/organization/ward-allocations/${id}/`, data),
   patch: (id, data) => apiClient.patch(`/organization/ward-allocations/${id}/`, data),
   delete: (id) => apiClient.delete(`/organization/ward-allocations/${id}/`),
 };

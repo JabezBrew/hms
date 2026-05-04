@@ -250,6 +250,60 @@ class TestStaffViewSet:
         assert response.data['employee_id'] == 'EMP_RETRIEVE'
         assert response.data['department'] == 'Cardiology'
 
+    def test_patch_staff_updates_nested_user_details(self, db):
+        """PATCH with user_details propagates to the related User."""
+        admin = AdminUserFactory()
+        staff = StaffFactory(department='Cardiology')
+        original_user_id = staff.user_id
+
+        client = get_authenticated_client(admin)
+        response = client.patch(
+            f'/api/users/staff/{staff.id}/',
+            {
+                'department': 'Neurology',
+                'user_details': {
+                    'first_name': 'Edited',
+                    'last_name': 'Name',
+                    'phone_number': '0555555555',
+                },
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        staff.refresh_from_db()
+        staff.user.refresh_from_db()
+        assert staff.department == 'Neurology'
+        assert staff.user_id == original_user_id
+        assert staff.user.first_name == 'Edited'
+        assert staff.user.last_name == 'Name'
+        assert staff.user.phone_number == '0555555555'
+
+    def test_patch_staff_user_details_cannot_escalate_privileges(self, db):
+        """user_type/is_active on user_details must remain read-only."""
+        admin = AdminUserFactory()
+        staff = StaffFactory()
+        original_user_type = staff.user.user_type
+
+        client = get_authenticated_client(admin)
+        response = client.patch(
+            f'/api/users/staff/{staff.id}/',
+            {
+                'user_details': {
+                    'first_name': 'NoEscalation',
+                    'user_type': 'admin',
+                    'is_active': False,
+                },
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        staff.user.refresh_from_db()
+        assert staff.user.first_name == 'NoEscalation'
+        assert staff.user.user_type == original_user_type
+        assert staff.user.is_active is True
+
     def test_staff_with_practitioner_profile(self, db):
         """Test staff with practitioner profile."""
         admin = AdminUserFactory()

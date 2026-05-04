@@ -127,6 +127,16 @@ class StaffSerializer(serializers.ModelSerializer):
                   'created_by', 'updated_by']
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
+    def update(self, instance, validated_data):
+        user_payload = self.initial_data.get('user_details') if isinstance(self.initial_data, dict) else None
+        if isinstance(user_payload, dict) and user_payload:
+            user_serializer = UserSerializer(
+                instance.user, data=user_payload, partial=True, context=self.context,
+            )
+            user_serializer.is_valid(raise_exception=True)
+            user_serializer.save()
+        return super().update(instance, validated_data)
+
 
 class PractitionerProfileSerializer(serializers.ModelSerializer):
     """

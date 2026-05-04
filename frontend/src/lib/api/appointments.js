@@ -119,7 +119,7 @@ export const appointmentsApi = {
    */
   updateAppointment: async (id, data) => {
     try {
-      return await apiClient.put(`/appointments/appointments/${id}/`, data);
+      return await apiClient.patch(`/appointments/appointments/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update appointment'));
     }
@@ -200,7 +200,7 @@ export const appointmentsApi = {
    */
   updateBlockedTime: async (id, data) => {
     try {
-      return await apiClient.put(`/appointments/blocked-times/${id}/`, data);
+      return await apiClient.patch(`/appointments/blocked-times/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update blocked time'));
     }
@@ -309,7 +309,7 @@ export const appointmentsApi = {
    */
   updateAvailabilityRule: async (id, data) => {
     try {
-      return await apiClient.put(`/appointments/availability-rules/${id}/`, data);
+      return await apiClient.patch(`/appointments/availability-rules/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update availability rule'));
     }
@@ -387,7 +387,7 @@ export const appointmentsApi = {
    */
   updateAppointmentType: async (id, data) => {
     try {
-      return await apiClient.put(`/appointments/types/${id}/`, data);
+      return await apiClient.patch(`/appointments/types/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update appointment type'));
     }

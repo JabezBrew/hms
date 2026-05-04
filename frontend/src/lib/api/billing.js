@@ -166,7 +166,7 @@ export const billingApi = {
    */
   updateInvoice: async (id, data) => {
     try {
-      return await apiClient.put(`/billing/invoices/${id}/`, data);
+      return await apiClient.patch(`/billing/invoices/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update invoice'));
     }
@@ -777,7 +777,7 @@ export const billingApi = {
    */
   updateBillingRule: async (id, data) => {
     try {
-      return await apiClient.put(`/billing/billing-rules/${id}/`, data);
+      return await apiClient.patch(`/billing/billing-rules/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update billing rule'));
     }
@@ -837,7 +837,7 @@ export const billingApi = {
    */
   updateFacilityBillingSettings: async (id, data) => {
     try {
-      return await apiClient.put(`/billing/billing-settings/${id}/`, data);
+      return await apiClient.patch(`/billing/billing-settings/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update billing settings'));
     }
@@ -921,7 +921,7 @@ export const billingApi = {
    */
   updatePatientInsurance: async (id, data) => {
     try {
-      return await apiClient.put(`/billing/patient-insurances/${id}/`, data);
+      return await apiClient.patch(`/billing/patient-insurances/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update patient insurance'));
     }

@@ -68,7 +68,7 @@ export const clinicalNotesApi = {
    */
   updateNoteTemplate: async (id, data) => {
     try {
-      return await apiClient.put(`/clinical-notes/templates/${id}/`, data);
+      return await apiClient.patch(`/clinical-notes/templates/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update note template'));
     }
@@ -291,7 +291,7 @@ export const clinicalNotesApi = {
    */
   updateNoteEntry: async (id, data, editReason = '') => {
     try {
-      return await apiClient.put(`/clinical-notes/entries/${id}/`, {
+      return await apiClient.patch(`/clinical-notes/entries/${id}/`, {
         data,
         edit_reason: editReason
       });

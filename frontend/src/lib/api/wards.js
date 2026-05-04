@@ -107,7 +107,7 @@ export const wardsApi = {
    */
   updateWard: async (id, data) => {
     try {
-      return await apiClient.put(`/wards/wards/${id}/`, data);
+      return await apiClient.patch(`/wards/wards/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update ward'));
     }
@@ -193,7 +193,7 @@ export const wardsApi = {
    */
   updateBed: async (id, data) => {
     try {
-      return await apiClient.put(`/wards/beds/${id}/`, data);
+      return await apiClient.patch(`/wards/beds/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update bed'));
     }
@@ -264,7 +264,7 @@ export const wardsApi = {
    */
   updateAdmission: async (id, data) => {
     try {
-      return await apiClient.put(`/wards/admissions/${id}/`, data);
+      return await apiClient.patch(`/wards/admissions/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update admission'));
     }
@@ -394,7 +394,7 @@ export const wardsApi = {
    */
   updateSection: async (id, data) => {
     try {
-      return await apiClient.put(`/wards/sections/${id}/`, data);
+      return await apiClient.patch(`/wards/sections/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update section'));
     }
@@ -479,7 +479,7 @@ export const wardsApi = {
    */
   updateAmenity: async (id, data) => {
     try {
-      return await apiClient.put(`/wards/amenities/${id}/`, data);
+      return await apiClient.patch(`/wards/amenities/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update amenity'));
     }
