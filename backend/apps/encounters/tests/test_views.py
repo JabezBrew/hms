@@ -243,8 +243,9 @@ class TestEncounterRetrieveView:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data['id'] == str(encounter.id)
-        assert 'patient_details' in response.data
-        assert 'practitioner_details' in response.data
+        assert 'patient' in response.data
+        assert 'patient_name' in response.data
+        assert 'practitioner_name' in response.data
 
     def test_retrieve_nonexistent_encounter(self, api_client):
         """Test retrieving nonexistent encounter returns 404."""

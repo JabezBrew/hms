@@ -183,6 +183,68 @@ def ingest_nursing_task_async(self, task_id):
 
 
 @shared_task(bind=True, max_retries=3)
+def ingest_lab_order_completion_async(self, order_id):
+    from apps.laboratory.models import LabOrder, LabResult
+
+    try:
+        order = LabOrder.objects.select_related(
+            'patient',
+            'facility',
+            'ordering_provider__staff__user',
+        ).get(id=order_id)
+    except LabOrder.DoesNotExist:
+        return
+
+    if order.status != 'completed':
+        return
+
+    provider = order.ordering_provider
+    recipient_user = None
+    if provider and provider.staff and provider.staff.user:
+        recipient_user = provider.staff.user
+    if not recipient_user:
+        return
+
+    has_critical = LabResult.objects.filter(
+        order_test__order=order,
+        flag__in=['critical_low', 'critical_high'],
+    ).exists()
+
+    if has_critical:
+        priority = InboxItem.PriorityLevel.URGENT
+    elif order.priority == 'stat':
+        priority = InboxItem.PriorityLevel.URGENT
+    else:
+        priority = InboxItem.PriorityLevel.NORMAL
+
+    test_count = order.order_tests.count()
+    title = f"Lab Results Ready - {order.order_number}"
+    if has_critical:
+        title = f"CRITICAL Lab Results - {order.order_number}"
+    summary = f"{test_count} test{'s' if test_count != 1 else ''} completed for {order.patient.user.get_full_name()}"
+
+    InboxItem.objects.update_or_create(
+        recipient_user=recipient_user,
+        recipient_role='doctor',
+        source_type=InboxItem.SourceType.LAB_RESULT,
+        source_id=order.id,
+        dedupe_key=f"lab_order:{order.id}",
+        defaults={
+            'facility': order.facility,
+            'patient': order.patient,
+            'title': title,
+            'summary': summary,
+            'action_url': f"/patients/{order.patient_id}?action=view_lab_results&order_id={order.id}",
+            'priority': priority,
+            'status': InboxItem.ItemStatus.UNREAD,
+            'is_action_required': True,
+            'is_read': False,
+            'occurred_at': order.completed_at or order.updated_at,
+        }
+    )
+
+
+@shared_task(bind=True, max_retries=3)
 def ingest_drug_safety_alert_async(self, alert_id):
     from apps.drug_safety.models import DrugSafetyAlert
 

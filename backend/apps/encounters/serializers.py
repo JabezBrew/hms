@@ -5,7 +5,6 @@ from rest_framework import serializers
 from django.utils import timezone
 
 from .models import Encounter, OutpatientVisit, TriageQueue, EncounterCareTeam
-from apps.users.serializers import PatientProfileSerializer, PractitionerProfileSerializer
 
 
 class EncounterCareTeamSerializer(serializers.ModelSerializer):
@@ -88,31 +87,30 @@ class EncounterSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True)
     primary_team_name = serializers.CharField(source='primary_team.name', read_only=True)
     admitted_by_team_name = serializers.CharField(source='admitted_by_team.name', read_only=True)
-    admitted_by_team_id = serializers.UUIDField(source='admitted_by_team.id', read_only=True, allow_null=True)
-    duration_minutes = serializers.ReadOnlyField()
-    outpatient_visit = OutpatientVisitSerializer(read_only=True)
-    patient_details = PatientProfileSerializer(source='patient', read_only=True)
-    practitioner_details = PractitionerProfileSerializer(source='practitioner', read_only=True)
+    outpatient_visit_status = serializers.CharField(
+        source='outpatient_visit.visit_status', read_only=True, allow_null=True,
+    )
     care_team_assignments = EncounterCareTeamListSerializer(many=True, read_only=True)
 
     class Meta:
         model = Encounter
         fields = [
-            'id', 'patient', 'patient_details', 'patient_name',
-            'practitioner', 'practitioner_details', 'practitioner_name',
+            'id', 'patient', 'patient_name',
+            'practitioner', 'practitioner_name',
             'clinic', 'clinic_name', 'department', 'department_name',
-            'primary_team', 'primary_team_name', 'admitted_by_team', 'admitted_by_team_name', 'admitted_by_team_id', 'care_team_assignments',
-            'appointment', 'outpatient_visit',
+            'primary_team', 'primary_team_name',
+            'admitted_by_team', 'admitted_by_team_name',
+            'care_team_assignments',
+            'appointment', 'outpatient_visit_status',
             'encounter_type', 'status', 'start_time', 'end_time',
             'reason', 'service_type', 'location',
             'admission_source', 'discharge_disposition', 'destination',
-            'admission', 'duration_minutes',
-            'fhir_id', 'fhir_synced', 'fhir_last_synced',
+            'admission',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'patient_name', 'practitioner_name', 'duration_minutes',
-            'outpatient_visit', 'fhir_id', 'fhir_synced', 'fhir_last_synced',
+            'id', 'patient_name', 'practitioner_name',
+            'outpatient_visit_status',
             'created_at', 'updated_at'
         ]
 

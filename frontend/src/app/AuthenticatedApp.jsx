@@ -19,6 +19,7 @@ const Toaster = lazy(() =>
   import('@/components/ui/sonner').then((module) => ({ default: module.Toaster }))
 )
 const OnboardingRuntime = lazy(() => import('@/features/onboarding/components/OnboardingRuntime'))
+const LoginInboxToaster = lazy(() => import('@/features/inbox/components/LoginInboxToaster'))
 
 export default function AuthenticatedApp() {
   return (
@@ -56,6 +57,9 @@ export default function AuthenticatedApp() {
           <SessionTimeoutWarning />
           <Suspense fallback={null}>
             <Toaster />
+          </Suspense>
+          <Suspense fallback={null}>
+            <LoginInboxToaster />
           </Suspense>
         </OmniSearchProvider>
       </ReadOnlyModeProvider>

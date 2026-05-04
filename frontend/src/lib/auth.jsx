@@ -256,6 +256,12 @@ export function AuthProvider({ children }) {
       justLoggedInRef.current = false
     }, 5000)
 
+    try {
+      sessionStorage.setItem('hms.pendingLoginToast', '1')
+    } catch {
+      // sessionStorage unavailable (private mode, SSR) — toaster will simply skip
+    }
+
     return userData
   }, [defaultFacilityCode, setAccessToken])
 

@@ -25,4 +25,15 @@ export const notificationsApi = {
       throw new Error(handleApiError(error, 'Failed to fetch inbox counts'));
     }
   },
+
+  markRead: async (id, options = {}) => {
+    try {
+      return await apiClient.post(`/notifications/inbox/${id}/mark-read/`, null, options);
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      throw new Error(handleApiError(error, 'Failed to mark inbox item read'));
+    }
+  },
 };

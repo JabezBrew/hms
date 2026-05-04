@@ -16,6 +16,23 @@ import { CareTeamBadge } from '@/components/organization/CareTeamBadge';
 import { cn } from '@/lib/utils';
 
 /**
+ * Normalize a team field that may be either a nested object
+ * ({id, name, code}) or a flat UUID string paired with a separate
+ * `*_name` field on the encounter.
+ */
+function normalizeTeam(team, nameFallback) {
+  if (!team) return null;
+  if (typeof team === 'string') {
+    if (!nameFallback) return null;
+    return { id: team, name: nameFallback };
+  }
+  if (!team.name && nameFallback) {
+    return { ...team, name: nameFallback };
+  }
+  return team;
+}
+
+/**
  * PatientCareTeamCard component.
  *
  * @param {Object} props
@@ -30,7 +47,12 @@ export function PatientCareTeamCard({ encounter, className }) {
     return null;
   }
 
-  const { primary_team, admitted_by_team, care_team_assignments = [] } = encounter;
+  const { care_team_assignments = [] } = encounter;
+  const primary_team = normalizeTeam(encounter.primary_team, encounter.primary_team_name);
+  const admitted_by_team = normalizeTeam(
+    encounter.admitted_by_team,
+    encounter.admitted_by_team_name,
+  );
 
   // Check if patient was transferred (admitted_by_team differs from primary_team)
   const wasTransferred =
@@ -129,7 +151,12 @@ export function PatientCareTeamCompact({ encounter, className }) {
     return null;
   }
 
-  const { primary_team, admitted_by_team, care_team_assignments = [] } = encounter;
+  const { care_team_assignments = [] } = encounter;
+  const primary_team = normalizeTeam(encounter.primary_team, encounter.primary_team_name);
+  const admitted_by_team = normalizeTeam(
+    encounter.admitted_by_team,
+    encounter.admitted_by_team_name,
+  );
 
   const wasTransferred =
     admitted_by_team &&

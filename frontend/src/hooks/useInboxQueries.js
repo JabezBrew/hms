@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { notificationsApi } from '@/features/inbox/api';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
@@ -28,3 +28,15 @@ export function useInboxCounts(options = {}) {
     ...options,
   });
 }
+
+export function useMarkInboxRead(options = {}) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => notificationsApi.markRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inboxKeys.all });
+    },
+    ...options,
+  });
+}
+

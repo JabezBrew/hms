@@ -1,6 +1,8 @@
 from django.core.cache import cache
 from django.db.models import Count, Q
-from rest_framework import permissions, viewsets
+from django.http import Http404
+from django.utils import timezone
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -128,3 +130,35 @@ class InboxItemViewSet(viewsets.ReadOnlyModelViewSet):
         }
         cache.set(cache_key, payload, timeout=30)
         return Response(payload)
+
+    def _invalidate_user_inbox_cache(self, facility_code, user_id, role):
+        try:
+            cache.delete_pattern(f"*inbox:{facility_code}:{user_id}:*")
+            cache.delete_pattern(f"*inbox-counts:{facility_code}:{user_id}:*")
+        except AttributeError:
+            cache.delete(self._build_counts_cache_key(facility_code, user_id, role))
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        facility = get_user_facility(request)
+        if not facility:
+            return Response({'detail': 'Facility context required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            item = InboxItem.objects.get(
+                pk=pk,
+                facility=facility,
+                recipient_user=request.user,
+            )
+        except InboxItem.DoesNotExist:
+            raise Http404
+
+        if not item.is_read or item.status == InboxItem.ItemStatus.UNREAD:
+            item.is_read = True
+            if item.status == InboxItem.ItemStatus.UNREAD:
+                item.status = InboxItem.ItemStatus.READ
+            item.updated_at = timezone.now()
+            item.save(update_fields=['is_read', 'status', 'updated_at'])
+            self._invalidate_user_inbox_cache(facility.code, request.user.id, request.user.user_type)
+
+        return Response(InboxItemListSerializer(item).data)

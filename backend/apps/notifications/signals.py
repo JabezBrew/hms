@@ -6,6 +6,7 @@ from apps.referrals.models import ReferralNotification
 
 from .tasks import (
     ingest_drug_safety_alert_async,
+    ingest_lab_order_completion_async,
     ingest_nursing_alert_async,
     ingest_nursing_task_async,
     ingest_referral_notification_async,
@@ -30,3 +31,9 @@ def ingest_nursing_task(sender, instance, **kwargs):
 @receiver(post_save, sender='drug_safety.DrugSafetyAlert')
 def ingest_drug_safety_alert(sender, instance, **kwargs):
     ingest_drug_safety_alert_async.delay(str(instance.id))
+
+
+@receiver(post_save, sender='laboratory.LabOrder')
+def ingest_lab_order_completion(sender, instance, **kwargs):
+    if instance.status == 'completed':
+        ingest_lab_order_completion_async.delay(str(instance.id))
