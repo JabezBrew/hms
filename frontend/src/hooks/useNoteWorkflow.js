@@ -279,29 +279,21 @@ export function useNoteWorkflow(patientId, options = {}) {
         return { success: true, note: noteEntry, isEdit: true };
       }
 
-      // If we have a backend workflow, complete it
-      if (workflowId) {
-        const data = await apiClient.post(
-          `/workflows/${workflowId}/clinical-note/complete/`,
-          {
-            final_data: finalData,
-            encounter_type: 'outpatient',
-            encounter_status: 'finished',
-            template_id: template.id,
-            template_revision_id: templateRevisionId,
-          }
-        );
-        return data;
-      }
-
-      // Otherwise, create a note entry directly using the clinical notes API
+      // Always create the note via the clinical-notes API. The workflow's
+      // /complete/ endpoint depended on per-step PATCH calls populating its
+      // ClinicalNoteWorkflow row; since we no longer hit the server per step,
+      // that path 500s. Creating the NoteEntry directly is the canonical path
+      // (also used by DynamicNoteForm) and doesn't need any prior workflow
+      // state. The backend draft workflow (if one exists) is left as-is — it
+      // can be cleaned up server-side or via save-draft, but is not on the
+      // critical path for note creation.
       const noteEntry = await clinicalNotesApi.createNoteEntry({
         template_id: template.id,
         template_revision_id: templateRevisionId,
         patient_id: patientId,
         data: finalData,
       });
-      return { success: true, note: noteEntry };
+      return { success: true, note: noteEntry, workflowId };
     },
     onSuccess: () => {
       // Invalidate relevant queries

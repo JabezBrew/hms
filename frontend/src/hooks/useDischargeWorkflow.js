@@ -267,7 +267,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
     }
   }, [workflowId, currentStepConfig, formData, updateStepMutation]);
 
-  const nextStep = useCallback(async () => {
+  const nextStep = useCallback(() => {
     const stepId = currentStepConfig?.id;
     if (!stepId) return false;
 
@@ -278,29 +278,13 @@ export function useDischargeWorkflow(patientId, admissionId) {
       return false;
     }
 
-    if (workflowId) {
-      setIsSaving(true);
-      try {
-        const response = await updateStepMutation.mutateAsync({
-          workflowId,
-          stepData: stepPayload,
-        });
-
-        // Backend normally advances the step; fallback locally if it doesn't.
-        const backendStep = response?.workflow?.current_step;
-        if (!Number.isInteger(backendStep) && currentStep < totalSteps) {
-          setCurrentStep((prev) => prev + 1);
-        }
-      } finally {
-        setIsSaving(false);
-      }
-    } else if (currentStep < totalSteps) {
+    if (currentStep < totalSteps) {
       setCurrentStep((prev) => prev + 1);
     }
 
     setValidationErrors({});
     return true;
-  }, [currentStep, currentStepConfig, formData, workflowId, totalSteps, updateStepMutation]);
+  }, [currentStep, currentStepConfig, formData, totalSteps]);
 
   const prevStep = useCallback(() => {
     if (currentStep > 1) {

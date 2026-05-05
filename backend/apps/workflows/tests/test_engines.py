@@ -24,7 +24,8 @@ from apps.workflows.engines import (
     DischargeEngine, ClinicalNoteEngine
 )
 from apps.discharge.models import DischargeCase
-from apps.clinical_notes.models import Prescription
+from apps.clinical_notes.models import NoteEntry, NoteTemplateRevision, Prescription
+from apps.clinical_notes.tests.factories import NoteTemplateFactory
 from apps.users.tests.factories import (
     PatientProfileFactory, DoctorUserFactory, PractitionerProfileFactory
 )
@@ -556,6 +557,137 @@ class TestClinicalNoteEngine:
         )
 
         assert updated['clinical_note_data'].chief_complaint == 'Follow-up visit'
+
+    def test_complete_from_final_data_without_step_updates(self, db):
+        """Completing does not require prior per-step PATCH persistence."""
+        patient = PatientProfileFactory()
+        facility = patient.facility
+        user = DoctorUserFactory(primary_facility=facility)
+        practitioner = PractitionerProfileFactory(
+            staff__user=user,
+            staff__primary_facility=facility,
+        )
+        EncounterFactory(
+            patient=patient,
+            facility=facility,
+            practitioner=practitioner,
+            status='in-progress',
+            encounter_type='outpatient',
+            created_by=user,
+        )
+        template = NoteTemplateFactory(
+            facility=facility,
+            created_by=user,
+            updated_by=user,
+            structure={
+                'sections': [
+                    {'name': 'Subjective', 'type': 'text', 'required': True},
+                    {'name': 'Assessment', 'type': 'text', 'required': True},
+                    {'name': 'Plan', 'type': 'text', 'required': False},
+                ],
+            },
+        )
+        revision = NoteTemplateRevision.objects.create(
+            template=template,
+            facility=facility,
+            version=1,
+            status='published',
+            mode='written',
+            content=template.structure,
+            created_by=user,
+            published_by=user,
+            published_at=timezone.now(),
+        )
+        workflow = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='soap',
+            initial_data={
+                'template_id': str(template.id),
+                'template_revision_id': str(revision.id),
+            },
+        )['workflow']
+        final_data = {
+            'Subjective': 'Patient reports improved pain.',
+            'Assessment': 'Stable clinical status.',
+            'Plan': 'Continue current management.',
+        }
+
+        result = ClinicalNoteEngine.complete(
+            workflow=workflow,
+            final_data=final_data,
+        )
+
+        assert result['success'] is True
+        note = NoteEntry.objects.get(id=result['note_id'])
+        assert note.facility == facility
+        assert note.patient == patient
+        assert note.template == template
+        assert note.template_revision == revision
+        assert note.data == final_data
+
+    def test_complete_is_idempotent_after_success(self, db):
+        """Retrying a completed workflow returns cached result without duplicate notes."""
+        patient = PatientProfileFactory()
+        facility = patient.facility
+        user = DoctorUserFactory(primary_facility=facility)
+        practitioner = PractitionerProfileFactory(
+            staff__user=user,
+            staff__primary_facility=facility,
+        )
+        EncounterFactory(
+            patient=patient,
+            facility=facility,
+            practitioner=practitioner,
+            status='in-progress',
+            encounter_type='outpatient',
+            created_by=user,
+        )
+        template = NoteTemplateFactory(
+            facility=facility,
+            created_by=user,
+            updated_by=user,
+        )
+        revision = NoteTemplateRevision.objects.create(
+            template=template,
+            facility=facility,
+            version=1,
+            status='published',
+            mode='written',
+            content=template.structure,
+            created_by=user,
+            published_by=user,
+            published_at=timezone.now(),
+        )
+        workflow = ClinicalNoteEngine.start(
+            user=user,
+            patient_id=patient.id,
+            note_type='progress',
+            initial_data={
+                'template_id': str(template.id),
+                'template_revision_id': str(revision.id),
+            },
+        )['workflow']
+
+        first_result = ClinicalNoteEngine.complete(
+            workflow=workflow,
+            final_data={
+                'Chief Complaint': 'Follow-up visit',
+                'Assessment': 'Improving',
+                'Plan': 'Review in one week',
+            },
+        )
+        workflow.refresh_from_db()
+        second_result = ClinicalNoteEngine.complete(
+            workflow=workflow,
+            final_data={
+                'Chief Complaint': 'Retried request should not create another note',
+            },
+        )
+
+        assert second_result == first_result
+        assert NoteEntry.objects.filter(id=first_result['note_id']).count() == 1
+        assert NoteEntry.objects.filter(patient=patient, template=template).count() == 1
 
 
 # =============================================================================

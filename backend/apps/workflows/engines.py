@@ -1415,8 +1415,15 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         from apps.users.models import PractitionerProfile
         from apps.encounters.services import get_or_create_active_encounter
 
-        context = workflow.context_data
+        context = workflow.context_data or {}
+        cached_completion = context.get('completion_result')
+        if workflow.status == WorkflowStatus.COMPLETED and cached_completion:
+            return cached_completion
+
         clinical_note_data = workflow.clinical_note_data
+        facility = getattr(workflow.patient, 'facility', None)
+        if facility is None:
+            raise ValueError('Patient facility is required to create a clinical note')
 
         # Update clinical note data with final_data if provided
         if final_data:
@@ -1435,12 +1442,13 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         template_revision = None
         if template_revision_id:
             template_revision = NoteTemplateRevision.objects.select_related('template').filter(
-                id=template_revision_id
+                id=template_revision_id,
+                facility=facility,
             ).first()
 
         template = None
         if template_id:
-            template = NoteTemplate.objects.filter(id=template_id).first()
+            template = NoteTemplate.objects.filter(id=template_id, facility=facility).first()
         elif template_revision:
             template = template_revision.template
 
@@ -1454,6 +1462,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
         if not template_revision:
             template_revision = NoteTemplateRevision.objects.filter(
                 template=template,
+                facility=facility,
                 status='published',
             ).order_by('-version').first()
 
@@ -1494,6 +1503,7 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
                 template_revision=template_revision,
                 template_version=template_revision.version if template_revision else None,
                 patient=workflow.patient,
+                facility=facility,
                 encounter=encounter,
                 practitioner=practitioner,
                 data=note_data,
@@ -1505,22 +1515,28 @@ class ClinicalNoteEngine(BaseWorkflowEngine):
             logger.error(f"Failed to create clinical note for workflow {workflow.id}: {str(e)}")
             raise  # Re-raise instead of silently continuing
 
-        # Mark workflow complete
-        workflow.encounter_id = str(encounter.id)
-        workflow.complete_workflow()
-
         artifacts = [
             {'type': 'encounter', 'id': str(encounter.id)},
             {'type': 'note', 'id': str(note.id)},
         ]
-
-        return {
+        result = {
             'success': True,
             'workflow_id': str(workflow.id),
             'encounter_id': str(encounter.id),
             'note_id': str(note.id),
             'artifacts': artifacts,
         }
+
+        # Mark workflow complete and persist enough state for safe retries.
+        workflow.encounter_id = str(encounter.id)
+        workflow.context_data = {
+            **context,
+            'completion_result': result,
+        }
+        workflow.save(update_fields=['encounter_id', 'context_data', 'updated_at'])
+        workflow.complete_workflow()
+
+        return result
 
     @staticmethod
     def _get_encounter_reason(clinical_note_data: ClinicalNoteWorkflow, context: Dict) -> str:

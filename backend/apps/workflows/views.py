@@ -502,8 +502,13 @@ class WorkflowViewSet(viewsets.ModelViewSet):
 
             return Response(result)
 
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
-            logger.error(f"Error completing clinical note: {str(e)}")
+            logger.error("Error completing clinical note workflow %s: %s", workflow.id, str(e))
             return Response(
                 {'error': 'Failed to complete clinical note. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

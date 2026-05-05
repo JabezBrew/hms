@@ -300,39 +300,25 @@ export function useConsultationWorkflow(patientId, options = {}) {
     }
   }, [workflowId, formData, updateStepMutation]);
 
-  // Navigate to next step
-  const nextStep = useCallback(async () => {
+  // Navigate to next step (local only — form data is in React state, auto-save
+  // and /complete cover persistence; no need for a PATCH per click).
+  const nextStep = useCallback(() => {
     const stepId = currentStepConfig?.id;
     const stepData = formData[stepId] || {};
 
-    // Validate current step
     const validation = validateStep(stepId, stepData);
     if (!validation.valid) {
       setValidationErrors(validation.errors);
       return false;
     }
 
-    // Save to backend
-    if (workflowId) {
-      setIsSaving(true);
-      try {
-        await updateStepMutation.mutateAsync({
-          workflowId,
-          stepData: formData,
-        });
-      } finally {
-        setIsSaving(false);
-      }
-    }
-
-    // Advance step
     if (currentStep < totalSteps) {
-      setCurrentStep(prev => prev + 1);
+      setCurrentStep((prev) => prev + 1);
       setValidationErrors({});
     }
 
     return true;
-  }, [currentStep, currentStepConfig, formData, workflowId, totalSteps, updateStepMutation]);
+  }, [currentStep, currentStepConfig, formData, totalSteps]);
 
   // Navigate to previous step
   const prevStep = useCallback(() => {
