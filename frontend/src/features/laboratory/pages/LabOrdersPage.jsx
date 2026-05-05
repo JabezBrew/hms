@@ -336,12 +336,17 @@ export default function LabOrdersPage() {
         title="Lab Orders"
         description={(
           <span>
-            {stats.total} {isDoctor ? "matching orders placed by you" : "matching orders"}
-            {stats.total !== stats.visible && (
-              <span className="ml-2 text-muted-foreground">
-                (showing {stats.visible} on this page)
-              </span>
-            )}
+            {isDoctor
+              ? "Records view of lab orders you've placed — track status, results, and cancel if needed."
+              : "Records view of all lab orders. For active specimen collection, processing, and result entry, use the Worklist."}
+            <span className="ml-2 text-muted-foreground">
+              {stats.total} {isDoctor ? "matching orders placed by you" : "matching orders"}
+              {stats.total !== stats.visible && (
+                <span className="ml-1">
+                  (showing {stats.visible} on this page)
+                </span>
+              )}
+            </span>
             {stats.critical > 0 && (
               <span className="text-rose-600 ml-2">
                 ({stats.critical} critical on this page)

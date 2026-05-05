@@ -14,7 +14,6 @@ import BookOpen from 'lucide-react/dist/esm/icons/book-open.js'
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js'
 import FileSearch from 'lucide-react/dist/esm/icons/file-search.js'
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js'
-import Droplet from 'lucide-react/dist/esm/icons/droplet.js'
 import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js'
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js'
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js'
@@ -85,13 +84,6 @@ const INBOX_ROLES = [
 ]
 
 const LAB_CATALOG_ROLES = [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.DOCTOR]
-const LAB_COLLECTION_ROLES = [
-  ROLES.ADMIN,
-  ROLES.LAB_TECHNICIAN,
-  ROLES.NURSE,
-  ROLES.HEAD_NURSE,
-  ROLES.NURSE_PRACTITIONER,
-]
 const LAB_RESULTS_ROLES = [
   ROLES.ADMIN,
   ROLES.LAB_TECHNICIAN,
@@ -302,14 +294,6 @@ const globalSections = [
           href: '/laboratory/dashboard',
           icon: ClipboardList,
           roles: ROLE_GROUPS.LAB_TECHS,
-          exact: true,
-        }),
-        item({
-          key: 'lab-collection',
-          label: 'Collection Queue',
-          href: '/laboratory/collection',
-          icon: Droplet,
-          roles: LAB_COLLECTION_ROLES,
           exact: true,
         }),
         item({
@@ -526,9 +510,8 @@ const inventorySections = [
 
 const laboratorySections = [
   section('laboratory', 'Laboratory', [
-    item({ key: 'lab-dashboard', label: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutDashboard, roles: ROLE_GROUPS.LAB_TECHS, features: ['laboratory'], exact: true }),
+    item({ key: 'lab-dashboard', label: 'Worklist', href: '/laboratory/dashboard', icon: LayoutDashboard, roles: ROLE_GROUPS.LAB_TECHS, features: ['laboratory'], exact: true }),
     item({ key: 'lab-catalog', label: 'Catalog', href: '/laboratory/catalog', icon: FlaskConical, roles: LAB_CATALOG_ROLES, features: ['laboratory'], exact: true }),
-    item({ key: 'lab-collection', label: 'Collection Queue', href: '/laboratory/collection', icon: Droplet, roles: LAB_COLLECTION_ROLES, features: ['laboratory'], exact: true }),
     item({ key: 'lab-orders', label: 'Orders', href: '/laboratory/orders', icon: TestTube2, roles: ROLE_GROUPS.LAB_ACCESS, features: ['laboratory'], exact: true }),
     item({ key: 'lab-results', label: 'Results', href: '/laboratory/results', icon: FileText, roles: LAB_RESULTS_ROLES, features: ['laboratory'], exact: true }),
   ]),

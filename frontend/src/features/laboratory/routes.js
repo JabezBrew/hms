@@ -6,7 +6,6 @@ const LabCatalogPage = lazy(() => import('./pages/LabCatalogPage'))
 const LabDashboardPage = lazy(() => import('./pages/LabDashboardPage'))
 const LabOrdersPage = lazy(() => import('./pages/LabOrdersPage'))
 const LabResultsPage = lazy(() => import('./pages/LabResultsPage'))
-const LabCollectionWorklistPage = lazy(() => import('./pages/LabCollectionWorklistPage'))
 
 const LAB_BREADCRUMB = { label: 'Laboratory', path: '/laboratory/dashboard' }
 
@@ -23,10 +22,10 @@ export const laboratoryRoutes = [
   {
     path: '/laboratory/dashboard',
     component: LabDashboardPage,
-    roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN],
+    roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER],
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.LABORATORY,
-    title: 'Lab Dashboard | Hospital Management System',
+    title: 'Lab Worklist | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB],
   },
   {
@@ -46,14 +45,5 @@ export const laboratoryRoutes = [
     sidebar: SIDEBARS.LABORATORY,
     title: 'Lab Results | Hospital Management System',
     breadcrumbs: [LAB_BREADCRUMB, { label: 'Results', path: '/laboratory/results' }],
-  },
-  {
-    path: '/laboratory/collection',
-    component: LabCollectionWorklistPage,
-    roles: [ROLES.ADMIN, ROLES.LAB_TECHNICIAN, ROLES.NURSE, ROLES.HEAD_NURSE, ROLES.NURSE_PRACTITIONER],
-    layout: ROUTE_LAYOUTS.APP,
-    sidebar: SIDEBARS.LABORATORY,
-    title: 'Lab Collection | Hospital Management System',
-    breadcrumbs: [LAB_BREADCRUMB, { label: 'Collection', path: '/laboratory/collection' }],
   },
 ]

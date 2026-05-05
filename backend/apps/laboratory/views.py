@@ -766,13 +766,18 @@ class LabOrderViewSet(viewsets.ModelViewSet):
         """
         order = self.get_object()
 
-        if order.status != LabOrderStatus.RECEIVED:
+        if order.status not in (LabOrderStatus.COLLECTED, LabOrderStatus.RECEIVED):
             return Response(
                 {'error': f'Cannot start processing order in {order.get_status_display()} status'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Update status
+        # If skipping the explicit "received in lab" step, stamp received_at now
+        # so timing reports and the audit trail still have a receipt timestamp.
+        if order.status == LabOrderStatus.COLLECTED and not order.received_at:
+            order.received_at = timezone.now()
+            order.specimens.filter(status='in_transit').update(status='received')
+
         order.status = LabOrderStatus.PROCESSING
         order.save()
 
@@ -1326,6 +1331,7 @@ class LabResultViewSet(viewsets.ModelViewSet):
             result = LabResult.objects.create(
                 order_test=order_test,
                 specimen=specimen,
+                facility=order.facility,
                 value=result_item['value'],
                 unit=result_item.get('unit', order_test.test.unit or ''),
                 reference_low=result_item.get('reference_low'),

@@ -15,6 +15,7 @@ import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -413,21 +414,17 @@ const PatientIdentityHero = ({
             Prescribe
           </Button>
 
-          {onAskChronicle && (
+          {onOrderLabs && (
             <Button
               variant="outline"
               size="sm"
-              className={cn(
-                "font-mono text-xs",
-                "border-amber-200 bg-amber-50/80 text-amber-900 hover:bg-amber-100",
-                "dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50"
-              )}
-              onClick={onAskChronicle}
-              onPointerEnter={() => prefetchAction('copilot')}
-              onFocus={() => prefetchAction('copilot')}
+              className="font-mono text-xs"
+              onClick={onOrderLabs}
+              onPointerEnter={() => prefetchAction('labs')}
+              onFocus={() => prefetchAction('labs')}
             >
-              <Sparkles className="h-3.5 w-3.5 mr-1.5 text-amber-600 dark:text-amber-300" />
-              Ask Chronicle
+              <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+              Order Labs
             </Button>
           )}
 
@@ -450,6 +447,7 @@ const PatientIdentityHero = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
+                aria-label="More actions"
                 data-onboarding="chronicle-more-actions"
                 onPointerEnter={() => {
                   prefetchAction('labs');
@@ -466,6 +464,17 @@ const PatientIdentityHero = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {onAskChronicle && (
+                <DropdownMenuItem
+                  onClick={onAskChronicle}
+                  onPointerEnter={() => prefetchAction('copilot')}
+                  onFocus={() => prefetchAction('copilot')}
+                  className="text-amber-900 dark:text-amber-100 focus:bg-amber-50 dark:focus:bg-amber-950/40"
+                >
+                  <Sparkles className="h-4 w-4 mr-2 text-amber-600 dark:text-amber-300" />
+                  Ask Chronicle
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={onOrderLabs}
                 onPointerEnter={() => prefetchAction('labs')}

@@ -31,13 +31,14 @@ function renderHero(props = {}) {
 }
 
 describe('PatientIdentityHero', () => {
-  it('renders Ask Chronicle as a quick action and triggers the callback', async () => {
+  it('renders Ask Chronicle in the overflow menu and triggers the callback', async () => {
     const user = userEvent.setup()
     const onAskChronicle = vi.fn()
 
     renderHero({ onAskChronicle })
 
-    await user.click(screen.getByRole('button', { name: /ask chronicle/i }))
+    await user.click(screen.getByRole('button', { name: /more actions/i }))
+    await user.click(await screen.findByRole('menuitem', { name: /ask chronicle/i }))
 
     expect(onAskChronicle).toHaveBeenCalledTimes(1)
   })
@@ -51,7 +52,8 @@ describe('PatientIdentityHero', () => {
       onActionIntent,
     })
 
-    await user.hover(screen.getByRole('button', { name: /ask chronicle/i }))
+    await user.click(screen.getByRole('button', { name: /more actions/i }))
+    await user.hover(await screen.findByRole('menuitem', { name: /ask chronicle/i }))
 
     expect(onActionIntent).toHaveBeenCalledWith('copilot')
   })

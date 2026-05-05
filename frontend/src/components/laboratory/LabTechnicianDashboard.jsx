@@ -9,7 +9,9 @@ import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
 import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
-import { useEffect, useState } from "react";
+import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,10 +32,13 @@ import {
   useLabOrders,
   useCollectLabOrder,
   useStartProcessingLabOrder,
+  usePaginatedLabResults,
+  useBulkVerifyLabResults,
 } from "@/features/laboratory/hooks";
 import { useDebounce } from '@/hooks/use-debounce';
 import { toast } from "sonner";
 import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
+import SpecimenCollectionDialog from "./SpecimenCollectionDialog";
 
 /**
  * LabTechnicianDashboard - Lab technician worklist and workflow management
@@ -49,28 +54,41 @@ import { LabResultEntrySlideOver } from "./LabResultEntrySlideOver";
  */
 const LabTechnicianDashboard = () => {
   const PAGE_SIZE = 24;
-  const [activeTab, setActiveTab] = useState("collected");
+  const [activeTab, setActiveTab] = useState("ordered");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const [orderedPage, setOrderedPage] = useState(1);
   const [collectedPage, setCollectedPage] = useState(1);
   const [processingPage, setProcessingPage] = useState(1);
+  const [verifyPage, setVerifyPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [currentAction, setCurrentAction] = useState(null);
   const [resultEntryOpen, setResultEntryOpen] = useState(false);
+  const [collectDialogOpen, setCollectDialogOpen] = useState(false);
+  const [orderToCollect, setOrderToCollect] = useState(null);
+  const [verifyingOrderId, setVerifyingOrderId] = useState(null);
 
   // Form states
   const [specimenBarcode, setSpecimenBarcode] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
 
   useEffect(() => {
+    setOrderedPage(1);
     setCollectedPage(1);
     setProcessingPage(1);
+    setVerifyPage(1);
   }, [debouncedSearchQuery]);
 
-  // API queries - Lab worklist only shows collected onwards (not submitted/ordered)
+  // API queries - Full lab workflow in one worklist: ordered → collected → processing
   // Include expand=tests to get full order_tests array with test details.
-  // Search and pagination are pushed to the backend to avoid client-side page walking.
+  const orderedFilters = {
+    status: "ordered",
+    expand: "tests",
+    page: orderedPage,
+    page_size: PAGE_SIZE,
+    ...(debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : {}),
+  };
   const collectedFilters = {
     status: "collected",
     expand: "tests,specimens",
@@ -85,18 +103,89 @@ const LabTechnicianDashboard = () => {
     page_size: PAGE_SIZE,
     ...(debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : {}),
   };
+  const { data: orderedOrders, isLoading: isOrderedLoading } = useLabOrders(orderedFilters);
   const { data: collectedOrders, isLoading: isCollectedLoading } = useLabOrders(collectedFilters);
   const { data: processingOrders, isLoading: isProcessingLoading } = useLabOrders(processingFilters);
+
+  // Pending Verification: unverified results, grouped by order on the client.
+  const verifyFilters = {
+    is_verified: false,
+    page: verifyPage,
+    page_size: PAGE_SIZE,
+    ...(debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : {}),
+  };
+  const { data: unverifiedResults, isLoading: isVerifyLoading } = usePaginatedLabResults(verifyFilters);
+
+  const verificationGroups = useMemo(() => {
+    const rows = unverifiedResults?.results || [];
+    const map = new Map();
+    for (const r of rows) {
+      const key = r.order_id || r.order_test?.order;
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          order_number: r.order_number,
+          patient_name: r.patient_name,
+          patient_mrn: r.patient_mrn,
+          ordering_provider_name: r.ordering_provider,
+          results: [],
+        });
+      }
+      map.get(key).results.push(r);
+    }
+    return Array.from(map.values());
+  }, [unverifiedResults]);
 
   // Mutations
   const collectOrder = useCollectLabOrder();
   const startProcessing = useStartProcessingLabOrder();
+  const bulkVerify = useBulkVerifyLabResults();
 
-  const activeOrdersResponse = activeTab === "collected" ? collectedOrders : processingOrders;
+  const handleVerifyOrder = async (group) => {
+    setVerifyingOrderId(group.id);
+    try {
+      await bulkVerify.mutateAsync({ order_id: group.id });
+      toast.success("Results verified", {
+        description: `Order #${group.order_number} — ${group.results.length} result(s)`,
+      });
+    } catch (error) {
+      const message = error?.response?.data?.error || error?.message || "Please try again";
+      toast.error("Verification failed", { description: message });
+    } finally {
+      setVerifyingOrderId(null);
+    }
+  };
+
+  const tabResponseMap = {
+    ordered: orderedOrders,
+    collected: collectedOrders,
+    processing: processingOrders,
+    verify: unverifiedResults,
+  };
+  const tabLoadingMap = {
+    ordered: isOrderedLoading,
+    collected: isCollectedLoading,
+    processing: isProcessingLoading,
+    verify: isVerifyLoading,
+  };
+  const tabPageMap = {
+    ordered: orderedPage,
+    collected: collectedPage,
+    processing: processingPage,
+    verify: verifyPage,
+  };
+  const tabSetPageMap = {
+    ordered: setOrderedPage,
+    collected: setCollectedPage,
+    processing: setProcessingPage,
+    verify: setVerifyPage,
+  };
+  const activeOrdersResponse = tabResponseMap[activeTab];
   const filteredOrders = activeOrdersResponse?.results || [];
   const activeTotalCount = activeOrdersResponse?.count || 0;
-  const activePage = activeTab === "collected" ? collectedPage : processingPage;
-  const isActiveLoading = activeTab === "collected" ? isCollectedLoading : isProcessingLoading;
+  const activePage = tabPageMap[activeTab];
+  const isActiveLoading = tabLoadingMap[activeTab];
 
   // Handle action click
   const handleActionClick = (order, action) => {
@@ -153,6 +242,17 @@ const LabTechnicianDashboard = () => {
     setResultEntryOpen(true);
   };
 
+  // Handle collect click - opens the specimen collection dialog
+  const handleCollectClick = (order) => {
+    setOrderToCollect(order);
+    setCollectDialogOpen(true);
+  };
+
+  const handleCollectSuccess = () => {
+    setCollectDialogOpen(false);
+    setOrderToCollect(null);
+  };
+
   // Handle result entry success
   const handleResultEntrySuccess = () => {
     setResultEntryOpen(false);
@@ -191,8 +291,10 @@ const LabTechnicianDashboard = () => {
 
   // Get order counts for tabs
   const orderCounts = {
+    ordered: orderedOrders?.count || 0,
     collected: collectedOrders?.count || 0,
     processing: processingOrders?.count || 0,
+    verify: unverifiedResults?.count || 0,
   };
 
   return (
@@ -217,6 +319,11 @@ const LabTechnicianDashboard = () => {
           {/* Stats */}
           <div className="hidden sm:flex items-center gap-6">
             <div className="text-right">
+              <p className="font-mono text-2xl text-foreground">{orderCounts.ordered}</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Awaiting Collection</p>
+            </div>
+            <div className="w-px h-10 bg-border" />
+            <div className="text-right">
               <p className="font-mono text-2xl text-foreground">{orderCounts.collected}</p>
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Collected</p>
             </div>
@@ -224,6 +331,11 @@ const LabTechnicianDashboard = () => {
             <div className="text-right">
               <p className="font-mono text-2xl text-foreground">{orderCounts.processing}</p>
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Processing</p>
+            </div>
+            <div className="w-px h-10 bg-border" />
+            <div className="text-right">
+              <p className="font-mono text-2xl text-foreground">{orderCounts.verify}</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Pending Verification</p>
             </div>
           </div>
         </div>
@@ -244,6 +356,31 @@ const LabTechnicianDashboard = () => {
 
       {/* Chronicle-styled Tabs */}
       <div role="tablist" aria-label="Lab order status" className="flex gap-2 border-b border-border pb-0">
+        <button
+          role="tab"
+          id="tab-ordered"
+          aria-selected={activeTab === "ordered"}
+          aria-controls="tabpanel-ordered"
+          onClick={() => setActiveTab("ordered")}
+          className={cn(
+            "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
+            activeTab === "ordered"
+              ? "text-[oklch(0.65_0.22_15)]"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <span className="flex items-center gap-2">
+            Awaiting Collection
+            {orderCounts.ordered > 0 && (
+              <span className="badge-chronicle-rose px-1.5 py-0.5 text-[10px]">
+                {orderCounts.ordered}
+              </span>
+            )}
+          </span>
+          {activeTab === "ordered" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[oklch(0.65_0.22_15)]" aria-hidden="true" />
+          )}
+        </button>
         <button
           role="tab"
           id="tab-collected"
@@ -294,6 +431,31 @@ const LabTechnicianDashboard = () => {
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[oklch(0.70_0.15_230)]" aria-hidden="true" />
           )}
         </button>
+        <button
+          role="tab"
+          id="tab-verify"
+          aria-selected={activeTab === "verify"}
+          aria-controls="tabpanel-verify"
+          onClick={() => setActiveTab("verify")}
+          className={cn(
+            "relative px-4 py-3 font-mono text-xs uppercase tracking-widest transition-colors",
+            activeTab === "verify"
+              ? "text-[oklch(0.70_0.17_155)]"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <span className="flex items-center gap-2">
+            Pending Verification
+            {orderCounts.verify > 0 && (
+              <span className="badge-chronicle-emerald px-1.5 py-0.5 text-[10px]">
+                {orderCounts.verify}
+              </span>
+            )}
+          </span>
+          {activeTab === "verify" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[oklch(0.70_0.17_155)]" aria-hidden="true" />
+          )}
+        </button>
       </div>
 
       {/* Tab Content with Chronicle cards */}
@@ -309,6 +471,106 @@ const LabTechnicianDashboard = () => {
               <p className="font-mono text-xs text-muted-foreground">Loading worklist...</p>
             </div>
           </div>
+        ) : activeTab === "verify" ? (
+          verificationGroups.length === 0 ? (
+            <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
+              <div className="text-center">
+                <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                  <ShieldCheck className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <p className="font-display text-xl text-foreground mb-2">No results pending verification</p>
+                <p className="font-mono text-xs text-muted-foreground">
+                  Entered results awaiting a second technician&apos;s review will appear here
+                </p>
+              </div>
+            </div>
+          ) : (
+            verificationGroups.map((group, index) => (
+              <article
+                key={group.id}
+                className={cn(
+                  "group relative bg-card/50 backdrop-blur border border-border",
+                  "rounded-xl sm:rounded-2xl p-4 sm:p-6",
+                  "hover:border-[oklch(0.70_0.17_155)]/40 transition-all duration-500",
+                  "animate-chronicle-enter"
+                )}
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
+                <header className="flex items-start justify-between gap-4 mb-4">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-display text-lg sm:text-xl text-foreground tracking-tight mb-1">
+                      {group.patient_name || "Unknown patient"}
+                    </h3>
+                    <p className="font-mono text-[10px] sm:text-xs text-muted-foreground flex flex-wrap items-center gap-2 sm:gap-4">
+                      <span className="flex items-center gap-1">
+                        <span className="text-foreground/70">MRN</span>
+                        {group.patient_mrn || "—"}
+                      </span>
+                      <span className="hidden sm:inline text-border">·</span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-foreground/70">Order</span>
+                        #{group.order_number}
+                      </span>
+                      {group.ordering_provider_name && (
+                        <>
+                          <span className="hidden sm:inline text-border">·</span>
+                          <span className="flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {group.ordering_provider_name}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </header>
+
+                <div className="mb-4 space-y-1.5">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+                    Results awaiting review ({group.results.length})
+                  </p>
+                  {group.results.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between gap-3 bg-background/50 border border-border rounded-lg px-3 py-2"
+                    >
+                      <span className="text-sm text-foreground truncate">
+                        {r.test_name || r.test_code || "Test"}
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono text-sm text-foreground">
+                          {r.value}{r.unit ? ` ${r.unit}` : ""}
+                        </span>
+                        {r.flag && r.flag !== "normal" && (
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-mono uppercase",
+                            (r.flag === "critical_low" || r.flag === "critical_high") && "bg-[oklch(0.65_0.22_15)]/10 text-[oklch(0.65_0.22_15)]",
+                            (r.flag === "low" || r.flag === "high" || r.flag === "abnormal") && "bg-primary/10 text-primary"
+                          )}>
+                            {r.flag_display || r.flag}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <footer className="flex items-center justify-between pt-4 border-t border-border">
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    Must be verified by a different technician than the one who entered the results
+                  </span>
+                  <Button
+                    onClick={() => handleVerifyOrder(group)}
+                    size="sm"
+                    disabled={bulkVerify.isPending && verifyingOrderId === group.id}
+                    className="font-mono text-xs bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)]"
+                  >
+                    <ShieldCheck className="h-3 w-3 mr-1.5" />
+                    {bulkVerify.isPending && verifyingOrderId === group.id ? "Verifying…" : "Verify All"}
+                  </Button>
+                </footer>
+              </article>
+            ))
+          )
         ) : filteredOrders.length === 0 ? (
           <div className="bg-card/50 backdrop-blur border border-border rounded-2xl p-12 animate-chronicle-enter">
             <div className="text-center">
@@ -445,9 +707,21 @@ const LabTechnicianDashboard = () => {
                 <footer className="flex items-center justify-between pt-4 border-t border-border">
                   <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {activeTab === "collected" ? "Ready for processing" : "In progress"}
+                    {activeTab === "ordered" && "Awaiting specimen collection"}
+                    {activeTab === "collected" && "Ready for processing"}
+                    {activeTab === "processing" && "In progress"}
                   </span>
                   <div className="flex gap-2">
+                    {activeTab === "ordered" && (
+                      <Button
+                        onClick={() => handleCollectClick(order)}
+                        size="sm"
+                        className="font-mono text-xs bg-[oklch(0.65_0.22_15)] hover:bg-[oklch(0.60_0.22_15)]"
+                      >
+                        <Droplet className="h-3 w-3 mr-1.5" />
+                        Collect Specimen
+                      </Button>
+                    )}
                     {activeTab === "collected" && (
                       <Button
                         onClick={() => handleActionClick(order, "start")}
@@ -483,13 +757,10 @@ const LabTechnicianDashboard = () => {
           hasPrevPage={Boolean(activeOrdersResponse?.previous)}
           onPageChange={(newPage) => {
             if (newPage < 1) return;
-            if (activeTab === "collected") {
-              setCollectedPage(newPage);
-            } else {
-              setProcessingPage(newPage);
-            }
+            const setter = tabSetPageMap[activeTab];
+            if (setter) setter(newPage);
           }}
-          itemLabel="orders"
+          itemLabel={activeTab === "verify" ? "results" : "orders"}
         />
       </div>
 
@@ -596,6 +867,14 @@ const LabTechnicianDashboard = () => {
         order={selectedOrder}
         specimen={getSpecimenForOrder(selectedOrder)}
         onSuccess={handleResultEntrySuccess}
+      />
+
+      {/* Specimen Collection Dialog */}
+      <SpecimenCollectionDialog
+        open={collectDialogOpen}
+        onOpenChange={setCollectDialogOpen}
+        order={orderToCollect}
+        onSuccess={handleCollectSuccess}
       />
     </div>
   );
