@@ -45,6 +45,7 @@ service-account*.json
 *_key.json
 *_credentials.json
 google_credentials.json
+AGENTS.md
 
 # IDE
 .idea/

@@ -135,6 +135,14 @@ favor correctness, least privilege, and predictable performance.
 ## Deployment Notes
 - HMS deploys one client per Hetzner VPS with Docker Compose. Use the runbook in
   `ops/hetzner-client-vps/README.md`.
+- For HMS Hetzner VPS access from this laptop, use `ssh hms-staging`. The alias
+  lives in `/Users/jebre/.ssh/config`, connects as `deploy@staging.thehms.systems`,
+  and uses the local key `~/.ssh/hms_staging`.
+- Use `ssh hms-staging-root` only when root access is explicitly needed.
+- On the VPS, HMS lives at `/opt/hms`. Normal Docker Compose operations should
+  run as `deploy` from `/opt/hms` and do not require `sudo`.
+- Do not store deployment passwords in repo files, Codex memory, or shell history;
+  use the SSH alias and local keychain/agent setup instead.
 - The reusable client Compose profile is `ops/hetzner-client-vps/compose.yml`.
 - Generate private client env files with `ops/create-client-deployment.py`.
 - Deploy updates from `/opt/hms` on the VPS with:
