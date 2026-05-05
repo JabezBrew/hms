@@ -425,19 +425,17 @@ export function useNoteWorkflow(patientId, options = {}) {
     }
   }, [workflowId, template, steps, currentStep, formData, updateStepMutation]);
 
-  // Navigate to next step
-  const nextStep = useCallback(async () => {
-    if (currentStep < totalSteps) {
-      await saveStep(currentStep + 1);
-    }
-  }, [currentStep, totalSteps, saveStep]);
+  // Navigate to next step (local only — form data is already in React state, the
+  // workflow's auto-save and final complete cover persistence; we don't need to
+  // hit the server on every navigation click).
+  const nextStep = useCallback(() => {
+    setCurrentStep((current) => (current < totalSteps ? current + 1 : current));
+  }, [totalSteps]);
 
   // Navigate to previous step
   const prevStep = useCallback(() => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
-  }, [currentStep]);
+    setCurrentStep((current) => (current > 1 ? current - 1 : current));
+  }, []);
 
   // Navigate to a specific step (for clickable step indicators)
   const goToStep = useCallback((stepNumber) => {

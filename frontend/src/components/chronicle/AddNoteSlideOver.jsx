@@ -305,20 +305,21 @@ const AddNoteSlideOver = ({
 
   const handleComplete = async () => {
     try {
-      let activeLint = lintResult;
-      if (!activeLint || lintDataHash !== finalDataHash) {
-        activeLint = await runQualityCheck({ silent: true });
-      }
-
-      const gate = evaluateLintGate({
-        lintResult: activeLint,
-        lintDataHash: finalDataHash,
-        currentDataHash: finalDataHash,
-        majorAcknowledged,
-      });
-      if (!gate.canComplete) {
-        toast.error(gate.reason || 'Resolve quality issues before completion.');
-        return;
+      // Quality check is advisory: only block when the user has actually run a
+      // check and it returned blocking issues. We never auto-fire the lint API
+      // on completion.
+      const hasFreshLint = !!lintResult && lintDataHash === finalDataHash;
+      if (hasFreshLint) {
+        const gate = evaluateLintGate({
+          lintResult,
+          lintDataHash,
+          currentDataHash: finalDataHash,
+          majorAcknowledged,
+        });
+        if (!gate.canComplete && !gate.requiresLintRun) {
+          toast.error(gate.reason || 'Resolve quality issues before completion.');
+          return;
+        }
       }
 
       const result = await completeWorkflow();
