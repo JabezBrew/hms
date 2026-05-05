@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 
 import format from "date-fns/format";
+import { useAuth } from "@/lib/auth";
 import {
   useLabOrders,
   useCollectLabOrder,
@@ -54,6 +55,8 @@ import SpecimenCollectionDialog from "./SpecimenCollectionDialog";
  */
 const LabTechnicianDashboard = () => {
   const PAGE_SIZE = 24;
+  const { user } = useAuth();
+  const currentStaffId = user?.staffId || null;
   const [activeTab, setActiveTab] = useState("ordered");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -130,12 +133,17 @@ const LabTechnicianDashboard = () => {
           patient_mrn: r.patient_mrn,
           ordering_provider_name: r.ordering_provider,
           results: [],
+          canVerify: true,
         });
       }
-      map.get(key).results.push(r);
+      const group = map.get(key);
+      group.results.push(r);
+      if (currentStaffId && r.performed_by && r.performed_by === currentStaffId) {
+        group.canVerify = false;
+      }
     }
     return Array.from(map.values());
-  }, [unverifiedResults]);
+  }, [unverifiedResults, currentStaffId]);
 
   // Mutations
   const collectOrder = useCollectLabOrder();
@@ -555,18 +563,26 @@ const LabTechnicianDashboard = () => {
                 </div>
 
                 <footer className="flex items-center justify-between pt-4 border-t border-border">
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    Must be verified by a different technician than the one who entered the results
-                  </span>
-                  <Button
-                    onClick={() => handleVerifyOrder(group)}
-                    size="sm"
-                    disabled={bulkVerify.isPending && verifyingOrderId === group.id}
-                    className="font-mono text-xs bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)]"
-                  >
-                    <ShieldCheck className="h-3 w-3 mr-1.5" />
-                    {bulkVerify.isPending && verifyingOrderId === group.id ? "Verifying…" : "Verify All"}
-                  </Button>
+                  {group.canVerify ? (
+                    <>
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        Must be verified by a different technician than the one who entered the results
+                      </span>
+                      <Button
+                        onClick={() => handleVerifyOrder(group)}
+                        size="sm"
+                        disabled={bulkVerify.isPending && verifyingOrderId === group.id}
+                        className="font-mono text-xs bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)]"
+                      >
+                        <ShieldCheck className="h-3 w-3 mr-1.5" />
+                        {bulkVerify.isPending && verifyingOrderId === group.id ? "Verifying…" : "Verify All"}
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      You entered these results — another technician must verify them.
+                    </span>
+                  )}
                 </footer>
               </article>
             ))

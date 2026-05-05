@@ -34,6 +34,7 @@ export const nursingKeys = {
   marGridAll: () => keyWith('mar-grid'),
   pendingDispensing: (patientId) => keyWith('pending-dispensing', patientId),
   pendingDispensingAll: () => keyWith('pending-dispensing'),
+  pendingDispensingGrouped: (patientId) => keyWith('pending-dispensing', 'grouped', patientId),
   readyForAdmin: (patientId) => keyWith('ready-for-admin', patientId),
   readyForAdminAll: () => keyWith('ready-for-admin'),
   shiftHandoffs: (ward, date, shift) => keyWith('shift-handoffs', ward, date, shift),
@@ -599,6 +600,19 @@ export const usePendingDispensing = (patientId = null) => {
     queryFn: async () => {
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/pending/${params}`);
+      return response;
+    },
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+};
+
+export const usePendingDispensingGrouped = (patientId = null) => {
+  return useQuery({
+    queryKey: nursingKeys.pendingDispensingGrouped(patientId),
+    queryFn: async () => {
+      const params = patientId ? `?patient=${patientId}` : '';
+      const response = await apiClient.get(`/pharmacy/dispensing/pending-grouped/${params}`);
       return response;
     },
     refetchInterval: 30000,

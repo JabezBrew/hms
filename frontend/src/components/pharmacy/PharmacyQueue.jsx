@@ -21,8 +21,7 @@ import format from 'date-fns/format';
 import { toast } from 'sonner';
 import PatientContextPanel from '@/components/patients/PatientContextPanel';
 import {
-  usePendingDispensing,
-  useDispenseMedication,
+  usePendingDispensingGrouped,
   useBulkDispense
 } from '@/features/nursing/hooks';
 
@@ -35,17 +34,19 @@ export function PharmacyQueue() {
   const [contextOpen, setContextOpen] = useState(false);
   const [contextPatient, setContextPatient] = useState(null);
 
-  // Fetch pending dispensing
+  // Fetch pending dispensing (grouped per prescription so a "5 mg TDS x 7 days"
+  // course shows as one row, not 21).
   const {
     data: pendingMeds,
     isLoading,
     error,
     refetch
-  } = usePendingDispensing();
+  } = usePendingDispensingGrouped();
 
-  // Mutations
-  const dispenseMutation = useDispenseMedication();
+  // All dispenses (single or bulk) flow through bulk-dispense, since dispensing a
+  // group means flipping every MAR entry it contains.
   const bulkDispenseMutation = useBulkDispense();
+  const dispenseMutation = bulkDispenseMutation;
 
   // Format timestamp
   const formatTime = (timestamp) => {
@@ -144,10 +145,14 @@ export function PharmacyQueue() {
     }
   };
 
-  // Single dispense
+  // Single dispense (a "row" is now a prescription group, so dispense flips every
+  // MAR entry it represents — one supply issued covers all scheduled doses).
   const handleDispense = async (medication) => {
+    const ids = medication.mar_entry_ids?.length
+      ? medication.mar_entry_ids
+      : [medication.mar_entry_id || medication.id];
     try {
-      await dispenseMutation.mutateAsync(medication.id);
+      await bulkDispenseMutation.mutateAsync(ids);
       toast.success(`${medication.medication_name} dispensed successfully`);
       setConfirmMedication(null);
       setShowConfirmDialog(false);
@@ -156,16 +161,29 @@ export function PharmacyQueue() {
     }
   };
 
-  // Bulk dispense
+  // Bulk dispense — selectedMeds holds group ids; expand to the union of their
+  // child MAR entry ids before posting.
   const handleBulkDispense = async () => {
     if (selectedMeds.length === 0) {
       toast.error('No medications selected');
       return;
     }
 
+    const groupsById = new Map((pendingMeds || []).map((m) => [m.id, m]));
+    const marIds = [];
+    for (const groupId of selectedMeds) {
+      const group = groupsById.get(groupId);
+      if (!group) continue;
+      if (group.mar_entry_ids?.length) {
+        marIds.push(...group.mar_entry_ids);
+      } else if (group.mar_entry_id) {
+        marIds.push(group.mar_entry_id);
+      }
+    }
+
     try {
-      const result = await bulkDispenseMutation.mutateAsync(selectedMeds);
-      toast.success(`${result.dispensed_count || selectedMeds.length} medications dispensed`);
+      const result = await bulkDispenseMutation.mutateAsync(marIds);
+      toast.success(`${result.dispensed_count || marIds.length} doses dispensed`);
       setSelectedMeds([]);
     } catch (error) {
       toast.error(error.message || 'Failed to dispense medications');
@@ -368,7 +386,22 @@ export function PharmacyQueue() {
                 <DetailRow label="Dosage" value={confirmMedication.dosage} />
                 <DetailRow label="Route" value={confirmMedication.route} />
                 <DetailRow label="Frequency" value={confirmMedication.frequency} />
-                <DetailRow label="Scheduled" value={formatDateTime(confirmMedication.scheduled_time)} mono />
+                {confirmMedication.dose_count > 1 ? (
+                  <>
+                    <DetailRow
+                      label="Doses to dispense"
+                      value={`${confirmMedication.dose_count} doses (whole supply)`}
+                      highlight
+                    />
+                    <DetailRow
+                      label="Next due"
+                      value={formatDateTime(confirmMedication.scheduled_time)}
+                      mono
+                    />
+                  </>
+                ) : (
+                  <DetailRow label="Scheduled" value={formatDateTime(confirmMedication.scheduled_time)} mono />
+                )}
                 <hr className="border-border" />
                 <DetailRow label="Prescribed by" value={getPrescriberName(confirmMedication)} />
               </div>
@@ -541,16 +574,21 @@ const ByPatientView = ({
                           </Badge>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5">
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                         <span className="font-mono text-xs text-muted-foreground">
-                          {med.dosage} · {med.route}
+                          {med.dosage} · {med.route} · {med.frequency}
                         </span>
+                        {med.dose_count > 1 && (
+                          <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">
+                            {med.dose_count} doses
+                          </Badge>
+                        )}
                         <span className={cn(
                           "font-mono text-xs flex items-center gap-1",
                           med.is_overdue ? "text-destructive" : "text-muted-foreground"
                         )}>
                           <Clock className="h-3 w-3" />
-                          {formatTime(med.scheduled_time)}
+                          {med.dose_count > 1 ? 'Next due ' : ''}{formatTime(med.scheduled_time)}
                         </span>
                       </div>
                     </div>
@@ -641,7 +679,7 @@ const AllMedicationsView = ({
                   </p>
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-sm text-foreground truncate">
                       {med.medication_name}
                     </span>
@@ -650,9 +688,14 @@ const AllMedicationsView = ({
                         Overdue
                       </Badge>
                     )}
+                    {med.dose_count > 1 && (
+                      <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">
+                        {med.dose_count} doses
+                      </Badge>
+                    )}
                   </div>
                   <p className="font-mono text-xs text-muted-foreground">
-                    {med.dosage} · {med.route}
+                    {med.dosage} · {med.route} · {med.frequency}
                   </p>
                 </div>
                 <div className="text-left sm:text-right">
@@ -660,7 +703,7 @@ const AllMedicationsView = ({
                     "font-mono text-xs",
                     med.is_overdue ? "text-destructive" : "text-muted-foreground"
                   )}>
-                    {formatDateTime(med.scheduled_time)}
+                    {med.dose_count > 1 ? 'Next due ' : ''}{formatDateTime(med.scheduled_time)}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {getPrescriberName(med)}

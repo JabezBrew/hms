@@ -341,6 +341,65 @@ def get_pending_dispensing(patient_id=None, facility=None):
     return queryset.order_by('scheduled_time')
 
 
+def get_pending_dispensing_grouped(patient_id=None, facility=None):
+    """
+    Get MAR entries awaiting dispensing, collapsed into one group per prescription.
+
+    Pharmacists dispense by supply (one prescription = one issue), not per dose.
+    The flat MAR queryset shows N rows for an N-dose course; this function returns
+    one row per prescription with the aggregate counts the UI needs.
+
+    Falls back to a synthetic key (patient + medication + dosage + route + frequency)
+    for ad-hoc MAR entries that have no prescription FK.
+
+    Returns a list of dicts ordered by next_due ascending.
+    """
+    entries = list(get_pending_dispensing(patient_id=patient_id, facility=facility))
+
+    now = timezone.now()
+    groups: Dict[str, Dict[str, Any]] = {}
+
+    for entry in entries:
+        if entry.prescription_id:
+            key = f"rx:{entry.prescription_id}"
+        else:
+            key = (
+                f"adhoc:{entry.patient_id}|{entry.medication_name}|"
+                f"{entry.dosage}|{entry.route}|{entry.frequency}"
+            )
+
+        bucket = groups.get(key)
+        if bucket is None:
+            bucket = {
+                'group_id': key,
+                'prescription_id': entry.prescription_id,
+                'representative': entry,
+                'mar_entry_ids': [],
+                'dose_count': 0,
+                'next_due': entry.scheduled_time,
+                'last_due': entry.scheduled_time,
+                'overdue_count': 0,
+            }
+            groups[key] = bucket
+
+        bucket['mar_entry_ids'].append(entry.id)
+        bucket['dose_count'] += 1
+
+        if entry.scheduled_time:
+            if not bucket['next_due'] or entry.scheduled_time < bucket['next_due']:
+                bucket['next_due'] = entry.scheduled_time
+                bucket['representative'] = entry
+            if not bucket['last_due'] or entry.scheduled_time > bucket['last_due']:
+                bucket['last_due'] = entry.scheduled_time
+            if entry.scheduled_time < now:
+                bucket['overdue_count'] += 1
+
+    return sorted(
+        groups.values(),
+        key=lambda g: g['next_due'] or now,
+    )
+
+
 def get_pending_dispensing_with_stock(patient_id=None, facility=None, location=None):
     """
     Get MAR entries awaiting dispensing with stock availability info.

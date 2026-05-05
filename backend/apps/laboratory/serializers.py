@@ -853,7 +853,7 @@ class LabResultListSerializer(serializers.ModelSerializer):
             'ordering_provider',
             'value', 'unit', 'reference_low', 'reference_high',
             'flag', 'flag_display', 'is_verified',
-            'performed_at', 'verified_at'
+            'performed_by', 'performed_at', 'verified_at'
         ]
 
     def get_panel_name(self, obj):

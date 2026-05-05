@@ -73,6 +73,54 @@ class DispensingViewSet(viewsets.ViewSet):
         serializer = MedicationDispensingListSerializer(medications, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'], url_path='pending-grouped')
+    def pending_grouped(self, request):
+        """
+        Get pending dispensing collapsed to one row per prescription.
+
+        A prescription like "5 mg TDS x 7 days" generates 21 MAR entries; pharmacists
+        dispense the supply once, not per dose. This endpoint returns one record per
+        prescription with the aggregate dose count and the list of MAR ids that the
+        bulk-dispense endpoint should mark as dispensed.
+        """
+        patient_id = request.query_params.get('patient')
+        facility = get_user_facility(request)
+        if not facility:
+            raise PermissionDenied("Facility context is required.")
+        if patient_id:
+            patient = PatientProfile.objects.filter(id=patient_id).first()
+            if not patient:
+                return Response(
+                    {'error': 'Patient not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            if patient.facility_id != facility.id:
+                raise PermissionDenied("Patient does not belong to the active facility.")
+            check_prescription_access(request.user, patient)
+
+        groups = services.get_pending_dispensing_grouped(patient_id, facility=facility)
+
+        results = []
+        for group in groups:
+            rep = group['representative']
+            rep_data = MedicationDispensingListSerializer(rep).data
+            # The grouped row represents the prescription supply, not a single dose.
+            rep_data['id'] = group['group_id']
+            rep_data['mar_entry_id'] = str(rep.id)
+            rep_data['mar_entry_ids'] = [str(mid) for mid in group['mar_entry_ids']]
+            rep_data['dose_count'] = group['dose_count']
+            rep_data['overdue_count'] = group['overdue_count']
+            rep_data['is_overdue'] = group['overdue_count'] > 0
+            rep_data['scheduled_time'] = (
+                group['next_due'].isoformat() if group['next_due'] else None
+            )
+            rep_data['last_scheduled_time'] = (
+                group['last_due'].isoformat() if group['last_due'] else None
+            )
+            results.append(rep_data)
+
+        return Response(results)
+
     @action(detail=False, methods=['get'], url_path='ready-for-admin')
     def ready_for_admin(self, request):
         """
