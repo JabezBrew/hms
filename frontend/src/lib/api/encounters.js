@@ -3,6 +3,12 @@
  */
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
 export const encountersApi = {
   /**
    * Get encounters with pagination and filtering
@@ -175,6 +181,7 @@ export const encountersApi = {
         params: { patient_id: patientId },
       });
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch patient encounters'));
     }
   }

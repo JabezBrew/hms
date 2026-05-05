@@ -3,7 +3,6 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries'
 import { encountersApi } from '@/features/encounters/api'
 import { chronicleKeys } from '@/hooks/useChronicleContext'
-import { fetchTimelinePage, timelineKeys } from '@/hooks/useTimelineQueries'
 import { apiClient } from '@/lib/api-client'
 
 const PREFETCH_MODE = {
@@ -115,17 +114,6 @@ function prefetchChronicleContext(queryClient, patientId) {
   })
 }
 
-function prefetchTimelineFirstPage(queryClient, patientId) {
-  return queryClient.prefetchInfiniteQuery({
-    queryKey: timelineKeys.listParams(patientId, 'all', '', 20, undefined, undefined, undefined),
-    queryFn: ({ pageParam = 1 }) =>
-      fetchTimelinePage(patientId, { page: pageParam, page_size: 20 }),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage) => (lastPage?.has_next ? lastPage.page + 1 : undefined),
-    staleTime: 30 * 1000,
-  })
-}
-
 export function prefetchPatientChronicleData(queryClient, patientId, options = {}) {
   if (!queryClient || !patientId) {
     return
@@ -167,7 +155,6 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
 
   void prefetchChronicleContext(queryClient, patientId)
 
-  void prefetchTimelineFirstPage(queryClient, patientId)
   void queryClient.prefetchQuery({
     queryKey: encounterKeys.forPatient(patientId),
     queryFn: () => encountersApi.getEncountersForPatient(patientId),

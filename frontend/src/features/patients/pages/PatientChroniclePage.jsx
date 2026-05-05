@@ -21,7 +21,7 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
-import { usePatientEncounters, useEncounter } from "@/features/encounters/hooks/useEncounterQueries";
+import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
@@ -347,10 +347,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
       && activeOutpatientVisitStatuses.has(encounter.outpatient_visit_status)
     )) || null;
   }, [encounters]);
-
-  // Fetch full encounter detail (includes primary_team, admitted_by_team,
-  // care_team_assignments — not present on the list payload).
-  const { data: activeEncounterDetail } = useEncounter(activeEncounter?.id);
 
   const enabledFeatures = deploymentCapabilities?.features;
   const hasWardBoardContext = Boolean(
@@ -1418,7 +1414,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               medications={medications}
               allergies={allergies}
               labResults={labResults}
-              encounter={activeEncounterDetail || activeEncounter}
+              encounter={activeEncounter}
               onViewVitalsTrends={() => handleViewTrends('vitals')}
               onViewFluidTrends={() => handleViewTrends('fluids')}
             />

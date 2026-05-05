@@ -1,5 +1,11 @@
 import { apiClient, handleApiError } from '../api-client';
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
 /**
  * Patients API service
  */
@@ -104,13 +110,15 @@ export const patientsApi = {
    * @param {string} query - Search query
    * @returns {Promise<Array>} List of matching patients
    */
-  searchPatients: async (params) => {
+  searchPatients: async (params, options = {}) => {
     try {
       // Handle both string (legacy) and object params
       const queryParams = typeof params === 'string' ? { query: params } : params;
       const queryString = new URLSearchParams(queryParams).toString();
-      return await apiClient.get(`/patients/search/?${queryString}`);
+      const endpoint = `/patients/search/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.get(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to search patients'));
     }
   },
@@ -120,12 +128,14 @@ export const patientsApi = {
    * @param {Object|string} params - Search parameters
    * @returns {Promise<Object>} Search response with results + paging metadata
    */
-  searchPatientsWithMeta: async (params) => {
+  searchPatientsWithMeta: async (params, options = {}) => {
     try {
       const queryParams = typeof params === 'string' ? { query: params } : params;
       const queryString = new URLSearchParams(queryParams).toString();
-      return await apiClient.getWithPagination(`/patients/search/?${queryString}`);
+      const endpoint = `/patients/search/${queryString ? `?${queryString}` : ''}`;
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to search patients'));
     }
   },

@@ -13,16 +13,17 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import NotFound, PermissionDenied
 from django.db import transaction
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Prefetch
 from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
 
 from apps.discharge.services import submit_legacy_discharge
-from .models import Encounter, OutpatientVisit, TriageQueue
+from .models import Encounter, EncounterCareTeam, OutpatientVisit, TriageQueue
 from .serializers import (
     EncounterSerializer,
     EncounterListSerializer,
+    EncounterPatientListSerializer,
     EncounterCreateSerializer,
     EncounterUpdateSerializer,
     OutpatientVisitSerializer,
@@ -122,9 +123,9 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 pass
         return timezone.get_current_timezone()
 
-    def get_queryset(self):
+    def _get_base_queryset(self):
         """
-        Return encounters with optimized queries.
+        Return facility/user-scoped encounters before endpoint-specific filters.
         """
         facility = get_user_facility(self.request)
         if not facility:
@@ -140,6 +141,8 @@ class EncounterViewSet(viewsets.ModelViewSet):
             'admission',
             'clinic',
             'department',
+            'primary_team',
+            'admitted_by_team',
             'appointment',
         ).filter(facility=facility)
 
@@ -154,6 +157,14 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(patient__in=accessible_patients)
         else:
             return Encounter.objects.none()
+
+        return queryset
+
+    def get_queryset(self):
+        """
+        Return encounters with optimized queries.
+        """
+        queryset = self._get_base_queryset()
 
         # Filter by patient - supports UUID, MRN, or name search
         patient_id = self.request.query_params.get('patient_id')
@@ -503,7 +514,7 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        patient = PatientProfile.objects.filter(id=patient_id).first()
+        patient = PatientProfile.objects.select_related('facility').filter(id=patient_id).first()
         if not patient:
             return Response(
                 {"error": "Patient not found"},
@@ -514,8 +525,15 @@ class EncounterViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Patient does not belong to the active facility.")
         check_clinical_access(request.user, patient)
 
-        encounters = self.get_queryset().filter(patient_id=patient_id)
-        serializer = EncounterListSerializer(encounters, many=True)
+        care_team_queryset = EncounterCareTeam.objects.select_related('team').order_by('created_at')
+        encounters = (
+            self._get_base_queryset()
+            .filter(patient_id=patient_id)
+            .prefetch_related(
+                Prefetch('care_team_assignments', queryset=care_team_queryset)
+            )
+        )
+        serializer = EncounterPatientListSerializer(encounters, many=True)
         return Response(serializer.data)
 
 

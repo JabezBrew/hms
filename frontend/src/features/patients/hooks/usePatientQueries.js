@@ -218,7 +218,7 @@ export function usePatientSearch(params = {}, options = {}) {
   const { enabled = true, staleTime = 60 * 1000 } = options;
   return useQuery({
     queryKey: [...patientKeys.lists(), 'search', params],
-    queryFn: () => patientsApi.searchPatientsWithMeta(params),
+    queryFn: ({ signal }) => patientsApi.searchPatientsWithMeta(params, { signal }),
     enabled,
     staleTime,
   });

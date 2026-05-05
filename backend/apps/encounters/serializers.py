@@ -147,6 +147,41 @@ class EncounterListSerializer(serializers.ModelSerializer):
         ]
 
 
+class EncounterPatientListSerializer(EncounterListSerializer):
+    """
+    Encounter list payload for Patient Chronicle.
+
+    Keeps the patient-scoped list lightweight while carrying the care-team
+    projection needed by the Chronicle sidebar, avoiding one detail request per
+    page load.
+    """
+    primary_team = serializers.SerializerMethodField()
+    admitted_by_team = serializers.SerializerMethodField()
+    admitted_by_team_name = serializers.SerializerMethodField()
+    care_team_assignments = EncounterCareTeamListSerializer(many=True, read_only=True)
+
+    class Meta(EncounterListSerializer.Meta):
+        fields = EncounterListSerializer.Meta.fields + [
+            'primary_team', 'admitted_by_team', 'admitted_by_team_name',
+            'care_team_assignments',
+        ]
+
+    def get_primary_team(self, obj):
+        if not obj.primary_team_id:
+            return None
+        return str(obj.primary_team_id)
+
+    def get_admitted_by_team(self, obj):
+        if not obj.admitted_by_team_id:
+            return None
+        return str(obj.admitted_by_team_id)
+
+    def get_admitted_by_team_name(self, obj):
+        if not obj.admitted_by_team_id:
+            return None
+        return obj.admitted_by_team.name
+
+
 class EncounterCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating a new Encounter.

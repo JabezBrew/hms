@@ -17,7 +17,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from apps.encounters.models import Encounter
-from apps.encounters.tests.factories import EncounterFactory
+from apps.encounters.tests.factories import EncounterCareTeamFactory, EncounterFactory
 from apps.encounters.views import EncounterViewSet
 from apps.users.tests.factories import (
     UserFactory,
@@ -26,6 +26,7 @@ from apps.users.tests.factories import (
 )
 from apps.wards.tests.factories import AdmissionFactory, BedFactory
 from apps.organization.models import ClinicalUnit, Clinic, UnitTypeConfig
+from apps.organization.tests.factories import ClinicalUnitFactory
 from apps.core.tests.factories import DepartmentFactory
 
 
@@ -582,6 +583,62 @@ class TestEncounterForPatientAction:
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 2
+
+    def test_for_patient_includes_care_team_projection(self, api_client):
+        """Test patient-scoped encounters include Chronicle care-team fields."""
+        patient = PatientProfileFactory()
+        primary_team = ClinicalUnitFactory(name='Medicine')
+        admitted_by_team = ClinicalUnitFactory(name='Emergency')
+        consulting_team = ClinicalUnitFactory(name='Surgery')
+        encounter = EncounterFactory(
+            patient=patient,
+            primary_team=primary_team,
+            admitted_by_team=admitted_by_team,
+        )
+        EncounterCareTeamFactory(
+            encounter=encounter,
+            team=consulting_team,
+            role='consulting',
+            status='active',
+            is_active=True,
+        )
+
+        response = api_client.get(f'/api/encounters/for_patient/?patient_id={patient.id}')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        row = response.data[0]
+        assert str(row['primary_team']) == str(primary_team.id)
+        assert str(row['primary_team_id']) == str(primary_team.id)
+        assert row['primary_team_name'] == 'Medicine'
+        assert str(row['admitted_by_team']) == str(admitted_by_team.id)
+        assert str(row['admitted_by_team_id']) == str(admitted_by_team.id)
+        assert row['admitted_by_team_name'] == 'Emergency'
+        assert len(row['care_team_assignments']) == 1
+        assert str(row['care_team_assignments'][0]['team']) == str(consulting_team.id)
+        assert row['care_team_assignments'][0]['team_name'] == 'Surgery'
+
+    def test_for_patient_care_team_queries_are_bounded(
+        self,
+        api_client,
+        django_assert_max_num_queries,
+    ):
+        """Test care-team projection stays O(1) for patient encounter lists."""
+        patient = PatientProfileFactory()
+        for _ in range(5):
+            encounter = EncounterFactory(
+                patient=patient,
+                primary_team=ClinicalUnitFactory(),
+                admitted_by_team=ClinicalUnitFactory(),
+            )
+            EncounterCareTeamFactory.create_batch(2, encounter=encounter)
+
+        with django_assert_max_num_queries(8):
+            response = api_client.get(f'/api/encounters/for_patient/?patient_id={patient.id}')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 5
+        assert all(len(row['care_team_assignments']) == 2 for row in response.data)
 
     def test_for_patient_requires_patient_id(self, api_client):
         """Test for_patient requires patient_id parameter."""
