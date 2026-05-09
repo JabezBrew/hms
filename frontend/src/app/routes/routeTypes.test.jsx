@@ -121,6 +121,9 @@ describe('featureRoutes', () => {
     expect(routesByPath.get('/patients/create')?.features).toEqual(
       expect.arrayContaining(['patient_chronicle', 'patient_registration'])
     )
+    expect(routesByPath.get('/patients/:id/chronicle/print')?.roles).toEqual(
+      expect.arrayContaining(['admin', 'doctor', 'nurse'])
+    )
     expect(routesByPath.get('/encounters/new')?.features).toEqual(
       expect.arrayContaining(['outpatient_encounters'])
     )

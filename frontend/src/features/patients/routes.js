@@ -9,6 +9,8 @@ const PatientPage = lazy(() => import('./pages/PatientPage'))
 const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
 const PatientChroniclePrintPage = lazy(() => import('./pages/PatientChroniclePrintPage'))
 
+const PATIENT_CHRONICLE_PRINT_ROLES = [ROLES.ADMIN, ...ROLE_GROUPS.CLINICAL]
+
 export const patientRoutes = [
   {
     path: '/patients',
@@ -58,7 +60,7 @@ export const patientRoutes = [
   {
     path: '/patients/:id/chronicle/print',
     component: PatientChroniclePrintPage,
-    roles: ROLE_GROUPS.CLINICAL,
+    roles: PATIENT_CHRONICLE_PRINT_ROLES,
     features: ['patient_chronicle'],
     layout: ROUTE_LAYOUTS.BARE,
     title: 'Patient Chronicle Print | Hospital Management System',
