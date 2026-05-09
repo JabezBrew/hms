@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getApiBasePathname,
   getApiBaseUrl,
@@ -13,6 +13,10 @@ describe('runtime-config', () => {
   const originalLocation = globalThis.window.location;
 
   beforeEach(() => {
+    vi.stubEnv('VITE_API_BASE_URL', '');
+    vi.stubEnv('VITE_WS_URL', '');
+    vi.stubEnv('VITE_DEFAULT_FACILITY_CODE', '');
+    vi.stubEnv('VITE_MULTI_FACILITY_MODE', '');
     globalThis.window.__HMS_RUNTIME_CONFIG__ = undefined;
     Object.defineProperty(globalThis.window, 'location', {
       value: {
@@ -24,6 +28,7 @@ describe('runtime-config', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     globalThis.window.__HMS_RUNTIME_CONFIG__ = originalRuntimeConfig;
     Object.defineProperty(globalThis.window, 'location', {
       value: originalLocation,

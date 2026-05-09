@@ -404,7 +404,7 @@ describe('useUpdateInventoryItem', () => {
     queryClient.setQueryData(inventoryKeys.itemDetail(mockItem.id), mockItem)
 
     server.use(
-      http.put('/api/inventory/items/:id/', async ({ params, request }) => {
+      http.patch('/api/inventory/items/:id/', async ({ request }) => {
         const body = await request.json()
         return HttpResponse.json({
           ...mockItem,

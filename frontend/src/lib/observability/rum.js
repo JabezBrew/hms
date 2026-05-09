@@ -81,7 +81,7 @@ export function scrubRouteLabel(input) {
       return normalized.length > 32 ? DYNAMIC_SEGMENT : normalized;
     });
 
-  const label = `/${segments.join('/')}` || '/';
+  const label = segments.length > 0 ? `/${segments.join('/')}` : '/';
   return label.length > MAX_ROUTE_LENGTH ? '/too-deep' : label;
 }
 

@@ -52,8 +52,8 @@ describe('dynamic sidebar', () => {
       enabledFeatures: { laboratory: true },
     })
 
-    expect(screen.getByRole('link', { name: /Collection Queue/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Orders/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Worklist/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Catalog/i })).not.toBeInTheDocument()
   })
 
