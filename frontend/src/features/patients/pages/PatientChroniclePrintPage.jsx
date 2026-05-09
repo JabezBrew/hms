@@ -202,13 +202,13 @@ function DataRows({ data }) {
   if (rows.length === 0) return null;
 
   return (
-    <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+    <dl className="print-entry-data mt-2 grid grid-cols-1 gap-x-5 gap-y-1.5 sm:grid-cols-2">
       {rows.map(([key, value]) => (
-        <div key={key} className="break-inside-avoid">
-          <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-500">
+        <div key={key} className="grid grid-cols-[7.5rem_1fr] gap-2 border-t border-neutral-200 pt-1.5">
+          <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">
             {titleize(key)}
           </dt>
-          <dd className="mt-0.5 whitespace-pre-wrap text-sm text-neutral-900">
+          <dd className="whitespace-pre-wrap text-[12px] leading-5 text-neutral-900">
             {formatValue(value)}
           </dd>
         </div>
@@ -221,27 +221,27 @@ function PrintEntry({ entry }) {
   const summary = getEntrySummary(entry);
 
   return (
-    <article className="print-entry break-inside-avoid border-t border-neutral-200 py-4 first:border-t-0">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <article className="print-entry border-t border-neutral-200 py-3 first:border-t-0">
+      <div className="grid gap-2 sm:grid-cols-[8.5rem_1fr_9rem]">
+        <div className="font-mono text-[10px] leading-5 text-neutral-600">
+          <time>{formatDateTime(entry.timestamp)}</time>
+          {entry.author && <div className="text-neutral-500">{entry.author}</div>}
+        </div>
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.16em] text-neutral-500">
-            {titleize(entry.type || entry.entry_type)}
-          </p>
-          <h4 className="mt-1 text-base font-semibold text-neutral-950">
+          <h4 className="text-[14px] font-semibold leading-5 text-neutral-950">
             {getEntryTitle(entry)}
           </h4>
+          {summary && (
+            <p className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-neutral-800">
+              {summary}
+            </p>
+          )}
+          <DataRows data={entry.data} />
         </div>
-        <div className="text-right font-mono text-xs text-neutral-600">
-          <time>{formatDateTime(entry.timestamp)}</time>
-          {entry.author && <div>{entry.author}</div>}
+        <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-neutral-500 sm:text-right">
+          {titleize(entry.type || entry.entry_type)}
         </div>
       </div>
-      {summary && (
-        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-neutral-800">
-          {summary}
-        </p>
-      )}
-      <DataRows data={entry.data} />
     </article>
   );
 }
@@ -252,24 +252,24 @@ function EncounterSection({ encounter, entries }) {
   const location = encounter?.location || encounter?.department_name || encounter?.ward_name;
 
   return (
-    <section className="print-section break-inside-avoid rounded border border-neutral-300 bg-white">
-      <header className="border-b border-neutral-300 bg-neutral-50 px-4 py-3">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <section className="print-section border-t-2 border-neutral-900">
+      <header className="print-section-header border-b border-neutral-300 py-2">
+        <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
           <div>
-            <h3 className="text-base font-semibold text-neutral-950">{titleize(encounterType)}</h3>
-            <p className="mt-1 font-mono text-xs text-neutral-600">
+            <h3 className="text-[14px] font-semibold leading-5 text-neutral-950">{titleize(encounterType)}</h3>
+            <p className="font-mono text-[10px] text-neutral-600">
               {formatDate(encounter?.start_time)}
               {encounter?.end_time ? ` to ${formatDate(encounter.end_time)}` : ''}
             </p>
           </div>
-          <div className="text-right font-mono text-xs text-neutral-600">
+          <div className="font-mono text-[10px] leading-5 text-neutral-600 sm:text-right">
             {encounter?.status && <div>{titleize(encounter.status)}</div>}
             {practitioner && <div>{practitioner}</div>}
             {location && <div>{location}</div>}
           </div>
         </div>
       </header>
-      <div className="px-4">
+      <div>
         {entries.map((entry) => (
           <PrintEntry key={`${entry.type}-${entry.id || entry.timestamp}`} entry={entry} />
         ))}
@@ -280,18 +280,18 @@ function EncounterSection({ encounter, entries }) {
 
 function SummaryList({ title, items, getLabel }) {
   return (
-    <section className="break-inside-avoid">
-      <h3 className="border-b border-neutral-300 pb-2 font-mono text-xs uppercase tracking-[0.18em] text-neutral-600">
+    <section className="break-inside-avoid border border-neutral-300">
+      <h3 className="border-b border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-600">
         {title}
       </h3>
       {items.length > 0 ? (
-        <ul className="mt-3 space-y-2 text-sm text-neutral-900">
+        <ul className="space-y-1.5 px-3 py-2 text-[12px] leading-5 text-neutral-900">
           {items.map((item, index) => (
             <li key={item.id || index}>{getLabel(item)}</li>
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-neutral-500">{EMPTY_VALUE}</p>
+        <p className="px-3 py-2 text-[12px] text-neutral-500">{EMPTY_VALUE}</p>
       )}
     </section>
   );
@@ -372,10 +372,17 @@ export default function PatientChroniclePrintPage() {
       {pageMeta}
       <style>{`
         @page {
-          margin: 14mm;
+          margin: 11mm 12mm;
           size: A4;
         }
+        .print-document {
+          font-size: 12px;
+          line-height: 1.45;
+        }
         @media print {
+          html {
+            background: white !important;
+          }
           body {
             background: white !important;
           }
@@ -387,8 +394,8 @@ export default function PatientChroniclePrintPage() {
             max-width: none !important;
             box-shadow: none !important;
           }
-          .print-entry,
-          .print-section {
+          .print-entry-data,
+          .print-section-header {
             break-inside: avoid;
             page-break-inside: avoid;
           }
@@ -406,7 +413,7 @@ export default function PatientChroniclePrintPage() {
           </Button>
         </div>
 
-        <main className="print-document mx-auto max-w-5xl bg-white p-8 shadow-sm print:p-0">
+        <main className="print-document mx-auto max-w-5xl bg-white p-7 shadow-sm print:p-0">
           {isLoading ? (
             <div className="space-y-6">
               <Skeleton className="h-16 w-2/3" />
@@ -428,45 +435,45 @@ export default function PatientChroniclePrintPage() {
               </div>
             </section>
           ) : (
-            <article className="space-y-8">
-              <header className="border-b-2 border-neutral-950 pb-5">
-                <div className="flex flex-wrap items-start justify-between gap-6">
+            <article className="space-y-5">
+              <header className="border-b-2 border-neutral-950 pb-4">
+                <div className="grid gap-5 sm:grid-cols-[1fr_18rem]">
                   <div>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em] text-neutral-500">
+                    <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-500">
                       Patient Chronicle
                     </p>
-                    <h1 className="mt-2 text-4xl font-semibold tracking-tight text-neutral-950">
+                    <h1 className="mt-1 text-3xl font-semibold leading-tight tracking-tight text-neutral-950">
                       {patientDetails.name}
                     </h1>
                   </div>
-                  <div className="text-right font-mono text-xs text-neutral-600">
+                  <div className="font-mono text-[11px] leading-5 text-neutral-600 sm:text-right">
                     <div>Printed {formatDateTime(new Date())}</div>
                     <div>Printed by {user?.full_name || user?.username || user?.email || EMPTY_VALUE}</div>
                     <div>{resolvedVisitScope === CHRONICLE_ALL_VISITS ? 'All history' : 'Selected visit'}</div>
                   </div>
                 </div>
 
-                <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
+                <dl className="mt-4 grid grid-cols-2 border border-neutral-300 text-[12px] sm:grid-cols-4">
                   <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-500">MRN</dt>
-                    <dd className="mt-1 font-mono">{patientDetails.mrn}</dd>
+                    <dt className="border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">MRN</dt>
+                    <dd className="px-3 py-2 font-mono">{patientDetails.mrn}</dd>
                   </div>
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-500">DOB</dt>
-                    <dd className="mt-1">{formatDate(patientDetails.dateOfBirth)}</dd>
+                  <div className="border-l border-neutral-200">
+                    <dt className="border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">DOB</dt>
+                    <dd className="px-3 py-2">{formatDate(patientDetails.dateOfBirth)}</dd>
                   </div>
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-500">Sex</dt>
-                    <dd className="mt-1">{titleize(patientDetails.gender)}</dd>
+                  <div className="border-l border-neutral-200">
+                    <dt className="border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">Sex</dt>
+                    <dd className="px-3 py-2">{titleize(patientDetails.gender)}</dd>
                   </div>
-                  <div>
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-500">Location</dt>
-                    <dd className="mt-1">{patientDetails.location}</dd>
+                  <div className="border-l border-neutral-200">
+                    <dt className="border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">Location</dt>
+                    <dd className="px-3 py-2">{patientDetails.location}</dd>
                   </div>
                 </dl>
               </header>
 
-              <section className="grid gap-6 md:grid-cols-3">
+              <section className="grid gap-3 md:grid-cols-3">
                 <SummaryList
                   title="Allergies"
                   items={allergies}
@@ -493,11 +500,11 @@ export default function PatientChroniclePrintPage() {
                 />
               </section>
 
-              <section className="space-y-4">
-                <div className="flex flex-wrap items-end justify-between gap-3 border-b border-neutral-300 pb-3">
+              <section className="space-y-3">
+                <div className="flex flex-wrap items-end justify-between gap-3 border-b border-neutral-300 pb-2">
                   <div>
-                    <h2 className="text-xl font-semibold text-neutral-950">Timeline</h2>
-                    <p className="mt-1 font-mono text-xs text-neutral-600">
+                    <h2 className="text-lg font-semibold leading-tight text-neutral-950">Timeline</h2>
+                    <p className="mt-0.5 font-mono text-[10px] text-neutral-600">
                       {timelineQuery.data?.count ?? entries.length} entries
                       {requestedType !== 'all' ? ` | ${titleize(requestedType)}` : ''}
                       {requestedSearch ? ` | Search: ${requestedSearch}` : ''}
@@ -508,7 +515,7 @@ export default function PatientChroniclePrintPage() {
                 {groupedEntries.grouped.length === 0 && groupedEntries.unlinked.length === 0 ? (
                   <p className="text-sm text-neutral-500">No chronicle entries found for this print scope.</p>
                 ) : (
-                  <div className="space-y-5">
+                  <div className="space-y-4">
                     {groupedEntries.grouped.map(({ encounter, entries: encounterEntries }) => (
                       <EncounterSection
                         key={encounter.id || encounterEntries[0]?.timestamp}
