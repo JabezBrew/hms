@@ -22,6 +22,40 @@ import {
 
 const PRINT_PAGE_SIZE = 100;
 const EMPTY_VALUE = 'Not recorded';
+const NOTE_ENTRY_TYPES = new Set([
+  'progress_note',
+  'soap_note',
+  'nursing_note',
+  'admission_note',
+  'discharge_note',
+  'consult_note',
+  'consult',
+  'procedure',
+]);
+const NOTE_SECTION_ORDER = [
+  'chief_complaint',
+  'chiefComplaint',
+  'subjective',
+  'history_of_present_illness',
+  'historyOfPresentIllness',
+  'history',
+  'objective',
+  'physical_exam',
+  'physicalExam',
+  'examination',
+  'assessment',
+  'diagnosis',
+  'plan',
+  'treatment',
+  'medications',
+  'investigations',
+  'results',
+  'notes',
+  'findings',
+  'recommendations',
+  'follow_up',
+  'followUp',
+];
 
 function formatDateTime(value) {
   if (!value) return EMPTY_VALUE;
@@ -49,6 +83,7 @@ function formatDate(value) {
 
 function titleize(value) {
   return String(value || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
@@ -125,6 +160,10 @@ function formatValue(value) {
 }
 
 function shouldPrintDataKey(key) {
+  const normalizedKey = String(key || '')
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .toLowerCase();
+
   return ![
     'id',
     'uuid',
@@ -136,7 +175,13 @@ function shouldPrintDataKey(key) {
     'template_id',
     'created_at',
     'updated_at',
-  ].includes(key);
+    'author',
+    'author_id',
+    'patient_name',
+    'template_name',
+    'template_title',
+    'template_system_key',
+  ].includes(normalizedKey);
 }
 
 function getEntryTitle(entry) {
@@ -153,6 +198,150 @@ function getEntrySummary(entry) {
   if (entry.data?.notes) return entry.data.notes;
   if (entry.data?.clinical_notes) return entry.data.clinical_notes;
   if (entry.data?.instructions) return entry.data.instructions;
+  return '';
+}
+
+function compactValue(value) {
+  const formatted = formatValue(value);
+  return formatted === EMPTY_VALUE ? '' : formatted.trim();
+}
+
+function uniqueValues(values) {
+  const seen = new Set();
+  return values
+    .map((value) => compactValue(value))
+    .filter(Boolean)
+    .filter((value) => {
+      const normalized = value.toLowerCase();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+}
+
+function isNoteEntry(entry) {
+  return entry?.entry_type === 'note' || NOTE_ENTRY_TYPES.has(entry?.type);
+}
+
+function sortNoteSections(entries) {
+  return [...entries].sort(([keyA], [keyB]) => {
+    const indexA = NOTE_SECTION_ORDER.indexOf(keyA);
+    const indexB = NOTE_SECTION_ORDER.indexOf(keyB);
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    return 0;
+  });
+}
+
+function shouldPrintNoteSection(key, value, summary) {
+  if (!shouldPrintDataKey(key)) return false;
+  const formatted = compactValue(value);
+  if (!formatted) return false;
+  if (summary && formatted.toLowerCase() === summary.trim().toLowerCase()) return false;
+  return true;
+}
+
+function getMedicationLine(entry) {
+  const data = entry.data || {};
+  return uniqueValues([
+    data.dose || data.dosage,
+    data.route_display || data.route,
+    data.frequency_display || data.frequency,
+    data.duration_days ? `for ${data.duration_days} days` : '',
+    data.status_display || data.status,
+  ]).join(' | ');
+}
+
+function getVitalsLine(entry) {
+  const data = entry.data || {};
+  return uniqueValues([
+    data.blood_pressure && `BP ${data.blood_pressure}`,
+    data.heart_rate && `HR ${data.heart_rate}`,
+    data.temperature && `Temp ${data.temperature}`,
+    data.oxygen_saturation && `SpO2 ${data.oxygen_saturation}`,
+    data.respiratory_rate && `RR ${data.respiratory_rate}`,
+    data.pain_level && `Pain ${data.pain_level}`,
+  ]).join(' | ');
+}
+
+function getLabLine(entry) {
+  const data = entry.data || {};
+  const resultCount = Array.isArray(data.results) ? data.results.length : 0;
+  const testCount = Array.isArray(data.tests_ordered) ? data.tests_ordered.length : 0;
+  return uniqueValues([
+    data.order_number,
+    data.priority_display || data.priority,
+    data.status_display || data.status,
+    resultCount ? `${resultCount} result${resultCount === 1 ? '' : 's'}` : '',
+    !resultCount && testCount ? `${testCount} test${testCount === 1 ? '' : 's'} ordered` : '',
+  ]).join(' | ');
+}
+
+function getSupportingFields(entry, summary) {
+  const data = entry.data || {};
+  const summaryText = summary || '';
+
+  if (isNoteEntry(entry)) {
+    return sortNoteSections(
+      Object.entries(data).filter(([key, value]) => shouldPrintNoteSection(key, value, summaryText))
+    );
+  }
+
+  if (entry.entry_type === 'prescription' || entry.type === 'medication' || entry.type === 'prescription') {
+    return [
+      ['Reason', data.reason],
+      ['Instructions', data.instructions || data.notes],
+      ['Discontinue reason', data.discontinue_reason],
+    ].filter(([, value]) => {
+      const formatted = compactValue(value);
+      return formatted && formatted.toLowerCase() !== summaryText.trim().toLowerCase();
+    });
+  }
+
+  if (entry.entry_type === 'vitals' || entry.type === 'vitals') {
+    return [
+      ['Notes', data.notes],
+    ].filter(([, value]) => compactValue(value));
+  }
+
+  if (entry.entry_type === 'lab_result' || entry.type === 'lab_result') {
+    return [
+      ['Clinical notes', data.clinical_notes],
+      ['Results summary', data.results_summary],
+    ].filter(([, value]) => compactValue(value));
+  }
+
+  if (entry.entry_type === 'referral' || entry.type === 'referral') {
+    return [
+      ['Reason', data.reason],
+      ['Clinical summary', data.clinical_summary],
+      ['Question', data.questions_for_specialist],
+      ['Specialist notes', data.specialist_notes],
+      ['Recommendations', data.recommendations],
+    ].filter(([, value]) => compactValue(value));
+  }
+
+  if (entry.entry_type === 'chart' || entry.type === 'chart') {
+    return [
+      ['Notes', data.notes],
+    ].filter(([, value]) => compactValue(value));
+  }
+
+  return Object.entries(data)
+    .filter(([key, value]) => shouldPrintDataKey(key) && compactValue(value));
+}
+
+function getEntryLeadLine(entry) {
+  if (entry.entry_type === 'prescription' || entry.type === 'medication' || entry.type === 'prescription') {
+    return getMedicationLine(entry);
+  }
+  if (entry.entry_type === 'vitals' || entry.type === 'vitals') {
+    return getVitalsLine(entry);
+  }
+  if (entry.entry_type === 'lab_result' || entry.type === 'lab_result') {
+    return getLabLine(entry);
+  }
   return '';
 }
 
@@ -193,18 +382,16 @@ function groupEntriesByEncounter(entries, encounters) {
   return { grouped, unlinked };
 }
 
-function DataRows({ data }) {
-  if (!data || typeof data !== 'object') return null;
-
-  const rows = Object.entries(data)
-    .filter(([key, value]) => shouldPrintDataKey(key) && value !== null && value !== undefined && value !== '');
-
-  if (rows.length === 0) return null;
+function SupportingFields({ fields, isNote }) {
+  if (fields.length === 0) return null;
 
   return (
-    <dl className="print-entry-data mt-2 grid grid-cols-1 gap-x-5 gap-y-1.5 sm:grid-cols-2">
-      {rows.map(([key, value]) => (
-        <div key={key} className="grid grid-cols-[7.5rem_1fr] gap-2 border-t border-neutral-200 pt-1.5">
+    <dl className="print-entry-data mt-2 space-y-1.5">
+      {fields.map(([key, value]) => (
+        <div
+          key={key}
+          className={isNote ? 'border-l-2 border-neutral-300 pl-3' : 'grid grid-cols-[7.5rem_1fr] gap-2 border-t border-neutral-200 pt-1.5'}
+        >
           <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">
             {titleize(key)}
           </dt>
@@ -219,6 +406,9 @@ function DataRows({ data }) {
 
 function PrintEntry({ entry }) {
   const summary = getEntrySummary(entry);
+  const leadLine = getEntryLeadLine(entry);
+  const isNote = isNoteEntry(entry);
+  const supportingFields = getSupportingFields(entry, summary);
 
   return (
     <article className="print-entry border-t border-neutral-200 py-3 first:border-t-0">
@@ -231,12 +421,17 @@ function PrintEntry({ entry }) {
           <h4 className="text-[14px] font-semibold leading-5 text-neutral-950">
             {getEntryTitle(entry)}
           </h4>
+          {leadLine && (
+            <p className="mt-1 font-mono text-[11px] leading-5 text-neutral-700">
+              {leadLine}
+            </p>
+          )}
           {summary && (
             <p className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-neutral-800">
               {summary}
             </p>
           )}
-          <DataRows data={entry.data} />
+          <SupportingFields fields={supportingFields} isNote={isNote} />
         </div>
         <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-neutral-500 sm:text-right">
           {titleize(entry.type || entry.entry_type)}
