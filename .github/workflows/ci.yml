@@ -76,6 +76,9 @@ jobs:
         DB_HOST: localhost
         DB_PORT: 5432
         REDIS_URL: redis://localhost:6379/0
+        EMAIL_PROVIDER: resend
+        RESEND_API_KEY: test-resend-key
+        UNOSEND_API_KEY: test-unosend-key
         SENDGRID_API_KEY: test-sendgrid-key
         DEFAULT_FROM_EMAIL: ci@example.com
         GOOGLE_APPLICATION_CREDENTIALS: ""
@@ -98,6 +101,9 @@ jobs:
         DB_HOST: localhost
         DB_PORT: 5432
         REDIS_URL: redis://localhost:6379/0
+        EMAIL_PROVIDER: resend
+        RESEND_API_KEY: test-resend-key
+        UNOSEND_API_KEY: test-unosend-key
         SENDGRID_API_KEY: test-sendgrid-key
         DEFAULT_FROM_EMAIL: ci@example.com
         GOOGLE_APPLICATION_CREDENTIALS: ""
@@ -123,6 +129,9 @@ jobs:
         DB_HOST: localhost
         DB_PORT: 5432
         REDIS_URL: redis://localhost:6379/0
+        EMAIL_PROVIDER: resend
+        RESEND_API_KEY: test-resend-key
+        UNOSEND_API_KEY: test-unosend-key
         SENDGRID_API_KEY: test-sendgrid-key
         DEFAULT_FROM_EMAIL: ci@example.com
         GOOGLE_APPLICATION_CREDENTIALS: ""
@@ -192,6 +201,9 @@ jobs:
         DB_HOST: localhost
         DB_PORT: 5432
         REDIS_URL: redis://localhost:6379/0
+        EMAIL_PROVIDER: resend
+        RESEND_API_KEY: test-resend-key
+        UNOSEND_API_KEY: test-unosend-key
         SENDGRID_API_KEY: test-sendgrid-key
         DEFAULT_FROM_EMAIL: ci@example.com
         GOOGLE_APPLICATION_CREDENTIALS: ""
@@ -319,6 +331,9 @@ jobs:
       DB_HOST: localhost
       DB_PORT: 5432
       REDIS_URL: redis://localhost:6379/0
+      EMAIL_PROVIDER: resend
+      RESEND_API_KEY: test-resend-key
+      UNOSEND_API_KEY: test-unosend-key
       SENDGRID_API_KEY: test-sendgrid-key
       DEFAULT_FROM_EMAIL: e2e@example.com
       DEFAULT_FACILITY_CODE: MAIN
