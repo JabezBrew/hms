@@ -8,6 +8,21 @@ import logging
 from datetime import datetime, timezone
 
 
+SAFE_EXTRA_FIELDS = {
+    "duration_seconds",
+    "event",
+    "http_method",
+    "http_path",
+    "http_route",
+    "remote_addr",
+    "request_id",
+    "response_size_bytes",
+    "server_hostname",
+    "status_class",
+    "status_code",
+}
+
+
 class JsonLogFormatter(logging.Formatter):
     """
     Emit single-line JSON logs for stdout collectors.
@@ -33,5 +48,9 @@ class JsonLogFormatter(logging.Formatter):
 
         if record.stack_info:
             event["stack_info"] = self.formatStack(record.stack_info)
+
+        for field in sorted(SAFE_EXTRA_FIELDS):
+            if hasattr(record, field):
+                event[field] = getattr(record, field)
 
         return json.dumps(event, ensure_ascii=True, separators=(",", ":"))

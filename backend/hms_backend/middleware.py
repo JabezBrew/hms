@@ -1,7 +1,9 @@
 import logging
 import time
-import json
 import ipaddress
+import re
+import threading
+from uuid import uuid4
 from uuid import UUID
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
@@ -14,6 +16,13 @@ from rest_framework import status as http_status
 from hms_backend.deployment import api_path_enabled, feature_enabled
 
 logger = logging.getLogger('django.request')
+
+
+REQUEST_ID_HEADER = 'X-Request-ID'
+REQUEST_ID_META_KEY = 'HTTP_X_REQUEST_ID'
+SAFE_REQUEST_ID_RE = re.compile(r'^[A-Za-z0-9._:-]{1,64}$')
+_HTTP_IN_FLIGHT_LOCK = threading.Lock()
+_HTTP_IN_FLIGHT_REQUESTS = 0
 
 
 FACILITY_CONTEXT_OPTIONAL_PATH_PREFIXES = (
@@ -122,7 +131,7 @@ def _scrub_path_segment(segment):
         return '<id>'
     except (ValueError, AttributeError, TypeError):
         pass
-    if segment.isdigit() and len(segment) >= 4:
+    if segment.isdigit():
         return '<id>'
     return segment
 
@@ -142,6 +151,93 @@ def _scrub_path(path):
             continue
         parts.append(_scrub_path_segment(segment))
     return '/'.join(parts)
+
+
+def _is_observability_excluded_path(path):
+    normalized_path = str(path or '')
+    return normalized_path.startswith((
+        '/api/metrics/',
+        '/api/health/',
+        '/static/',
+        '/media/',
+    ))
+
+
+def _safe_request_id(value):
+    request_id = str(value or '').strip()
+    if request_id and SAFE_REQUEST_ID_RE.fullmatch(request_id):
+        return request_id
+    return str(uuid4())
+
+
+def _safe_route_label(request):
+    resolver_match = getattr(request, 'resolver_match', None)
+    route = getattr(resolver_match, 'route', None)
+    if route:
+        return '/' + str(route).strip('/')
+
+    view_name = (
+        getattr(resolver_match, 'view_name', None)
+        or getattr(resolver_match, 'url_name', None)
+    )
+    if view_name:
+        return f'view:{view_name}'
+
+    return _scrub_path(getattr(request, 'path', '')) or '<unknown>'
+
+
+def _status_class(status_code):
+    try:
+        code = int(status_code)
+    except (TypeError, ValueError):
+        return 'unknown'
+    return f'{code // 100}xx'
+
+
+def _response_size(response):
+    if response.has_header('Content-Length'):
+        try:
+            return int(response['Content-Length'])
+        except (TypeError, ValueError):
+            return 0
+    if getattr(response, 'streaming', False):
+        return 0
+    content = getattr(response, 'content', b'')
+    return len(content or b'')
+
+
+def _increment_in_flight_requests():
+    global _HTTP_IN_FLIGHT_REQUESTS
+    from apps.core.metrics import set_gauge
+
+    with _HTTP_IN_FLIGHT_LOCK:
+        _HTTP_IN_FLIGHT_REQUESTS += 1
+        current = _HTTP_IN_FLIGHT_REQUESTS
+    set_gauge(
+        'hms_http_in_flight_requests',
+        current,
+        description='Current number of non-probe HTTP requests in flight.',
+    )
+
+
+def _decrement_in_flight_requests():
+    global _HTTP_IN_FLIGHT_REQUESTS
+    from apps.core.metrics import set_gauge
+
+    with _HTTP_IN_FLIGHT_LOCK:
+        _HTTP_IN_FLIGHT_REQUESTS = max(0, _HTTP_IN_FLIGHT_REQUESTS - 1)
+        current = _HTTP_IN_FLIGHT_REQUESTS
+    set_gauge(
+        'hms_http_in_flight_requests',
+        current,
+        description='Current number of non-probe HTTP requests in flight.',
+    )
+
+
+def reset_http_observability_state_for_tests():
+    global _HTTP_IN_FLIGHT_REQUESTS
+    with _HTTP_IN_FLIGHT_LOCK:
+        _HTTP_IN_FLIGHT_REQUESTS = 0
 
 
 class FacilityContextMiddleware(MiddlewareMixin):
@@ -352,65 +448,111 @@ class OffSiteDetectionMiddleware(MiddlewareMixin):
 
 class RequestLoggingMiddleware(MiddlewareMixin):
     """
-    Middleware to log all requests and responses.
+    Middleware for safe HTTP request correlation, metrics, and logs.
     """
     def process_request(self, request):
         """
-        Process the request and log it.
+        Attach a safe request id and start HTTP observability.
         """
-        request.start_time = time.time()
-        
-        # Don't log media or static file requests
-        if request.path.startswith('/media/') or request.path.startswith('/static/'):
+        request.start_time = time.perf_counter()
+        request.request_id = _safe_request_id(request.META.get(REQUEST_ID_META_KEY))
+        request.http_observability_excluded = _is_observability_excluded_path(request.path)
+
+        if request.http_observability_excluded:
             return None
-            
-        # Log the request
-        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
-        if user_id is not None:
-            user_id = str(user_id)
+
+        _increment_in_flight_requests()
+        request.http_observability_in_flight = True
+        route = _safe_route_label(request)
 
         log_data = {
-            'remote_address': request.META.get('REMOTE_ADDR'),
+            'event': 'http_request_started',
+            'request_id': request.request_id,
+            'remote_addr': request.META.get('REMOTE_ADDR'),
             'server_hostname': request.META.get('SERVER_NAME'),
-            'request_method': request.method,
-            'request_path': _scrub_path(request.path),
-            'user_id': user_id,
+            'http_method': request.method,
+            'http_path': _scrub_path(request.path),
+            'http_route': route,
         }
-        
-        logger.info(f"Request: {json.dumps(log_data)}")
+
+        logger.info('http_request_started', extra=log_data)
         return None
 
     def process_response(self, request, response):
         """
-        Process the response and log it.
+        Echo request id, emit metrics, and log safe response fields.
         """
-        # Don't log media or static file responses
-        if request.path.startswith('/media/') or request.path.startswith('/static/'):
+        request_id = getattr(request, 'request_id', None)
+        if request_id is None:
+            request_id = _safe_request_id(request.META.get(REQUEST_ID_META_KEY))
+            request.request_id = request_id
+        response[REQUEST_ID_HEADER] = request_id
+
+        if getattr(request, 'http_observability_excluded', False):
             return response
-            
-        # Calculate request processing time
+
         if hasattr(request, 'start_time'):
-            processing_time = time.time() - request.start_time
+            duration_seconds = max(0.0, time.perf_counter() - request.start_time)
         else:
-            processing_time = 0
-            
-        # Log the response
-        user_id = getattr(request.user, 'id', None) if request.user.is_authenticated else None
-        if user_id is not None:
-            user_id = str(user_id)
+            duration_seconds = 0.0
+
+        route = _safe_route_label(request)
+        status_code = str(getattr(response, 'status_code', 0))
+        status_class = _status_class(status_code)
+        response_size = _response_size(response)
+        labels = {
+            'method': request.method,
+            'route': route,
+            'status_code': status_code,
+            'status_class': status_class,
+        }
+
+        from apps.core.metrics import inc_counter, observe_histogram
+
+        inc_counter(
+            'hms_http_requests_total',
+            labels=labels,
+            description='Total non-probe HTTP requests by method, safe route, and status.',
+        )
+        observe_histogram(
+            'hms_http_request_duration_seconds',
+            duration_seconds,
+            labels=labels,
+            description='Non-probe HTTP request duration in seconds.',
+        )
+        observe_histogram(
+            'hms_http_response_size_bytes',
+            response_size,
+            labels=labels,
+            description='Non-probe HTTP response size in bytes.',
+            buckets=(100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000),
+        )
+        if getattr(request, 'http_observability_in_flight', False):
+            _decrement_in_flight_requests()
+            request.http_observability_in_flight = False
 
         log_data = {
-            'remote_address': request.META.get('REMOTE_ADDR'),
-            'request_method': request.method,
-            'request_path': _scrub_path(request.path),
-            'response_status': response.status_code,
-            'processing_time': processing_time,
-            'user_id': user_id,
+            'event': 'http_request_finished',
+            'request_id': request_id,
+            'remote_addr': request.META.get('REMOTE_ADDR'),
+            'http_method': request.method,
+            'http_path': _scrub_path(request.path),
+            'http_route': route,
+            'status_code': response.status_code,
+            'status_class': status_class,
+            'duration_seconds': duration_seconds,
+            'response_size_bytes': response_size,
         }
-        
-        logger.info(f"Response: {json.dumps(log_data)}")
+
+        logger.info('http_request_finished', extra=log_data)
         return response
-        
+
+    def process_exception(self, request, exception):
+        if getattr(request, 'http_observability_in_flight', False):
+            _decrement_in_flight_requests()
+            request.http_observability_in_flight = False
+        return None
+
     def _get_request_body(self, request):
         return ''
 

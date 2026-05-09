@@ -38,6 +38,14 @@ _GAUGES: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
 _HISTOGRAMS: dict[tuple[str, tuple[tuple[str, str], ...]], "_HistogramState"] = {}
 
 
+def reset_metrics_for_tests() -> None:
+    with _REGISTRY_LOCK:
+        _METRIC_DEFINITIONS.clear()
+        _COUNTERS.clear()
+        _GAUGES.clear()
+        _HISTOGRAMS.clear()
+
+
 def _normalize_labels(labels: dict[str, str] | None) -> tuple[tuple[str, str], ...]:
     if not labels:
         return ()
@@ -46,10 +54,17 @@ def _normalize_labels(labels: dict[str, str] | None) -> tuple[tuple[str, str], .
     )
 
 
+def _escape_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 def _labels_to_text(labels: tuple[tuple[str, str], ...]) -> str:
     if not labels:
         return ""
-    serialized = ",".join(f'{key}="{value}"' for key, value in labels)
+    serialized = ",".join(
+        f'{key}="{_escape_label_value(value)}"'
+        for key, value in labels
+    )
     return f"{{{serialized}}}"
 
 
