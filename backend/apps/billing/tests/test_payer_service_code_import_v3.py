@@ -10,6 +10,9 @@ from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.tests.factories import UserFactory
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.fixture
 def facility():
     return DefaultFacilityFactory()

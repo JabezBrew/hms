@@ -16,6 +16,9 @@ from apps.encounters.tests.factories import EncounterFactory, EncounterCareTeamF
 from apps.organization.tests.factories import ClinicalUnitFactory, StaffUnitAssignmentFactory
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.mark.tier1
 class TestTeamBasedClinicalAccess:
     def test_admin_can_access_any_patient(self, settings):

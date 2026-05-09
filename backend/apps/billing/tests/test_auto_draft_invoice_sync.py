@@ -16,6 +16,9 @@ from apps.laboratory.tests.factories import LabOrderFactory, LabOrderTestFactory
 from apps.users.tests.factories import PatientProfileFactory, UserFactory
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.fixture
 def facility():
     return DefaultFacilityFactory()
@@ -144,4 +147,3 @@ def test_finalize_disables_auto_update(facility, admin_user):
     invoice.refresh_from_db()
     assert invoice.auto_update_enabled is False
     assert invoice.status == "pending"
-

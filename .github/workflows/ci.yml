@@ -5,6 +5,9 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
 
 env:
   PYTHON_VERSION: '3.11'
@@ -109,9 +112,10 @@ jobs:
         python manage.py check_pending_migrations --fail-on-pending
         python startup.py
 
-    - name: Run tests with coverage
+    - name: Run backend tests
       env:
         DEBUG: True
+        DJANGO_SETTINGS_MODULE: hms_backend.settings_test
         SECRET_KEY: test-secret-key-ci-${{ github.run_id }}
         DB_NAME: hms_test
         DB_USER: postgres
@@ -129,7 +133,76 @@ jobs:
         GOOGLE_HL7V2_STORE: test-hl7v2-store
       run: |
         cd backend
-        pytest --cov=apps --cov-report=xml --cov-report=html --cov-report=term-missing -v
+        pytest -n auto
+
+  # ==========================================================================
+  # Backend Coverage
+  # ==========================================================================
+  backend-coverage:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install -r backend/requirements-dev.txt
+
+    - name: Run backend coverage
+      env:
+        DEBUG: True
+        DJANGO_SETTINGS_MODULE: hms_backend.settings_test
+        SECRET_KEY: test-secret-key-ci-${{ github.run_id }}
+        DB_NAME: hms_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: localhost
+        DB_PORT: 5432
+        REDIS_URL: redis://localhost:6379/0
+        SENDGRID_API_KEY: test-sendgrid-key
+        DEFAULT_FROM_EMAIL: ci@example.com
+        GOOGLE_APPLICATION_CREDENTIALS: ""
+        GOOGLE_CLOUD_PROJECT: test-project
+        GOOGLE_HEALTHCARE_DATASET: test-dataset
+        GOOGLE_FHIR_STORE: test-fhir-store
+        GOOGLE_DICOM_STORE: test-dicom-store
+        GOOGLE_HL7V2_STORE: test-hl7v2-store
+      run: |
+        cd backend
+        pytest --cov=apps --cov-report=xml --cov-report=html --cov-report=term-missing
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4

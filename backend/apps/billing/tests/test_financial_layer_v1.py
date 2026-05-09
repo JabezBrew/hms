@@ -17,6 +17,9 @@ from apps.core.tests.factories import DefaultFacilityFactory, FacilityFactory
 from apps.users.tests.factories import PatientProfileFactory, UserFactory
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.fixture
 def facility():
     return DefaultFacilityFactory()

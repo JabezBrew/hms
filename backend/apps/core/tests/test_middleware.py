@@ -106,6 +106,7 @@ def test_deployment_capabilities_endpoint_allows_missing_context_for_multi_facil
     assert request.facility_code is None
 
 
+@pytest.mark.django_db
 def test_disabled_feature_api_prefix_is_blocked(settings):
     settings.FACILITY_CONTEXT_REQUIRED = False
     settings.DEPLOYMENT_FEATURES = {'wards': False}
@@ -351,6 +352,7 @@ def test_api_path_scrubbing_redacts_identifiers_before_truncating():
     assert '00000000-0000-0000-0000-000000000000' not in scrubbed
 
 
+@pytest.mark.django_db
 def test_get_access_context_uses_trusted_forwarded_client_ip(monkeypatch, settings):
     settings.TRUST_PROXY_HEADERS = True
     settings.TRUSTED_PROXY_HOPS = 1

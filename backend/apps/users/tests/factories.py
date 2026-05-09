@@ -41,14 +41,6 @@ class UserFactory(factory.django.DjangoModelFactory):
     is_superuser = False
     primary_facility = factory.SubFactory(DefaultFacilityFactory)
 
-    @factory.post_generation
-    def password(self, create, extracted, **kwargs):
-        """Set password after user creation."""
-        password = extracted or 'testpass123'
-        self.set_password(password)
-        if create:
-            self.save()
-
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
         """Override create to use create_user manager method."""

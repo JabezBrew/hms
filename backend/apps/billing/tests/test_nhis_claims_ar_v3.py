@@ -29,6 +29,9 @@ from apps.core.tests.factories import DefaultFacilityFactory
 from apps.users.tests.factories import PatientProfileFactory, UserFactory
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.fixture
 def facility():
     return DefaultFacilityFactory()
@@ -185,4 +188,3 @@ def test_nhis_remittance_import_posts_insurance_payment_and_updates_ar(client, f
     r_aging = client.get("/api/billing/nhis/ar/insurance_aging/?basis=invoice_date")
     assert r_aging.status_code == 200
     assert Decimal(r_aging.data["total"]) == Decimal("50.00")
-

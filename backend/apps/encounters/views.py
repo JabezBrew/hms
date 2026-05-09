@@ -164,6 +164,10 @@ class EncounterViewSet(viewsets.ModelViewSet):
         """
         Return encounters with optimized queries.
         """
+        facility = get_user_facility(self.request)
+        if not facility:
+            return Encounter.objects.none()
+
         queryset = self._get_base_queryset()
 
         # Filter by patient - supports UUID, MRN, or name search
@@ -508,6 +512,10 @@ class EncounterViewSet(viewsets.ModelViewSet):
         GET /api/encounters/for_patient/?patient_id={uuid}
         """
         patient_id = request.query_params.get('patient_id')
+        encounter_type = request.query_params.get('encounter_type')
+        if encounter_type:
+            self._require_encounter_type_enabled(encounter_type)
+
         if not patient_id:
             return Response(
                 {"error": "patient_id parameter is required"},
@@ -533,6 +541,9 @@ class EncounterViewSet(viewsets.ModelViewSet):
                 Prefetch('care_team_assignments', queryset=care_team_queryset)
             )
         )
+        if encounter_type:
+            encounters = encounters.filter(encounter_type=encounter_type)
+
         serializer = EncounterPatientListSerializer(encounters, many=True)
         return Response(serializer.data)
 

@@ -12,6 +12,9 @@ from apps.users.tests.factories import PatientProfileFactory, UserFactory
 from apps.interop.crypto import encrypt_payload
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.fixture
 def facility():
     return DefaultFacilityFactory()

@@ -26,7 +26,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 # Configure Django settings BEFORE importing Django/DRF modules
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings_test')
 os.environ.setdefault('DEFAULT_FACILITY_CODE', 'TEST')
 os.environ.setdefault('CONTROL_PLANE_DB_ALIAS', 'default')
 django.setup()
@@ -46,27 +46,27 @@ User = get_user_model()
 
 
 # =============================================================================
-# Database Access Fixtures
+# Cache Isolation Fixtures
 # =============================================================================
 
 @pytest.fixture(autouse=True)
-def enable_db_access_for_all_tests(db):
-    """Automatically enable database access for all tests."""
-    pass
+def clear_test_cache():
+    """Keep per-test cache isolation without forcing database access."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
 
 
-# =============================================================================
-# Facility Fixtures
-# =============================================================================
-
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def default_facility(db):
     """Ensure a default facility exists for facility-scoped requests."""
-    from django.core.cache import cache
     from apps.core.cache_utils import facility_cache_key
     from apps.core.tests.factories import DefaultFacilityFactory
 
-    cache.clear()
+    from django.core.cache import cache
+
     facility = DefaultFacilityFactory()
     cache.set(facility_cache_key(f'facility_{facility.code}'), facility, 300)
     cache.set(facility_cache_key('active_facilities'), [facility], 300)
@@ -742,17 +742,6 @@ def mock_external_api():
 
     with responses.RequestsMock() as rsps:
         yield rsps
-
-
-# =============================================================================
-# Test Data Cleanup Fixtures
-# =============================================================================
-
-@pytest.fixture(autouse=True)
-def reset_sequences(db):
-    """Reset database sequences after each test for consistent IDs."""
-    yield
-    # Cleanup happens automatically with Django's test database rollback
 
 
 # =============================================================================
