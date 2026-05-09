@@ -156,12 +156,42 @@ favor correctness, least privilege, and predictable performance.
 - Visual language: editorial medical journal aesthetic; avoid generic dashboards.
 
 ## Running tests
-- Backend tests: Activate virtual environment and run `pytest`. This is how to activate the virtual environment in the backend directory:
-- Ensure Postgres is running and accessible on the configured host/port before running tests.
+- Backend tests use `backend/hms_backend/settings_test.py` via `backend/pytest.ini`.
+- The default backend test run is the fast parallel suite:
 
 ```bash
+cd backend
 source .venv/bin/activate
+pytest -n auto
 ```
+
+- If the local reused test database is stale after pulling migration or seed-data changes, rebuild it once:
+
+```bash
+pytest -n auto --create-db
+```
+
+- After the test database has been rebuilt, normal runs can use the reused DB again:
+
+```bash
+pytest -n auto --reuse-db
+```
+
+- For local Postgres installs where the role is the macOS username instead of `postgres`, override DB env vars explicitly:
+
+```bash
+DB_NAME=hms DB_USER=jebre DB_PASSWORD= DB_HOST=localhost DB_PORT=5432 pytest -n auto --reuse-db
+```
+
+- Coverage is intentionally not part of the default fast run. Use this when coverage is needed:
+
+```bash
+pytest --cov=apps --cov-report=term-missing --cov-report=html
+```
+
+- The test settings force locmem cache, in-memory email, eager Celery, and fast password hashing. Tests that need Redis or production-like hashing must opt into those settings explicitly.
+- Pure unit tests must not rely on implicit database access. Mark DB-backed tests with `@pytest.mark.django_db`, request `db`, or use a fixture that requests DB access.
+- Ensure Postgres is running and accessible on the configured host/port before running tests.
 
 ## Debugging
 - When it comes to debugging, never stipulate what the cause "could be". Always investigate the codebase for the actual cause and provide a solution. The solution should be robust and not some quick patch.

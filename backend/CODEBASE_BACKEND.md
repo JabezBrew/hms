@@ -371,9 +371,25 @@ Configurable REST email backend supports Unosend and Resend via `EMAIL_PROVIDER`
 
 `/backend/pytest.ini` defines:
 
-- `DJANGO_SETTINGS_MODULE = hms_backend.settings`
-- DB reuse (`--reuse-db`)
+- `DJANGO_SETTINGS_MODULE = hms_backend.settings_test`
+- DB reuse (`--reuse-db`) and explicit DB access through `db` / `@pytest.mark.django_db`
 - marker taxonomy (`tier1/tier2/tier3`, `rbac`, `integration`, etc.)
+
+`/backend/hms_backend/settings_test.py` keeps the default test path cheap and deterministic:
+
+- locmem cache instead of Redis
+- in-memory email backend
+- eager Celery with propagated exceptions
+- MD5 password hashing
+- safe test defaults for required env vars
+
+The global autouse DB fixture has been removed. Pure unit tests should not touch the database. Tests that need the database must request `db`, use `@pytest.mark.django_db`, or depend on a DB-backed fixture.
+
+When a reused local test database is stale after migration or seed-data changes, rebuild it once:
+
+```bash
+pytest -n auto --create-db
+```
 
 ### 12.2 Coverage and CI
 
@@ -381,7 +397,8 @@ CI workflow executes:
 
 - flake8
 - migration preflight
-- pytest + coverage
+- fast parallel backend pytest on push/PR
+- backend coverage on the scheduled/manual coverage job
 - docker build parity checks
 
 ## 13. Deployment and Infra Notes

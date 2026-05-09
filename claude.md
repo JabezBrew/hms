@@ -206,10 +206,15 @@ import { PatientChronicleCard, TimelineEntry, ClinicalSummarySidebar, PatientIde
 ### Commands
 ```bash
 # Backend (from backend/, venv activated)
-python -m pytest path/to/test.py -v --tb=short           # Specific file
-python -m pytest path/to/test.py::TestClass -v --tb=short # Specific class
-python -m pytest apps/app_name/tests/ -v --tb=short       # App tests
-python -m pytest -v --tb=short                            # Full suite
+pytest path/to/test.py -v --tb=short                     # Specific file
+pytest path/to/test.py::TestClass -v --tb=short          # Specific class
+pytest apps/app_name/tests/ -v --tb=short                # App tests
+pytest -n auto                                           # Fast full suite
+pytest -n auto --create-db                               # Rebuild stale reused test DB once
+pytest --cov=apps --cov-report=term-missing --cov-report=html # Coverage run
+
+# Local Postgres override when the DB role is the macOS user rather than postgres
+DB_NAME=hms DB_USER=jebre DB_PASSWORD= DB_HOST=localhost DB_PORT=5432 pytest -n auto --reuse-db
 
 # Migrations
 python manage.py makemigrations && python manage.py migrate
@@ -221,6 +226,10 @@ npm run test:coverage                     # Coverage run
 ```
 
 **Markers:** `@pytest.mark.tier1` (critical), `@pytest.mark.integration`, `@pytest.mark.rbac`
+
+Backend pytest uses `hms_backend.settings_test` by default. That settings module keeps the suite fast by using locmem cache, in-memory email, eager Celery, and MD5 password hashing. Tests that need Redis, real async Celery behavior, or production-like password hashing must opt into those settings explicitly. Pure unit tests should stay DB-free; DB tests must request `db` or use `@pytest.mark.django_db`.
+
+CI runs fast backend tests on push/PR without coverage. Backend coverage runs on the scheduled/manual coverage job.
 
 ---
 
