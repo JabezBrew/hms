@@ -45,3 +45,12 @@ scrape_configs:
       - files:
           - /etc/prometheus/client-targets/redis*.targets.yml
         refresh_interval: 1m
+
+  - job_name: tempo
+    static_configs:
+      - targets:
+          - tempo:3200
+        labels:
+          client: ops
+          environment: ops
+          service: tempo

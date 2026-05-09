@@ -14,6 +14,7 @@ REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
     'user': '10000/hour',
     'login': '100/minute',  # Increased from 5/minute for E2E tests
     'password_reset': '100/hour',
+    'rum': '1000/minute',
 }
 
 # Disable throttling classes entirely for tests (optional - uncomment if needed)

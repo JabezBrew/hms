@@ -30,6 +30,7 @@ services:
       - /etc/alloy/config.alloy
     environment:
       LOKI_WRITE_URL: ${LOKI_WRITE_URL:?set LOKI_WRITE_URL}
+      TEMPO_OTLP_ENDPOINT: ${TEMPO_OTLP_ENDPOINT:?set TEMPO_OTLP_ENDPOINT}
       OBS_CLIENT_SLUG: ${CLIENT_SLUG:?set CLIENT_SLUG}
       OBS_ENVIRONMENT: ${OBS_ENVIRONMENT:-production}
       OBS_COMPOSE_PROJECT_REGEX: ${OBS_COMPOSE_PROJECT_REGEX:-.*}
@@ -37,6 +38,10 @@ services:
       - ./alloy/docker-logs.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy
+    networks:
+      hms_internal:
+        aliases:
+          - hms-telemetry-alloy
     restart: unless-stopped
     logging: *telemetry-logging
 

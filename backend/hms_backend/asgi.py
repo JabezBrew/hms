@@ -12,9 +12,11 @@ For production, run with Daphne:
 import os
 
 from django.core.asgi import get_asgi_application
+from hms_backend.tracing import configure_tracing
 
 # Must set Django settings before importing anything else
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hms_backend.settings')
+configure_tracing()
 
 # Initialize Django ASGI application early to ensure AppRegistry is populated
 django_asgi_app = get_asgi_application()

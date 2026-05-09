@@ -12,6 +12,64 @@ This bundle provides self-hosted observability for Hetzner VPS deployments:
 The Telegram alerts intentionally do not dump raw logs. Every alert must explain
 what happened, why it matters, likely cause, first checks, and the runbook path.
 
+## Open Grafana Dashboards
+
+Open Grafana through an SSH tunnel. For staging from this laptop:
+
+```bash
+ssh -L 3001:127.0.0.1:3001 hms-staging
+```
+
+Then visit `http://127.0.0.1:3001` and open the `HMS` folder.
+
+Use the dashboards in this order during incidents:
+
+- `HMS Operability`: process readiness, dependency readiness, Celery worker
+  visibility, queue depth, uptime, and basic infrastructure health.
+- API/request dashboard, when provisioned: request rate, 5xx rate, p95 latency,
+  slow routes, and status-code breakdowns.
+- RUM/browser dashboard, when provisioned: browser page loads, frontend API
+  errors, client-side latency, and ingestion health.
+- Tracing/Tempo dashboard, when provisioned: representative traces for slow or
+  failing API calls and cross-service timing.
+
+If a dashboard is missing from the `HMS` folder, check
+`monitoring/grafana/provisioning/dashboards/dashboards.yml`, then check the
+Grafana container logs for dashboard JSON parse errors.
+
+## Signal Guide
+
+- Readiness tells you whether the API believes required dependencies are safe
+  enough to serve traffic. A ready API can still be slow or returning 5xxs.
+- Dependency readiness identifies database, PgBouncer, Redis, or other required
+  service failures from the API's point of view.
+- Request rate shows traffic volume. A sudden drop can mean users cannot reach
+  HMS; a sudden spike can explain saturation.
+- 5xx rate shows server-side failures. Treat sustained 5xxs as clinical workflow
+  impact until proven otherwise.
+- p95 API latency shows the slow experience for real users. HMS targets clinical
+  views below 200 ms p99; sustained p95 above alert threshold needs route-level
+  investigation.
+- RUM events show browser-side experience. Missing RUM after it is enabled means
+  frontend failures may be invisible.
+- Tempo traces show where time is spent across a request path. Tempo target
+  alerts only fire when Tempo scrape targets are configured in Prometheus.
+- Loki logs provide event context. Logs must remain PHI-safe and should be
+  filtered by service, environment, client, route, status, and request id.
+
+## PHI Safety Rules
+
+- Do not paste request bodies, clinical note text, patient identifiers, names,
+  phone numbers, addresses, accession numbers, or free-text clinical fields into
+  Telegram, GitHub, or tickets.
+- Use route templates, status codes, request ids, container names, and aggregate
+  counts for incident notes.
+- Prefer Grafana screenshots that show aggregate panels. Crop or redact any log
+  line that might include PHI before sharing.
+- Never change logging to dump request bodies while investigating an incident.
+- Treat browser telemetry as operational metadata only. RUM must not include page
+  text, form values, patient names, or raw URLs containing identifiers.
+
 ## Staging on the Same VPS
 
 Run this after the main HMS stack is healthy. The staging bundle joins the HMS
@@ -35,10 +93,31 @@ docker compose --env-file ops/hetzner-client-vps/.env \
 Open dashboards through an SSH tunnel:
 
 ```bash
-ssh -L 3001:127.0.0.1:3001 deploy@staging-vps
+ssh -L 3001:127.0.0.1:3001 hms-staging
 ```
 
 Then visit `http://127.0.0.1:3001`.
+
+## Validate Staging
+
+After deploying monitoring changes to staging:
+
+1. Confirm the monitoring stack is running:
+   `docker compose -f monitoring/docker-compose.monitoring.yml ps`.
+2. Open Grafana through the SSH tunnel and confirm the `HMS` folder contains the
+   expected dashboards.
+3. In Prometheus, check `Status > Targets` and confirm `hms-api`, `node`,
+   `cadvisor`, `postgres`, and `redis` are up.
+4. Load `/api/health/ready/` and `/api/metrics/` through the private metrics
+   proxy from the monitoring container or host.
+5. Generate one authenticated staging page load and one normal API request, then
+   confirm request metrics move on the API dashboard when that dashboard is
+   provisioned.
+6. If RUM is enabled, generate a staging page load and confirm
+   `hms_rum_events_total` increases without sending PHI fields.
+7. If Tempo is enabled, confirm the Tempo scrape target is up and one staging API
+   request produces a trace.
+8. Check Alertmanager logs for template errors before relying on Telegram.
 
 ## Production Ops VPS
 
@@ -116,6 +195,27 @@ must include:
 This keeps Telegram useful during incidents without sending PHI or noisy log
 blocks into the chat.
 
+## First-Response Workflow
+
+1. Read the Telegram fields in order: `what_happened`, `why_it_matters`,
+   `likely_cause`, `first_checks`, then `runbook`.
+2. Open Grafana through the SSH tunnel and inspect the dashboard named by the
+   alert. Confirm whether the symptom is still active.
+3. Determine blast radius: one client or all clients, one service or several,
+   one route or global API degradation.
+4. Check Prometheus targets before chasing application causes. A scrape failure
+   can mean observability is broken rather than HMS itself.
+5. Use Loki with labels first, for example
+   `{client="<client>", environment="<env>", service="api"}`. Narrow by route,
+   status, and request id; do not search for patient names or clinical text.
+6. SSH to the VPS only after metrics/logs identify the affected host or
+   container. Start with `docker compose ps`, targeted service logs, disk,
+   memory, and recent deploy history.
+7. If API latency or 5xxs are route-specific, inspect query count, database
+   panels, and recent backend changes for that route before restarting services.
+8. Record the incident using aggregate facts: time window, client, environment,
+   affected service, alert name, route template, status code class, and fix.
+
 ## Troubleshooting
 
 Check targets:
@@ -143,10 +243,6 @@ Check private API metrics from the ops VPS:
 curl -fsS http://10.90.0.11:9188/api/metrics/ | head
 ```
 
-Useful first response pattern:
-
-1. Read the Telegram alert fields, especially `first_checks`.
-2. Open Grafana through SSH tunnel and inspect the affected target.
-3. Query Loki by `{client="<client>", environment="<env>", service="<service>"}`.
-4. SSH to the affected VPS only if metrics/logs identify a host or container
-   issue.
+For alert rules, every Prometheus alert must keep the Telegram annotation
+contract: `summary`, `what_happened`, `why_it_matters`, `likely_cause`,
+`first_checks`, and `runbook`.

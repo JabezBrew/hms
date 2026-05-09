@@ -41,6 +41,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - tempo
     networks:
       - monitoring
     restart: unless-stopped
@@ -54,6 +55,19 @@ services:
       - loki-data:/loki
     ports:
       - "127.0.0.1:3100:3100"
+    networks:
+      - monitoring
+    restart: unless-stopped
+    logging: *monitoring-logging
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: -config.file=/etc/tempo/tempo-local.yaml
+    volumes:
+      - ./tempo/tempo-local.yaml:/etc/tempo/tempo-local.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
     networks:
       - monitoring
     restart: unless-stopped
@@ -82,6 +96,7 @@ services:
       - /etc/alloy/config.alloy
     environment:
       LOKI_WRITE_URL: http://loki:3100/loki/api/v1/push
+      TEMPO_OTLP_ENDPOINT: tempo:4317
       OBS_CLIENT_SLUG: ${CLIENT_SLUG:-staging}
       OBS_ENVIRONMENT: ${OBS_ENVIRONMENT:-staging}
       OBS_COMPOSE_PROJECT_REGEX: ${OBS_COMPOSE_PROJECT_REGEX:-.*}
@@ -91,8 +106,10 @@ services:
       - alloy-data:/var/lib/alloy
     depends_on:
       - loki
+      - tempo
     networks:
       - monitoring
+      - hms_internal
     restart: unless-stopped
     logging: *monitoring-logging
 
@@ -176,6 +193,7 @@ volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  tempo-data:
   alloy-data:
   alertmanager-data:
 

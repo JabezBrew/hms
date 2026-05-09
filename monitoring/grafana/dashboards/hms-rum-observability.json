@@ -1,0 +1,128 @@
+{
+  "uid": "hms-rum-observability",
+  "title": "HMS Browser RUM Observability",
+  "tags": ["hms", "observability", "rum"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "client",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "query": "label_values(hms_browser_rum_events_total, client)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "query": "label_values(hms_browser_rum_events_total, environment)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true
+      },
+      {
+        "name": "route",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "query": "label_values(hms_browser_rum_events_total{client=~\"$client\",environment=~\"$environment\"}, route)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "RUM Event Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (type, name) (rate(hms_browser_rum_events_total{client=~\"$client\",environment=~\"$environment\",route=~\"$route\"}[$__rate_interval]))",
+          "legendFormat": "{{type}} {{name}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "RUM Enabled",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "max(hms_rum_enabled{client=~\"$client\",environment=~\"$environment\"})",
+          "legendFormat": "enabled"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Browser API p95",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hms_browser_rum_duration_seconds_bucket{client=~\"$client\",environment=~\"$environment\",route=~\"$route\",type=\"api\"}[$__rate_interval])))",
+          "legendFormat": "api p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "title": "Web Vitals And Navigation",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 7 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum by (name, le) (rate(hms_browser_rum_duration_seconds_bucket{client=~\"$client\",environment=~\"$environment\",route=~\"$route\",type=~\"navigation|web-vital\"}[$__rate_interval])))",
+          "legendFormat": "{{name}} p75"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "title": "Slow Browser Routes",
+      "type": "table",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "expr": "topk(10, histogram_quantile(0.95, sum by (route, le) (rate(hms_browser_rum_duration_seconds_bucket{client=~\"$client\",environment=~\"$environment\",type=~\"navigation|api\"}[$__rate_interval]))))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "title": "Browser API Status Mix",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(hms_browser_rum_events_total{client=~\"$client\",environment=~\"$environment\",route=~\"$route\",type=\"api\"}[$__rate_interval]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    }
+  ]
+}

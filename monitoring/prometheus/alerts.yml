@@ -40,6 +40,65 @@ groups:
           first_checks: "Use the dependency label to identify the failing service, then check docker health, container logs, memory pressure, and disk availability."
           runbook: "monitoring/README.md#troubleshooting"
 
+  - name: hms-api-experience
+    rules:
+      - alert: HMSApiHigh5xxRate
+        expr: |
+          (
+            (
+              sum by (client, environment) (rate(hms_http_requests_total{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum by (client, environment) (rate(hms_http_requests_total[5m])), 0.001)
+            ) > 0.02
+            and
+            sum by (client, environment) (rate(hms_http_requests_total[5m])) > 0.1
+          )
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: HMS API 5xx rate is elevated
+          what_happened: "More than 2 percent of API requests have returned 5xx responses for five minutes."
+          why_it_matters: "Clinical workflows may be failing even if the process and readiness checks still look healthy."
+          likely_cause: "Recent deploy regression, database/cache outage, exhausted worker threads, unhandled exception, or a downstream service failure."
+          first_checks: "Open the API request dashboard, split errors by route/status, check Loki for the same route and time window, then inspect the API container logs without pasting PHI into chat."
+          runbook: "monitoring/README.md#first-response-workflow"
+
+      - alert: HMSApiHighP95Latency
+        expr: |
+          (
+            histogram_quantile(
+              0.95,
+              sum by (client, environment, le) (rate(hms_http_request_duration_seconds_bucket[5m]))
+            ) > 0.75
+          )
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS API p95 latency is high
+          what_happened: "The API p95 request latency has stayed above 750 ms for ten minutes."
+          why_it_matters: "Slow clinical views delay bedside work and often arrive before full outages."
+          likely_cause: "Slow database query, N+1 regression, PgBouncer saturation, Redis latency, CPU pressure, or a noisy route introduced by a deploy."
+          first_checks: "Open the request latency dashboard, identify the slowest route, compare database/container panels for the same window, then check logs for slow request entries."
+          runbook: "monitoring/README.md#first-response-workflow"
+
+      - alert: HMSRumIngestionMissing
+        expr: |
+          (hms_rum_enabled == 1)
+          unless on (client, environment)
+          (sum by (client, environment) (increase(hms_browser_rum_events_total[15m])) > 0)
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS RUM ingestion is missing
+          what_happened: "Frontend RUM is marked enabled, but Prometheus has not seen browser telemetry events for at least 15 minutes."
+          why_it_matters: "Frontend load failures, browser-side API errors, and real-user latency may be invisible during an incident."
+          likely_cause: "RUM endpoint disabled, frontend env mismatch, collector/API route failing, ad blocker or CSP blocking telemetry, or the staging site has no browser traffic."
+          first_checks: "Confirm RUM is intentionally enabled for this environment, generate one staging page load, check the browser network request, then check API logs and the RUM ingestion panel."
+          runbook: "monitoring/README.md#validate-staging"
+
   - name: hms-workers
     rules:
       - alert: HMSCeleryWorkersMissing
@@ -159,4 +218,17 @@ groups:
           why_it_matters: "Cache, Channels, and Celery broker health may be invisible."
           likely_cause: "The exporter is down, Redis is unavailable, or the internal Docker network is broken."
           first_checks: "Check redis-exporter logs, redis container health, and Redis memory usage."
+          runbook: "monitoring/README.md#troubleshooting"
+
+      - alert: HMSTempoTargetDown
+        expr: up{job=~"tempo|tempo-distributor|tempo-query-frontend|tempo-gateway"} == 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: HMS tracing target is unreachable
+          what_happened: "Prometheus cannot scrape one of the configured Tempo tracing targets."
+          why_it_matters: "Distributed traces may be missing when debugging slow or failing requests."
+          likely_cause: "Tempo is down, the tracing collector is down, the target file is wrong, or the private monitoring network cannot reach the tracing service."
+          first_checks: "Check Prometheus targets for the Tempo job, then inspect Tempo or collector logs and confirm the private scrape address from the monitoring host."
           runbook: "monitoring/README.md#troubleshooting"

@@ -619,6 +619,8 @@ REST_FRAMEWORK = {
     }
 }
 
+HMS_RUM_ENABLED = env.bool('HMS_RUM_ENABLED', default=False)
+
 # CORS settings
 # Filter out invalid origins (e.g., empty or just "https://")
 _cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://localhost:5173'])

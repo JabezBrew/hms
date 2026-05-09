@@ -51,3 +51,33 @@ loki.write "hms" {
     environment = sys.env("OBS_ENVIRONMENT"),
   }
 }
+
+otelcol.receiver.otlp "hms" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.batch.hms_traces.input]
+  }
+}
+
+otelcol.processor.batch "hms_traces" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = sys.env("TEMPO_OTLP_ENDPOINT")
+
+    tls {
+      insecure = true
+    }
+  }
+}

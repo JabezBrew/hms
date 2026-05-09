@@ -40,6 +40,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - tempo
     networks:
       - monitoring
     restart: unless-stopped
@@ -54,6 +55,47 @@ services:
     ports:
       - "127.0.0.1:3100:3100"
       - "${OPS_WG_IP:?set OPS_WG_IP}:3100:3100"
+    networks:
+      - monitoring
+    restart: unless-stopped
+    logging: *monitoring-logging
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: -config.file=/etc/tempo/tempo-local.yaml
+    volumes:
+      - ./tempo/tempo-local.yaml:/etc/tempo/tempo-local.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+    networks:
+      - monitoring
+    restart: unless-stopped
+    logging: *monitoring-logging
+
+  alloy:
+    image: grafana/alloy:v1.7.5
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy
+      - /etc/alloy/config.alloy
+    environment:
+      LOKI_WRITE_URL: http://loki:3100/loki/api/v1/push
+      TEMPO_OTLP_ENDPOINT: tempo:4317
+      OBS_CLIENT_SLUG: ${OBS_CLIENT_SLUG:-ops}
+      OBS_ENVIRONMENT: ${OBS_ENVIRONMENT:-ops}
+      OBS_COMPOSE_PROJECT_REGEX: ${OBS_COMPOSE_PROJECT_REGEX:-.*}
+    volumes:
+      - ./alloy/docker-logs.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
+    ports:
+      - "${OPS_WG_IP:?set OPS_WG_IP}:4317:4317"
+      - "${OPS_WG_IP:?set OPS_WG_IP}:4318:4318"
+    depends_on:
+      - loki
+      - tempo
     networks:
       - monitoring
     restart: unless-stopped
@@ -87,6 +129,8 @@ volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  tempo-data:
+  alloy-data:
   alertmanager-data:
 
 networks:

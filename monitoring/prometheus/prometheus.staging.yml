@@ -21,6 +21,8 @@ scrape_configs:
       - targets:
           - metrics-proxy:9188
         labels:
+          client: staging
+          environment: staging
           service: api
 
   - job_name: node
@@ -28,6 +30,8 @@ scrape_configs:
       - targets:
           - node-exporter:9100
         labels:
+          client: staging
+          environment: staging
           service: node
 
   - job_name: cadvisor
@@ -35,6 +39,8 @@ scrape_configs:
       - targets:
           - cadvisor:8080
         labels:
+          client: staging
+          environment: staging
           service: containers
 
   - job_name: postgres
@@ -42,6 +48,8 @@ scrape_configs:
       - targets:
           - postgres-exporter:9187
         labels:
+          client: staging
+          environment: staging
           service: postgres
 
   - job_name: redis
@@ -49,4 +57,15 @@ scrape_configs:
       - targets:
           - redis-exporter:9121
         labels:
+          client: staging
+          environment: staging
           service: redis
+
+  - job_name: tempo
+    static_configs:
+      - targets:
+          - tempo:3200
+        labels:
+          client: staging
+          environment: staging
+          service: tempo

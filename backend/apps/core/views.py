@@ -263,6 +263,11 @@ def health_ready(_request):
 @permission_classes([AllowAny])
 def metrics_view(_request):
     publish_celery_operability_metrics(get_cached_celery_operability())
+    set_gauge(
+        'hms_rum_enabled',
+        1 if getattr(settings, 'HMS_RUM_ENABLED', False) else 0,
+        description='Whether browser real user monitoring is expected for this environment.',
+    )
 
     body = render_prometheus_metrics()
     response = HttpResponse(body, content_type='text/plain; version=0.0.4; charset=utf-8')
