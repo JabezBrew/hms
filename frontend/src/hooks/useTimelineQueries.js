@@ -194,12 +194,49 @@ function normalizeTimelinePage(data) {
  * @param {Object} options - Query options (type, search, page_size, start_date, end_date, encounter_id)
  * @returns {Promise} - Paginated timeline data
  */
-export async function fetchTimelinePage(patientId, options = {}) {
+export async function fetchTimelinePage(patientId, options = {}, requestOptions = {}) {
   const endpoint = buildTimelineEndpoint(patientId, options);
 
   // Use getWithPagination to get the full response including pagination info
-  const data = await apiClient.getWithPagination(endpoint);
+  const data = await apiClient.getWithPagination(endpoint, requestOptions);
   return normalizeTimelinePage(data);
+}
+
+export async function fetchAllTimelineEntries(patientId, options = {}, requestOptions = {}) {
+  const pageSize = options.page_size || options.pageSize || 100;
+  const maxPages = options.maxPages || 100;
+  const entries = [];
+  let page = 1;
+  let latestPage = null;
+
+  while (page <= maxPages) {
+    const pageData = await fetchTimelinePage(
+      patientId,
+      {
+        ...options,
+        page,
+        page_size: pageSize,
+      },
+      requestOptions,
+    );
+
+    latestPage = pageData;
+    entries.push(...(pageData.results || []));
+
+    if (!pageData.has_next) {
+      break;
+    }
+    page += 1;
+  }
+
+  return {
+    ...(latestPage || {}),
+    results: entries,
+    count: latestPage?.count ?? entries.length,
+    page: 1,
+    has_next: latestPage?.has_next && page > maxPages,
+    page_size: pageSize,
+  };
 }
 
 /**
@@ -238,7 +275,7 @@ export function usePatientTimeline(patientId, options = {}) {
     // Use primitive values in query key to prevent unnecessary refetches
     // React Query does deep comparison but object identity changes can cause issues
     queryKey: timelineKeys.listParams(patientId, type, search, pageSize, startDate, endDate, encounterId),
-    queryFn: ({ pageParam = 1 }) => fetchTimelinePage(patientId, {
+    queryFn: ({ pageParam = 1, signal }) => fetchTimelinePage(patientId, {
       type,
       search,
       page: pageParam,
@@ -246,7 +283,7 @@ export function usePatientTimeline(patientId, options = {}) {
       start_date: startDate,
       end_date: endDate,
       encounter_id: encounterId,
-    }),
+    }, { signal }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       // Return the next page number if there are more pages

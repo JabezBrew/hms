@@ -79,6 +79,14 @@ const DISCHARGE_CASE_ROLES = new Set([
   'billing',
 ]);
 
+const CHRONICLE_TYPE_MAPPING = {
+  all: 'all',
+  progress_note: 'notes',
+  vitals: 'vitals',
+  medication: 'prescriptions',
+  lab_result: 'labs',
+};
+
 function getEncounterKind(encounter) {
   const encounterType = encounter?.encounter_type || encounter?.type;
   return typeof encounterType === 'string' ? encounterType.toLowerCase() : 'outpatient';
@@ -558,14 +566,6 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [vitalsId, vitalsRecordedAt, latestVitals]);
 
   // Map filter to API type
-  const typeMapping = {
-    'all': 'all',
-    'progress_note': 'notes',
-    'vitals': 'vitals',
-    'medication': 'prescriptions',
-    'lab_result': 'labs',
-  };
-
   // Fetch timeline with infinite scroll
   // Uses id from URL params to start fetching immediately in parallel with patient data
   const {
@@ -576,7 +576,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     isLoading: isTimelineLoading,
     refetch: refetchTimeline,
   } = usePatientTimeline(id, {
-    type: typeMapping[activeFilter] || 'all',
+    type: CHRONICLE_TYPE_MAPPING[activeFilter] || 'all',
     search: debouncedSearch,
     pageSize: 20,
     encounterId: selectedEncounterId || undefined,
@@ -1045,6 +1045,32 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('insurance');
   }, [openChronicleWorkspace]);
 
+  const handlePrintSummary = useCallback(() => {
+    if (!id) {
+      return;
+    }
+
+    const printParams = new URLSearchParams();
+    const printVisitScope = selectedEncounterId || CHRONICLE_ALL_VISITS;
+    printParams.set(CHRONICLE_VISIT_PARAM, printVisitScope);
+
+    const printType = CHRONICLE_TYPE_MAPPING[activeFilter] || 'all';
+    if (printType !== 'all') {
+      printParams.set('type', printType);
+    }
+
+    const trimmedSearch = searchInput.trim();
+    if (trimmedSearch) {
+      printParams.set('search', trimmedSearch);
+    }
+
+    window.open(
+      `/patients/${id}/chronicle/print?${printParams.toString()}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }, [activeFilter, id, searchInput, selectedEncounterId]);
+
   const handleVisitScopeChange = useCallback((nextVisitScope) => {
     const nextSearch = buildChronicleSearch(location.search, {
       updates: {
@@ -1362,6 +1388,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
           onStartWardRound={handleStartWardRound}
           onStartDischarge={handleStartDischarge}
           onManageInsurance={handleManageInsurance}
+          onPrintSummary={handlePrintSummary}
           insurance={patientInsurance}
           activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
         />

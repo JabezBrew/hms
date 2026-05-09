@@ -55,6 +55,7 @@ const PatientIdentityHero = ({
   onStartWardRound,
   onStartDischarge,
   onManageInsurance,
+  onPrintSummary,
   insurance = [],
   activeAdmission,
   activeVisit,
@@ -524,7 +525,7 @@ const PatientIdentityHero = ({
                 </>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => window.print()}>Print Summary</DropdownMenuItem>
+              <DropdownMenuItem onClick={onPrintSummary || (() => window.print())}>Print Summary</DropdownMenuItem>
               {onShareRecord && (
                 <DropdownMenuItem
                   onClick={onShareRecord}

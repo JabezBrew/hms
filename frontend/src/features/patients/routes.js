@@ -7,6 +7,7 @@ const PatientCreatePage = lazy(() => import('./pages/PatientCreatePage'))
 const MyPatientsPage = lazy(() => import('./pages/MyPatientsPage'))
 const PatientPage = lazy(() => import('./pages/PatientPage'))
 const PatientEditPage = lazy(() => import('./pages/PatientEditPage'))
+const PatientChroniclePrintPage = lazy(() => import('./pages/PatientChroniclePrintPage'))
 
 export const patientRoutes = [
   {
@@ -52,6 +53,18 @@ export const patientRoutes = [
     breadcrumbs: [
       { label: 'Patients', path: '/patients' },
       { label: 'Patient', path: '/patients/:id' },
+    ],
+  },
+  {
+    path: '/patients/:id/chronicle/print',
+    component: PatientChroniclePrintPage,
+    roles: ROLE_GROUPS.CLINICAL,
+    features: ['patient_chronicle'],
+    layout: ROUTE_LAYOUTS.BARE,
+    title: 'Patient Chronicle Print | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Patients', path: '/patients' },
+      { label: 'Print Chronicle', path: '/patients/:id/chronicle/print' },
     ],
   },
   {
