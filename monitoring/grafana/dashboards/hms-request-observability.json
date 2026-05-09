@@ -99,7 +99,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "targets": [
         {
-          "expr": "topk(10, histogram_quantile(0.95, sum by (route, le) (rate(hms_http_request_duration_seconds_bucket{client=~\"$client\",environment=~\"$environment\"}[$__rate_interval]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (route, le) (rate(hms_http_request_duration_seconds_bucket{client=~\"$client\",environment=~\"$environment\"}[$__rate_interval]))) > 0)",
           "format": "table",
           "instant": true
         }
