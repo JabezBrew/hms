@@ -27,6 +27,11 @@ urlpatterns = [
         views.omni_search,
         name='omni-search',
     ),
+    path(
+        'observability/rum/',
+        views.rum_ingest,
+        name='rum-ingest',
+    ),
     # Fluid Balance Settings
     path(
         'settings/fluid-balance/',

@@ -615,6 +615,7 @@ REST_FRAMEWORK = {
         'user': '5000/hour' if not DEBUG else '50000/hour',
         'login': '5/minute' if not DEBUG else '100/minute',
         'password_reset': '3/hour',
+        'rum': '120/minute',
     }
 }
 

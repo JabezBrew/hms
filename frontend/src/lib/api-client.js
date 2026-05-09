@@ -4,6 +4,7 @@
 import { toast } from 'sonner';
 import { getClientDeviceLabel } from './device-label';
 import { getApiBasePathname, getApiBaseUrl } from './runtime-config';
+import { configureRumAuth, recordApiTiming } from './observability/rum';
 
 const AUTH_ENDPOINTS = [
   '/auth/login/',
@@ -83,10 +84,12 @@ export function setAuthTokenProvider(tokenGetter, tokenSetter, refreshFailureHan
   getAccessToken = tokenGetter;
   setAccessTokenFn = tokenSetter;
   onRefreshFailure = refreshFailureHandler;
+  configureRumAuth({ getAccessToken, getFacilityCode });
 }
 
 export function setFacilityCodeProvider(facilityGetter) {
   getFacilityCode = facilityGetter;
+  configureRumAuth({ getAccessToken, getFacilityCode });
 }
 
 /**
@@ -198,6 +201,8 @@ function getCsrfToken() {
  */
 async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
   const url = `${getApiBaseUrl()}${endpoint}`;
+  const startedAt = globalThis?.performance?.now?.() ?? Date.now();
+  let observedStatus = null;
 
   // Skip token refresh for auth endpoints.
   // Note: `/auth/token/refresh/` is intentionally excluded from AUTH_ENDPOINTS.
@@ -264,6 +269,7 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
       headers,
       credentials: 'include', // Include cookies for refresh token
     });
+    observedStatus = response.status;
 
     // Parse response data
     let data;
@@ -367,6 +373,14 @@ async function fetchWithAuth(endpoint, options = {}, retryWithRefresh = true) {
       0,
       { originalError: error }
     );
+  } finally {
+    const endedAt = globalThis?.performance?.now?.() ?? Date.now();
+    recordApiTiming({
+      endpoint,
+      method: options.method || 'GET',
+      durationMs: endedAt - startedAt,
+      status: observedStatus,
+    });
   }
 }
 

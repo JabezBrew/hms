@@ -1,21 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api-client';
 import { laboratoryApi } from '../api/laboratory';
+import { __resetRumForTests, flushRum } from '../observability/rum';
 
 describe('apiClient runtime config integration', () => {
   const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__;
   const originalFetch = globalThis.fetch;
+  const originalSendBeacon = globalThis.navigator.sendBeacon;
 
   beforeEach(() => {
     globalThis.window.__HMS_RUNTIME_CONFIG__ = {
       apiBaseUrl: 'https://api.example.com/api',
     };
     globalThis.fetch = vi.fn();
+    globalThis.navigator.sendBeacon = vi.fn(() => true);
+    __resetRumForTests();
   });
 
   afterEach(() => {
+    __resetRumForTests();
     globalThis.window.__HMS_RUNTIME_CONFIG__ = originalRuntimeConfig;
     globalThis.fetch = originalFetch;
+    globalThis.navigator.sendBeacon = originalSendBeacon;
     vi.clearAllMocks();
   });
 
@@ -107,5 +113,41 @@ describe('apiClient runtime config integration', () => {
     await expect(
       laboratoryApi.getLabOrdersPaginated({}, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
+  });
+
+  it('records API timing without changing the response shape', async () => {
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+      apiBaseUrl: 'https://api.example.com/api',
+      rumEnabled: true,
+    };
+    globalThis.navigator.sendBeacon = vi.fn(() => false);
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [{ id: 1 }], next: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const data = await apiClient.get('/patients/PAT-928374/chronicle/', {
+      params: { tab: 'labs' },
+    });
+    expect(data).toEqual([{ id: 1 }]);
+
+    flushRum();
+
+    expect(globalThis.navigator.sendBeacon).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    const [, request] = globalThis.fetch.mock.calls[1];
+    expect(JSON.parse(request.body)).toMatchObject({
+      events: [
+        {
+          type: 'api',
+          name: 'duration',
+          route: '/patients/:id/chronicle',
+          method: 'get',
+          status: '200',
+        },
+      ],
+    });
   });
 });

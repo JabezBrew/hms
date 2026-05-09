@@ -7,10 +7,11 @@ import time
 import uuid
 
 from rest_framework import status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.throttling import UserRateThrottle
 
 from django.conf import settings
 from django.core.cache import cache
@@ -21,7 +22,7 @@ from django.http import HttpResponse
 from apps.users.rbac import IsAdmin
 from .features import effective_feature_state
 from .models import Facility, FeatureEntitlementOverride, FacilityFluidBalanceSettings
-from .metrics import render_prometheus_metrics, set_gauge
+from .metrics import inc_counter, observe_histogram, render_prometheus_metrics, set_gauge
 from .observability import get_cached_celery_operability, publish_celery_operability_metrics
 from .pagination import StandardResultsSetPagination
 from .serializers import (
@@ -45,6 +46,95 @@ from hms_backend.feature_manifest import FEATURE_MANIFEST
 
 
 PROCESS_STARTED_AT = time.time()
+RUM_MAX_EVENTS = 20
+RUM_SAFE_LABEL_RE = re.compile(r'^[a-z0-9:_./-]{1,120}$')
+RUM_ALLOWED_TYPES = {'navigation', 'web-vital', 'api'}
+RUM_ALLOWED_METHODS = {'get', 'post', 'put', 'patch', 'delete', 'head', 'options'}
+RUM_ALLOWED_STATUS_RE = re.compile(r'^(network|aborted|[1-5][0-9]{2})$')
+
+
+class RumRateThrottle(UserRateThrottle):
+    scope = 'rum'
+
+
+def _safe_rum_label(value, *, max_length=80):
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized or len(normalized) > max_length:
+        return None
+    if not RUM_SAFE_LABEL_RE.fullmatch(normalized):
+        return None
+    return normalized
+
+
+def _scrub_rum_route(value):
+    if not isinstance(value, str) or '?' in value or '#' in value:
+        return None
+    path = value.strip().split('://', 1)[-1]
+    if '/' in path and not path.startswith('/'):
+        path = '/' + path.split('/', 1)[1]
+    if not path.startswith('/'):
+        path = '/' + path
+
+    segments = []
+    for raw_segment in path.split('/'):
+        if not raw_segment:
+            continue
+        segment = raw_segment.strip().lower()
+        if not re.fullmatch(r'[a-z0-9_.:-]{1,48}', segment):
+            return None
+        if (
+            segment.isdigit()
+            or re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', segment)
+            or re.fullmatch(r'(pat|mrn|enc|adm|ord|inv|rx|lab)[-_][a-z0-9-]{4,}', segment)
+            or (len(segment) >= 10 and re.search(r'[0-9]', segment) and re.search(r'[a-z]', segment))
+        ):
+            segments.append(':id')
+        else:
+            segments.append(segment)
+        if len(segments) >= 8:
+            break
+
+    route = '/' + '/'.join(segments)
+    if len(route) > 120:
+        return '/too-deep'
+    return route or '/'
+
+
+def _validate_rum_event(event):
+    if not isinstance(event, dict):
+        return None, 'Each event must be an object.'
+
+    event_type = _safe_rum_label(event.get('type'))
+    name = _safe_rum_label(event.get('name'))
+    route = _scrub_rum_route(event.get('route'))
+    if event_type not in RUM_ALLOWED_TYPES or not name or not route:
+        return None, 'Event contains unsafe labels.'
+
+    try:
+        value = float(event.get('value'))
+    except (TypeError, ValueError):
+        return None, 'Event value must be numeric.'
+    if value < 0 or value > 120000:
+        return None, 'Event value is out of range.'
+
+    method = _safe_rum_label(event.get('method') or 'none')
+    if method != 'none' and method not in RUM_ALLOWED_METHODS:
+        return None, 'Event method is unsafe.'
+
+    status_label = _safe_rum_label(str(event.get('status') or 'none'))
+    if status_label != 'none' and not RUM_ALLOWED_STATUS_RE.fullmatch(status_label):
+        return None, 'Event status is unsafe.'
+
+    return {
+        'type': event_type,
+        'name': name,
+        'route': route,
+        'value_seconds': value / 1000.0,
+        'method': method,
+        'status': status_label,
+    }, None
 
 
 def _health_response(check_name: str, ok: bool, *, dependencies: dict | None = None, status_code: int = 200):
@@ -178,6 +268,53 @@ def metrics_view(_request):
     response = HttpResponse(body, content_type='text/plain; version=0.0.4; charset=utf-8')
     response['Cache-Control'] = 'no-store'
     return response
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([RumRateThrottle])
+def rum_ingest(request):
+    events = request.data.get('events') if isinstance(request.data, dict) else None
+    if not isinstance(events, list):
+        return Response({'detail': 'events must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(events) > RUM_MAX_EVENTS:
+        return Response(
+            {'detail': f'events must contain at most {RUM_MAX_EVENTS} items.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    validated_events = []
+    for event in events:
+        validated, error = _validate_rum_event(event)
+        if error:
+            return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+        validated_events.append(validated)
+
+    for event in validated_events:
+        labels = {
+            'type': event['type'],
+            'name': event['name'],
+            'route': event['route'],
+            'method': event['method'],
+            'status': event['status'],
+        }
+        inc_counter(
+            'hms_browser_rum_events_total',
+            labels=labels,
+            description='Browser real user monitoring events accepted by the backend.',
+        )
+        observe_histogram(
+            'hms_browser_rum_duration_seconds',
+            event['value_seconds'],
+            labels=labels,
+            description='Browser real user monitoring event durations in seconds.',
+            buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
+        )
+
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+rum_ingest.exclude_from_http_metrics = True
 
 
 class FacilityScopedViewSet(FacilityScopedQuerysetMixin, FacilityScopedCreateMixin, viewsets.ModelViewSet):
