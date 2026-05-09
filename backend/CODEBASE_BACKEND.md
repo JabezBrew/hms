@@ -388,7 +388,18 @@ The global autouse DB fixture has been removed. Pure unit tests should not touch
 When a reused local test database is stale after migration or seed-data changes, rebuild it once:
 
 ```bash
+docker compose up -d postgres redis
 pytest -n auto --create-db
+```
+
+Local development uses the same PostgreSQL credentials as CI:
+
+```text
+DB_NAME=hms
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_HOST=localhost
+DB_PORT=5432
 ```
 
 ### 12.2 Coverage and CI

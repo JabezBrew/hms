@@ -1,6 +1,6 @@
 # Docker Compose for HMS Development
 #
-# Starts all services needed for local development:
+# Starts all services needed for full-container local development:
 # - PostgreSQL (primary + replica)
 # - Redis (cache + channels)
 # - Django API (gunicorn)
@@ -10,11 +10,13 @@
 # - React frontend (nginx)
 #
 # Usage:
-#   docker-compose -f docker/docker-compose.yml up -d
-#   docker-compose -f docker/docker-compose.yml logs -f api
-#   docker-compose -f docker/docker-compose.yml down
-
-version: '3.8'
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml logs -f api
+#   docker compose -f docker/docker-compose.yml down
+#
+# For the usual host-based backend/frontend workflow, prefer the root
+# compose.yml dependency stack:
+#   docker compose up -d postgres redis
 
 services:
   # ===================
@@ -26,8 +28,8 @@ services:
     container_name: hms-db
     environment:
       POSTGRES_DB: hms
-      POSTGRES_USER: hms_user
-      POSTGRES_PASSWORD: hms_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_INITDB_ARGS: "--data-checksums"
     command:
       - "postgres"
@@ -48,7 +50,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hms_user -d hms"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hms"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,8 +62,8 @@ services:
     container_name: hms-db-replica
     environment:
       POSTGRES_DB: hms
-      POSTGRES_USER: hms_user
-      POSTGRES_PASSWORD: hms_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       PRIMARY_HOST: db
       PGDATA: /var/lib/postgresql/data
     entrypoint: ["/bin/bash", "/setup-replica.sh"]
@@ -80,7 +82,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hms_user -d hms"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hms"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -120,8 +122,8 @@ services:
       - DEBUG=True
       - SECRET_KEY=dev-secret-key-change-in-production
       - DB_NAME=hms
-      - DB_USER=hms_user
-      - DB_PASSWORD=hms_password
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
       - DB_REPLICA_HOST=db-replica
@@ -169,8 +171,8 @@ services:
       - DEBUG=True
       - SECRET_KEY=dev-secret-key-change-in-production
       - DB_NAME=hms
-      - DB_USER=hms_user
-      - DB_PASSWORD=hms_password
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
       - REDIS_URL=redis://redis:6379/0
@@ -205,8 +207,8 @@ services:
       - DEBUG=True
       - SECRET_KEY=dev-secret-key-change-in-production
       - DB_NAME=hms
-      - DB_USER=hms_user
-      - DB_PASSWORD=hms_password
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
       - REDIS_URL=redis://redis:6379/0
@@ -239,8 +241,8 @@ services:
       - DEBUG=True
       - SECRET_KEY=dev-secret-key-change-in-production
       - DB_NAME=hms
-      - DB_USER=hms_user
-      - DB_PASSWORD=hms_password
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
       - REDIS_URL=redis://redis:6379/0

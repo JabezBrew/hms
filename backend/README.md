@@ -76,7 +76,7 @@ The web deployment then relies on `/api/health/ready/` and `FAIL_ON_PENDING_MIGR
 ### Prerequisites
 
 - Python 3.8+
-- Redis (will be checked by startup script)
+- Docker Desktop or another Docker daemon for local PostgreSQL/Redis
 - Virtual environment with dependencies installed
 
 ```bash
@@ -87,9 +87,15 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Start local PostgreSQL and Redis. These credentials match CI and settings_test.py.
+cd ..
+docker compose up -d postgres redis
+cd backend
+
 # Set up environment variables
 cp .env.example .env
-# Edit .env with your configuration
+# Keep the default local DB values unless you intentionally use another database:
+# DB_NAME=hms DB_USER=postgres DB_PASSWORD=postgres DB_HOST=localhost DB_PORT=5432
 
 # Run migrations
 python manage.py migrate
@@ -149,19 +155,18 @@ Phase 2 (Core Backend Development) has been fully implemented with the following
 
 ## Running the Tests
 
-To run the tests, use the following command:
+To run the backend pytest suite:
 
 ```bash
 cd backend
-python manage.py test
+source .venv/bin/activate
+pytest -n auto --create-db
 ```
 
-To run tests for a specific app:
+For normal reruns after the reused test databases exist:
 
 ```bash
-python manage.py test apps.users
-python manage.py test apps.patients
-python manage.py test apps.fhir_client
+pytest -n auto
 ```
 
 ## Project Structure

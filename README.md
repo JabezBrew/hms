@@ -32,7 +32,7 @@ The Hospital Management System is designed to integrate with Google Cloud Health
 
 - Python 3.9+
 - Node.js 16+
-- PostgreSQL 12+
+- Docker Desktop or another Docker daemon for local PostgreSQL/Redis
 - Google Cloud account with Healthcare API enabled (for production)
 
 ### Backend Setup
@@ -50,15 +50,16 @@ The Hospital Management System is designed to integrate with Google Cloud Health
    pip install -r backend/requirements.txt
    ```
 
-3. Create a PostgreSQL database:
+3. Start local service dependencies:
    ```bash
-   createdb hms
+   docker compose up -d postgres redis
    ```
 
 4. Configure environment variables:
    ```bash
    cp backend/.env.example backend/.env
-   # Edit backend/.env with your database credentials and other settings
+   # The default local database credentials match compose.yml and CI:
+   # DB_NAME=hms DB_USER=postgres DB_PASSWORD=postgres DB_HOST=localhost DB_PORT=5432
    ```
 
 5. Run migrations:
@@ -76,6 +77,25 @@ The Hospital Management System is designed to integrate with Google Cloud Health
    ```bash
    python manage.py runserver
    ```
+
+### Backend Tests
+
+The local and CI test database credentials are intentionally the same. Start
+Postgres and Redis first, then run pytest from `backend/`:
+
+```bash
+docker compose up -d postgres redis
+cd backend
+source .venv/bin/activate
+pytest -n auto --create-db
+```
+
+Use `--create-db` when rebuilding stale reused test databases. Normal reruns can
+use:
+
+```bash
+pytest -n auto
+```
 
 ### Frontend Setup
 

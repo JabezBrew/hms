@@ -206,15 +206,13 @@ import { PatientChronicleCard, TimelineEntry, ClinicalSummarySidebar, PatientIde
 ### Commands
 ```bash
 # Backend (from backend/, venv activated)
+docker compose up -d postgres redis                        # From repo root; starts local Postgres/Redis
 pytest path/to/test.py -v --tb=short                     # Specific file
 pytest path/to/test.py::TestClass -v --tb=short          # Specific class
 pytest apps/app_name/tests/ -v --tb=short                # App tests
 pytest -n auto                                           # Fast full suite
 pytest -n auto --create-db                               # Rebuild stale reused test DB once
 pytest --cov=apps --cov-report=term-missing --cov-report=html # Coverage run
-
-# Local Postgres override when the DB role is the macOS user rather than postgres
-DB_NAME=hms DB_USER=jebre DB_PASSWORD= DB_HOST=localhost DB_PORT=5432 pytest -n auto --reuse-db
 
 # Migrations
 python manage.py makemigrations && python manage.py migrate
