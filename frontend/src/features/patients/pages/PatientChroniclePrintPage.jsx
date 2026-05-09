@@ -81,16 +81,6 @@ function formatDate(value) {
   });
 }
 
-function formatDateTimeRange(start, end) {
-  const formattedStart = formatDateTime(start);
-  if (formattedStart === EMPTY_VALUE) return EMPTY_VALUE;
-
-  const formattedEnd = formatDateTime(end);
-  if (formattedEnd === EMPTY_VALUE) return formattedStart;
-
-  return `${formattedStart} to ${formattedEnd}`;
-}
-
 function titleize(value) {
   return String(value || '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -288,15 +278,6 @@ function getLabLine(entry) {
   ]).join(' | ');
 }
 
-function field(label, value) {
-  return [label, value];
-}
-
-function keepPrintableField([, value], summaryText = '') {
-  const formatted = compactValue(value);
-  return formatted && formatted.toLowerCase() !== summaryText.trim().toLowerCase();
-}
-
 function getSupportingFields(entry, summary) {
   const data = entry.data || {};
   const summaryText = summary || '';
@@ -309,69 +290,42 @@ function getSupportingFields(entry, summary) {
 
   if (entry.entry_type === 'prescription' || entry.type === 'medication' || entry.type === 'prescription') {
     return [
-      field('Dose', data.dose || data.dosage),
-      field('Route', data.route_display || data.route),
-      field('Frequency', data.frequency_display || data.frequency),
-      field('Duration', data.duration_days ? `${data.duration_days} days` : ''),
-      field('Start date', data.start_date ? formatDate(data.start_date) : ''),
-      field('End date', data.end_date ? formatDate(data.end_date) : ''),
-      field('Status', data.status_display || data.status),
-      field('Reason', data.reason),
-      field('Instructions', data.instructions || data.notes),
-      field('Discontinue reason', data.discontinue_reason),
-    ].filter((item) => keepPrintableField(item, summaryText));
+      ['Reason', data.reason],
+      ['Instructions', data.instructions || data.notes],
+      ['Discontinue reason', data.discontinue_reason],
+    ].filter(([, value]) => {
+      const formatted = compactValue(value);
+      return formatted && formatted.toLowerCase() !== summaryText.trim().toLowerCase();
+    });
   }
 
   if (entry.entry_type === 'vitals' || entry.type === 'vitals') {
     return [
-      field('Blood pressure', data.blood_pressure),
-      field('Heart rate', data.heart_rate),
-      field('Temperature', data.temperature),
-      field('Oxygen saturation', data.oxygen_saturation),
-      field('Respiratory rate', data.respiratory_rate),
-      field('Pain level', data.pain_level),
-      field('Notes', data.notes),
-    ].filter((item) => keepPrintableField(item, summaryText));
+      ['Notes', data.notes],
+    ].filter(([, value]) => compactValue(value));
   }
 
   if (entry.entry_type === 'lab_result' || entry.type === 'lab_result') {
     return [
-      field('Order number', data.order_number),
-      field('Priority', data.priority_display || data.priority),
-      field('Status', data.status_display || data.status),
-      field('Ordered at', data.ordered_at ? formatDateTime(data.ordered_at) : ''),
-      field('Completed at', data.completed_at ? formatDateTime(data.completed_at) : ''),
-      field('Clinical notes', data.clinical_notes),
-      field('Results summary', data.results_summary),
-      field('Tests ordered', data.tests_ordered),
-      field('Results', data.results),
-      field('Tests', data.tests),
-    ].filter((item) => keepPrintableField(item, summaryText));
+      ['Clinical notes', data.clinical_notes],
+      ['Results summary', data.results_summary],
+    ].filter(([, value]) => compactValue(value));
   }
 
   if (entry.entry_type === 'referral' || entry.type === 'referral') {
     return [
-      field('Referral number', data.referral_number),
-      field('Status', data.status_display || data.status),
-      field('Urgency', data.urgency_display || data.urgency),
-      field('Referring department', data.referring_department),
-      field('Referred to specialty', data.referred_to_specialty),
-      field('Referred to department', data.referred_to_department),
-      field('Referred to provider', data.referred_to_provider),
-      field('Reason', data.reason),
-      field('Clinical summary', data.clinical_summary),
-      field('Question', data.questions_for_specialist),
-      field('Specialist notes', data.specialist_notes),
-      field('Recommendations', data.recommendations),
-    ].filter((item) => keepPrintableField(item, summaryText));
+      ['Reason', data.reason],
+      ['Clinical summary', data.clinical_summary],
+      ['Question', data.questions_for_specialist],
+      ['Specialist notes', data.specialist_notes],
+      ['Recommendations', data.recommendations],
+    ].filter(([, value]) => compactValue(value));
   }
 
   if (entry.entry_type === 'chart' || entry.type === 'chart') {
     return [
-      field('Template', data.template_name),
-      field('Scope', data.scope_type),
-      field('Notes', data.notes),
-    ].filter((item) => keepPrintableField(item, summaryText));
+      ['Notes', data.notes],
+    ].filter(([, value]) => compactValue(value));
   }
 
   return Object.entries(data)
@@ -436,7 +390,7 @@ function SupportingFields({ fields, isNote }) {
       {fields.map(([key, value]) => (
         <div
           key={key}
-          className={isNote ? 'print-note-section border-l-2 border-neutral-400 pl-3' : 'grid grid-cols-[7.5rem_1fr] gap-2 border-t border-neutral-300 pt-1.5'}
+          className={isNote ? 'border-l-2 border-neutral-300 pl-3' : 'grid grid-cols-[7.5rem_1fr] gap-2 border-t border-neutral-200 pt-1.5'}
         >
           <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">
             {titleize(key)}
@@ -493,13 +447,14 @@ function EncounterSection({ encounter, entries }) {
   const location = encounter?.location || encounter?.department_name || encounter?.ward_name;
 
   return (
-    <section className="print-section print-box border border-neutral-400 bg-white">
+    <section className="print-section border-t-2 border-neutral-900">
       <header className="print-section-header border-b border-neutral-300 py-2">
-        <div className="grid gap-3 px-3 sm:grid-cols-[1fr_14rem]">
+        <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
           <div>
             <h3 className="text-[14px] font-semibold leading-5 text-neutral-950">{titleize(encounterType)}</h3>
             <p className="font-mono text-[10px] text-neutral-600">
-              {formatDateTimeRange(encounter?.start_time, encounter?.end_time)}
+              {formatDate(encounter?.start_time)}
+              {encounter?.end_time ? ` to ${formatDate(encounter.end_time)}` : ''}
             </p>
           </div>
           <div className="font-mono text-[10px] leading-5 text-neutral-600 sm:text-right">
@@ -509,7 +464,7 @@ function EncounterSection({ encounter, entries }) {
           </div>
         </div>
       </header>
-      <div className="px-3">
+      <div>
         {entries.map((entry) => (
           <PrintEntry key={`${entry.type}-${entry.id || entry.timestamp}`} entry={entry} />
         ))}
@@ -520,7 +475,7 @@ function EncounterSection({ encounter, entries }) {
 
 function SummaryList({ title, items, getLabel }) {
   return (
-    <section className="print-box break-inside-avoid border border-neutral-400">
+    <section className="break-inside-avoid border border-neutral-300">
       <h3 className="border-b border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-600">
         {title}
       </h3>
@@ -591,17 +546,6 @@ export default function PatientChroniclePrintPage() {
     (timelineQuery.data?.results || []).map(normalizeTimelineEntryForPrint)
   ), [timelineQuery.data]);
   const groupedEntries = useMemo(() => groupEntriesByEncounter(entries, encounters), [entries, encounters]);
-  const visitScopeLabel = useMemo(() => {
-    if (resolvedVisitScope === CHRONICLE_ALL_VISITS) {
-      return 'All history';
-    }
-
-    const selectedEncounter = encounters.find((encounter) => String(encounter.id) === String(resolvedVisitScope))
-      || activeEncounter;
-    const range = formatDateTimeRange(selectedEncounter?.start_time, selectedEncounter?.end_time);
-
-    return range === EMPTY_VALUE ? 'Selected visit' : range;
-  }, [activeEncounter, encounters, resolvedVisitScope]);
   const allergies = chronicleContext?.allergies || [];
   const medications = chronicleContext?.active_medications || [];
   const latestVitals = chronicleContext?.latest_vitals ? [chronicleContext.latest_vitals] : [];
@@ -630,12 +574,6 @@ export default function PatientChroniclePrintPage() {
           font-size: 12px;
           line-height: 1.45;
         }
-        .print-box {
-          box-shadow: inset 0 0 0 1px #a3a3a3;
-        }
-        .print-note-section {
-          box-shadow: inset 2px 0 0 #a3a3a3;
-        }
         @media print {
           html {
             background: white !important;
@@ -650,13 +588,6 @@ export default function PatientChroniclePrintPage() {
             margin: 0 !important;
             max-width: none !important;
             box-shadow: none !important;
-          }
-          .print-box {
-            box-shadow: inset 0 0 0 1px #737373 !important;
-          }
-          .print-note-section {
-            border-left: 0 !important;
-            box-shadow: inset 2px 0 0 #737373 !important;
           }
           .print-entry-data,
           .print-section-header {
@@ -713,11 +644,11 @@ export default function PatientChroniclePrintPage() {
                   <div className="font-mono text-[11px] leading-5 text-neutral-600 sm:text-right">
                     <div>Printed {formatDateTime(new Date())}</div>
                     <div>Printed by {user?.full_name || user?.username || user?.email || EMPTY_VALUE}</div>
-                    <div>{visitScopeLabel}</div>
+                    <div>{resolvedVisitScope === CHRONICLE_ALL_VISITS ? 'All history' : 'Selected visit'}</div>
                   </div>
                 </div>
 
-                <dl className="print-box mt-4 grid grid-cols-2 border border-neutral-400 text-[12px] sm:grid-cols-4">
+                <dl className="mt-4 grid grid-cols-2 border border-neutral-300 text-[12px] sm:grid-cols-4">
                   <div>
                     <dt className="border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-500">MRN</dt>
                     <dd className="px-3 py-2 font-mono">{patientDetails.mrn}</dd>
