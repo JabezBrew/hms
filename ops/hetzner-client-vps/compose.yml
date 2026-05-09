@@ -150,6 +150,7 @@ services:
       WS_URL: ${FRONTEND_WS_URL:-}
       DEFAULT_FACILITY_CODE: ${DEFAULT_FACILITY_CODE:?set DEFAULT_FACILITY_CODE in ops/hetzner-client-vps/.env}
       MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
+      RUM_ENABLED: ${HMS_RUM_ENABLED:-False}
     expose:
       - "80"
     networks:

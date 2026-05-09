@@ -21,6 +21,7 @@ ARG VITE_API_BASE_URL
 ARG VITE_WS_URL
 ARG VITE_DEFAULT_FACILITY_CODE
 ARG VITE_MULTI_FACILITY_MODE
+ARG VITE_RUM_ENABLED
 
 # Build the application
 RUN npm run build
@@ -32,11 +33,13 @@ ARG VITE_API_BASE_URL
 ARG VITE_WS_URL
 ARG VITE_DEFAULT_FACILITY_CODE
 ARG VITE_MULTI_FACILITY_MODE
+ARG VITE_RUM_ENABLED
 
 ENV API_BASE_URL=${VITE_API_BASE_URL} \
     WS_URL=${VITE_WS_URL} \
     DEFAULT_FACILITY_CODE=${VITE_DEFAULT_FACILITY_CODE} \
-    MULTI_FACILITY_MODE=${VITE_MULTI_FACILITY_MODE}
+    MULTI_FACILITY_MODE=${VITE_MULTI_FACILITY_MODE} \
+    RUM_ENABLED=${VITE_RUM_ENABLED}
 
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf.template
@@ -48,9 +51,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 RUN echo '#!/bin/sh' > /start.sh && \
     echo 'set -eu' >> /start.sh && \
     echo ': "${MULTI_FACILITY_MODE:=false}"' >> /start.sh && \
+    echo ': "${RUM_ENABLED:=false}"' >> /start.sh && \
     echo ': "${API_BASE_URL:=/api}"' >> /start.sh && \
     echo 'sed "s/PORT_PLACEHOLDER/${PORT:-80}/g" /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf' >> /start.sh && \
-    echo 'envsubst '"'"'${API_BASE_URL} ${WS_URL} ${DEFAULT_FACILITY_CODE} ${MULTI_FACILITY_MODE}'"'"' < /usr/share/nginx/html/runtime-config.js > /usr/share/nginx/html/runtime-config.js.tmp' >> /start.sh && \
+    echo 'envsubst '"'"'${API_BASE_URL} ${WS_URL} ${DEFAULT_FACILITY_CODE} ${MULTI_FACILITY_MODE} ${RUM_ENABLED}'"'"' < /usr/share/nginx/html/runtime-config.js > /usr/share/nginx/html/runtime-config.js.tmp' >> /start.sh && \
     echo 'mv /usr/share/nginx/html/runtime-config.js.tmp /usr/share/nginx/html/runtime-config.js' >> /start.sh && \
     echo 'exec nginx -g "daemon off;"' >> /start.sh && \
     chmod +x /start.sh
