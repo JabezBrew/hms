@@ -81,6 +81,16 @@ function formatDate(value) {
   });
 }
 
+function formatDateTimeRange(start, end) {
+  const formattedStart = formatDateTime(start);
+  if (formattedStart === EMPTY_VALUE) return EMPTY_VALUE;
+
+  const formattedEnd = formatDateTime(end);
+  if (formattedEnd === EMPTY_VALUE) return formattedStart;
+
+  return `${formattedStart} - ${formattedEnd}`;
+}
+
 function titleize(value) {
   return String(value || '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -309,6 +319,7 @@ function getSupportingFields(entry, summary) {
     return [
       ['Clinical notes', data.clinical_notes],
       ['Results summary', data.results_summary],
+      ['Results', data.results],
     ].filter(([, value]) => compactValue(value));
   }
 
@@ -396,11 +407,62 @@ function SupportingFields({ fields, isNote }) {
             {titleize(key)}
           </dt>
           <dd className="whitespace-pre-wrap text-[12px] leading-5 text-neutral-900">
-            {formatValue(value)}
+            {key === 'Results' && Array.isArray(value) ? (
+              <LabResults results={value} />
+            ) : (
+              formatValue(value)
+            )}
           </dd>
         </div>
       ))}
     </dl>
+  );
+}
+
+function LabResults({ results }) {
+  const printableResults = (results || []).filter((result) => result && typeof result === 'object');
+
+  if (printableResults.length === 0) {
+    return null;
+  }
+
+  return (
+    <table className="mt-1 w-full border-collapse text-left text-[11px] leading-4">
+      <thead>
+        <tr className="border-b border-neutral-300 font-mono text-[9px] uppercase tracking-[0.1em] text-neutral-500">
+          <th className="py-1 pr-2 font-normal">Test</th>
+          <th className="py-1 pr-2 font-normal">Result</th>
+          <th className="py-1 pr-2 font-normal">Reference</th>
+          <th className="py-1 font-normal">Flag</th>
+        </tr>
+      </thead>
+      <tbody>
+        {printableResults.map((result, index) => {
+          const resultValue = [
+            result.value ?? result.result_value ?? result.numeric_value,
+            result.unit,
+          ].filter(Boolean).join(' ');
+          const flag = result.abnormal_flag || result.flag || result.status_display || result.status;
+
+          return (
+            <tr key={result.id || `${result.test_name || result.name || 'result'}-${index}`} className="border-b border-neutral-200 last:border-b-0">
+              <td className="py-1 pr-2 align-top text-neutral-950">
+                {result.test_name || result.name || result.test || result.analyte || EMPTY_VALUE}
+              </td>
+              <td className="py-1 pr-2 align-top font-mono text-neutral-900">
+                {resultValue || result.result || result.display || EMPTY_VALUE}
+              </td>
+              <td className="py-1 pr-2 align-top font-mono text-neutral-700">
+                {result.reference_range || result.reference || EMPTY_VALUE}
+              </td>
+              <td className="py-1 align-top font-mono text-neutral-700">
+                {flag || EMPTY_VALUE}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -546,6 +608,17 @@ export default function PatientChroniclePrintPage() {
     (timelineQuery.data?.results || []).map(normalizeTimelineEntryForPrint)
   ), [timelineQuery.data]);
   const groupedEntries = useMemo(() => groupEntriesByEncounter(entries, encounters), [entries, encounters]);
+  const visitScopeLabel = useMemo(() => {
+    if (resolvedVisitScope === CHRONICLE_ALL_VISITS) {
+      return 'All history';
+    }
+
+    const selectedEncounter = encounters.find((encounter) => String(encounter.id) === String(resolvedVisitScope))
+      || activeEncounter;
+    const range = formatDateTimeRange(selectedEncounter?.start_time, selectedEncounter?.end_time);
+
+    return range === EMPTY_VALUE ? 'Selected Visit' : `Selected Visit: ${range}`;
+  }, [activeEncounter, encounters, resolvedVisitScope]);
   const allergies = chronicleContext?.allergies || [];
   const medications = chronicleContext?.active_medications || [];
   const latestVitals = chronicleContext?.latest_vitals ? [chronicleContext.latest_vitals] : [];
@@ -644,7 +717,7 @@ export default function PatientChroniclePrintPage() {
                   <div className="font-mono text-[11px] leading-5 text-neutral-600 sm:text-right">
                     <div>Printed {formatDateTime(new Date())}</div>
                     <div>Printed by {user?.full_name || user?.username || user?.email || EMPTY_VALUE}</div>
-                    <div>{resolvedVisitScope === CHRONICLE_ALL_VISITS ? 'All history' : 'Selected visit'}</div>
+                    <div>{visitScopeLabel}</div>
                   </div>
                 </div>
 
