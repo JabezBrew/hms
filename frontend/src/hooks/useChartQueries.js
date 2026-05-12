@@ -8,6 +8,9 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { v2Api } from '@/lib/api/v2/client';
+import { handleV2ApiError } from '@/lib/api/v2/errors';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { immutableMetadataQueryOptions } from '@/lib/react-query';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
@@ -22,6 +25,8 @@ import { invalidatePatientTimelineQueries } from '@/hooks/useTimelineQueries';
 // =============================================================================
 // Query Keys
 // =============================================================================
+
+const MAX_CHART_ENTRY_PAGE_SIZE = 50;
 
 const chartKeyFactory = createKeyFactory('charts');
 
@@ -60,6 +65,94 @@ function normalizeIdentifier(value) {
     return value.id ?? value.uuid ?? null;
   }
   return null;
+}
+
+function createRustV2ChartBuilderUnsupportedError(surface = 'Chart builder') {
+  return new Error(
+    `${surface} is unavailable in Rust V2 mode: no generated /api/v2 chart builder contract exists.`,
+  );
+}
+
+function ensureRustV2ChartBuilderSupported(surface) {
+  if (isRustV2ApiMode()) {
+    throw createRustV2ChartBuilderUnsupportedError(surface);
+  }
+}
+
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function rethrowV2ChartError(error, message) {
+  rethrowAbortError(error);
+  throw new Error(handleV2ApiError(error, message));
+}
+
+function safeChartEntryLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return MAX_CHART_ENTRY_PAGE_SIZE;
+  }
+  return Math.min(parsed, MAX_CHART_ENTRY_PAGE_SIZE);
+}
+
+function adaptV2ChartEntry(item = {}) {
+  const entryType = item.entry_type || 'observation';
+  const value = item.value ?? '';
+  return {
+    ...item,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    observation_datetime: item.measured_at,
+    measured_at: item.measured_at,
+    entry_type: entryType,
+    data: {
+      [entryType]: value,
+    },
+    has_critical_values: false,
+  };
+}
+
+function adaptV2ChartEntriesResponse(response = {}) {
+  const results = (response?.data || []).map(adaptV2ChartEntry);
+  return {
+    count: results.length,
+    results,
+    page: 1,
+    total_pages: 1,
+    has_next: Boolean(response?.page?.has_next),
+    has_previous: false,
+    next_cursor: response?.page?.next_cursor || null,
+  };
+}
+
+function normalizeV2ChartEntryPayload(entryData = {}) {
+  const patientId = normalizeIdentifier(
+    entryData.patient_id || entryData.patientId || entryData.patient,
+  );
+  if (!patientId) {
+    throw createRustV2ChartBuilderUnsupportedError('Chart entry assignment recording');
+  }
+
+  const entryType = entryData.entry_type || entryData.type || entryData.field_key;
+  const measuredAt = entryData.measured_at || entryData.observation_datetime || new Date().toISOString();
+  const value = entryData.value ?? entryData.data?.[entryType];
+
+  if (!entryType || value === undefined || value === null || value === '') {
+    throw new Error('Patient chart entry requires entry_type and value in Rust V2 mode.');
+  }
+
+  return {
+    patientId,
+    payload: {
+      entry_type: entryType,
+      measured_at: measuredAt,
+      value: String(value),
+      ...(entryData.unit !== undefined ? { unit: entryData.unit } : {}),
+    },
+  };
 }
 
 function getCachedAssignment(queryClient, assignmentId) {
@@ -243,6 +336,7 @@ export function useChartTemplates(filters = {}) {
     // Use primitive values in query key to prevent duplicate calls from object reference changes
     queryKey: keyWith('charts', 'templates', 'list', category, visibility, search, is_active),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart templates');
       return await apiClient.get(`/charts/templates/?${params.toString()}`, { signal });
     },
     enabled,
@@ -258,6 +352,7 @@ export function useChartTemplate(templateId) {
   return useQuery({
     queryKey: chartKeys.templateDetail(templateId),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart template detail');
       return await apiClient.get(`/charts/templates/${templateId}/`, { signal });
     },
     enabled: !!templateId,
@@ -274,6 +369,7 @@ export function useChartCategories(options = {}) {
   return useQuery({
     queryKey: chartKeys.categories(),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart template categories');
       const response = await apiClient.get('/charts/templates/categories/', { signal });
       return response.categories;
     },
@@ -292,6 +388,7 @@ export function useChartIntervals(options = {}) {
   return useQuery({
     queryKey: chartKeys.intervals(),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart monitoring intervals');
       const response = await apiClient.get('/charts/templates/intervals/', { signal });
       return response.intervals;
     },
@@ -312,6 +409,7 @@ export function useCreateChartTemplate() {
 
   return useMutation({
     mutationFn: async (templateData) => {
+      ensureRustV2ChartBuilderSupported('Chart template creation');
       return await apiClient.post('/charts/templates/', templateData);
     },
     onSuccess: (data) => {
@@ -337,6 +435,7 @@ export function useUpdateChartTemplate() {
 
   return useMutation({
     mutationFn: async ({ templateId, data }) => {
+      ensureRustV2ChartBuilderSupported('Chart template update');
       return await apiClient.patch(`/charts/templates/${templateId}/`, data);
     },
     onSuccess: (data, { templateId }) => {
@@ -359,6 +458,7 @@ export function useDeleteChartTemplate() {
 
   return useMutation({
     mutationFn: async (templateId) => {
+      ensureRustV2ChartBuilderSupported('Chart template deletion');
       await apiClient.delete(`/charts/templates/${templateId}/`);
       return templateId;
     },
@@ -381,6 +481,7 @@ export function useCloneChartTemplate() {
 
   return useMutation({
     mutationFn: async (templateId) => {
+      ensureRustV2ChartBuilderSupported('Chart template cloning');
       return await apiClient.post(`/charts/templates/${templateId}/clone/`);
     },
     onSuccess: () => {
@@ -406,6 +507,7 @@ export function useAddChartField() {
 
   return useMutation({
     mutationFn: async ({ templateId, fieldData }) => {
+      ensureRustV2ChartBuilderSupported('Chart template field creation');
       return await apiClient.post(`/charts/templates/${templateId}/fields/`, fieldData);
     },
     onSuccess: (data, { templateId }) => {
@@ -427,6 +529,7 @@ export function useUpdateChartField() {
 
   return useMutation({
     mutationFn: async ({ templateId, fieldId, fieldData }) => {
+      ensureRustV2ChartBuilderSupported('Chart template field update');
       return await apiClient.patch(
         `/charts/templates/${templateId}/fields/${fieldId}/`,
         fieldData
@@ -451,6 +554,7 @@ export function useDeleteChartField() {
 
   return useMutation({
     mutationFn: async ({ templateId, fieldId }) => {
+      ensureRustV2ChartBuilderSupported('Chart template field deletion');
       await apiClient.delete(`/charts/templates/${templateId}/fields/${fieldId}/delete/`);
       return { templateId, fieldId };
     },
@@ -473,6 +577,7 @@ export function useReorderChartFields() {
 
   return useMutation({
     mutationFn: async ({ templateId, fields }) => {
+      ensureRustV2ChartBuilderSupported('Chart template field reorder');
       return await apiClient.patch(
         `/charts/templates/${templateId}/fields/reorder/`,
         { fields }
@@ -514,6 +619,7 @@ export function useChartAssignments(filters = {}, options = {}) {
     // Use primitive values in query key to prevent duplicate calls from object reference changes
     queryKey: keyWith('charts', 'assignments', 'list', patient, admission, encounter_id, template, status, scope_type, all_history, page_size, ordering),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart assignments');
       return await apiClient.get(`/charts/assignments/?${params.toString()}`, { signal });
     },
     enabled,
@@ -563,6 +669,7 @@ export function usePaginatedChartAssignments(filters = {}, options = {}) {
       page_size,
     ),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Paginated chart assignments');
       const response = await apiClient.getWithPagination(`/charts/assignments/?${params.toString()}`, { signal });
 
       if (Array.isArray(response)) {
@@ -606,6 +713,7 @@ export function useChartAssignment(assignmentId) {
   return useQuery({
     queryKey: chartKeys.assignmentDetail(assignmentId),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment detail');
       return await apiClient.get(`/charts/assignments/${assignmentId}/`, { signal });
     },
     enabled: !!assignmentId,
@@ -626,6 +734,7 @@ export function usePatientChartAssignments(patientId, status = 'active', filters
       filters.all_history,
     ),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Patient chart assignments');
       const params = new URLSearchParams({ patient_id: patientId });
       if (status) params.append('status', status);
       if (filters.admission_id) params.append('admission_id', filters.admission_id);
@@ -651,6 +760,7 @@ export function useCreateChartAssignment() {
 
   return useMutation({
     mutationFn: async (assignmentData) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment creation');
       return await apiClient.post('/charts/assignments/', assignmentData);
     },
     onSuccess: (data, variables) => {
@@ -688,6 +798,7 @@ export function useUpdateChartAssignment() {
 
   return useMutation({
     mutationFn: async ({ assignmentId, data }) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment update');
       return await apiClient.patch(`/charts/assignments/${assignmentId}/`, data);
     },
     onSuccess: (data, { assignmentId }) => {
@@ -714,6 +825,7 @@ export function useCompleteChartAssignment() {
 
   return useMutation({
     mutationFn: async (assignmentId) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment completion');
       return await apiClient.post(`/charts/assignments/${assignmentId}/complete/`);
     },
     onSuccess: (data, assignmentId) => {
@@ -740,6 +852,7 @@ export function usePauseChartAssignment() {
 
   return useMutation({
     mutationFn: async (assignmentId) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment pause');
       return await apiClient.post(`/charts/assignments/${assignmentId}/pause/`);
     },
     onSuccess: (data, assignmentId) => {
@@ -766,6 +879,7 @@ export function useResumeChartAssignment() {
 
   return useMutation({
     mutationFn: async (assignmentId) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment resume');
       return await apiClient.post(`/charts/assignments/${assignmentId}/resume/`);
     },
     onSuccess: (data, assignmentId) => {
@@ -792,6 +906,7 @@ export function useDiscontinueChartAssignment() {
 
   return useMutation({
     mutationFn: async ({ assignmentId, reason }) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment discontinuation');
       return await apiClient.post(
         `/charts/assignments/${assignmentId}/discontinue/`,
         { reason }
@@ -841,6 +956,7 @@ export function useChartEntries(filters = {}, options = {}) {
   return useQuery({
     queryKey: chartKeys.entryList(filters),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart assignment entries');
       return await apiClient.get(`/charts/entries/?${params.toString()}`, { signal });
     },
     enabled: !!filters.assignment && enabled,
@@ -854,6 +970,7 @@ export function useChartEntry(entryId) {
   return useQuery({
     queryKey: chartKeys.entryDetail(entryId),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart entry detail');
       return await apiClient.get(`/charts/entries/${entryId}/`, { signal });
     },
     enabled: !!entryId,
@@ -867,6 +984,7 @@ export function useChartEntrySummary(assignmentId, dateRange = {}) {
   return useQuery({
     queryKey: chartKeys.entrySummary(assignmentId, dateRange.start_date, dateRange.end_date),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart entry summary');
       const params = new URLSearchParams({ assignment_id: assignmentId });
       if (dateRange.start_date) params.append('start_date', dateRange.start_date);
       if (dateRange.end_date) params.append('end_date', dateRange.end_date);
@@ -890,6 +1008,7 @@ export function useChartEntryTrends(assignmentId, fieldKey, options = {}) {
   return useQuery({
     queryKey: chartKeys.entryTrends(assignmentId, fieldKey, component, start_date, end_date, limit),
     queryFn: async ({ signal }) => {
+      ensureRustV2ChartBuilderSupported('Chart entry trends');
       const params = new URLSearchParams({
         assignment_id: assignmentId,
         field_key: fieldKey,
@@ -918,6 +1037,20 @@ export function usePatientChartEntries(patientId, filters = {}) {
       filters.all_history,
     ),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          return adaptV2ChartEntriesResponse(await v2Api.getPatientChartEntries(
+            { patient_id: patientId },
+            {
+              query: { limit: safeChartEntryLimit(filters.limit) },
+              signal,
+            },
+          ));
+        } catch (error) {
+          rethrowV2ChartError(error, 'Failed to fetch patient chart entries');
+        }
+      }
+
       const params = new URLSearchParams({ patient_id: patientId });
       if (filters.template_id) params.append('template_id', filters.template_id);
       if (filters.admission_id) params.append('admission_id', filters.admission_id);
@@ -943,6 +1076,15 @@ export function useCreateChartEntry() {
 
   return useMutation({
     mutationFn: async (entryData) => {
+      if (isRustV2ApiMode()) {
+        const { patientId, payload } = normalizeV2ChartEntryPayload(entryData);
+        try {
+          const response = await v2Api.postPatientChartEntries({ patient_id: patientId }, payload);
+          return adaptV2ChartEntry(response?.data || response);
+        } catch (error) {
+          rethrowV2ChartError(error, 'Failed to record chart entry');
+        }
+      }
       return await apiClient.post('/charts/entries/', entryData);
     },
     onSuccess: (data, variables) => {
@@ -1002,6 +1144,7 @@ export function useUpdateChartEntry() {
 
   return useMutation({
     mutationFn: async ({ entryId, data }) => {
+      ensureRustV2ChartBuilderSupported('Chart entry update');
       return await apiClient.patch(`/charts/entries/${entryId}/`, data);
     },
     onSuccess: (data, { entryId }) => {
@@ -1037,6 +1180,7 @@ export function useDeleteChartEntry() {
 
   return useMutation({
     mutationFn: async ({ entryId, reason }) => {
+      ensureRustV2ChartBuilderSupported('Chart entry deletion');
       await apiClient.delete(`/charts/entries/${entryId}/`, { data: { reason } });
       return entryId;
     },
