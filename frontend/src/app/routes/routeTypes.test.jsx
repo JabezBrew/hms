@@ -127,6 +127,9 @@ describe('featureRoutes', () => {
     expect(routesByPath.get('/encounters/new')?.features).toEqual(
       expect.arrayContaining(['outpatient_encounters'])
     )
+    expect(routesByPath.get('/appointments/new')?.features).toEqual(
+      expect.arrayContaining(['appointments'])
+    )
     expect(routesByPath.get('/encounters/:id/clinical-notes')?.features).toEqual(
       expect.arrayContaining(['clinical_notes', 'outpatient_encounters'])
     )
