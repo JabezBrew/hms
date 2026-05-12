@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { prefetchPatientChronicleData } from '../prefetch'
+import { fetchChronicleContext } from '@/hooks/useChronicleContext'
 
 const mockPrefetchQuery = vi.fn().mockResolvedValue(undefined)
 const mockPrefetchInfiniteQuery = vi.fn().mockResolvedValue(undefined)
@@ -27,6 +28,7 @@ vi.mock('@/features/encounters/hooks/useEncounterQueries', () => ({
 
 vi.mock('@/hooks/useChronicleContext', () => ({
   chronicleKeys: { context: (id) => ['chronicle', 'context', id] },
+  fetchChronicleContext: vi.fn(),
 }))
 
 vi.mock('@/hooks/useTimelineQueries', () => ({
@@ -64,5 +66,17 @@ describe('prefetchPatientChronicleData hover mode', () => {
       Array.isArray(c[0]?.queryKey) && c[0].queryKey.includes('patient-3')
     )
     expect(detailCall).toBeDefined()
+  })
+
+  it('prefetches Chronicle context through the shared bridge in navigation mode', async () => {
+    const signal = new AbortController().signal
+    prefetchPatientChronicleData(queryClient, 'patient-4', { mode: 'navigation' })
+    const contextCall = mockPrefetchQuery.mock.calls.find((c) =>
+      Array.isArray(c[0]?.queryKey) && c[0].queryKey.includes('context')
+    )
+
+    expect(contextCall).toBeDefined()
+    await contextCall[0].queryFn({ signal })
+    expect(fetchChronicleContext).toHaveBeenCalledWith('patient-4', { signal })
   })
 })

@@ -2,8 +2,7 @@ import { patientsApi } from '@/features/patients/api'
 import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries'
 import { encountersApi } from '@/features/encounters/api'
-import { chronicleKeys } from '@/hooks/useChronicleContext'
-import { apiClient } from '@/lib/api-client'
+import { chronicleKeys, fetchChronicleContext } from '@/hooks/useChronicleContext'
 
 const PREFETCH_MODE = {
   HOVER: 'hover',
@@ -106,10 +105,7 @@ export function prefetchMyPatientsRoute() {
 function prefetchChronicleContext(queryClient, patientId) {
   return queryClient.prefetchQuery({
     queryKey: chronicleKeys.context(patientId),
-    queryFn: async () => {
-      const response = await apiClient.get(`/clinical-notes/chronicle/${patientId}/context/`)
-      return response?.data ?? response ?? {}
-    },
+    queryFn: ({ signal }) => fetchChronicleContext(patientId, { signal }),
     staleTime: 5 * 60 * 1000,
   })
 }
