@@ -20392,6 +20392,21 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/LabOrderStatus"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -20578,6 +20593,32 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/LabResultStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_verified",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
                 "null"
               ]
             }

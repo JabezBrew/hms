@@ -69,6 +69,17 @@ pub struct NewLabResult {
     pub actor_user_id: Uuid,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct LabOrderListFilters {
+    pub status: Option<LabOrderStatus>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct LabResultListFilters {
+    pub status: Option<LabResultStatus>,
+    pub is_verified: Option<bool>,
+}
+
 #[derive(Clone, Debug, FromRow)]
 struct TestRow {
     id: Uuid,
@@ -185,10 +196,15 @@ pub async fn list_orders(
     facility_id: Uuid,
     cursor: Option<LabCursor>,
     limit: i64,
+    filters: LabOrderListFilters,
 ) -> anyhow::Result<Vec<LabOrderListItem>> {
     let mut query = order_query();
     query.push(" WHERE lab_orders.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(status) = filters.status {
+        query.push(" AND lab_orders.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
     apply_cursor(&mut query, "lab_orders.ordered_at", "lab_orders.id", cursor);
     query.push(
         r#"
@@ -364,10 +380,22 @@ pub async fn list_results(
     facility_id: Uuid,
     cursor: Option<LabCursor>,
     limit: i64,
+    filters: LabResultListFilters,
 ) -> anyhow::Result<Vec<LabResultListItem>> {
     let mut query = result_query();
     query.push(" WHERE lab_results.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(status) = filters.status {
+        query.push(" AND lab_results.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    if let Some(is_verified) = filters.is_verified {
+        if is_verified {
+            query.push(" AND lab_results.verified_at IS NOT NULL");
+        } else {
+            query.push(" AND lab_results.verified_at IS NULL");
+        }
+    }
     apply_cursor(
         &mut query,
         "lab_results.entered_at",

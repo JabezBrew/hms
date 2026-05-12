@@ -1661,6 +1661,26 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     assert_eq!(orders_body["data"].as_array().unwrap().len(), 1);
     assert_eq!(orders_body["page"]["limit"], 1);
 
+    let ordered_orders = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/laboratory/orders?status=ordered&limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("status-filtered order list succeeds");
+    assert_eq!(ordered_orders.status(), StatusCode::OK);
+    let ordered_orders_body = json_body(ordered_orders).await;
+    assert!(ordered_orders_body["data"]
+        .as_array()
+        .expect("orders are an array")
+        .iter()
+        .all(|order| order["status"] == "ordered"));
+
     let specimen_response = app
         .clone()
         .oneshot(
@@ -1742,6 +1762,26 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .await
         .expect("result list succeeds");
     assert_eq!(results.status(), StatusCode::OK);
+
+    let unverified_results = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/laboratory/results?is_verified=false&limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("unverified result list succeeds");
+    assert_eq!(unverified_results.status(), StatusCode::OK);
+    let unverified_results_body = json_body(unverified_results).await;
+    assert!(unverified_results_body["data"]
+        .as_array()
+        .expect("results are an array")
+        .iter()
+        .all(|result| result["verified_at"].is_null()));
 
     let verify = app
         .clone()

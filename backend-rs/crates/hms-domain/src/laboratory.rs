@@ -120,3 +120,18 @@ pub struct LaboratoryListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct LaboratoryOrderListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<LabOrderStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct LaboratoryResultListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<LabResultStatus>,
+    pub is_verified: Option<bool>,
+}

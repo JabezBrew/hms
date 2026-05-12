@@ -29,7 +29,8 @@ use hms_db::inventory::{
     NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
 };
 use hms_db::laboratory::{
-    LabCursor, NewLabOrder, NewLabResult, NewSpecimen, OrderContext, ResultContext, SpecimenContext,
+    LabCursor, LabOrderListFilters, LabResultListFilters, NewLabOrder, NewLabResult, NewSpecimen,
+    OrderContext, ResultContext, SpecimenContext,
 };
 use hms_db::patients::{NewPatient, PatientContextCursor, PatientCursor, PatientUpdate};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
@@ -1404,8 +1405,16 @@ impl AppState {
         &self,
         cursor: Option<LabCursor>,
         limit: i64,
+        filters: LabOrderListFilters,
     ) -> Result<Vec<LabOrderListItem>> {
-        hms_db::laboratory::list_orders(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::laboratory::list_orders(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
     }
 
     pub async fn create_lab_order(
@@ -1476,8 +1485,16 @@ impl AppState {
         &self,
         cursor: Option<LabCursor>,
         limit: i64,
+        filters: LabResultListFilters,
     ) -> Result<Vec<LabResultListItem>> {
-        hms_db::laboratory::list_results(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::laboratory::list_results(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
     }
 
     pub async fn create_lab_result(

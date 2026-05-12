@@ -2,11 +2,208 @@
  * Laboratory API service
  */
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
     throw error;
   }
+}
+
+function rethrowV2Error(error, message) {
+  rethrowAbortError(error);
+  throw new Error(handleV2ApiError(error, message));
+}
+
+const labCursorCache = new Map();
+
+function hashForCache(value) {
+  let hash = 0;
+  const input = JSON.stringify(value);
+  for (let index = 0; index < input.length; index += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(index);
+    hash |= 0;
+  }
+  return String(hash);
+}
+
+function cursorCacheKey(scope, params = {}) {
+  const cacheParams = { ...(params || {}) };
+  delete cacheParams.page;
+  delete cacheParams.cursor;
+  delete cacheParams.next_cursor;
+  delete cacheParams.expand;
+  return `${scope}:${hashForCache(cacheParams)}`;
+}
+
+function getCursorForParams(scope, params = {}) {
+  if (params.cursor || params.next_cursor) {
+    return params.cursor || params.next_cursor;
+  }
+  const page = Number(params.page || 1);
+  if (page <= 1) {
+    return undefined;
+  }
+  return labCursorCache.get(`${cursorCacheKey(scope, params)}:${page}`);
+}
+
+function cacheCursorForNextPage(scope, params, response) {
+  const currentPage = Number(params?.page || 1);
+  const nextCursor = response?.page?.next_cursor;
+  if (!nextCursor) {
+    return;
+  }
+  labCursorCache.set(`${cursorCacheKey(scope, params)}:${currentPage + 1}`, nextCursor);
+}
+
+function normalizeV2Limit(params = {}, fallback = 25) {
+  const rawLimit = params.limit || params.page_size || fallback;
+  const parsed = Number.parseInt(String(rawLimit), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, 100);
+}
+
+function mapOrderStatusToV2(status) {
+  const normalized = String(status || '').toLowerCase();
+  const aliases = {
+    submitted: 'ordered',
+    ordered: 'ordered',
+    collected: 'specimen_collected',
+    specimen_collected: 'specimen_collected',
+    received: 'specimen_collected',
+    processing: 'result_entered',
+    result_entered: 'result_entered',
+    completed: 'verified',
+    verified: 'verified',
+    cancelled: 'cancelled',
+  };
+  return aliases[normalized] || undefined;
+}
+
+function testPlaceholders(orderId, testCount) {
+  const safeCount = Math.max(0, Number.parseInt(testCount, 10) || 0);
+  return Array.from({ length: safeCount }, (_, index) => ({
+    id: `${orderId}-test-${index + 1}`,
+    test: {
+      id: `${orderId}-test-${index + 1}`,
+      name: safeCount === 1 ? 'Ordered test' : `Ordered test ${index + 1}`,
+    },
+    result: null,
+  }));
+}
+
+function adaptV2LabOrder(item = {}) {
+  const patientCode = item.patient_code || '';
+  const orderNumber = item.order_number || String(item.id || '').slice(0, 8).toUpperCase();
+  const patientName = item.patient_display_name || item.patient_name || patientCode || 'Unknown patient';
+  const status = item.status;
+
+  return {
+    ...item,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_mrn: patientCode,
+    patient_name: patientName,
+    patient_details: {
+      id: item.patient_id,
+      medical_record_number: patientCode,
+      user_details: {
+        full_name: patientName,
+      },
+    },
+    order_number: orderNumber,
+    created_at: item.ordered_at,
+    ordered_at: item.ordered_at,
+    tests_count: item.test_count ?? 0,
+    order_tests: item.order_tests || testPlaceholders(item.id, item.test_count),
+    specimens: item.specimens || (status && status !== 'ordered'
+      ? [{
+          id: `${item.id}-specimen`,
+          barcode_number: 'Collected specimen',
+          status: 'collected',
+        }]
+      : []),
+  };
+}
+
+function adaptV2LabResult(item = {}) {
+  const patientCode = item.patient_code || '';
+  const orderNumber = item.order_number || String(item.order_id || '').slice(0, 8).toUpperCase();
+  const patientName = item.patient_display_name || item.patient_name || patientCode || 'Unknown patient';
+  const isVerified = Boolean(item.verified_at) || item.status === 'verified';
+
+  return {
+    ...item,
+    order: item.order_id,
+    patient: item.patient_id,
+    patient_mrn: patientCode,
+    patient_name: patientName,
+    order_number: orderNumber,
+    test_name: item.test_name,
+    is_verified: isVerified,
+    patient_details: {
+      id: item.patient_id,
+      medical_record_number: patientCode,
+      user_details: {
+        full_name: patientName,
+      },
+    },
+    test_details: {
+      id: item.test_id,
+      name: item.test_name,
+    },
+    order_test: {
+      order: item.order_id,
+      test: item.test_id,
+    },
+  };
+}
+
+function adaptV2PaginatedResponse(scope, response, params = {}, adapter) {
+  const limit = Number(response?.page?.limit || normalizeV2Limit(params));
+  const currentPage = Number(params.page || 1);
+  const results = Array.isArray(response?.data) ? response.data.map(adapter) : [];
+  const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+  const estimatedTotal = ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0);
+
+  cacheCursorForNextPage(scope, params, response);
+
+  return {
+    count: estimatedTotal,
+    total: estimatedTotal,
+    count_exact: false,
+    page: currentPage,
+    page_size: limit,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
+    next: hasNext ? response.page.next_cursor : null,
+    previous: currentPage > 1 ? String(currentPage - 1) : null,
+    next_cursor: response?.page?.next_cursor || null,
+    results,
+  };
+}
+
+function buildV2LabOrderQuery(params = {}) {
+  const query = { limit: normalizeV2Limit(params) };
+  const cursor = getCursorForParams('orders', params);
+  const status = mapOrderStatusToV2(params.status);
+  if (cursor) query.cursor = cursor;
+  if (status) query.status = status;
+  return query;
+}
+
+function buildV2LabResultQuery(params = {}) {
+  const query = { limit: normalizeV2Limit(params) };
+  const cursor = getCursorForParams('results', params);
+  if (cursor) query.cursor = cursor;
+  if (params.status) query.status = params.status;
+  if (params.is_verified !== undefined && params.is_verified !== null) {
+    query.is_verified = params.is_verified;
+  }
+  return query;
 }
 
 export const laboratoryApi = {
@@ -195,10 +392,21 @@ export const laboratoryApi = {
 
   getLabOrders: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratoryOrders({
+          query: buildV2LabOrderQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('orders', response, params, adaptV2LabOrder);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/orders/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab orders');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab orders'));
     }
@@ -206,10 +414,21 @@ export const laboratoryApi = {
 
   getLabOrdersPaginated: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratoryOrders({
+          query: buildV2LabOrderQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('orders', response, params, adaptV2LabOrder);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/orders/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab orders');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab orders'));
     }
@@ -330,10 +549,21 @@ export const laboratoryApi = {
 
   getLabResults: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratoryResults({
+          query: buildV2LabResultQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('results', response, params, adaptV2LabResult);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/results/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab results');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab results'));
     }
@@ -341,10 +571,21 @@ export const laboratoryApi = {
 
   getLabResultsPaginated: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratoryResults({
+          query: buildV2LabResultQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('results', response, params, adaptV2LabResult);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/results/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab results');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab results'));
     }

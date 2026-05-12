@@ -2,12 +2,16 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::laboratory::{LabCursor, OrderContext, ResultContext, SpecimenContext};
+use hms_db::laboratory::{
+    LabCursor, LabOrderListFilters, LabResultListFilters, OrderContext, ResultContext,
+    SpecimenContext,
+};
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
     CreateLabOrderRequest, CreateLabResultRequest, CreateSpecimenRequest, LabOrderListItem,
-    LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery, SpecimenListItem,
+    LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery,
+    LaboratoryOrderListQuery, LaboratoryResultListQuery, SpecimenListItem,
 };
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -90,7 +94,7 @@ pub async fn list_panels(
     operation_id = "getLaboratoryOrders",
     tag = "laboratory",
     security(("bearerAuth" = [])),
-    params(LaboratoryListQuery),
+    params(LaboratoryOrderListQuery),
     responses(
         (status = 200, description = "Laboratory orders", body = ListResponse<LabOrderListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -100,12 +104,18 @@ pub async fn list_panels(
 pub async fn list_orders(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<LaboratoryListQuery>,
+    Query(query): Query<LaboratoryOrderListQuery>,
 ) -> Result<Json<ListResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size) = page_request(query.cursor, query.limit)?;
     let rows = state
-        .list_lab_orders(cursor, page_size as i64 + 1)
+        .list_lab_orders(
+            cursor,
+            page_size as i64 + 1,
+            LabOrderListFilters {
+                status: query.status,
+            },
+        )
         .await
         .map_err(|_| {
             ApiError::conflict(
@@ -189,7 +199,7 @@ pub async fn list_specimens(
     Query(query): Query<LaboratoryListQuery>,
 ) -> Result<Json<ListResponse<SpecimenListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size) = page_request(query.cursor, query.limit)?;
     let rows = state
         .list_lab_specimens(cursor, page_size as i64 + 1)
         .await
@@ -245,7 +255,7 @@ pub async fn create_specimen(
     operation_id = "getLaboratoryResults",
     tag = "laboratory",
     security(("bearerAuth" = [])),
-    params(LaboratoryListQuery),
+    params(LaboratoryResultListQuery),
     responses(
         (status = 200, description = "Laboratory results", body = ListResponse<LabResultListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -255,12 +265,19 @@ pub async fn create_specimen(
 pub async fn list_results(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<LaboratoryListQuery>,
+    Query(query): Query<LaboratoryResultListQuery>,
 ) -> Result<Json<ListResponse<LabResultListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size) = page_request(query.cursor, query.limit)?;
     let rows = state
-        .list_lab_results(cursor, page_size as i64 + 1)
+        .list_lab_results(
+            cursor,
+            page_size as i64 + 1,
+            LabResultListFilters {
+                status: query.status,
+                is_verified: query.is_verified,
+            },
+        )
         .await
         .map_err(|_| {
             ApiError::conflict("lab_result_list_failed", "Lab results could not be loaded.")
@@ -468,10 +485,12 @@ fn has_permission(user: &AuthUser, permission: PermissionCode) -> bool {
     user.permissions.contains(&permission)
 }
 
-fn page_request(query: LaboratoryListQuery) -> Result<(Option<LabCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
+fn page_request(
+    cursor: Option<String>,
+    limit: Option<u8>,
+) -> Result<(Option<LabCursor>, u8), ApiError> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let cursor = cursor
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
