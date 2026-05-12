@@ -68,6 +68,49 @@ function adaptV2StaffListItem(item = {}) {
   };
 }
 
+function compactObject(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  );
+}
+
+function normalizeV2StaffCreatePayload(data = {}) {
+  const displayName = data.display_name
+    || [data.first_name, data.last_name].filter(Boolean).join(' ').trim()
+    || data.name
+    || data.email;
+
+  const practitionerProfile = data.practitioner_profile
+    ?? (
+      data.license_number || data.specialization || data.qualification
+        ? compactObject({
+          license_number: data.license_number,
+          specialization: data.specialization,
+          qualification: data.qualification,
+        })
+        : undefined
+    );
+
+  return compactObject({
+    email: data.email,
+    display_name: displayName,
+    temporary_password: data.temporary_password || data.temp_password || data.password,
+    employee_id: data.employee_id,
+    department: data.department,
+    position: data.position,
+    hire_date: data.hire_date,
+    practitioner_profile: practitionerProfile,
+  });
+}
+
+function adaptV2StaffLifecycleResponse(response, mode, detail) {
+  return {
+    mode,
+    detail,
+    staff: adaptV2StaffListItem(response?.data || {}),
+  };
+}
+
 function adaptV2PractitionerListItem(item = {}) {
   const displayName = item.display_name || item.name || 'Unknown Practitioner';
   const { firstName, lastName } = splitDisplayName(displayName);
@@ -103,6 +146,48 @@ function practitionerMatchesQuery(practitioner, query) {
     practitioner.specialization,
     practitioner.qualification,
   ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+}
+
+function staffMatchesQuery(staff, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  return [
+    staff.name,
+    staff.email,
+    staff.employee_id,
+    staff.department,
+    staff.position,
+    staff.user_type,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+}
+
+function staffMatchesFilters(staff, filters = {}) {
+  if (!filters.includeInactive && staff.is_active === false) {
+    return false;
+  }
+
+  if (filters.staffKind) {
+    const staffKind = staff.staff_kind || staff.staffKind || staff.kind || '';
+    if (String(staffKind).toLowerCase() !== String(filters.staffKind).toLowerCase()) {
+      return false;
+    }
+  }
+
+  if (filters.practitionersOnly && !staff.practitioner_profile) {
+    return false;
+  }
+
+  if (filters.userTypes) {
+    const requested = Array.isArray(filters.userTypes)
+      ? filters.userTypes
+      : String(filters.userTypes).split(',');
+    const normalized = requested.map((value) => String(value).trim().toLowerCase()).filter(Boolean);
+    if (normalized.length > 0 && !normalized.includes(String(staff.user_type || '').toLowerCase())) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -147,6 +232,18 @@ export const staffApi = {
    * @returns {Promise<Object>} Staff data
    */
   getStaffMember: async (id) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.getAdminStaffById({ id });
+        return adaptV2StaffListItem(response?.data);
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to fetch staff member'));
+      }
+    }
+
     try {
       return await apiClient.get(`/users/staff/${id}/`);
     } catch (error) {
@@ -160,6 +257,18 @@ export const staffApi = {
    * @returns {Promise<Object>} Created staff data
    */
   createStaff: async (data) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.postAdminStaff(normalizeV2StaffCreatePayload(data));
+        return adaptV2StaffListItem(response?.data);
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to create staff member'));
+      }
+    }
+
     try {
       return await apiClient.post('/users/staff/', data);
     } catch (error) {
@@ -174,6 +283,10 @@ export const staffApi = {
    * @returns {Promise<Object>} Updated staff data
    */
   updateStaff: async (id, data) => {
+    if (isRustV2ApiMode()) {
+      throw new Error('Rust V2 does not expose general staff profile updates yet.');
+    }
+
     try {
       return await apiClient.patch(`/users/staff/${id}/`, data);
     } catch (error) {
@@ -187,6 +300,18 @@ export const staffApi = {
    * @returns {Promise<void>}
    */
   deleteStaff: async (id) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.postAdminStaffDeactivate({ id });
+        return adaptV2StaffListItem(response?.data);
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to deactivate staff member'));
+      }
+    }
+
     try {
       return await apiClient.delete(`/users/staff/${id}/`);
     } catch (error) {
@@ -200,6 +325,10 @@ export const staffApi = {
    * @returns {Promise<Object>} Registered staff data
    */
   registerStaff: async (data) => {
+    if (isRustV2ApiMode()) {
+      return staffApi.createStaff(data);
+    }
+
     try {
       return await apiClient.post('/users/staff/register/', data);
     } catch (error) {
@@ -213,6 +342,22 @@ export const staffApi = {
    * @returns {Promise<Object>} API response with mode, detail, and staff
    */
   reactivateStaff: async (staffId) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.postAdminStaffReactivate({ id: staffId });
+        return adaptV2StaffLifecycleResponse(
+          response,
+          'password_reset',
+          'Staff account reactivated and password reset required.',
+        );
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to reactivate staff account'));
+      }
+    }
+
     try {
       return await apiClient.post(`/users/staff/${staffId}/reactivate/`);
     } catch (error) {
@@ -226,6 +371,22 @@ export const staffApi = {
    * @returns {Promise<Object>} API response with mode and detail
    */
   resendSetupLink: async (staffId) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.postAdminStaffForcePasswordReset({ id: staffId });
+        return adaptV2StaffLifecycleResponse(
+          response,
+          'password_reset',
+          'Password reset link sent successfully.',
+        );
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to resend setup link'));
+      }
+    }
+
     try {
       return await apiClient.post(`/users/staff/${staffId}/resend-setup-link/`);
     } catch (error) {
@@ -330,6 +491,16 @@ export const staffApi = {
         return [];
       }
 
+      if (isRustV2ApiMode()) {
+        const staff = await staffApi.getStaff(
+          { limit: 100 },
+          { signal: filters.signal },
+        );
+        return staff.filter((member) => (
+          staffMatchesQuery(member, query) && staffMatchesFilters(member, filters)
+        ));
+      }
+
       const params = new URLSearchParams({ q: query });
 
       if (filters.staffKind) {
@@ -352,6 +523,12 @@ export const staffApi = {
 
       return await apiClient.get(`/users/staff/search/?${params.toString()}`);
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to search staff'));
+      }
       throw new Error(handleApiError(error, 'Failed to search staff'));
     }
   },
@@ -362,6 +539,25 @@ export const staffApi = {
    * @returns {Promise<Object>} Practitioner data
    */
   getPractitioner: async (id) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const practitioners = await staffApi.getPractitioners({ limit: 100 });
+        const practitioner = practitioners.find((item) => item.id === id || item.staff_id === id);
+        if (!practitioner) {
+          throw new Error('Practitioner not found in Rust V2 practitioner directory.');
+        }
+        return practitioner;
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        if (error?.message === 'Practitioner not found in Rust V2 practitioner directory.') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to fetch practitioner'));
+      }
+    }
+
     try {
       return await apiClient.get(`/users/practitioners/${id}/`);
     } catch (error) {

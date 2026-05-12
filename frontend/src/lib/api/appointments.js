@@ -224,6 +224,10 @@ export const appointmentsApi = {
    */
   getScheduleMappings: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
+
       const queryString = new URLSearchParams(queryParamsWithoutSignal(params)).toString();
       const endpoint = `/appointments/schedule-mappings/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);

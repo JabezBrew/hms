@@ -238,6 +238,14 @@ describe('Rust V2 appointments bridge', () => {
     });
   });
 
+  it('does not fall back to legacy schedule mappings when Rust V2 has no generated contract', async () => {
+    await expect(
+      appointmentsApi.getScheduleMappings({ clinic_id: 'clinic-1' }),
+    ).resolves.toEqual([]);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('preserves AbortError from Rust appointment list calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);

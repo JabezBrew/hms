@@ -196,4 +196,332 @@ describe('Rust V2 staff bridge', () => {
       }),
     ]);
   });
+
+  it('searches staff in Rust mode through the bounded V2 staff directory instead of the legacy staff search endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'staff-1',
+              user_id: 'user-1',
+              display_name: 'Ama Mensah',
+              email: 'ama@example.test',
+              employee_id: 'EMP-001',
+              department: 'Nursing',
+              position: 'Ward Nurse',
+              is_active: true,
+            },
+            {
+              id: 'staff-2',
+              user_id: 'user-2',
+              display_name: 'Kojo Boateng',
+              email: 'kojo@example.test',
+              employee_id: 'EMP-002',
+              department: 'Pharmacy',
+              position: 'Pharmacist',
+              is_active: true,
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.searchStaff('ama');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual([
+      expect.objectContaining({
+        id: 'staff-1',
+        name: 'Ama Mensah',
+        employee_id: 'EMP-001',
+      }),
+    ]);
+  });
+
+  it('loads staff detail through the Rust V2 staff detail endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'staff-1',
+            user_id: 'user-1',
+            display_name: 'Ama Mensah',
+            email: 'ama@example.test',
+            employee_id: 'EMP-001',
+            department: 'Nursing',
+            position: 'Ward Nurse',
+            hire_date: '2026-01-01',
+            is_active: true,
+            password_change_required: false,
+            session_version: 1,
+            permission_version: 1,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.getStaffMember('staff-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff/staff-1',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toMatchObject({
+      id: 'staff-1',
+      name: 'Ama Mensah',
+      user_details: {
+        first_name: 'Ama',
+        last_name: 'Mensah',
+        email: 'ama@example.test',
+        is_active: true,
+      },
+    });
+  });
+
+  it('creates staff through the Rust V2 staff contract when the V2-required fields are present', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'staff-3',
+            user_id: 'user-3',
+            display_name: 'Akosua Addo',
+            email: 'akosua@example.test',
+            employee_id: 'EMP-003',
+            department: 'Laboratory',
+            position: 'Lab Technician',
+            hire_date: '2026-05-01',
+            is_active: true,
+            password_change_required: true,
+            session_version: 1,
+            permission_version: 1,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.createStaff({
+      email: 'akosua@example.test',
+      first_name: 'Akosua',
+      last_name: 'Addo',
+      temporary_password: 'ChangeMe123!',
+      employee_id: 'EMP-003',
+      department: 'Laboratory',
+      position: 'Lab Technician',
+      hire_date: '2026-05-01',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          email: 'akosua@example.test',
+          display_name: 'Akosua Addo',
+          temporary_password: 'ChangeMe123!',
+          employee_id: 'EMP-003',
+          department: 'Laboratory',
+          position: 'Lab Technician',
+          hire_date: '2026-05-01',
+        }),
+      }),
+    );
+    expect(response).toMatchObject({
+      id: 'staff-3',
+      name: 'Akosua Addo',
+    });
+  });
+
+  it('deactivates staff through the Rust V2 lifecycle endpoint instead of deleting through legacy', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'staff-1',
+            user_id: 'user-1',
+            display_name: 'Ama Mensah',
+            email: 'ama@example.test',
+            employee_id: 'EMP-001',
+            department: 'Nursing',
+            position: 'Ward Nurse',
+            hire_date: '2026-01-01',
+            is_active: false,
+            password_change_required: false,
+            session_version: 2,
+            permission_version: 2,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.deleteStaff('staff-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff/staff-1/deactivate',
+      expect.objectContaining({
+        method: 'POST',
+        body: undefined,
+      }),
+    );
+    expect(response).toMatchObject({
+      id: 'staff-1',
+      is_active: false,
+    });
+  });
+
+  it('reactivates staff through Rust V2 and returns the mode shape expected by the current UI', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'staff-1',
+            user_id: 'user-1',
+            display_name: 'Ama Mensah',
+            email: 'ama@example.test',
+            employee_id: 'EMP-001',
+            department: 'Nursing',
+            position: 'Ward Nurse',
+            hire_date: '2026-01-01',
+            is_active: true,
+            password_change_required: true,
+            session_version: 3,
+            permission_version: 3,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.reactivateStaff('staff-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff/staff-1/reactivate',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(response).toMatchObject({
+      mode: 'password_reset',
+      staff: {
+        id: 'staff-1',
+        is_active: true,
+      },
+    });
+  });
+
+  it('resends setup links through the Rust V2 force-password-reset lifecycle endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'staff-1',
+            user_id: 'user-1',
+            display_name: 'Ama Mensah',
+            email: 'ama@example.test',
+            employee_id: 'EMP-001',
+            department: 'Nursing',
+            position: 'Ward Nurse',
+            hire_date: '2026-01-01',
+            is_active: true,
+            password_change_required: true,
+            session_version: 4,
+            permission_version: 4,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.resendSetupLink('staff-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff/staff-1/force-password-reset',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(response).toMatchObject({
+      mode: 'password_reset',
+      staff: {
+        id: 'staff-1',
+        password_change_required: true,
+      },
+    });
+  });
+
+  it('loads a practitioner detail from the bounded Rust V2 practitioner directory without legacy detail fallback', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'practitioner-1',
+              staff_id: 'staff-1',
+              user_id: 'user-1',
+              display_name: 'Ama Mensah',
+              employee_id: 'EMP-001',
+              license_number: 'MDC-001',
+              specialization: 'General Medicine',
+              qualification: 'MBChB',
+              is_active: true,
+              created_at: '2026-05-12T08:00:00Z',
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.getPractitioner('practitioner-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/practitioners?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toMatchObject({
+      id: 'practitioner-1',
+      staff: 'staff-1',
+      name: 'Ama Mensah',
+      license_number: 'MDC-001',
+    });
+  });
 });
