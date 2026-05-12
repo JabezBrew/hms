@@ -45,6 +45,14 @@ function positiveInteger(value, fieldName) {
   return parsed;
 }
 
+function nonNegativeInteger(value, fieldName) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${fieldName} must be zero or greater.`);
+  }
+  return parsed;
+}
+
 function v2Object(response) {
   return response?.data || {};
 }
@@ -104,6 +112,33 @@ function adaptV2LocationStock(row) {
     quantity,
     available_quantity: quantity,
     reserved_quantity: 0,
+  };
+}
+
+function adaptV2ControlledEntry(entry) {
+  return {
+    ...entry,
+    entry_type: entry?.entry_type || entry?.movement_type,
+    type: entry?.entry_type || entry?.movement_type,
+    quantity: toNumber(entry?.quantity ?? entry?.quantity_delta),
+    balance_before: toNumber(entry?.balance_before),
+    balance_after: toNumber(entry?.balance_after),
+    witness: entry?.witness_user_id || null,
+  };
+}
+
+function adaptV2ControlledRegister(register) {
+  const currentBalance = toNumber(register?.current_balance ?? register?.balance_after ?? register?.balance_on_hand);
+  return {
+    ...register,
+    current_balance: currentBalance,
+    balance_on_hand: currentBalance,
+    location_name: register?.location_name || 'Storage location',
+    unit_of_measure: register?.unit_of_measure || register?.unit || 'units',
+    entry_count: toNumber(register?.entry_count),
+    total_dispensed: toNumber(register?.total_dispensed),
+    total_received: toNumber(register?.total_received),
+    total_wastage: toNumber(register?.total_wastage),
   };
 }
 
@@ -197,6 +232,14 @@ function buildV2ControlledMovementPayload(data = {}, movementType, direction) {
     movement_type: movementType,
     quantity_delta: direction * quantity,
     witness_user_id: pickEntityId(data.witness_user_id ?? data.witness) || null,
+  };
+}
+
+function buildV2ControlledCountPayload(data = {}) {
+  return {
+    actual_count: nonNegativeInteger(data.actual_count ?? data.count, 'actual_count'),
+    witness_user_id: pickEntityId(data.witness_user_id ?? data.witness ?? data.witness_id) || null,
+    notes: data.notes || null,
   };
 }
 
@@ -1972,7 +2015,7 @@ export const inventoryApi = {
         const response = await v2Api.getControlledSubstanceRegister({
           query: buildV2CursorQuery(params, 20),
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, adaptV2ControlledRegister);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1997,7 +2040,7 @@ export const inventoryApi = {
         const response = await v2Api.getControlledSubstanceRegisterById({ id }, {
           signal: options.signal,
         });
-        return v2Object(response);
+        return adaptV2ControlledRegister(v2Object(response));
       }
 
       return await apiClient.get(`/inventory/controlled-registers/${id}/`);
@@ -2021,13 +2064,23 @@ export const inventoryApi = {
   getControlledRegisterEntries: async (id, params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 controlled substance register entries contract');
+        const response = await v2Api.getControlledSubstanceRegisterEntries({ id }, {
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2ControlledEntry);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-registers/${id}/entries/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch register entries'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch register entries'));
     }
   },
@@ -2037,14 +2090,23 @@ export const inventoryApi = {
    * @param {string} id - Register ID
    * @returns {Promise<Object>} Validation result
    */
-  validateRegisterBalance: async (id) => {
+  validateRegisterBalance: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 controlled substance balance validation contract');
+        const response = await v2Api.getControlledSubstanceRegisterBalanceValidation({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/controlled-registers/${id}/validate_balance/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to validate register balance'));
+      }
       throw new Error(handleApiError(error, 'Failed to validate register balance'));
     }
   },
@@ -2119,14 +2181,26 @@ export const inventoryApi = {
    * @param {string} data.notes - Notes
    * @returns {Promise<Object>} Count result with discrepancy info
    */
-  recordControlledCount: async (data) => {
+  recordControlledCount: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 controlled substance count contract');
+        const id = pickEntityId(data.register_id ?? data.register);
+        const response = await v2Api.postControlledSubstanceRegisterCounts(
+          { id },
+          buildV2ControlledCountPayload(data),
+          { signal: options.signal || data.signal },
+        );
+        return v2Object(response);
       }
 
       return await apiClient.post('/inventory/controlled/count/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to record count'));
+      }
       throw new Error(handleApiError(error, 'Failed to record count'));
     }
   },

@@ -1232,9 +1232,89 @@
         "enum": [
           "receipt",
           "dispense",
-          "adjustment"
+          "adjustment",
+          "count"
         ],
         "type": "string"
+      },
+      "ControlledSubstanceBalanceValidation": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "computed_balance": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "current_balance": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "register_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "register_id",
+          "current_balance",
+          "computed_balance",
+          "valid",
+          "checked_at"
+        ],
+        "type": "object"
+      },
+      "ControlledSubstanceRegisterEntryItem": {
+        "properties": {
+          "balance_after": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "balance_before": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entry_number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entry_type": {
+            "$ref": "#/components/schemas/ControlledMovementType"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "witness_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "entry_number",
+          "entry_type",
+          "quantity",
+          "balance_before",
+          "balance_after",
+          "created_at"
+        ],
+        "type": "object"
       },
       "ControlledSubstanceRegisterItem": {
         "properties": {
@@ -1245,6 +1325,14 @@
           "created_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "current_balance": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entry_count": {
+            "format": "int64",
+            "type": "integer"
           },
           "id": {
             "format": "uuid",
@@ -1261,12 +1349,30 @@
             "format": "uuid",
             "type": "string"
           },
+          "location_name": {
+            "type": "string"
+          },
           "movement_type": {
             "$ref": "#/components/schemas/ControlledMovementType"
           },
           "quantity_delta": {
             "format": "int64",
             "type": "integer"
+          },
+          "total_dispensed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_received": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_wastage": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unit_of_measure": {
+            "type": "string"
           },
           "witness_user_id": {
             "format": "uuid",
@@ -1281,9 +1387,16 @@
           "item_id",
           "item_name",
           "location_id",
+          "location_name",
           "movement_type",
           "quantity_delta",
           "balance_after",
+          "current_balance",
+          "unit_of_measure",
+          "entry_count",
+          "total_dispensed",
+          "total_received",
+          "total_wastage",
           "created_at"
         ],
         "type": "object"
@@ -1548,6 +1661,31 @@
           "patient_id",
           "scope",
           "purpose"
+        ],
+        "type": "object"
+      },
+      "CreateControlledSubstanceCountRequest": {
+        "properties": {
+          "actual_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "witness_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actual_count"
         ],
         "type": "object"
       },
@@ -4538,6 +4676,71 @@
         ],
         "type": "object"
       },
+      "ListResponse_ControlledSubstanceRegisterEntryItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "balance_after": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "balance_before": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "entry_number": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "entry_type": {
+                  "$ref": "#/components/schemas/ControlledMovementType"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "quantity": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "witness_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "entry_number",
+                "entry_type",
+                "quantity",
+                "balance_before",
+                "balance_after",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_ControlledSubstanceRegisterItem": {
         "properties": {
           "data": {
@@ -4550,6 +4753,14 @@
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "current_balance": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "entry_count": {
+                  "format": "int64",
+                  "type": "integer"
                 },
                 "id": {
                   "format": "uuid",
@@ -4566,12 +4777,30 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "location_name": {
+                  "type": "string"
+                },
                 "movement_type": {
                   "$ref": "#/components/schemas/ControlledMovementType"
                 },
                 "quantity_delta": {
                   "format": "int64",
                   "type": "integer"
+                },
+                "total_dispensed": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "total_received": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "total_wastage": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "unit_of_measure": {
+                  "type": "string"
                 },
                 "witness_user_id": {
                   "format": "uuid",
@@ -4586,9 +4815,16 @@
                 "item_id",
                 "item_name",
                 "location_id",
+                "location_name",
                 "movement_type",
                 "quantity_delta",
                 "balance_after",
+                "current_balance",
+                "unit_of_measure",
+                "entry_count",
+                "total_dispensed",
+                "total_received",
+                "total_wastage",
                 "created_at"
               ],
               "type": "object"
@@ -9436,6 +9672,47 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_ControlledSubstanceBalanceValidation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "checked_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "computed_balance": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "current_balance": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "register_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "register_id",
+              "current_balance",
+              "computed_balance",
+              "valid",
+              "checked_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_ControlledSubstanceRegisterItem": {
         "properties": {
           "data": {
@@ -9447,6 +9724,14 @@
               "created_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "current_balance": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "entry_count": {
+                "format": "int64",
+                "type": "integer"
               },
               "id": {
                 "format": "uuid",
@@ -9463,12 +9748,30 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "location_name": {
+                "type": "string"
+              },
               "movement_type": {
                 "$ref": "#/components/schemas/ControlledMovementType"
               },
               "quantity_delta": {
                 "format": "int64",
                 "type": "integer"
+              },
+              "total_dispensed": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total_received": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total_wastage": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unit_of_measure": {
+                "type": "string"
               },
               "witness_user_id": {
                 "format": "uuid",
@@ -9483,9 +9786,16 @@
               "item_id",
               "item_name",
               "location_id",
+              "location_name",
               "movement_type",
               "quantity_delta",
               "balance_after",
+              "current_balance",
+              "unit_of_measure",
+              "entry_count",
+              "total_dispensed",
+              "total_received",
+              "total_wastage",
               "created_at"
             ],
             "type": "object"
@@ -26121,6 +26431,251 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ObjectResponse_ControlledSubstanceRegisterItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "pharmacy"
+        ]
+      }
+    },
+    "/api/v2/pharmacy/controlled-substances/register/{id}/balance-validation": {
+      "get": {
+        "operationId": "getControlledSubstanceRegisterBalanceValidation",
+        "parameters": [
+          {
+            "description": "Controlled substance register entry ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ControlledSubstanceBalanceValidation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "pharmacy"
+        ]
+      }
+    },
+    "/api/v2/pharmacy/controlled-substances/register/{id}/counts": {
+      "post": {
+        "operationId": "postControlledSubstanceRegisterCounts",
+        "parameters": [
+          {
+            "description": "Controlled substance register entry ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateControlledSubstanceCountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ControlledSubstanceRegisterItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "pharmacy"
+        ]
+      }
+    },
+    "/api/v2/pharmacy/controlled-substances/register/{id}/entries": {
+      "get": {
+        "operationId": "getControlledSubstanceRegisterEntries",
+        "parameters": [
+          {
+            "description": "Controlled substance register entry ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_ControlledSubstanceRegisterEntryItem"
                 }
               }
             },

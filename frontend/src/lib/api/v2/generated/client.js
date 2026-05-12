@@ -308,6 +308,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getControlledSubstanceRegisterBalanceValidation": {
+    "operationId": "getControlledSubstanceRegisterBalanceValidation",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/controlled-substances/register/{id}/balance-validation",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getControlledSubstanceRegisterById": {
     "operationId": "getControlledSubstanceRegisterById",
     "method": "GET",
@@ -316,6 +326,19 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getControlledSubstanceRegisterEntries": {
+    "operationId": "getControlledSubstanceRegisterEntries",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/controlled-substances/register/{id}/entries",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getDashboardSnapshot": {
@@ -1437,6 +1460,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postControlledSubstanceRegisterCounts": {
+    "operationId": "postControlledSubstanceRegisterCounts",
+    "method": "POST",
+    "path": "/api/v2/pharmacy/controlled-substances/register/{id}/counts",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postDischargeComplete": {
     "operationId": "postDischargeComplete",
     "method": "POST",
@@ -1967,7 +2000,9 @@ export function createGeneratedClient(request) {
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
     getConsents: createOperation(request, operations.getConsents),
     getControlledSubstanceRegister: createOperation(request, operations.getControlledSubstanceRegister),
+    getControlledSubstanceRegisterBalanceValidation: createOperation(request, operations.getControlledSubstanceRegisterBalanceValidation),
     getControlledSubstanceRegisterById: createOperation(request, operations.getControlledSubstanceRegisterById),
+    getControlledSubstanceRegisterEntries: createOperation(request, operations.getControlledSubstanceRegisterEntries),
     getDashboardSnapshot: createOperation(request, operations.getDashboardSnapshot),
     getDischarges: createOperation(request, operations.getDischarges),
     getEncounterById: createOperation(request, operations.getEncounterById),
@@ -2080,6 +2115,7 @@ export function createGeneratedClient(request) {
     postConsentRevoke: createOperation(request, operations.postConsentRevoke),
     postConsents: createOperation(request, operations.postConsents),
     postControlledSubstanceRegister: createOperation(request, operations.postControlledSubstanceRegister),
+    postControlledSubstanceRegisterCounts: createOperation(request, operations.postControlledSubstanceRegisterCounts),
     postDischargeComplete: createOperation(request, operations.postDischargeComplete),
     postDischarges: createOperation(request, operations.postDischarges),
     postEncounterCancel: createOperation(request, operations.postEncounterCancel),

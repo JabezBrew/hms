@@ -1,4 +1,4 @@
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 use crate::handlers::inventory;
@@ -75,6 +75,18 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/pharmacy/controlled-substances/register/:id",
             get(inventory::get_controlled_register_entry),
+        )
+        .route(
+            "/api/v2/pharmacy/controlled-substances/register/:id/entries",
+            get(inventory::list_controlled_register_entries),
+        )
+        .route(
+            "/api/v2/pharmacy/controlled-substances/register/:id/balance-validation",
+            get(inventory::validate_controlled_register_balance),
+        )
+        .route(
+            "/api/v2/pharmacy/controlled-substances/register/:id/counts",
+            post(inventory::create_controlled_count),
         )
         .route(
             "/api/v2/pharmacy/dispenses",

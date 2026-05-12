@@ -2371,6 +2371,118 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let controlled_detail_body = json_body(controlled_detail_response).await;
     assert_eq!(controlled_detail_body["data"]["id"], controlled_id);
 
+    let controlled_entries_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/pharmacy/controlled-substances/register/{controlled_id}/entries?limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled register entries succeeds");
+    assert_eq!(controlled_entries_response.status(), StatusCode::OK);
+    let controlled_entries_body = json_body(controlled_entries_response).await;
+    let controlled_entries = controlled_entries_body["data"]
+        .as_array()
+        .expect("controlled entries array exists");
+    assert_eq!(controlled_entries.len(), 2);
+    assert_eq!(controlled_entries[0]["entry_number"], 1);
+    assert_eq!(controlled_entries[0]["entry_type"], "receipt");
+    assert_eq!(controlled_entries[0]["balance_before"], 0);
+    assert_eq!(controlled_entries[0]["balance_after"], 10);
+    assert_eq!(controlled_entries[1]["entry_number"], 2);
+    assert_eq!(controlled_entries[1]["entry_type"], "dispense");
+    assert_eq!(controlled_entries[1]["quantity"], -1);
+    assert_eq!(controlled_entries[1]["balance_before"], 10);
+    assert_eq!(controlled_entries[1]["balance_after"], 9);
+
+    let controlled_balance_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/pharmacy/controlled-substances/register/{controlled_id}/balance-validation"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled register balance validation succeeds");
+    assert_eq!(controlled_balance_response.status(), StatusCode::OK);
+    let controlled_balance_body = json_body(controlled_balance_response).await;
+    assert_eq!(
+        controlled_balance_body["data"]["register_id"],
+        controlled_id
+    );
+    assert_eq!(controlled_balance_body["data"]["current_balance"], 9);
+    assert_eq!(controlled_balance_body["data"]["computed_balance"], 9);
+    assert_eq!(controlled_balance_body["data"]["valid"], true);
+
+    let controlled_count_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/pharmacy/controlled-substances/register/{controlled_id}/counts"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "actual_count": 8,
+                        "witness_user_id": owner_id,
+                        "notes": "non-PHI controlled count test"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled count succeeds");
+    assert_eq!(controlled_count_response.status(), StatusCode::OK);
+    let controlled_count_body = json_body(controlled_count_response).await;
+    let controlled_count_id = controlled_count_body["data"]["id"]
+        .as_str()
+        .expect("controlled count entry id exists");
+    assert_eq!(controlled_count_body["data"]["movement_type"], "count");
+    assert_eq!(controlled_count_body["data"]["quantity_delta"], -1);
+    assert_eq!(controlled_count_body["data"]["balance_after"], 8);
+    assert_eq!(controlled_count_body["data"]["current_balance"], 8);
+
+    let controlled_register_list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/pharmacy/controlled-substances/register?limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled register summary list succeeds");
+    assert_eq!(controlled_register_list_response.status(), StatusCode::OK);
+    let controlled_register_list_body = json_body(controlled_register_list_response).await;
+    let controlled_summary = controlled_register_list_body["data"]
+        .as_array()
+        .expect("controlled register summary array exists")
+        .iter()
+        .find(|row| row["id"] == controlled_count_id)
+        .expect("latest controlled register summary exists");
+    assert_eq!(controlled_summary["location_name"], "Pharmacy Store");
+    assert_eq!(controlled_summary["current_balance"], 8);
+    assert_eq!(controlled_summary["entry_count"], 3);
+    assert_eq!(controlled_summary["total_received"], 10);
+    assert_eq!(controlled_summary["total_dispensed"], 1);
+
     let patient_response = app
         .clone()
         .oneshot(
@@ -2438,6 +2550,10 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}"),
         format!("/api/v2/inventory/goods-received-notes/{grn_id}"),
         format!("/api/v2/pharmacy/controlled-substances/register/{controlled_id}"),
+        format!("/api/v2/pharmacy/controlled-substances/register/{controlled_id}/entries?limit=1"),
+        format!(
+            "/api/v2/pharmacy/controlled-substances/register/{controlled_id}/balance-validation"
+        ),
     ] {
         let denied_detail = app
             .clone()
@@ -2453,6 +2569,30 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
             .expect("inventory detail denial succeeds");
         assert_eq!(denied_detail.status(), StatusCode::FORBIDDEN);
     }
+
+    let count_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/pharmacy/controlled-substances/register/{controlled_id}/counts"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "actual_count": 8,
+                        "witness_user_id": owner_id,
+                        "notes": null
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled count denial succeeds");
+    assert_eq!(count_denied.status(), StatusCode::FORBIDDEN);
 
     let denied = app
         .clone()

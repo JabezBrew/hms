@@ -549,6 +549,127 @@ describe('Rust V2 inventory bridge', () => {
     ]);
   });
 
+  it('loads controlled register entries and records counts through generated Rust V2 endpoints', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'entry-1',
+            entry_number: 1,
+            entry_type: 'receipt',
+            quantity: 10,
+            balance_before: 0,
+            balance_after: 10,
+            witness_user_id: null,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          {
+            id: 'entry-2',
+            entry_number: 2,
+            entry_type: 'dispense',
+            quantity: -1,
+            balance_before: 10,
+            balance_after: 9,
+            witness_user_id: 'user-2',
+            created_at: '2026-05-12T08:25:00Z',
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          register_id: 'entry-2',
+          current_balance: 9,
+          computed_balance: 9,
+          valid: true,
+          checked_at: '2026-05-12T08:30:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'count-entry-1',
+          item_id: 'item-2',
+          item_name: 'Morphine',
+          location_id: 'location-1',
+          movement_type: 'count',
+          quantity_delta: -1,
+          balance_after: 8,
+          witness_user_id: 'user-2',
+          created_at: '2026-05-12T08:35:00Z',
+        },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getControlledRegisterEntries('entry-2', {
+      page_size: 20,
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      results: [
+        expect.objectContaining({
+          id: 'entry-1',
+          entry_type: 'receipt',
+          quantity: 10,
+          balance_before: 0,
+          balance_after: 10,
+        }),
+        expect.objectContaining({
+          id: 'entry-2',
+          entry_type: 'dispense',
+          quantity: -1,
+          balance_before: 10,
+          balance_after: 9,
+        }),
+      ],
+    });
+    await expect(inventoryApi.validateRegisterBalance('entry-2', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      register_id: 'entry-2',
+      current_balance: 9,
+      computed_balance: 9,
+      valid: true,
+    });
+    await expect(inventoryApi.recordControlledCount({
+      register: 'entry-2',
+      actual_count: 8,
+      witness: 'user-2',
+    }, {
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      id: 'count-entry-1',
+      movement_type: 'count',
+      balance_after: 8,
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal, init.body])).toEqual([
+      [
+        'http://localhost:8080/api/v2/pharmacy/controlled-substances/register/entry-2/entries?limit=20',
+        'GET',
+        controller.signal,
+        undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/pharmacy/controlled-substances/register/entry-2/balance-validation',
+        'GET',
+        controller.signal,
+        undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/pharmacy/controlled-substances/register/entry-2/counts',
+        'POST',
+        controller.signal,
+        JSON.stringify({
+          actual_count: 8,
+          witness_user_id: 'user-2',
+          notes: null,
+        }),
+      ],
+    ]);
+  });
+
   it('returns safe local fallbacks for inventory screens without a Rust V2 contract', async () => {
     await expect(inventoryApi.getSuppliers()).resolves.toMatchObject({ results: [], count: 0 });
     await expect(inventoryApi.getStandingOrders()).resolves.toMatchObject({ results: [], count: 0 });

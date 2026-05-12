@@ -25,8 +25,8 @@ use hms_db::clinical::{
 use hms_db::consent::{ConsentCursor, NewConsentGrant};
 use hms_db::dashboard::NotificationCursor;
 use hms_db::inventory::{
-    InventoryCursor, NewControlledMovement, NewGoodsReceivedNote, NewPharmacyDispense,
-    NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
+    InventoryCursor, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
+    NewPharmacyDispense, NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
 };
 use hms_db::laboratory::{
     LabCursor, LabOrderListFilters, LabResultListFilters, NewLabOrder, NewLabResult, NewSpecimen,
@@ -70,10 +70,12 @@ use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
 use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
-    ControlledMovementType, ControlledSubstanceRegisterItem, GoodsReceivedNoteListItem,
-    InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
-    PharmacyDispenseListItem, PurchaseOrderListItem, StockBatchListItem, StockMovementListItem,
-    StockRequisitionListItem, StockTransferListItem, StorageLocationListItem,
+    ControlledMovementType, ControlledSubstanceBalanceValidation,
+    ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
+    GoodsReceivedNoteListItem, InventoryCategoryListItem, InventoryItemListItem,
+    InventoryItemStockLocationItem, PharmacyDispenseListItem, PurchaseOrderListItem,
+    StockBatchListItem, StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
+    StorageLocationListItem,
 };
 use hms_domain::laboratory::{
     LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
@@ -2077,6 +2079,55 @@ impl AppState {
             &self.inner.pool,
             self.facility_id(),
             entry_id,
+        )
+        .await
+    }
+
+    pub async fn list_controlled_substance_register_entries(
+        &self,
+        entry_id: Uuid,
+        cursor: Option<InventoryCursor>,
+        limit: i64,
+    ) -> Result<Vec<ControlledSubstanceRegisterEntryItem>> {
+        hms_db::inventory::list_controlled_register_entries(
+            &self.inner.pool,
+            self.facility_id(),
+            entry_id,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn validate_controlled_substance_register_balance(
+        &self,
+        entry_id: Uuid,
+    ) -> Result<Option<ControlledSubstanceBalanceValidation>> {
+        hms_db::inventory::validate_controlled_register_balance(
+            &self.inner.pool,
+            self.facility_id(),
+            entry_id,
+        )
+        .await
+    }
+
+    pub async fn create_controlled_substance_count(
+        &self,
+        entry_id: Uuid,
+        actual_count: i64,
+        witness_user_id: Uuid,
+        actor_user_id: Uuid,
+    ) -> Result<ControlledSubstanceRegisterItem> {
+        hms_db::inventory::create_controlled_count(
+            &self.inner.pool,
+            NewControlledCount {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                register_entry_id: entry_id,
+                actual_count,
+                witness_user_id,
+                actor_user_id,
+            },
         )
         .await
     }

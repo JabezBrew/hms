@@ -55,6 +55,7 @@ pub enum ControlledMovementType {
     Receipt,
     Dispense,
     Adjustment,
+    Count,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
@@ -198,11 +199,39 @@ pub struct ControlledSubstanceRegisterItem {
     pub item_id: Uuid,
     pub item_name: String,
     pub location_id: Uuid,
+    pub location_name: String,
     pub movement_type: ControlledMovementType,
     pub quantity_delta: i64,
     pub balance_after: i64,
+    pub current_balance: i64,
+    pub unit_of_measure: String,
+    pub entry_count: i64,
+    pub total_dispensed: i64,
+    pub total_received: i64,
+    pub total_wastage: i64,
     pub witness_user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ControlledSubstanceRegisterEntryItem {
+    pub id: Uuid,
+    pub entry_number: i64,
+    pub entry_type: ControlledMovementType,
+    pub quantity: i64,
+    pub balance_before: i64,
+    pub balance_after: i64,
+    pub witness_user_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ControlledSubstanceBalanceValidation {
+    pub register_id: Uuid,
+    pub current_balance: i64,
+    pub computed_balance: i64,
+    pub valid: bool,
+    pub checked_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -212,6 +241,13 @@ pub struct CreateControlledSubstanceMovementRequest {
     pub movement_type: ControlledMovementType,
     pub quantity_delta: i64,
     pub witness_user_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateControlledSubstanceCountRequest {
+    pub actual_count: i64,
+    pub witness_user_id: Option<Uuid>,
+    pub notes: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
