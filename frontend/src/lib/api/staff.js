@@ -1,4 +1,72 @@
 import { apiClient, handleApiError } from '../api-client';
+import { v2Api } from './v2/client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+
+const DEFAULT_STAFF_LIST_LIMIT = 25;
+const MAX_STAFF_LIST_LIMIT = 100;
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, MAX_STAFF_LIST_LIMIT);
+}
+
+function getStaffListQuery(params = {}) {
+  const limit = normalizePositiveInteger(
+    params.limit ?? params.page_size ?? params.pageSize,
+    DEFAULT_STAFF_LIST_LIMIT,
+  );
+  const cursor = params.cursor ?? params.next_cursor;
+  return {
+    limit,
+    ...(cursor ? { cursor } : {}),
+  };
+}
+
+function splitDisplayName(displayName) {
+  const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: '', lastName: '' };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  };
+}
+
+function adaptV2StaffListItem(item = {}) {
+  const displayName = item.display_name || item.name || item.email || 'Unknown Staff';
+  const { firstName, lastName } = splitDisplayName(displayName);
+  const isActive = item.is_active ?? true;
+  const userType = item.user_type || 'staff';
+
+  return {
+    ...item,
+    id: item.id,
+    user_id: item.user_id,
+    name: displayName,
+    email: item.email || '',
+    employee_id: item.employee_id || '',
+    department: item.department || '',
+    position: item.position || '',
+    is_active: isActive,
+    user_type: userType,
+    user_details: {
+      id: item.user_id,
+      first_name: firstName,
+      last_name: lastName,
+      email: item.email || '',
+      user_type: userType,
+      is_active: isActive,
+    },
+  };
+}
 
 /**
  * Staff API service
@@ -9,11 +77,28 @@ export const staffApi = {
    * @param {Object} params - Query parameters for filtering
    * @returns {Promise<Array>} List of staff members
    */
-  getStaff: async (params = {}) => {
+  getStaff: async (params = {}, options = {}) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.getAdminStaff({
+          query: getStaffListQuery(params),
+          signal: options.signal,
+        });
+        return Array.isArray(response?.data)
+          ? response.data.map(adaptV2StaffListItem)
+          : [];
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to fetch staff members'));
+      }
+    }
+
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/users/staff/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.get(endpoint);
+      return await apiClient.get(endpoint, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch staff members'));
     }

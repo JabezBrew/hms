@@ -26,7 +26,7 @@ export const staffKeys = {
 export function useStaff(filters = {}) {
   return useQuery({
     queryKey: staffKeys.list(filters),
-    queryFn: () => staffApi.getStaff(filters),
+    queryFn: ({ signal }) => staffApi.getStaff(filters, { signal }),
   });
 }
 
