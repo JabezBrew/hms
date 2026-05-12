@@ -78,6 +78,81 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
 }
 
 #[tokio::test]
+async fn patient_validation_rules_repository_is_facility_scoped_and_active_only() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let other_facility_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO facilities (id, code, name, deployment_profile)
+        VALUES ($1, 'OTHER', 'Other Facility', 'hospital')
+        "#,
+    )
+    .bind(other_facility_id)
+    .execute(&pool)
+    .await
+    .expect("other facility inserts");
+
+    sqlx::query(
+        r#"
+        INSERT INTO patient_registration_validation_rules (
+            id,
+            facility_id,
+            field_name,
+            validation_regex,
+            validation_message,
+            is_required,
+            is_active
+        )
+        VALUES
+            ($1, $2, 'phone_number', '^[0-9]{10}$', 'Phone number must be 10 digits', true, true),
+            ($3, $2, 'legacy_number', null, 'Legacy number is disabled', false, false),
+            ($4, $5, 'email', '^.+@.+$', 'Email belongs to another facility', false, true)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(facility_id)
+    .bind(uuid::Uuid::new_v4())
+    .bind(uuid::Uuid::new_v4())
+    .bind(other_facility_id)
+    .execute(&pool)
+    .await
+    .expect("validation rules insert");
+
+    let rules =
+        hms_db::patients::list_patient_registration_validation_rules(&pool, facility_id, 50)
+            .await
+            .expect("validation rules list succeeds");
+
+    assert!(rules.iter().any(|rule| {
+        rule.field_name == "phone_number"
+            && rule.validation_regex.as_deref() == Some("^[0-9]{10}$")
+            && rule.validation_message == "Phone number must be 10 digits"
+            && rule.is_required
+            && rule.is_active
+    }));
+    assert!(rules.iter().any(|rule| rule.field_name == "first_name"));
+    assert!(!rules.iter().any(|rule| rule.field_name == "legacy_number"));
+    assert!(!rules.iter().any(|rule| rule.field_name == "email"));
+}
+
+#[tokio::test]
 async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

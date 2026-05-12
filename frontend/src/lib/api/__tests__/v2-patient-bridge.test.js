@@ -104,4 +104,52 @@ describe('Rust V2 patient bridge', () => {
       patientsApi.searchPatientsWithMeta({ query: 'Ama' }, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
   });
+
+  it('loads patient registration validation rules through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'rule-1',
+              field_name: 'first_name',
+              validation_regex: null,
+              validation_message: 'First name is required',
+              is_required: true,
+              is_active: true,
+              created_at: '2026-05-12T00:00:00Z',
+              updated_at: '2026-05-12T00:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const rules = await patientsApi.getValidationRules({ signal: new AbortController().signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/validation-rules',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer access-token-123',
+          'X-Facility-Code': 'HMS',
+        }),
+      }),
+    );
+    expect(rules).toEqual([
+      expect.objectContaining({
+        field_name: 'first_name',
+        is_required: true,
+        validation_message: 'First name is required',
+      }),
+    ]);
+  });
 });

@@ -5964,6 +5964,67 @@
         ],
         "type": "object"
       },
+      "ListResponse_PatientRegistrationValidationRule": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "field_name": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "is_required": {
+                  "type": "boolean"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "validation_message": {
+                  "type": "string"
+                },
+                "validation_regex": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "field_name",
+                "validation_message",
+                "is_required",
+                "is_active",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_PatientVitalsListItem": {
         "properties": {
           "data": {
@@ -12540,6 +12601,50 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "PatientRegistrationValidationRule": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "field_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_required": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "validation_message": {
+            "type": "string"
+          },
+          "validation_regex": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "field_name",
+          "validation_message",
+          "is_required",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
         "type": "object"
       },
       "PatientVitalsListItem": {
@@ -23465,6 +23570,51 @@
               }
             },
             "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v2/patients/validation-rules": {
+      "get": {
+        "operationId": "getPatientValidationRules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientRegistrationValidationRule"
+                }
+              }
+            },
+            "description": "Patient registration validation rules"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
           }
         },
         "security": [

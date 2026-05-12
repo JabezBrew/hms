@@ -28,6 +28,10 @@ pub const OWNER_USER_ID: u128 = 0x20000000000000000000000000000001;
 pub const LIMITED_USER_ID: u128 = 0x20000000000000000000000000000002;
 pub const PATIENT_ONE_ID: u128 = 0x30000000000000000000000000000001;
 pub const PATIENT_TWO_ID: u128 = 0x30000000000000000000000000000002;
+pub const DEFAULT_PATIENT_VALIDATION_FIRST_NAME_ID: u128 = 0x30000000000000000000000000000100;
+pub const DEFAULT_PATIENT_VALIDATION_LAST_NAME_ID: u128 = 0x30000000000000000000000000000101;
+pub const DEFAULT_PATIENT_VALIDATION_DATE_OF_BIRTH_ID: u128 = 0x30000000000000000000000000000102;
+pub const DEFAULT_PATIENT_VALIDATION_SEX_ID: u128 = 0x30000000000000000000000000000103;
 pub const DEFAULT_CLINIC_ID: u128 = 0x40000000000000000000000000000001;
 pub const DEFAULT_WARD_ID: u128 = 0x50000000000000000000000000000001;
 pub const DEFAULT_BED_ID: u128 = 0x50000000000000000000000000000002;
@@ -103,6 +107,7 @@ pub async fn provision_baseline(
     seed_users(pool, baseline).await?;
     seed_admin_authority_baseline(pool, baseline).await?;
     seed_notifications(pool, baseline).await?;
+    seed_patient_validation_rules(pool, baseline).await?;
     if baseline.seed_demo_patients {
         seed_patients(pool, baseline).await?;
         seed_patient_contexts(pool, baseline).await?;
@@ -938,6 +943,75 @@ async fn seed_patient_contexts(
     Ok(())
 }
 
+async fn seed_patient_validation_rules(
+    pool: &PgPool,
+    baseline: &BaselineProvisioning,
+) -> anyhow::Result<()> {
+    let rules = [
+        SeedPatientValidationRule {
+            id: Uuid::from_u128(DEFAULT_PATIENT_VALIDATION_FIRST_NAME_ID),
+            field_name: "first_name",
+            validation_regex: Some(r"^[A-Za-z' -]{2,100}$"),
+            validation_message: "First name is required and must use valid name characters.",
+            is_required: true,
+        },
+        SeedPatientValidationRule {
+            id: Uuid::from_u128(DEFAULT_PATIENT_VALIDATION_LAST_NAME_ID),
+            field_name: "last_name",
+            validation_regex: Some(r"^[A-Za-z' -]{2,100}$"),
+            validation_message: "Last name is required and must use valid name characters.",
+            is_required: true,
+        },
+        SeedPatientValidationRule {
+            id: Uuid::from_u128(DEFAULT_PATIENT_VALIDATION_DATE_OF_BIRTH_ID),
+            field_name: "date_of_birth",
+            validation_regex: None,
+            validation_message: "Date of birth is required.",
+            is_required: true,
+        },
+        SeedPatientValidationRule {
+            id: Uuid::from_u128(DEFAULT_PATIENT_VALIDATION_SEX_ID),
+            field_name: "gender",
+            validation_regex: None,
+            validation_message: "Sex is required.",
+            is_required: true,
+        },
+    ];
+
+    for rule in rules {
+        sqlx::query(
+            r#"
+            INSERT INTO patient_registration_validation_rules (
+                id,
+                facility_id,
+                field_name,
+                validation_regex,
+                validation_message,
+                is_required,
+                is_active
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+            ON CONFLICT (facility_id, field_name) DO UPDATE
+            SET validation_regex = EXCLUDED.validation_regex,
+                validation_message = EXCLUDED.validation_message,
+                is_required = EXCLUDED.is_required,
+                is_active = TRUE,
+                updated_at = now()
+            "#,
+        )
+        .bind(rule.id)
+        .bind(baseline.facility_id)
+        .bind(rule.field_name)
+        .bind(rule.validation_regex)
+        .bind(rule.validation_message)
+        .bind(rule.is_required)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
 struct SeedPatient {
     id: Uuid,
     patient_code: &'static str,
@@ -946,5 +1020,13 @@ struct SeedPatient {
     date_of_birth: NaiveDate,
     sex: Sex,
     created_at: DateTime<Utc>,
+}
+
+struct SeedPatientValidationRule {
+    id: Uuid,
+    field_name: &'static str,
+    validation_regex: Option<&'static str>,
+    validation_message: &'static str,
+    is_required: bool,
 }
 use std::sync::OnceLock;

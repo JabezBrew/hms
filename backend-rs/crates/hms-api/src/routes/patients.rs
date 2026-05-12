@@ -15,6 +15,10 @@ pub fn routes() -> Router<AppState> {
             get(patients::list_context_patients),
         )
         .route(
+            "/api/v2/patients/validation-rules",
+            get(patients::list_patient_validation_rules),
+        )
+        .route(
             "/api/v2/patients/:id/chronicle",
             get(patients::get_patient_chronicle),
         )

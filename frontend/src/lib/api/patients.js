@@ -392,10 +392,18 @@ export const patientsApi = {
    * Get patient registration validation rules
    * @returns {Promise<Array>} Validation rules
    */
-  getValidationRules: async () => {
+  getValidationRules: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPatientValidationRules({ signal: options.signal });
+        return Array.isArray(response?.data) ? response.data : [];
+      }
       return await apiClient.get('/patients/validation-rules/');
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch validation rules'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch validation rules'));
     }
   },

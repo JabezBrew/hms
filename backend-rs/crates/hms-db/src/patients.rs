@@ -1,6 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::patients::{
-    PatientAdministrativeStatus, PatientContextKind, PatientContextListItem, PatientRecord, Sex,
+    PatientAdministrativeStatus, PatientContextKind, PatientContextListItem, PatientRecord,
+    PatientRegistrationValidationRule, Sex,
 };
 use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -69,6 +70,18 @@ struct PatientContextRow {
     sex: String,
     status: String,
     context_kind: String,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PatientRegistrationValidationRuleRow {
+    id: Uuid,
+    field_name: String,
+    validation_regex: Option<String>,
+    validation_message: String,
+    is_required: bool,
+    is_active: bool,
+    created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
 
@@ -150,6 +163,48 @@ pub async fn get_patient(
     .await?;
 
     row.map(patient_from_row).transpose()
+}
+
+pub async fn list_patient_registration_validation_rules(
+    pool: &PgPool,
+    facility_id: Uuid,
+    limit: i64,
+) -> anyhow::Result<Vec<PatientRegistrationValidationRule>> {
+    let rows = sqlx::query_as::<_, PatientRegistrationValidationRuleRow>(
+        r#"
+        SELECT id,
+               field_name,
+               validation_regex,
+               validation_message,
+               is_required,
+               is_active,
+               created_at,
+               updated_at
+        FROM patient_registration_validation_rules
+        WHERE facility_id = $1
+          AND is_active = TRUE
+        ORDER BY field_name ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(limit.clamp(1, 100))
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| PatientRegistrationValidationRule {
+            id: row.id,
+            field_name: row.field_name,
+            validation_regex: row.validation_regex,
+            validation_message: row.validation_message,
+            is_required: row.is_required,
+            is_active: row.is_active,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+        .collect())
 }
 
 pub async fn update_patient(

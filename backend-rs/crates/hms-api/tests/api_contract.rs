@@ -221,6 +221,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/realtime/subscriptions",
         "/api/v2/patients",
         "/api/v2/patients/context",
+        "/api/v2/patients/validation-rules",
         "/api/v2/patients/{id}",
         "/api/v2/patients/{id}/chronicle",
         "/api/v2/patients/{id}/chronicle/print",
@@ -1123,6 +1124,37 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .await
         .expect("patient denial succeeds");
     assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn patient_validation_rules_are_available_from_v2_contract() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients/validation-rules")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("validation rules request succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    let rules = body["data"].as_array().expect("rules are returned as data");
+    assert!(
+        rules.iter().any(|rule| {
+            rule["field_name"] == "first_name"
+                && rule["is_required"] == true
+                && rule["is_active"] == true
+        }),
+        "baseline first_name required rule is exposed"
+    );
+    assert_eq!(body["page"]["has_next"], false);
 }
 
 #[tokio::test]

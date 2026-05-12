@@ -70,6 +70,18 @@ pub struct PatientContextListItem {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PatientRegistrationValidationRule {
+    pub id: Uuid,
+    pub field_name: String,
+    pub validation_regex: Option<String>,
+    pub validation_message: String,
+    pub is_required: bool,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 impl From<&PatientRecord> for PatientListItem {
     fn from(value: &PatientRecord) -> Self {
         Self {

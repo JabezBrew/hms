@@ -10,7 +10,7 @@ use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::{
     CreatePatientRequest, PatientContextListItem, PatientDetail, PatientListItem, PatientListQuery,
-    PatientRecord, UpdatePatientRequest,
+    PatientRecord, PatientRegistrationValidationRule, UpdatePatientRequest,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -167,6 +167,51 @@ pub async fn list_context_patients(
             next_cursor,
             has_next,
             limit,
+        },
+    )))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/patients/validation-rules",
+    operation_id = "getPatientValidationRules",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Patient registration validation rules", body = ListResponse<PatientRegistrationValidationRule>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_patient_validation_rules(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+) -> Result<Json<ListResponse<PatientRegistrationValidationRule>>, ApiError> {
+    if require_permission(&user, PermissionCode::PatientCreate).is_err()
+        && require_permission(&user, PermissionCode::PatientUpdate).is_err()
+    {
+        return Err(ApiError::forbidden(
+            "permission_denied",
+            "You do not have permission to use patient registration rules.",
+        ));
+    }
+
+    let rules = state
+        .list_patient_registration_validation_rules()
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_validation_rules_failed",
+                "Patient validation rules could not be loaded.",
+            )
+        })?;
+
+    Ok(Json(list(
+        rules,
+        PageInfo {
+            next_cursor: None,
+            has_next: false,
+            limit: 50,
         },
     )))
 }

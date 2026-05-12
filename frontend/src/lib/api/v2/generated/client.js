@@ -692,6 +692,14 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getPatientValidationRules": {
+    "operationId": "getPatientValidationRules",
+    "method": "GET",
+    "path": "/api/v2/patients/validation-rules",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getPatientVitals": {
     "operationId": "getPatientVitals",
     "method": "GET",
@@ -1842,6 +1850,7 @@ export function createGeneratedClient(request) {
     getPatientPrescriptions: createOperation(request, operations.getPatientPrescriptions),
     getPatientProblems: createOperation(request, operations.getPatientProblems),
     getPatients: createOperation(request, operations.getPatients),
+    getPatientValidationRules: createOperation(request, operations.getPatientValidationRules),
     getPatientVitals: createOperation(request, operations.getPatientVitals),
     getPharmacyDispenses: createOperation(request, operations.getPharmacyDispenses),
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),

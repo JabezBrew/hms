@@ -78,7 +78,9 @@ use hms_domain::laboratory::{
     LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
     SpecimenListItem,
 };
-use hms_domain::patients::{PatientContextListItem, PatientRecord, Sex};
+use hms_domain::patients::{
+    PatientContextListItem, PatientRecord, PatientRegistrationValidationRule, Sex,
+};
 use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
 use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState};
 use hms_domain::ward::{
@@ -1075,6 +1077,17 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
+    }
+
+    pub async fn list_patient_registration_validation_rules(
+        &self,
+    ) -> Result<Vec<PatientRegistrationValidationRule>> {
+        hms_db::patients::list_patient_registration_validation_rules(
+            &self.inner.pool,
+            self.facility_id(),
+            50,
+        )
+        .await
     }
 
     pub async fn list_context_patients(
