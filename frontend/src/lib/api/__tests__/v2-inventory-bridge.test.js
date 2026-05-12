@@ -335,6 +335,39 @@ describe('Rust V2 inventory bridge', () => {
     ]);
   });
 
+  it('loads inventory item detail through the generated Rust V2 endpoint', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({
+      data: {
+        id: 'item-1',
+        category_id: 'category-1',
+        code: 'PARA500',
+        name: 'Paracetamol 500mg',
+        item_type: 'medication',
+        unit: 'tablet',
+        controlled: false,
+      },
+      meta: {},
+    }));
+
+    await expect(inventoryApi.getInventoryItem('item-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      id: 'item-1',
+      code: 'PARA500',
+      name: 'Paracetamol 500mg',
+      controlled: false,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/inventory/items/item-1',
+      expect.objectContaining({
+        method: 'GET',
+        signal: controller.signal,
+      }),
+    );
+  });
+
   it('returns safe local fallbacks for inventory screens without a Rust V2 contract', async () => {
     await expect(inventoryApi.getSuppliers()).resolves.toMatchObject({ results: [], count: 0 });
     await expect(inventoryApi.getStandingOrders()).resolves.toMatchObject({ results: [], count: 0 });
@@ -469,7 +502,6 @@ describe('Rust V2 inventory bridge', () => {
   });
 
   it('fails closed for inventory actions without generated Rust V2 contracts', async () => {
-    await expect(inventoryApi.getInventoryItem('item-1')).rejects.toThrow('/api/v2 inventory item detail contract');
     await expect(inventoryApi.createCategory({ name: 'Medication' })).rejects.toThrow('/api/v2 inventory category mutation contract');
     await expect(inventoryApi.createSupplier({ name: 'Acme Medical' })).rejects.toThrow('/api/v2 supplier contract');
     await expect(inventoryApi.createStorageLocation({ name: 'Main Store' })).rejects.toThrow('/api/v2 storage location mutation contract');

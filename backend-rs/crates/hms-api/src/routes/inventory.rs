@@ -11,6 +11,7 @@ pub fn routes() -> Router<AppState> {
             get(inventory::list_categories),
         )
         .route("/api/v2/inventory/items", get(inventory::list_items))
+        .route("/api/v2/inventory/items/:id", get(inventory::get_item))
         .route(
             "/api/v2/inventory/storage-locations",
             get(inventory::list_locations),

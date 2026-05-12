@@ -416,6 +416,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getInventoryItemById": {
+    "operationId": "getInventoryItemById",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getInventoryItems": {
     "operationId": "getInventoryItems",
     "method": "GET",
@@ -1832,6 +1842,7 @@ export function createGeneratedClient(request) {
     getHealthAlive: createOperation(request, operations.getHealthAlive),
     getHealthReady: createOperation(request, operations.getHealthReady),
     getInventoryCategories: createOperation(request, operations.getInventoryCategories),
+    getInventoryItemById: createOperation(request, operations.getInventoryItemById),
     getInventoryItems: createOperation(request, operations.getInventoryItems),
     getLaboratoryOrders: createOperation(request, operations.getLaboratoryOrders),
     getLaboratoryPanels: createOperation(request, operations.getLaboratoryPanels),

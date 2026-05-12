@@ -665,14 +665,23 @@ export const inventoryApi = {
    * @param {string} id - Item ID
    * @returns {Promise<Object>} Item data with full details
    */
-  getInventoryItem: async (id) => {
+  getInventoryItem: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 inventory item detail contract');
+        const response = await v2Api.getInventoryItemById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/items/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch inventory item'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inventory item'));
     }
   },

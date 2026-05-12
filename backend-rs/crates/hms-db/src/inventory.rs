@@ -246,6 +246,27 @@ pub async fn list_items(
     rows.into_iter().map(item_from_row).collect()
 }
 
+pub async fn get_item(
+    pool: &PgPool,
+    facility_id: Uuid,
+    item_id: Uuid,
+) -> anyhow::Result<Option<InventoryItemListItem>> {
+    let row = sqlx::query_as::<_, ItemRow>(
+        r#"
+        SELECT id, category_id, code, name, item_type, unit, controlled
+        FROM inventory_items
+        WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(item_id)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(item_from_row).transpose()
+}
+
 pub async fn list_locations(
     pool: &PgPool,
     facility_id: Uuid,

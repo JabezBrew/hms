@@ -115,6 +115,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::inventory::list_controlled_register,
         crate::handlers::inventory::list_dispenses,
         crate::handlers::inventory::list_grns,
+        crate::handlers::inventory::get_item,
         crate::handlers::inventory::list_items,
         crate::handlers::inventory::list_locations,
         crate::handlers::inventory::list_movements,

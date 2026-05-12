@@ -1,4 +1,4 @@
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
@@ -54,6 +54,23 @@ pub async fn list_items(
             ApiError::conflict("inventory_item_list_failed", "Items could not be loaded.")
         })?,
     )))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/items/{id}", operation_id = "getInventoryItemById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ObjectResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_item(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<InventoryItemListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
+    let item = state
+        .get_inventory_item(id)
+        .await
+        .map_err(|_| ApiError::conflict("inventory_item_load_failed", "Item could not be loaded."))?
+        .ok_or_else(|| {
+            ApiError::not_found("inventory_item_not_found", "Item could not be found.")
+        })?;
+    Ok(Json(object(item)))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations", operation_id = "getStorageLocations", tag = "inventory", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]

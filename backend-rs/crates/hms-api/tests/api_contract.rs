@@ -257,6 +257,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/laboratory/results/{id}/verify",
         "/api/v2/inventory/categories",
         "/api/v2/inventory/items",
+        "/api/v2/inventory/items/{id}",
         "/api/v2/inventory/storage-locations",
         "/api/v2/inventory/stock-batches",
         "/api/v2/inventory/stock-movements",
@@ -1849,6 +1850,41 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .and_then(|item| item["id"].as_str())
         .expect("controlled item exists");
 
+    let invalid_item_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/items/not-a-uuid")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("invalid inventory item detail route succeeds");
+    assert_eq!(
+        invalid_item_detail_response.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let item_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/inventory/items/{paracetamol_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("inventory item detail succeeds");
+    let item_detail_status = item_detail_response.status();
+    let item_detail_body = json_body(item_detail_response).await;
+    assert_eq!(item_detail_status, StatusCode::OK, "{item_detail_body}");
+    assert_eq!(item_detail_body["data"]["id"], paracetamol_id);
+    assert_eq!(item_detail_body["data"]["controlled"], false);
+
     let locations_response = app
         .clone()
         .oneshot(
@@ -2115,6 +2151,20 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(dispense_body["data"]["status"], "dispensed");
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let detail_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/inventory/items/{paracetamol_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("inventory item detail denial succeeds");
+    assert_eq!(detail_denied.status(), StatusCode::FORBIDDEN);
+
     let denied = app
         .clone()
         .oneshot(

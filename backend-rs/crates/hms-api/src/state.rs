@@ -1795,6 +1795,10 @@ impl AppState {
         hms_db::inventory::list_items(&self.inner.pool, self.facility_id()).await
     }
 
+    pub async fn get_inventory_item(&self, item_id: Uuid) -> Result<Option<InventoryItemListItem>> {
+        hms_db::inventory::get_item(&self.inner.pool, self.facility_id(), item_id).await
+    }
+
     pub async fn list_storage_locations(&self) -> Result<Vec<StorageLocationListItem>> {
         hms_db::inventory::list_locations(&self.inner.pool, self.facility_id()).await
     }
