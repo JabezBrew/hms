@@ -3514,7 +3514,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
             Request::builder()
                 .method(Method::GET)
                 .uri(format!(
-                    "/api/v2/nursing/vitals?limit=10&patient_id={patient_id}&hours=48"
+                    "/api/v2/nursing/vitals?limit=10&patient_id={patient_id}&admission_case_id={admission_case_id}&hours=48"
                 ))
                 .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())

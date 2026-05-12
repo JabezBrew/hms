@@ -334,6 +334,7 @@ pub struct PatientVitalsListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub patient_id: Option<Uuid>,
+    pub admission_case_id: Option<Uuid>,
     pub hours: Option<u16>,
 }
 

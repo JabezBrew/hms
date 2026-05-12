@@ -22987,6 +22987,15 @@
           },
           {
             "in": "query",
+            "name": "admission_case_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "hours",
             "required": false,
             "schema": {

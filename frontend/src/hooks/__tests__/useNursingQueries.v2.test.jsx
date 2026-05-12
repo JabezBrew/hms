@@ -8,6 +8,7 @@ import {
   usePatientMonitoring,
   usePendingDispensingGrouped,
   useVitalSigns,
+  useVitalSignsTrends,
 } from '../useNursingQueries';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 
@@ -346,5 +347,61 @@ describe('Rust V2 nursing dashboard hooks', () => {
       heart_rate: 88,
       spo2: 98,
     }));
+  });
+
+  it('loads vital sign trends from the Rust vitals endpoint with patient and admission scope', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'vitals-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              recorded_at: '2026-05-12T09:00:00Z',
+              temperature_c: 37.5,
+              systolic_bp: 120,
+              diastolic_bp: 80,
+              pulse: 88,
+              respiratory_rate: 18,
+              oxygen_saturation: 98,
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useVitalSignsTrends('patient-1', { days: 7, admission_id: 'admission-1' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/vitals?limit=50&patient_id=patient-1&admission_case_id=admission-1&hours=168',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'vitals-1',
+        admission: 'admission-1',
+        patient: 'patient-1',
+        temperature: 37.5,
+      }),
+    ]);
   });
 });

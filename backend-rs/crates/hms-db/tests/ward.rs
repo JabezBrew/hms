@@ -428,6 +428,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
         &pool,
         facility_id,
         Some(patient_id),
+        Some(admission.id),
         Some(recent_recorded_at - chrono::Duration::hours(48)),
         None,
         25,
@@ -522,7 +523,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
 
     let other_facility = uuid::Uuid::new_v4();
     assert!(
-        hms_db::ward::list_patient_vitals(&pool, other_facility, None, None, None, 25)
+        hms_db::ward::list_patient_vitals(&pool, other_facility, None, None, None, None, 25)
             .await
             .expect("cross-facility vitals list succeeds")
             .is_empty()

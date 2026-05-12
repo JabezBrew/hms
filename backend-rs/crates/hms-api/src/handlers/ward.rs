@@ -1092,7 +1092,18 @@ pub async fn list_patient_vitals(
         state.facility_id(),
         PermissionCode::NursingTaskManage,
     )?;
-    if let Some(patient_id) = query.patient_id {
+    if let Some(admission_case_id) = query.admission_case_id {
+        let admission = load_admission_for_access(&state, &user, admission_case_id).await?;
+        if query
+            .patient_id
+            .is_some_and(|patient_id| patient_id != admission.patient_id)
+        {
+            return Err(ApiError::bad_request(
+                "invalid_vitals_query",
+                "Admission does not belong to the requested patient.",
+            ));
+        }
+    } else if let Some(patient_id) = query.patient_id {
         let _patient = load_patient_for_access(&state, &user, patient_id).await?;
     }
     let recorded_since = match query.hours {
@@ -1107,6 +1118,7 @@ pub async fn list_patient_vitals(
     let rows = state
         .list_patient_vitals(
             query.patient_id,
+            query.admission_case_id,
             recorded_since,
             cursor,
             page_size as i64 + 1,

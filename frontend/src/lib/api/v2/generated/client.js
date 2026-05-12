@@ -712,6 +712,7 @@ export const operations = {
       "cursor",
       "limit",
       "patient_id",
+      "admission_case_id",
       "hours"
     ],
     "hasBody": false

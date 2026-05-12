@@ -2711,6 +2711,7 @@ impl AppState {
     pub async fn list_patient_vitals(
         &self,
         patient_id: Option<Uuid>,
+        admission_case_id: Option<Uuid>,
         recorded_since: Option<DateTime<Utc>>,
         cursor: Option<WardCursor>,
         limit: i64,
@@ -2719,6 +2720,7 @@ impl AppState {
             &self.inner.pool,
             self.facility_id(),
             patient_id,
+            admission_case_id,
             recorded_since,
             cursor,
             limit,

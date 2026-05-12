@@ -146,6 +146,10 @@ async function getV2PatientVitals(filters = {}, { signal } = {}) {
   if (patientId) {
     query.patient_id = patientId;
   }
+  const admissionCaseId = filters.admission_case_id || filters.admission_id || filters.admission;
+  if (admissionCaseId) {
+    query.admission_case_id = admissionCaseId;
+  }
   if (filters.hours !== undefined && filters.hours !== null && filters.hours !== '') {
     query.hours = filters.hours;
   }
@@ -409,6 +413,16 @@ export const useVitalSignsTrends = (patientId, filters = {}, options = {}) => {
       end_date,
     ),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const daysAsHours = Math.max(1, Number.parseInt(days, 10) || 7) * 24;
+        return getV2PatientVitals({
+          patient: patientId,
+          admission_case_id: admission_id,
+          hours: daysAsHours,
+          ordering: '-recorded_at',
+          limit: MAX_VITALS_PAGE_SIZE,
+        }, { signal });
+      }
       const params = new URLSearchParams();
       params.append('patient', patientId);
       Object.entries(filters).forEach(([key, value]) => {

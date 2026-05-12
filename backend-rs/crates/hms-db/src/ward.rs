@@ -1648,6 +1648,7 @@ pub async fn list_patient_vitals(
     pool: &PgPool,
     facility_id: Uuid,
     patient_id: Option<Uuid>,
+    admission_case_id: Option<Uuid>,
     recorded_since: Option<chrono::DateTime<chrono::Utc>>,
     cursor: Option<WardCursor>,
     limit: i64,
@@ -1658,6 +1659,10 @@ pub async fn list_patient_vitals(
     if let Some(patient_id) = patient_id {
         query.push(" AND patient_vitals.patient_id = ");
         query.push_bind(patient_id);
+    }
+    if let Some(admission_case_id) = admission_case_id {
+        query.push(" AND patient_vitals.admission_case_id = ");
+        query.push_bind(admission_case_id);
     }
     if let Some(recorded_since) = recorded_since {
         query.push(" AND patient_vitals.recorded_at >= ");
