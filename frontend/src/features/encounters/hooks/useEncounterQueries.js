@@ -88,7 +88,7 @@ export function invalidateEncounterMutationQueries(queryClient, { encounterId, p
 export function useEncounters(filters = {}) {
   return useQuery({
     queryKey: encounterKeys.list(filters),
-    queryFn: () => encountersApi.getEncounters(filters),
+    queryFn: ({ signal }) => encountersApi.getEncounters(filters, { signal }),
     staleTime: 60 * 1000, // 60 seconds - matches backend cache timeout
   });
 }
@@ -101,7 +101,7 @@ export function useEncounters(filters = {}) {
 export function useEncounter(id) {
   return useQuery({
     queryKey: encounterKeys.detail(id),
-    queryFn: () => encountersApi.getEncounter(id),
+    queryFn: ({ signal }) => encountersApi.getEncounter(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
     staleTime: 60 * 1000, // 60 seconds
   });

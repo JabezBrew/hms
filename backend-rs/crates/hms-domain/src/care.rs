@@ -78,6 +78,13 @@ pub struct VisitListQuery {
     pub clinic_id: Option<Uuid>,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct EncounterListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct ClinicListItem {
     pub id: Uuid,

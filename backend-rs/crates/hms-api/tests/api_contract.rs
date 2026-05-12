@@ -4371,7 +4371,59 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .expect("encounters list succeeds");
     assert_eq!(encounters.status(), StatusCode::OK);
 
+    let patient_encounters = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/encounters?limit=10&patient_id={patient_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient encounters list succeeds");
+    assert_eq!(patient_encounters.status(), StatusCode::OK);
+    let patient_encounters_body = json_body(patient_encounters).await;
+    assert_eq!(patient_encounters_body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(patient_encounters_body["data"][0]["patient_id"], patient_id);
+
+    let missing_patient_id = Uuid::new_v4();
+    let missing_patient_encounters = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/encounters?limit=10&patient_id={missing_patient_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("missing patient encounter list succeeds");
+    assert_eq!(missing_patient_encounters.status(), StatusCode::NOT_FOUND);
+
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let denied_patient_encounters = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/encounters?limit=10&patient_id={patient_id}"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient encounter list denial succeeds");
+    assert_eq!(denied_patient_encounters.status(), StatusCode::FORBIDDEN);
+
     let denied_detail = app
         .clone()
         .oneshot(

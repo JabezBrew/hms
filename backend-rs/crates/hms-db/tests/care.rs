@@ -38,7 +38,6 @@ async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped()
     .fetch_one(&pool)
     .await
     .expect("patient exists");
-
     let appointment = hms_db::care::create_appointment(
         &pool,
         NewAppointment {
@@ -142,6 +141,14 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
     .fetch_one(&pool)
     .await
     .expect("patient exists");
+    let other_patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 AND id <> $2 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .bind(patient_id)
+    .fetch_one(&pool)
+    .await
+    .expect("second patient exists");
 
     let encounter = hms_db::care::create_encounter(
         &pool,
@@ -163,6 +170,28 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
         .expect("encounter exists");
     assert_eq!(loaded.patient_id, patient_id);
     assert_eq!(loaded.status, EncounterStatus::InProgress);
+
+    let other_encounter = hms_db::care::create_encounter(
+        &pool,
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id: other_patient_id,
+            visit_id: None,
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("other encounter is created");
+
+    let patient_encounters =
+        hms_db::care::list_encounters(&pool, facility_id, Some(patient_id), None, 25)
+            .await
+            .expect("patient encounter list succeeds");
+    assert_eq!(patient_encounters.len(), 1);
+    assert_eq!(patient_encounters[0].id, encounter.id);
+    assert_ne!(patient_encounters[0].id, other_encounter.id);
 
     let updated = hms_db::care::update_encounter(
         &pool,

@@ -7,8 +7,9 @@ use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::{
     AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
     CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateEncounterRequest,
-    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterStatus, TriageListItem,
-    UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
+    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery, EncounterStatus,
+    TriageListItem, UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem,
+    VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -565,7 +566,7 @@ pub async fn assign_triage(
     operation_id = "getEncounters",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(EncounterListQuery),
     responses(
         (status = 200, description = "Encounters list", body = ListResponse<EncounterListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -575,12 +576,18 @@ pub async fn assign_triage(
 pub async fn list_encounters(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<EncounterListQuery>,
 ) -> Result<Json<ListResponse<EncounterListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::EncounterView)?;
-    let (cursor, page_size) = page_request(query)?;
+    if let Some(patient_id) = query.patient_id {
+        let _patient = load_patient_for_access(&state, &user, patient_id).await?;
+    }
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_encounters(cursor, page_size as i64 + 1)
+        .list_encounters(query.patient_id, cursor, page_size as i64 + 1)
         .await
         .map_err(|_| {
             ApiError::conflict("encounter_list_failed", "Encounters could not be loaded.")

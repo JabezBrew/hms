@@ -2157,10 +2157,18 @@ impl AppState {
 
     pub async fn list_encounters(
         &self,
+        patient_id: Option<Uuid>,
         cursor: Option<CareCursor>,
         limit: i64,
     ) -> Result<Vec<EncounterListItem>> {
-        hms_db::care::list_encounters(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::care::list_encounters(
+            &self.inner.pool,
+            self.facility_id(),
+            patient_id,
+            cursor,
+            limit,
+        )
+        .await
     }
 
     pub async fn get_encounter(&self, encounter_id: Uuid) -> Result<Option<EncounterListItem>> {

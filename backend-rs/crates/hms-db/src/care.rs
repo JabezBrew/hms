@@ -799,6 +799,7 @@ pub async fn get_triage(
 pub async fn list_encounters(
     pool: &PgPool,
     facility_id: Uuid,
+    patient_id: Option<Uuid>,
     cursor: Option<CareCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<EncounterListItem>> {
@@ -821,6 +822,11 @@ pub async fn list_encounters(
     query.push_bind(facility_id);
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
+
+    if let Some(patient_id) = patient_id {
+        query.push(" AND encounters.patient_id = ");
+        query.push_bind(patient_id);
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (encounters.started_at, encounters.id) > (");
