@@ -8,8 +8,9 @@ use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use hms_domain::referrals::{
-    ClinicWaitlistEntryListItem, CreateClinicWaitlistEntryRequest, CreateReferralRequest,
-    OfferNextClinicWaitlistEntryRequest, ReferralListItem,
+    AcceptReferralRequest, ClinicWaitlistEntryListItem, CompleteReferralRequest,
+    CreateClinicWaitlistEntryRequest, CreateReferralRequest, DeclineReferralRequest,
+    OfferNextClinicWaitlistEntryRequest, ReferralListItem, ReferralSlaDashboard, ReferralSlaState,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -98,12 +99,37 @@ pub async fn create_referral(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/referrals/{id}",
+    operation_id = "getReferralById",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Referral id")),
+    responses(
+        (status = 200, description = "Referral detail", body = ObjectResponse<ReferralListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Referral not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_referral(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
+    require_referral_permission(&user, state.facility_id())?;
+    let referral = load_referral_for_access(&state, &user, id).await?;
+    Ok(Json(object(referral)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/referrals/{id}/accept",
     operation_id = "postReferralAccept",
     tag = "referrals",
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Referral id")),
+    request_body = AcceptReferralRequest,
     responses(
         (status = 200, description = "Referral accepted", body = ObjectResponse<ReferralListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -115,16 +141,12 @@ pub async fn accept_referral(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
     Path(id): Path<Uuid>,
+    Json(payload): Json<AcceptReferralRequest>,
 ) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
     require_referral_permission(&user, state.facility_id())?;
-    let existing = state
-        .get_referral(id)
-        .await
-        .map_err(|_| ApiError::conflict("referral_load_failed", "Referral could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
+    let _existing = load_referral_for_access(&state, &user, id).await?;
     let referral = state
-        .accept_referral(id, user.id)
+        .accept_referral(id, user.id, optional_text(payload.acceptance_notes))
         .await
         .map_err(|_| {
             ApiError::conflict("referral_accept_failed", "Referral could not be accepted.")
@@ -132,6 +154,143 @@ pub async fn accept_referral(
         .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
 
     Ok(Json(object(referral)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/referrals/{id}/decline",
+    operation_id = "postReferralDecline",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Referral id")),
+    request_body = DeclineReferralRequest,
+    responses(
+        (status = 200, description = "Referral declined", body = ObjectResponse<ReferralListItem>),
+        (status = 400, description = "Invalid decline request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Referral not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn decline_referral(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<DeclineReferralRequest>,
+) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
+    require_referral_permission(&user, state.facility_id())?;
+    let _existing = load_referral_for_access(&state, &user, id).await?;
+    let decline_reason = required_text(payload.decline_reason, "decline_reason")?;
+    let referral = state
+        .decline_referral(id, decline_reason)
+        .await
+        .map_err(|_| {
+            ApiError::conflict("referral_decline_failed", "Referral could not be declined.")
+        })?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+
+    Ok(Json(object(referral)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/referrals/{id}/complete",
+    operation_id = "postReferralComplete",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Referral id")),
+    request_body = CompleteReferralRequest,
+    responses(
+        (status = 200, description = "Referral completed", body = ObjectResponse<ReferralListItem>),
+        (status = 400, description = "Invalid completion request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Referral not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn complete_referral(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CompleteReferralRequest>,
+) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
+    require_referral_permission(&user, state.facility_id())?;
+    let _existing = load_referral_for_access(&state, &user, id).await?;
+    let specialist_notes = required_text(payload.specialist_notes, "specialist_notes")?;
+    let referral = state
+        .complete_referral(id, specialist_notes, optional_text(payload.recommendations))
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "referral_complete_failed",
+                "Referral could not be completed.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+
+    Ok(Json(object(referral)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/referrals/{id}/sla-state",
+    operation_id = "getReferralSlaState",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Referral id")),
+    responses(
+        (status = 200, description = "Referral SLA state", body = ObjectResponse<ReferralSlaState>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Referral not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_referral_sla_state(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ReferralSlaState>>, ApiError> {
+    require_referral_permission(&user, state.facility_id())?;
+    let _existing = load_referral_for_access(&state, &user, id).await?;
+    let sla_state = state
+        .referral_sla_state(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "referral_sla_state_failed",
+                "Referral SLA state could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+
+    Ok(Json(object(sla_state)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/referrals/sla-dashboard",
+    operation_id = "getReferralSlaDashboard",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Referral SLA dashboard", body = ObjectResponse<ReferralSlaDashboard>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_referral_sla_dashboard(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+) -> Result<Json<ObjectResponse<ReferralSlaDashboard>>, ApiError> {
+    require_patient_workflow_access(&user, state.facility_id())?;
+    let dashboard = state.referral_sla_dashboard().await.map_err(|_| {
+        ApiError::conflict(
+            "referral_sla_dashboard_failed",
+            "Referral SLA dashboard could not be loaded.",
+        )
+    })?;
+
+    Ok(Json(object(dashboard)))
 }
 
 #[utoipa::path(
@@ -263,6 +422,20 @@ async fn load_patient_for_access(
     Ok(patient)
 }
 
+async fn load_referral_for_access(
+    state: &AppState,
+    user: &AuthUser,
+    referral_id: Uuid,
+) -> Result<ReferralListItem, ApiError> {
+    let referral = state
+        .get_referral(referral_id)
+        .await
+        .map_err(|_| ApiError::conflict("referral_load_failed", "Referral could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+    let _patient = load_patient_for_access(state, user, referral.patient_id).await?;
+    Ok(referral)
+}
+
 fn require_patient_workflow_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
     require_referral_permission(user, facility_id)?;
     if user
@@ -358,4 +531,10 @@ fn required_text(value: String, field: &'static str) -> Result<String, ApiError>
         return Err(error);
     }
     Ok(value.to_owned())
+}
+
+fn optional_text(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }

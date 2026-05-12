@@ -16,6 +16,7 @@ pub enum ReferralPriority {
 pub enum ReferralStatus {
     Sent,
     Accepted,
+    Declined,
     Completed,
     Cancelled,
 }
@@ -38,8 +39,16 @@ pub struct ReferralListItem {
     pub to_service: String,
     pub priority: ReferralPriority,
     pub status: ReferralStatus,
+    pub reason: Option<String>,
+    pub acceptance_notes: Option<String>,
+    pub decline_reason: Option<String>,
+    pub specialist_notes: Option<String>,
+    pub recommendations: Option<String>,
     pub sla_due_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -74,4 +83,43 @@ pub struct CreateClinicWaitlistEntryRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct OfferNextClinicWaitlistEntryRequest {
     pub service: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AcceptReferralRequest {
+    pub acceptance_notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DeclineReferralRequest {
+    pub decline_reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CompleteReferralRequest {
+    pub specialist_notes: String,
+    pub recommendations: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ReferralSlaState {
+    pub referral_id: Uuid,
+    pub status: ReferralStatus,
+    pub sla_due_at: DateTime<Utc>,
+    pub breached: bool,
+    pub due_in_minutes: i64,
+    pub risk_level: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ReferralSlaRiskSummary {
+    pub total: i64,
+    pub open: i64,
+    pub breached: i64,
+    pub due_soon: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ReferralSlaDashboard {
+    pub risk_summary: ReferralSlaRiskSummary,
 }

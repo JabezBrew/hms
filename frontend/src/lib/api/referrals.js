@@ -2,6 +2,10 @@
  * Referrals API service
  */
 import { apiClient, handleApiError } from '../api-client';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
+
+const DEFAULT_REFERRAL_PAGE_SIZE = 50;
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -15,6 +19,118 @@ function normalizeListResponse(response) {
   return [];
 }
 
+function normalizeLimit(params = {}, fallback = DEFAULT_REFERRAL_PAGE_SIZE) {
+  const rawLimit = params.limit || params.page_size || fallback;
+  const parsed = Number.parseInt(String(rawLimit), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, 100);
+}
+
+function normalizePriority(value) {
+  const normalized = String(value || 'routine').toLowerCase();
+  if (normalized === 'emergency' || normalized === 'urgent' || normalized === 'routine') {
+    return normalized;
+  }
+  return 'routine';
+}
+
+function mapV2ReferralStatus(status) {
+  switch (status) {
+    case 'sent':
+      return 'pending';
+    case 'cancelled':
+      return 'declined';
+    default:
+      return status || 'pending';
+  }
+}
+
+function referralNumber(referral) {
+  return `V2-REF-${String(referral?.id || '').slice(0, 8).toUpperCase()}`;
+}
+
+function splitDisplayName(displayName) {
+  const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ['', ''];
+  if (parts.length === 1) return [parts[0], ''];
+  return [parts[0], parts.slice(1).join(' ')];
+}
+
+function adaptV2Referral(referral) {
+  if (!referral) {
+    return referral;
+  }
+  const [firstName, lastName] = splitDisplayName(referral.patient_display_name);
+  return {
+    ...referral,
+    id: referral.id,
+    patient: referral.patient_id,
+    patient_id: referral.patient_id,
+    patient_name: referral.patient_display_name,
+    patient_mrn: referral.patient_code,
+    patient_details: {
+      id: referral.patient_id,
+      first_name: firstName,
+      last_name: lastName,
+      medical_record_number: referral.patient_code,
+    },
+    referral_number: referral.referral_number || referralNumber(referral),
+    referred_to_department: referral.to_service,
+    referred_to_specialty: referral.to_service,
+    urgency: normalizePriority(referral.priority),
+    priority: normalizePriority(referral.priority),
+    status: mapV2ReferralStatus(referral.status),
+    v2_status: referral.status,
+    reason: referral.reason || '',
+    created_at: referral.created_at,
+    updated_at: referral.updated_at || referral.created_at,
+  };
+}
+
+function adaptV2ReferralList(response) {
+  return (response?.data || []).map(adaptV2Referral);
+}
+
+function adaptV2ReferralCollection(response) {
+  return { referrals: adaptV2ReferralList(response) };
+}
+
+function adaptV2WaitlistEntry(entry) {
+  if (!entry) {
+    return entry;
+  }
+  return {
+    ...entry,
+    patient: entry.patient_id,
+    patient_id: entry.patient_id,
+    patient_name: entry.patient_display_name,
+    patient_mrn: entry.patient_code,
+  };
+}
+
+function v2ReferralPayload(data = {}) {
+  return {
+    patient_id: data.patient_id || data.patient,
+    to_service: data.to_service || data.referred_to_department || data.department || data.referred_to_specialty,
+    priority: normalizePriority(data.priority || data.urgency),
+    reason: data.reason || null,
+  };
+}
+
+function v2WaitlistPayload(data = {}) {
+  return {
+    patient_id: data.patient_id || data.patient,
+    service: data.service || data.referred_to_department || data.department,
+    priority: normalizePriority(data.priority || data.urgency),
+  };
+}
+
+function unsupportedInRustV2(message) {
+  return new Error(message);
+}
+
 export const referralsApi = {
   /**
    * Get all referrals with optional filtering
@@ -23,6 +139,16 @@ export const referralsApi = {
    */
   getReferrals: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferrals({
+          ...options,
+          query: {
+            cursor: params.cursor || params.next_cursor,
+            limit: normalizeLimit(params),
+          },
+        });
+        return adaptV2ReferralList(response);
+      }
       const response = await apiClient.getWithPagination('/referrals/', {
         ...options,
         params,
@@ -34,9 +160,13 @@ export const referralsApi = {
     }
   },
 
-  getReferral: async (id) => {
+  getReferral: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/referrals/${id}/`);
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferralById({ id }, options);
+        return adaptV2Referral(response?.data);
+      }
+      return await apiClient.get(`/referrals/${id}/`, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch referral'));
     }
@@ -44,6 +174,10 @@ export const referralsApi = {
 
   createReferral: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postReferrals(v2ReferralPayload(data));
+        return adaptV2Referral(response?.data);
+      }
       return await apiClient.post('/referrals/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create referral'));
@@ -52,6 +186,9 @@ export const referralsApi = {
 
   updateReferral: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        throw unsupportedInRustV2('Rust V2 does not expose referral edits yet.');
+      }
       return await apiClient.patch(`/referrals/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update referral'));
@@ -60,6 +197,9 @@ export const referralsApi = {
 
   submitReferral: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return referralsApi.getReferral(id);
+      }
       return await apiClient.post(`/referrals/${id}/submit/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to submit referral'));
@@ -68,6 +208,13 @@ export const referralsApi = {
 
   acceptReferral: async (id, acceptanceNotes = '') => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postReferralAccept(
+          { id },
+          { acceptance_notes: acceptanceNotes || null },
+        );
+        return adaptV2Referral(response?.data);
+      }
       return await apiClient.post(`/referrals/${id}/accept/`, {
         acceptance_notes: acceptanceNotes,
       });
@@ -78,6 +225,13 @@ export const referralsApi = {
 
   declineReferral: async (id, declineReason) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postReferralDecline(
+          { id },
+          { decline_reason: declineReason },
+        );
+        return adaptV2Referral(response?.data);
+      }
       return await apiClient.post(`/referrals/${id}/decline/`, {
         decline_reason: declineReason,
       });
@@ -88,6 +242,9 @@ export const referralsApi = {
 
   scheduleReferral: async (id, appointmentId) => {
     try {
+      if (isRustV2ApiMode()) {
+        throw unsupportedInRustV2('Rust V2 does not expose referral scheduling yet.');
+      }
       return await apiClient.post(`/referrals/${id}/schedule/`, {
         scheduled_appointment_id: appointmentId,
       });
@@ -98,6 +255,16 @@ export const referralsApi = {
 
   completeReferral: async (id, specialistNotes, recommendations = '') => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postReferralComplete(
+          { id },
+          {
+            specialist_notes: specialistNotes,
+            recommendations: recommendations || null,
+          },
+        );
+        return adaptV2Referral(response?.data);
+      }
       return await apiClient.post(`/referrals/${id}/complete/`, {
         specialist_notes: specialistNotes,
         recommendations: recommendations,
@@ -109,6 +276,9 @@ export const referralsApi = {
 
   startConsultation: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return referralsApi.getReferral(id);
+      }
       return await apiClient.post(`/referrals/${id}/start-consultation/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to start consultation'));
@@ -117,6 +287,9 @@ export const referralsApi = {
 
   updateReferralResponse: async (id, specialistNotes, recommendations = '') => {
     try {
+      if (isRustV2ApiMode()) {
+        return referralsApi.completeReferral(id, specialistNotes, recommendations);
+      }
       return await apiClient.patch(`/referrals/${id}/update_response/`, {
         specialist_notes: specialistNotes,
         recommendations: recommendations,
@@ -126,17 +299,31 @@ export const referralsApi = {
     }
   },
 
-  getReferralInbox: async () => {
+  getReferralInbox: async (options = {}) => {
     try {
-      return await apiClient.get('/referrals/inbox/');
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferrals({
+          ...options,
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+        });
+        return adaptV2ReferralCollection(response);
+      }
+      return await apiClient.get('/referrals/inbox/', options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch referral inbox'));
     }
   },
 
-  getReferralInboxCount: async () => {
+  getReferralInboxCount: async (options = {}) => {
     try {
-      const response = await apiClient.get('/referrals/inbox-count/');
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferrals({
+          ...options,
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+        });
+        return adaptV2ReferralList(response).filter((referral) => referral.status === 'pending').length;
+      }
+      const response = await apiClient.get('/referrals/inbox-count/', options);
       return response?.count || 0;
     } catch (error) {
       // Return 0 on error to avoid breaking the UI
@@ -145,25 +332,43 @@ export const referralsApi = {
     }
   },
 
-  getReferralsSent: async () => {
+  getReferralsSent: async (options = {}) => {
     try {
-      return await apiClient.get('/referrals/sent/');
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferrals({
+          ...options,
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+        });
+        return adaptV2ReferralCollection(response);
+      }
+      return await apiClient.get('/referrals/sent/', options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch sent referrals'));
     }
   },
 
-  getPendingReferrals: async () => {
+  getPendingReferrals: async (options = {}) => {
     try {
-      return await apiClient.get('/referrals/pending/');
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferrals({
+          ...options,
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+        });
+        return adaptV2ReferralList(response).filter((referral) => referral.status === 'pending');
+      }
+      return await apiClient.get('/referrals/pending/', options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch pending referrals'));
     }
   },
 
-  getReferralSlaState: async (id) => {
+  getReferralSlaState: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/referrals/${id}/sla-state/`);
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferralSlaState({ id }, options);
+        return { sla_state: response?.data || null };
+      }
+      return await apiClient.get(`/referrals/${id}/sla-state/`, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch referral SLA state'));
     }
@@ -171,23 +376,40 @@ export const referralsApi = {
 
   evaluateReferralSla: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return referralsApi.getReferralSlaState(id);
+      }
       return await apiClient.post(`/referrals/${id}/evaluate-sla/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to evaluate referral SLA'));
     }
   },
 
-  getReferralSlaDashboard: async () => {
+  getReferralSlaDashboard: async (options = {}) => {
     try {
-      return await apiClient.get('/referrals/sla-dashboard/');
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getReferralSlaDashboard(options);
+        return response?.data || { risk_summary: { total: 0, open: 0, breached: 0, due_soon: 0 } };
+      }
+      return await apiClient.get('/referrals/sla-dashboard/', options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch referral SLA dashboard'));
     }
   },
 
-  getClinicWaitlist: async (params = {}) => {
+  getClinicWaitlist: async (params = {}, options = {}) => {
     try {
-      return await apiClient.get('/referrals/clinic-waitlist/', { params });
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getClinicWaitlist({
+          ...options,
+          query: {
+            cursor: params.cursor || params.next_cursor,
+            limit: normalizeLimit(params),
+          },
+        });
+        return (response?.data || []).map(adaptV2WaitlistEntry);
+      }
+      return await apiClient.get('/referrals/clinic-waitlist/', { ...options, params });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch clinic waitlist'));
     }
@@ -195,6 +417,10 @@ export const referralsApi = {
 
   createClinicWaitlistEntry: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postClinicWaitlist(v2WaitlistPayload(data));
+        return adaptV2WaitlistEntry(response?.data);
+      }
       return await apiClient.post('/referrals/clinic-waitlist/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create waitlist entry'));
@@ -203,6 +429,12 @@ export const referralsApi = {
 
   offerNextClinicWaitlistEntry: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postClinicWaitlistOfferNext({
+          service: data?.service || data?.department || data?.referred_to_department,
+        });
+        return adaptV2WaitlistEntry(response?.data);
+      }
       return await apiClient.post('/referrals/clinic-waitlist/offer-next/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to offer next waitlist entry'));
@@ -211,6 +443,9 @@ export const referralsApi = {
 
   promoteClinicWaitlistEntry: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        throw unsupportedInRustV2('Rust V2 does not expose clinic waitlist promotion yet.');
+      }
       return await apiClient.post(`/referrals/clinic-waitlist/${id}/promote/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to promote waitlist entry'));
@@ -219,15 +454,32 @@ export const referralsApi = {
 
   cancelClinicWaitlistEntry: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        throw unsupportedInRustV2('Rust V2 does not expose clinic waitlist cancellation yet.');
+      }
       return await apiClient.post(`/referrals/clinic-waitlist/${id}/cancel/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to cancel waitlist entry'));
     }
   },
 
-  getClinicWaitlistSummary: async () => {
+  getClinicWaitlistSummary: async (options = {}) => {
     try {
-      return await apiClient.get('/referrals/clinic-waitlist/summary/');
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getClinicWaitlist({
+          ...options,
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+        });
+        const rowsByService = new Map();
+        for (const entry of response?.data || []) {
+          const service = entry.service || 'Unassigned';
+          const current = rowsByService.get(service) || { service, total: 0 };
+          current.total += entry.status === 'waiting' ? 1 : 0;
+          rowsByService.set(service, current);
+        }
+        return { rows: Array.from(rowsByService.values()) };
+      }
+      return await apiClient.get('/referrals/clinic-waitlist/summary/', options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch waitlist summary'));
     }

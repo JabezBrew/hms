@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use hms_domain::referrals::{
     ClinicWaitlistEntryListItem, ClinicWaitlistStatus, ReferralListItem, ReferralPriority,
-    ReferralStatus,
+    ReferralSlaDashboard, ReferralSlaRiskSummary, ReferralSlaState, ReferralStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -46,8 +46,24 @@ struct ReferralRow {
     to_service: String,
     priority: String,
     status: String,
+    reason: Option<String>,
+    acceptance_notes: Option<String>,
+    decline_reason: Option<String>,
+    specialist_notes: Option<String>,
+    recommendations: Option<String>,
     sla_due_at: DateTime<Utc>,
     created_at: DateTime<Utc>,
+    accepted_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ReferralSlaSummaryRow {
+    total: i64,
+    open: i64,
+    breached: i64,
+    due_soon: i64,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -130,6 +146,7 @@ pub async fn accept_referral(
     facility_id: Uuid,
     referral_id: Uuid,
     actor_user_id: Uuid,
+    acceptance_notes: Option<String>,
 ) -> anyhow::Result<Option<ReferralListItem>> {
     sqlx::query(
         r#"
@@ -137,17 +154,80 @@ pub async fn accept_referral(
         SET status = $1,
             accepted_by_user_id = $2,
             accepted_at = COALESCE(accepted_at, now()),
+            acceptance_notes = $3,
             updated_at = now()
-        WHERE facility_id = $3
-          AND id = $4
-          AND status = $5
+        WHERE facility_id = $4
+          AND id = $5
+          AND status = $6
         "#,
     )
     .bind(codec::encode(ReferralStatus::Accepted)?)
     .bind(actor_user_id)
+    .bind(acceptance_notes)
     .bind(facility_id)
     .bind(referral_id)
     .bind(codec::encode(ReferralStatus::Sent)?)
+    .execute(pool)
+    .await?;
+
+    optional_referral_by_id(pool, facility_id, referral_id).await
+}
+
+pub async fn decline_referral(
+    pool: &PgPool,
+    facility_id: Uuid,
+    referral_id: Uuid,
+    decline_reason: String,
+) -> anyhow::Result<Option<ReferralListItem>> {
+    sqlx::query(
+        r#"
+        UPDATE referrals
+        SET status = $1,
+            decline_reason = $2,
+            updated_at = now()
+        WHERE facility_id = $3
+          AND id = $4
+          AND status IN ($5, $6)
+        "#,
+    )
+    .bind(codec::encode(ReferralStatus::Declined)?)
+    .bind(decline_reason)
+    .bind(facility_id)
+    .bind(referral_id)
+    .bind(codec::encode(ReferralStatus::Sent)?)
+    .bind(codec::encode(ReferralStatus::Accepted)?)
+    .execute(pool)
+    .await?;
+
+    optional_referral_by_id(pool, facility_id, referral_id).await
+}
+
+pub async fn complete_referral(
+    pool: &PgPool,
+    facility_id: Uuid,
+    referral_id: Uuid,
+    specialist_notes: String,
+    recommendations: Option<String>,
+) -> anyhow::Result<Option<ReferralListItem>> {
+    sqlx::query(
+        r#"
+        UPDATE referrals
+        SET status = $1,
+            specialist_notes = $2,
+            recommendations = $3,
+            completed_at = COALESCE(completed_at, now()),
+            updated_at = now()
+        WHERE facility_id = $4
+          AND id = $5
+          AND status = $6
+        "#,
+    )
+    .bind(codec::encode(ReferralStatus::Completed)?)
+    .bind(specialist_notes)
+    .bind(recommendations)
+    .bind(facility_id)
+    .bind(referral_id)
+    .bind(codec::encode(ReferralStatus::Accepted)?)
     .execute(pool)
     .await?;
 
@@ -160,6 +240,54 @@ pub async fn get_referral(
     referral_id: Uuid,
 ) -> anyhow::Result<Option<ReferralListItem>> {
     optional_referral_by_id(pool, facility_id, referral_id).await
+}
+
+pub async fn referral_sla_state(
+    pool: &PgPool,
+    facility_id: Uuid,
+    referral_id: Uuid,
+) -> anyhow::Result<Option<ReferralSlaState>> {
+    optional_referral_by_id(pool, facility_id, referral_id)
+        .await?
+        .map(referral_sla_state_from_item)
+        .transpose()
+}
+
+pub async fn referral_sla_dashboard(
+    pool: &PgPool,
+    facility_id: Uuid,
+) -> anyhow::Result<ReferralSlaDashboard> {
+    let row = sqlx::query_as::<_, ReferralSlaSummaryRow>(
+        r#"
+        SELECT COUNT(*)::bigint AS total,
+               COUNT(*) FILTER (
+                   WHERE status NOT IN ('completed', 'declined', 'cancelled')
+               )::bigint AS open,
+               COUNT(*) FILTER (
+                   WHERE status NOT IN ('completed', 'declined', 'cancelled')
+                     AND sla_due_at < now()
+               )::bigint AS breached,
+               COUNT(*) FILTER (
+                   WHERE status NOT IN ('completed', 'declined', 'cancelled')
+                     AND sla_due_at >= now()
+                     AND sla_due_at <= now() + interval '4 hours'
+               )::bigint AS due_soon
+        FROM referrals
+        WHERE facility_id = $1
+        "#,
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(ReferralSlaDashboard {
+        risk_summary: ReferralSlaRiskSummary {
+            total: row.total,
+            open: row.open,
+            breached: row.breached,
+            due_soon: row.due_soon,
+        },
+    })
 }
 
 pub async fn list_clinic_waitlist_entries(
@@ -284,8 +412,16 @@ fn referral_query() -> QueryBuilder<'static, Postgres> {
                referrals.to_service,
                referrals.priority,
                referrals.status,
+               referrals.reason,
+               referrals.acceptance_notes,
+               referrals.decline_reason,
+               referrals.specialist_notes,
+               referrals.recommendations,
                referrals.sla_due_at,
-               referrals.created_at
+               referrals.created_at,
+               referrals.accepted_at,
+               referrals.completed_at,
+               referrals.updated_at
         FROM referrals
         JOIN patients
           ON patients.id = referrals.patient_id
@@ -397,8 +533,43 @@ fn referral_from_row(row: ReferralRow) -> anyhow::Result<ReferralListItem> {
         to_service: row.to_service,
         priority: codec::decode(&row.priority)?,
         status: codec::decode(&row.status)?,
+        reason: row.reason,
+        acceptance_notes: row.acceptance_notes,
+        decline_reason: row.decline_reason,
+        specialist_notes: row.specialist_notes,
+        recommendations: row.recommendations,
         sla_due_at: row.sla_due_at,
         created_at: row.created_at,
+        accepted_at: row.accepted_at,
+        completed_at: row.completed_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn referral_sla_state_from_item(item: ReferralListItem) -> anyhow::Result<ReferralSlaState> {
+    let now = Utc::now();
+    let due_in_minutes = (item.sla_due_at - now).num_minutes();
+    let is_closed = matches!(
+        item.status,
+        ReferralStatus::Completed | ReferralStatus::Declined | ReferralStatus::Cancelled
+    );
+    let breached = !is_closed && item.sla_due_at < now;
+    let risk_level = if breached {
+        "breached"
+    } else if !is_closed && due_in_minutes <= 240 {
+        "due_soon"
+    } else {
+        "on_track"
+    }
+    .to_owned();
+
+    Ok(ReferralSlaState {
+        referral_id: item.id,
+        status: item.status,
+        sla_due_at: item.sla_due_at,
+        breached,
+        due_in_minutes,
+        risk_level,
     })
 }
 

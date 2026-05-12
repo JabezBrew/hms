@@ -39,7 +39,7 @@ export function useReferrals(filters = {}) {
 export function useReferral(id) {
   return useQuery({
     queryKey: referralKeys.detail(id),
-    queryFn: () => referralsApi.getReferral(id),
+    queryFn: ({ signal }) => referralsApi.getReferral(id, { signal }),
     enabled: !!id,
   });
 }
@@ -203,7 +203,7 @@ export function useUpdateReferralResponse() {
 export function useReferralInbox() {
   return useQuery({
     queryKey: referralKeys.inbox(),
-    queryFn: () => referralsApi.getReferralInbox(),
+    queryFn: ({ signal }) => referralsApi.getReferralInbox({ signal }),
   });
 }
 
@@ -213,7 +213,7 @@ export function useReferralInbox() {
 export function useReferralsSent() {
   return useQuery({
     queryKey: referralKeys.sent(),
-    queryFn: () => referralsApi.getReferralsSent(),
+    queryFn: ({ signal }) => referralsApi.getReferralsSent({ signal }),
   });
 }
 
@@ -223,7 +223,7 @@ export function useReferralsSent() {
 export function usePendingReferrals() {
   return useQuery({
     queryKey: referralKeys.pending(),
-    queryFn: () => referralsApi.getPendingReferrals(),
+    queryFn: ({ signal }) => referralsApi.getPendingReferrals({ signal }),
   });
 }
 
@@ -234,7 +234,7 @@ export function useReferralSlaDashboard(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: referralKeys.slaDashboard(),
-    queryFn: () => referralsApi.getReferralSlaDashboard(),
+    queryFn: ({ signal }) => referralsApi.getReferralSlaDashboard({ signal }),
     enabled,
     staleTime: 30 * 1000,
   });
@@ -247,7 +247,7 @@ export function useReferralSlaState(id, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: referralKeys.slaState(id),
-    queryFn: () => referralsApi.getReferralSlaState(id),
+    queryFn: ({ signal }) => referralsApi.getReferralSlaState(id, { signal }),
     enabled: enabled && !!id,
     staleTime: 30 * 1000,
   });
@@ -260,7 +260,7 @@ export function useClinicWaitlist(filters = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: referralKeys.clinicWaitlist(filters),
-    queryFn: () => referralsApi.getClinicWaitlist(filters),
+    queryFn: ({ signal }) => referralsApi.getClinicWaitlist(filters, { signal }),
     enabled,
   });
 }
@@ -272,7 +272,7 @@ export function useClinicWaitlistSummary(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: referralKeys.clinicWaitlistSummary(),
-    queryFn: () => referralsApi.getClinicWaitlistSummary(),
+    queryFn: ({ signal }) => referralsApi.getClinicWaitlistSummary({ signal }),
     enabled,
     staleTime: 30 * 1000,
   });

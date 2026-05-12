@@ -56,13 +56,74 @@ async fn referrals_sla_and_waitlist_are_facility_scoped() {
     .await
     .expect("referral create succeeds");
     assert_eq!(referral.status, ReferralStatus::Sent);
+    assert_eq!(referral.reason.as_deref(), Some("Medical review"));
     assert_eq!(referral.sla_due_at, sla_due_at);
 
-    let accepted = hms_db::referrals::accept_referral(&pool, facility_id, referral.id, owner_id)
-        .await
-        .expect("referral accept query succeeds")
-        .expect("referral exists");
+    let accepted = hms_db::referrals::accept_referral(
+        &pool,
+        facility_id,
+        referral.id,
+        owner_id,
+        Some("Accepted for same-day review".to_owned()),
+    )
+    .await
+    .expect("referral accept query succeeds")
+    .expect("referral exists");
     assert_eq!(accepted.status, ReferralStatus::Accepted);
+    assert_eq!(
+        accepted.acceptance_notes.as_deref(),
+        Some("Accepted for same-day review")
+    );
+
+    let completed = hms_db::referrals::complete_referral(
+        &pool,
+        facility_id,
+        referral.id,
+        "Specialist review completed".to_owned(),
+        Some("Continue current treatment".to_owned()),
+    )
+    .await
+    .expect("referral complete query succeeds")
+    .expect("referral exists");
+    assert_eq!(completed.status, ReferralStatus::Completed);
+    assert_eq!(
+        completed.specialist_notes.as_deref(),
+        Some("Specialist review completed")
+    );
+    assert_eq!(
+        completed.recommendations.as_deref(),
+        Some("Continue current treatment")
+    );
+
+    let decline_referral = hms_db::referrals::create_referral(
+        &pool,
+        NewReferral {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            to_service: "Surgery".to_owned(),
+            priority: ReferralPriority::Routine,
+            reason: Some("Surgical review".to_owned()),
+            sla_due_at: Utc::now() + chrono::Duration::hours(72),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("decline referral create succeeds");
+    let declined = hms_db::referrals::decline_referral(
+        &pool,
+        facility_id,
+        decline_referral.id,
+        "Needs orthopedics instead".to_owned(),
+    )
+    .await
+    .expect("referral decline query succeeds")
+    .expect("referral exists");
+    assert_eq!(declined.status, ReferralStatus::Declined);
+    assert_eq!(
+        declined.decline_reason.as_deref(),
+        Some("Needs orthopedics instead")
+    );
 
     let waitlist_entry = hms_db::referrals::create_clinic_waitlist_entry(
         &pool,

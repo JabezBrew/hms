@@ -11,8 +11,25 @@ pub fn routes() -> Router<AppState> {
             get(referrals::list_referrals).post(referrals::create_referral),
         )
         .route(
+            "/api/v2/referrals/sla-dashboard",
+            get(referrals::get_referral_sla_dashboard),
+        )
+        .route("/api/v2/referrals/:id", get(referrals::get_referral))
+        .route(
             "/api/v2/referrals/:id/accept",
             post(referrals::accept_referral),
+        )
+        .route(
+            "/api/v2/referrals/:id/decline",
+            post(referrals::decline_referral),
+        )
+        .route(
+            "/api/v2/referrals/:id/complete",
+            post(referrals::complete_referral),
+        )
+        .route(
+            "/api/v2/referrals/:id/sla-state",
+            get(referrals::get_referral_sla_state),
         )
         .route(
             "/api/v2/referrals/clinic-waitlist",

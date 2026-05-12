@@ -725,6 +725,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getReferralById": {
+    "operationId": "getReferralById",
+    "method": "GET",
+    "path": "/api/v2/referrals/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getReferrals": {
     "operationId": "getReferrals",
     "method": "GET",
@@ -734,6 +744,24 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getReferralSlaDashboard": {
+    "operationId": "getReferralSlaDashboard",
+    "method": "GET",
+    "path": "/api/v2/referrals/sla-dashboard",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getReferralSlaState": {
+    "operationId": "getReferralSlaState",
+    "method": "GET",
+    "path": "/api/v2/referrals/{id}/sla-state",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getStaffDirectory": {
@@ -1560,7 +1588,27 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
-    "hasBody": false
+    "hasBody": true
+  },
+  "postReferralComplete": {
+    "operationId": "postReferralComplete",
+    "method": "POST",
+    "path": "/api/v2/referrals/{id}/complete",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postReferralDecline": {
+    "operationId": "postReferralDecline",
+    "method": "POST",
+    "path": "/api/v2/referrals/{id}/decline",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
   },
   "postReferrals": {
     "operationId": "postReferrals",
@@ -1790,7 +1838,10 @@ export function createGeneratedClient(request) {
     getPharmacyDispenses: createOperation(request, operations.getPharmacyDispenses),
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),
     getRealtimeSubscriptions: createOperation(request, operations.getRealtimeSubscriptions),
+    getReferralById: createOperation(request, operations.getReferralById),
     getReferrals: createOperation(request, operations.getReferrals),
+    getReferralSlaDashboard: createOperation(request, operations.getReferralSlaDashboard),
+    getReferralSlaState: createOperation(request, operations.getReferralSlaState),
     getStaffDirectory: createOperation(request, operations.getStaffDirectory),
     getStockBatches: createOperation(request, operations.getStockBatches),
     getStockMovements: createOperation(request, operations.getStockMovements),
@@ -1881,6 +1932,8 @@ export function createGeneratedClient(request) {
     postPharmacyDispenses: createOperation(request, operations.postPharmacyDispenses),
     postPurchaseOrders: createOperation(request, operations.postPurchaseOrders),
     postReferralAccept: createOperation(request, operations.postReferralAccept),
+    postReferralComplete: createOperation(request, operations.postReferralComplete),
+    postReferralDecline: createOperation(request, operations.postReferralDecline),
     postReferrals: createOperation(request, operations.postReferrals),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitions: createOperation(request, operations.postStockRequisitions),

@@ -1,6 +1,17 @@
 {
   "components": {
     "schemas": {
+      "AcceptReferralRequest": {
+        "properties": {
+          "acceptance_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "AdminListQuery": {
         "properties": {
           "cursor": {
@@ -1120,6 +1131,23 @@
           "inactive"
         ],
         "type": "string"
+      },
+      "CompleteReferralRequest": {
+        "properties": {
+          "recommendations": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "specialist_notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "specialist_notes"
+        ],
+        "type": "object"
       },
       "ConsentGrantListItem": {
         "properties": {
@@ -2486,6 +2514,17 @@
           "generated_at",
           "metrics",
           "navigation"
+        ],
+        "type": "object"
+      },
+      "DeclineReferralRequest": {
+        "properties": {
+          "decline_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decline_reason"
         ],
         "type": "object"
       },
@@ -6654,9 +6693,35 @@
           "data": {
             "items": {
               "properties": {
+                "acceptance_notes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "accepted_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "completed_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "decline_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "id": {
                   "format": "uuid",
@@ -6675,14 +6740,36 @@
                 "priority": {
                   "$ref": "#/components/schemas/ReferralPriority"
                 },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recommendations": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "sla_due_at": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "specialist_notes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "status": {
                   "$ref": "#/components/schemas/ReferralStatus"
                 },
                 "to_service": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
                   "type": "string"
                 }
               },
@@ -6695,7 +6782,8 @@
                 "priority",
                 "status",
                 "sla_due_at",
-                "created_at"
+                "created_at",
+                "updated_at"
               ],
               "type": "object"
             },
@@ -11136,9 +11224,35 @@
         "properties": {
           "data": {
             "properties": {
+              "acceptance_notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "accepted_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "completed_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "decline_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "id": {
                 "format": "uuid",
@@ -11157,14 +11271,36 @@
               "priority": {
                 "$ref": "#/components/schemas/ReferralPriority"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "recommendations": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "sla_due_at": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "specialist_notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "status": {
                 "$ref": "#/components/schemas/ReferralStatus"
               },
               "to_service": {
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
                 "type": "string"
               }
             },
@@ -11177,7 +11313,73 @@
               "priority",
               "status",
               "sla_due_at",
-              "created_at"
+              "created_at",
+              "updated_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ReferralSlaDashboard": {
+        "properties": {
+          "data": {
+            "properties": {
+              "risk_summary": {
+                "$ref": "#/components/schemas/ReferralSlaRiskSummary"
+              }
+            },
+            "required": [
+              "risk_summary"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ReferralSlaState": {
+        "properties": {
+          "data": {
+            "properties": {
+              "breached": {
+                "type": "boolean"
+              },
+              "due_in_minutes": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "referral_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "risk_level": {
+                "type": "string"
+              },
+              "sla_due_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/ReferralStatus"
+              }
+            },
+            "required": [
+              "referral_id",
+              "status",
+              "sla_due_at",
+              "breached",
+              "due_in_minutes",
+              "risk_level"
             ],
             "type": "object"
           },
@@ -13026,9 +13228,35 @@
       },
       "ReferralListItem": {
         "properties": {
+          "acceptance_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accepted_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "decline_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -13047,14 +13275,36 @@
           "priority": {
             "$ref": "#/components/schemas/ReferralPriority"
           },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recommendations": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sla_due_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "specialist_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/ReferralStatus"
           },
           "to_service": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -13067,7 +13317,8 @@
           "priority",
           "status",
           "sla_due_at",
-          "created_at"
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -13079,10 +13330,83 @@
         ],
         "type": "string"
       },
+      "ReferralSlaDashboard": {
+        "properties": {
+          "risk_summary": {
+            "$ref": "#/components/schemas/ReferralSlaRiskSummary"
+          }
+        },
+        "required": [
+          "risk_summary"
+        ],
+        "type": "object"
+      },
+      "ReferralSlaRiskSummary": {
+        "properties": {
+          "breached": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "due_soon": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "open": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "open",
+          "breached",
+          "due_soon"
+        ],
+        "type": "object"
+      },
+      "ReferralSlaState": {
+        "properties": {
+          "breached": {
+            "type": "boolean"
+          },
+          "due_in_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "referral_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "risk_level": {
+            "type": "string"
+          },
+          "sla_due_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReferralStatus"
+          }
+        },
+        "required": [
+          "referral_id",
+          "status",
+          "sla_due_at",
+          "breached",
+          "due_in_minutes",
+          "risk_level"
+        ],
+        "type": "object"
+      },
       "ReferralStatus": {
         "enum": [
           "sent",
           "accepted",
+          "declined",
           "completed",
           "cancelled"
         ],
@@ -24902,9 +25226,54 @@
         ]
       }
     },
-    "/api/v2/referrals/{id}/accept": {
-      "post": {
-        "operationId": "postReferralAccept",
+    "/api/v2/referrals/sla-dashboard": {
+      "get": {
+        "operationId": "getReferralSlaDashboard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralSlaDashboard"
+                }
+              }
+            },
+            "description": "Referral SLA dashboard"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/{id}": {
+      "get": {
+        "operationId": "getReferralById",
         "parameters": [
           {
             "description": "Referral id",
@@ -24926,7 +25295,325 @@
                 }
               }
             },
+            "description": "Referral detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Referral not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/{id}/accept": {
+      "post": {
+        "operationId": "postReferralAccept",
+        "parameters": [
+          {
+            "description": "Referral id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptReferralRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralListItem"
+                }
+              }
+            },
             "description": "Referral accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Referral not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/{id}/complete": {
+      "post": {
+        "operationId": "postReferralComplete",
+        "parameters": [
+          {
+            "description": "Referral id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteReferralRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralListItem"
+                }
+              }
+            },
+            "description": "Referral completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid completion request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Referral not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/{id}/decline": {
+      "post": {
+        "operationId": "postReferralDecline",
+        "parameters": [
+          {
+            "description": "Referral id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclineReferralRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralListItem"
+                }
+              }
+            },
+            "description": "Referral declined"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid decline request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Referral not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/{id}/sla-state": {
+      "get": {
+        "operationId": "getReferralSlaState",
+        "parameters": [
+          {
+            "description": "Referral id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralSlaState"
+                }
+              }
+            },
+            "description": "Referral SLA state"
           },
           "401": {
             "content": {

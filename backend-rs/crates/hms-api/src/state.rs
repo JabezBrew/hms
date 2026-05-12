@@ -80,6 +80,7 @@ use hms_domain::laboratory::{
 };
 use hms_domain::patients::{PatientContextListItem, PatientRecord, Sex};
 use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
+use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState};
 use hms_domain::ward::{
     AdmissionCaseListItem, BedListItem, DischargeCaseListItem, FluidBalanceListItem,
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
@@ -572,14 +573,55 @@ impl AppState {
         &self,
         referral_id: Uuid,
         actor_user_id: Uuid,
+        acceptance_notes: Option<String>,
     ) -> Result<Option<ReferralListItem>> {
         hms_db::referrals::accept_referral(
             &self.inner.pool,
             self.facility_id(),
             referral_id,
             actor_user_id,
+            acceptance_notes,
         )
         .await
+    }
+
+    pub async fn decline_referral(
+        &self,
+        referral_id: Uuid,
+        decline_reason: String,
+    ) -> Result<Option<ReferralListItem>> {
+        hms_db::referrals::decline_referral(
+            &self.inner.pool,
+            self.facility_id(),
+            referral_id,
+            decline_reason,
+        )
+        .await
+    }
+
+    pub async fn complete_referral(
+        &self,
+        referral_id: Uuid,
+        specialist_notes: String,
+        recommendations: Option<String>,
+    ) -> Result<Option<ReferralListItem>> {
+        hms_db::referrals::complete_referral(
+            &self.inner.pool,
+            self.facility_id(),
+            referral_id,
+            specialist_notes,
+            recommendations,
+        )
+        .await
+    }
+
+    pub async fn referral_sla_state(&self, referral_id: Uuid) -> Result<Option<ReferralSlaState>> {
+        hms_db::referrals::referral_sla_state(&self.inner.pool, self.facility_id(), referral_id)
+            .await
+    }
+
+    pub async fn referral_sla_dashboard(&self) -> Result<ReferralSlaDashboard> {
+        hms_db::referrals::referral_sla_dashboard(&self.inner.pool, self.facility_id()).await
     }
 
     pub async fn list_clinic_waitlist_entries(
