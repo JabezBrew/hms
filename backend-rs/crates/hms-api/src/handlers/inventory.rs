@@ -425,6 +425,56 @@ pub async fn create_requisition(
     Ok(Json(object(requisition)))
 }
 
+#[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/submit", operation_id = "postStockRequisitionSubmit", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn submit_requisition(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let requisition = state
+        .submit_stock_requisition(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_submit_failed",
+                "Requisition could not be submitted.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "stock_requisition_not_found",
+                "Requisition could not be found.",
+            )
+        })?;
+    Ok(Json(object(requisition)))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/approve", operation_id = "postStockRequisitionApprove", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn approve_requisition(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let requisition = state
+        .approve_stock_requisition(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_approve_failed",
+                "Requisition could not be approved.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "stock_requisition_not_found",
+                "Requisition could not be found.",
+            )
+        })?;
+    Ok(Json(object(requisition)))
+}
+
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders", operation_id = "getPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_purchase_orders(
     State(state): State<AppState>,
@@ -487,6 +537,31 @@ pub async fn create_purchase_order(
             ApiError::conflict(
                 "purchase_order_create_failed",
                 "Purchase order could not be saved.",
+            )
+        })?;
+    Ok(Json(object(order)))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/purchase-orders/{id}/approve", operation_id = "postPurchaseOrderApprove", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn approve_purchase_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let order = state
+        .approve_purchase_order(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "purchase_order_approve_failed",
+                "Purchase order could not be approved.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "purchase_order_not_found",
+                "Purchase order could not be found.",
             )
         })?;
     Ok(Json(object(order)))

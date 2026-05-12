@@ -793,6 +793,40 @@ pub async fn create_requisition(
         .ok_or_else(|| anyhow::anyhow!("created requisition was not found"))
 }
 
+pub async fn submit_requisition(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    transition_requisition_status(
+        pool,
+        facility_id,
+        requisition_id,
+        &[RequisitionStatus::Requested, RequisitionStatus::Pending],
+        RequisitionStatus::Pending,
+    )
+    .await
+}
+
+pub async fn approve_requisition(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    transition_requisition_status(
+        pool,
+        facility_id,
+        requisition_id,
+        &[
+            RequisitionStatus::Requested,
+            RequisitionStatus::Pending,
+            RequisitionStatus::Approved,
+        ],
+        RequisitionStatus::Approved,
+    )
+    .await
+}
+
 pub async fn list_purchase_orders(
     pool: &PgPool,
     facility_id: Uuid,
@@ -840,6 +874,21 @@ pub async fn create_purchase_order(
     fetch_purchase_order_by_id(pool, order.facility_id, order.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created purchase order was not found"))
+}
+
+pub async fn approve_purchase_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    purchase_order_id: Uuid,
+) -> anyhow::Result<Option<PurchaseOrderListItem>> {
+    transition_purchase_order_status(
+        pool,
+        facility_id,
+        purchase_order_id,
+        &[PurchaseOrderStatus::Draft, PurchaseOrderStatus::Approved],
+        PurchaseOrderStatus::Approved,
+    )
+    .await
 }
 
 pub async fn list_grns(
@@ -1390,6 +1439,33 @@ async fn fetch_requisition_by_id(
         .transpose()
 }
 
+async fn transition_requisition_status(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+    allowed_statuses: &[RequisitionStatus],
+    target_status: RequisitionStatus,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    let allowed = codec::encode_slice(allowed_statuses)?;
+    let target = codec::encode(target_status)?;
+    sqlx::query(
+        r#"
+        UPDATE stock_requisitions
+        SET status = $4
+        WHERE facility_id = $1
+          AND id = $2
+          AND status = ANY($3)
+        "#,
+    )
+    .bind(facility_id)
+    .bind(requisition_id)
+    .bind(allowed)
+    .bind(target)
+    .execute(pool)
+    .await?;
+    fetch_requisition_by_id(pool, facility_id, requisition_id).await
+}
+
 async fn fetch_purchase_order_by_id(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1406,6 +1482,33 @@ async fn fetch_purchase_order_by_id(
         .await?
         .map(purchase_order_from_row)
         .transpose()
+}
+
+async fn transition_purchase_order_status(
+    pool: &PgPool,
+    facility_id: Uuid,
+    purchase_order_id: Uuid,
+    allowed_statuses: &[PurchaseOrderStatus],
+    target_status: PurchaseOrderStatus,
+) -> anyhow::Result<Option<PurchaseOrderListItem>> {
+    let allowed = codec::encode_slice(allowed_statuses)?;
+    let target = codec::encode(target_status)?;
+    sqlx::query(
+        r#"
+        UPDATE purchase_orders
+        SET status = $4
+        WHERE facility_id = $1
+          AND id = $2
+          AND status = ANY($3)
+        "#,
+    )
+    .bind(facility_id)
+    .bind(purchase_order_id)
+    .bind(allowed)
+    .bind(target)
+    .execute(pool)
+    .await?;
+    fetch_purchase_order_by_id(pool, facility_id, purchase_order_id).await
 }
 
 async fn fetch_grn_by_id(

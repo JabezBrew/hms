@@ -1804,6 +1804,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPurchaseOrderApprove": {
+    "operationId": "postPurchaseOrderApprove",
+    "method": "POST",
+    "path": "/api/v2/inventory/purchase-orders/{id}/approve",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postPurchaseOrders": {
     "operationId": "postPurchaseOrders",
     "method": "POST",
@@ -1858,6 +1868,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postStockRequisitionApprove": {
+    "operationId": "postStockRequisitionApprove",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/approve",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postStockRequisitions": {
     "operationId": "postStockRequisitions",
     "method": "POST",
@@ -1865,6 +1885,16 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
+  },
+  "postStockRequisitionSubmit": {
+    "operationId": "postStockRequisitionSubmit",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/submit",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
   },
   "postStockTransfers": {
     "operationId": "postStockTransfers",
@@ -2182,13 +2212,16 @@ export function createGeneratedClient(request) {
     postPatients: createOperation(request, operations.postPatients),
     postPatientVitals: createOperation(request, operations.postPatientVitals),
     postPharmacyDispenses: createOperation(request, operations.postPharmacyDispenses),
+    postPurchaseOrderApprove: createOperation(request, operations.postPurchaseOrderApprove),
     postPurchaseOrders: createOperation(request, operations.postPurchaseOrders),
     postReferralAccept: createOperation(request, operations.postReferralAccept),
     postReferralComplete: createOperation(request, operations.postReferralComplete),
     postReferralDecline: createOperation(request, operations.postReferralDecline),
     postReferrals: createOperation(request, operations.postReferrals),
     postStockBatches: createOperation(request, operations.postStockBatches),
+    postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),
     postStockRequisitions: createOperation(request, operations.postStockRequisitions),
+    postStockRequisitionSubmit: createOperation(request, operations.postStockRequisitionSubmit),
     postStockTransfers: createOperation(request, operations.postStockTransfers),
     postTreatmentSheets: createOperation(request, operations.postTreatmentSheets),
     postTriage: createOperation(request, operations.postTriage),

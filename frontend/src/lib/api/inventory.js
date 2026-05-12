@@ -181,6 +181,25 @@ function adaptV2ControlledDiscrepancy(entry, registerId) {
   };
 }
 
+function adaptV2Requisition(requisition) {
+  const status = requisition?.status === 'requested' ? 'pending' : requisition?.status;
+  return {
+    ...requisition,
+    status,
+    requested_by_name: requisition?.requested_by_name || requisition?.created_by_name || 'HMS V2',
+    items_count: toNumber(requisition?.items_count),
+  };
+}
+
+function adaptV2PurchaseOrder(order) {
+  return {
+    ...order,
+    supplier: order?.supplier_name || order?.supplier || null,
+    supplier_display: order?.supplier_name || order?.supplier || 'Supplier',
+    items_count: toNumber(order?.items_count),
+  };
+}
+
 function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, params = {}) {
   const expiringDays = boundedLimit(params.days, 30);
   const lowStockCount = batches.filter((batch) => toNumber(batch?.quantity_on_hand) <= 0).length;
@@ -192,7 +211,7 @@ function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, par
     expiring_count: batches.filter((batch) => isExpiringWithin(batch, expiringDays)).length,
     total_stock_value: 0,
     total_value: 0,
-    pending_requisitions: requisitions.filter((item) => item?.status === 'requested').length,
+    pending_requisitions: requisitions.filter((item) => item?.status === 'pending' || item?.status === 'requested').length,
     pending_grns: grns.filter((item) => item?.status === 'received').length,
     discrepancies: 0,
   };
@@ -1208,7 +1227,7 @@ export const inventoryApi = {
         const response = await v2Api.getStockRequisitions({
           query: buildV2CursorQuery(params, 20),
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, adaptV2Requisition);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1233,7 +1252,7 @@ export const inventoryApi = {
         const response = await v2Api.getStockRequisitionById({ id }, {
           signal: options.signal,
         });
-        return v2Object(response);
+        return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.get(`/inventory/requisitions/${id}/`);
@@ -1257,7 +1276,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postStockRequisitions(buildV2StockRequisitionPayload(data));
-        return v2Object(response);
+        return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post('/inventory/requisitions/', data);
@@ -1295,11 +1314,15 @@ export const inventoryApi = {
   submitRequisition: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionSubmit({ id });
+        return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/requisitions/${id}/submit/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to submit requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to submit requisition'));
     }
   },
@@ -1312,11 +1335,15 @@ export const inventoryApi = {
   approveRequisition: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionApprove({ id });
+        return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/requisitions/${id}/approve/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to approve requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to approve requisition'));
     }
   },
@@ -1374,7 +1401,7 @@ export const inventoryApi = {
         const response = await v2Api.getPurchaseOrders({
           query: buildV2CursorQuery(params, 20),
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, adaptV2PurchaseOrder);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1399,7 +1426,7 @@ export const inventoryApi = {
         const response = await v2Api.getPurchaseOrderById({ id }, {
           signal: options.signal,
         });
-        return v2Object(response);
+        return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.get(`/inventory/purchase-orders/${id}/`);
@@ -1423,7 +1450,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postPurchaseOrders(buildV2PurchaseOrderPayload(data));
-        return v2Object(response);
+        return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.post('/inventory/purchase-orders/', data);
@@ -1461,11 +1488,15 @@ export const inventoryApi = {
   approvePurchaseOrder: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 purchase order action contract');
+        const response = await v2Api.postPurchaseOrderApprove({ id });
+        return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/purchase-orders/${id}/approve/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to approve purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to approve purchase order'));
     }
   },

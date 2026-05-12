@@ -2276,6 +2276,45 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(requisition_detail_response.status(), StatusCode::OK);
     let requisition_detail_body = json_body(requisition_detail_response).await;
     assert_eq!(requisition_detail_body["data"]["id"], requisition_id);
+    assert_eq!(requisition_detail_body["data"]["status"], "requested");
+
+    let requisition_submit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/requisitions/{requisition_id}/submit"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition submit succeeds");
+    assert_eq!(requisition_submit_response.status(), StatusCode::OK);
+    let requisition_submit_body = json_body(requisition_submit_response).await;
+    assert_eq!(requisition_submit_body["data"]["id"], requisition_id);
+    assert_eq!(requisition_submit_body["data"]["status"], "pending");
+
+    let requisition_approve_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/requisitions/{requisition_id}/approve"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition approve succeeds");
+    assert_eq!(requisition_approve_response.status(), StatusCode::OK);
+    let requisition_approve_body = json_body(requisition_approve_response).await;
+    assert_eq!(requisition_approve_body["data"]["id"], requisition_id);
+    assert_eq!(requisition_approve_body["data"]["status"], "approved");
 
     let po_response = app
         .clone()
@@ -2314,6 +2353,26 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(po_detail_response.status(), StatusCode::OK);
     let po_detail_body = json_body(po_detail_response).await;
     assert_eq!(po_detail_body["data"]["id"], purchase_order_id);
+    assert_eq!(po_detail_body["data"]["status"], "draft");
+
+    let po_approve_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/purchase-orders/{purchase_order_id}/approve"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("purchase order approve succeeds");
+    assert_eq!(po_approve_response.status(), StatusCode::OK);
+    let po_approve_body = json_body(po_approve_response).await;
+    assert_eq!(po_approve_body["data"]["id"], purchase_order_id);
+    assert_eq!(po_approve_body["data"]["status"], "approved");
 
     let grn_response = app
         .clone()
@@ -2672,6 +2731,25 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .await
         .expect("controlled count denial succeeds");
     assert_eq!(count_denied.status(), StatusCode::FORBIDDEN);
+
+    for denied_path in [
+        format!("/api/v2/inventory/requisitions/{requisition_id}/approve"),
+        format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/approve"),
+    ] {
+        let denied_action = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(denied_path)
+                    .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("inventory action denial succeeds");
+        assert_eq!(denied_action.status(), StatusCode::FORBIDDEN);
+    }
 
     let denied = app
         .clone()

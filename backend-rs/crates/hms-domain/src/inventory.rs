@@ -32,6 +32,8 @@ pub enum TransferStatus {
 #[serde(rename_all = "snake_case")]
 pub enum RequisitionStatus {
     Requested,
+    Pending,
+    Approved,
     Fulfilled,
 }
 
@@ -39,6 +41,7 @@ pub enum RequisitionStatus {
 #[serde(rename_all = "snake_case")]
 pub enum PurchaseOrderStatus {
     Draft,
+    Approved,
     Ordered,
     Closed,
 }

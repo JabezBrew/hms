@@ -2016,6 +2016,22 @@ impl AppState {
         .await
     }
 
+    pub async fn submit_stock_requisition(
+        &self,
+        requisition_id: Uuid,
+    ) -> Result<Option<StockRequisitionListItem>> {
+        hms_db::inventory::submit_requisition(&self.inner.pool, self.facility_id(), requisition_id)
+            .await
+    }
+
+    pub async fn approve_stock_requisition(
+        &self,
+        requisition_id: Uuid,
+    ) -> Result<Option<StockRequisitionListItem>> {
+        hms_db::inventory::approve_requisition(&self.inner.pool, self.facility_id(), requisition_id)
+            .await
+    }
+
     pub async fn list_purchase_orders(
         &self,
         cursor: Option<InventoryCursor>,
@@ -2050,6 +2066,18 @@ impl AppState {
                 supplier_name,
                 actor_user_id,
             },
+        )
+        .await
+    }
+
+    pub async fn approve_purchase_order(
+        &self,
+        purchase_order_id: Uuid,
+    ) -> Result<Option<PurchaseOrderListItem>> {
+        hms_db::inventory::approve_purchase_order(
+            &self.inner.pool,
+            self.facility_id(),
+            purchase_order_id,
         )
         .await
     }
