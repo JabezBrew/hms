@@ -29,10 +29,16 @@ const AddVitalsSlideOver = ({
   open,
   onClose,
   patient,
+  encounter,
   onVitalsRecorded
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
+  const admissionCaseId = encounter?.admission_id
+    || encounter?.admission?.id
+    || patient?.local_data?.current_admission_id
+    || patient?.current_admission_id
+    || null;
 
   // Form state
   const [formData, setFormData] = useState({
@@ -156,7 +162,8 @@ const AddVitalsSlideOver = ({
 
     // Build data object with only non-empty values
     const data = {
-      patient: patientId
+      patient: patientId,
+      admission_case_id: admissionCaseId,
     };
 
     if (formData.temperature) data.temperature = parseFloat(formData.temperature);

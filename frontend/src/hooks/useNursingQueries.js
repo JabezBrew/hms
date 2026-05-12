@@ -104,6 +104,40 @@ function normalizeVitalSignsLimit(value) {
   return Math.min(parsed, MAX_VITALS_PAGE_SIZE);
 }
 
+function normalizeOptionalNumber(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getAdmissionCaseId(data = {}) {
+  return data.admission_case_id
+    || data.admissionCaseId
+    || data.admission_id
+    || data.admission?.id
+    || null;
+}
+
+function normalizeV2CreateVitalsPayload(data = {}) {
+  const admissionCaseId = getAdmissionCaseId(data);
+  if (!admissionCaseId) {
+    throw new Error('Active admission is required to record vital signs in Rust V2');
+  }
+
+  return {
+    admission_case_id: admissionCaseId,
+    recorded_at: data.recorded_at || new Date().toISOString(),
+    temperature_c: normalizeOptionalNumber(data.temperature_c ?? data.temperature),
+    systolic_bp: normalizeOptionalNumber(data.systolic_bp ?? data.blood_pressure_systolic),
+    diastolic_bp: normalizeOptionalNumber(data.diastolic_bp ?? data.blood_pressure_diastolic),
+    pulse: normalizeOptionalNumber(data.pulse ?? data.heart_rate),
+    respiratory_rate: normalizeOptionalNumber(data.respiratory_rate),
+    oxygen_saturation: normalizeOptionalNumber(data.oxygen_saturation ?? data.spo2),
+  };
+}
+
 async function getV2PatientVitals(filters = {}, { signal } = {}) {
   const patientId = filters.patient_id || filters.patient;
   const query = {
@@ -397,6 +431,14 @@ export const useCreateVitalSigns = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postPatientVitals(normalizeV2CreateVitalsPayload(data));
+          return adaptV2PatientVitals(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to record vital signs');
+        }
+      }
       // apiClient.post returns data directly, not wrapped in response.data
       const result = await apiClient.post('/nursing/vital-signs/', data);
       return result;
