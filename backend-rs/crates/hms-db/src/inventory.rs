@@ -6,7 +6,7 @@ use hms_domain::inventory::{
     InventoryItemListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
     PurchaseOrderListItem, PurchaseOrderStatus, RequisitionStatus, StockBatchListItem,
     StockMovementListItem, StockMovementType, StockRequisitionListItem, StockTransferListItem,
-    StorageLocationListItem, TransferStatus,
+    StorageLocationListItem, StorageLocationStockItem, TransferStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -259,6 +259,18 @@ struct LocationStockRow {
     quantity_on_hand: i64,
 }
 
+#[derive(Clone, Debug, FromRow)]
+struct StorageLocationStockRow {
+    item_id: Uuid,
+    item_name: String,
+    location_id: Uuid,
+    location_name: String,
+    quantity_on_hand: i64,
+    batch_count: i64,
+    earliest_expiry: Option<chrono::NaiveDate>,
+    last_received_at: DateTime<Utc>,
+}
+
 pub async fn list_categories(
     pool: &PgPool,
     facility_id: Uuid,
@@ -335,6 +347,84 @@ pub async fn list_locations(
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(location_from_row).collect())
+}
+
+pub async fn get_location(
+    pool: &PgPool,
+    facility_id: Uuid,
+    location_id: Uuid,
+) -> anyhow::Result<Option<StorageLocationListItem>> {
+    let row = sqlx::query_as::<_, LocationRow>(
+        r#"
+        SELECT id, code, name
+        FROM storage_locations
+        WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(location_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(location_from_row))
+}
+
+pub async fn list_storage_location_stock(
+    pool: &PgPool,
+    facility_id: Uuid,
+    location_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<StorageLocationStockItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT stock_batches.item_id,
+               inventory_items.name AS item_name,
+               stock_batches.location_id,
+               storage_locations.name AS location_name,
+               COALESCE(SUM(stock_batches.quantity_on_hand), 0)::BIGINT AS quantity_on_hand,
+               COUNT(stock_batches.id)::BIGINT AS batch_count,
+               MIN(stock_batches.expires_on) AS earliest_expiry,
+               MAX(stock_batches.received_at) AS last_received_at
+        FROM stock_batches
+        INNER JOIN inventory_items ON inventory_items.id = stock_batches.item_id
+        INNER JOIN storage_locations ON storage_locations.id = stock_batches.location_id
+        WHERE stock_batches.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND stock_batches.location_id = ");
+    query.push_bind(location_id);
+    query.push(" AND inventory_items.is_active = TRUE");
+    query.push(" AND storage_locations.is_active = TRUE");
+    query.push(
+        r#"
+        GROUP BY stock_batches.item_id,
+                 inventory_items.name,
+                 stock_batches.location_id,
+                 storage_locations.name
+        HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) > 0
+        "#,
+    );
+    if let Some(cursor) = cursor {
+        query.push(" AND (MAX(stock_batches.received_at), stock_batches.item_id) < (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+    query.push(" ORDER BY last_received_at DESC, stock_batches.item_id DESC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = query
+        .build_query_as::<StorageLocationStockRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(storage_location_stock_from_row)
+        .collect())
 }
 
 pub async fn list_batches(
@@ -1570,6 +1660,19 @@ fn location_stock_from_row(row: LocationStockRow) -> InventoryItemStockLocationI
         location_id: row.location_id,
         location_name: row.location_name,
         quantity_on_hand: row.quantity_on_hand,
+    }
+}
+
+fn storage_location_stock_from_row(row: StorageLocationStockRow) -> StorageLocationStockItem {
+    StorageLocationStockItem {
+        item_id: row.item_id,
+        item_name: row.item_name,
+        location_id: row.location_id,
+        location_name: row.location_name,
+        quantity_on_hand: row.quantity_on_hand,
+        batch_count: row.batch_count,
+        earliest_expiry: row.earliest_expiry,
+        last_received_at: row.last_received_at,
     }
 }
 

@@ -115,6 +115,28 @@ function adaptV2LocationStock(row) {
   };
 }
 
+function adaptV2StorageLocationStock(row) {
+  const quantity = toNumber(row?.quantity_on_hand);
+  return {
+    ...row,
+    id: row?.item_id,
+    item: row?.item_id,
+    item_id: row?.item_id,
+    item_name: row?.item_name || 'Inventory item',
+    name: row?.item_name || 'Inventory item',
+    location_id: row?.location_id,
+    location_name: row?.location_name || 'Storage location',
+    quantity_on_hand: quantity,
+    quantity,
+    available_quantity: quantity,
+    reserved_quantity: 0,
+    batch_count: toNumber(row?.batch_count),
+    earliest_expiry: row?.earliest_expiry || null,
+    expiry_date: row?.earliest_expiry || null,
+    last_received_at: row?.last_received_at || null,
+  };
+}
+
 function adaptV2ControlledEntry(entry) {
   return {
     ...entry,
@@ -576,14 +598,23 @@ export const inventoryApi = {
    * @param {string} id - Location ID
    * @returns {Promise<Object>} Location data
    */
-  getStorageLocation: async (id) => {
+  getStorageLocation: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 storage location detail contract');
+        const response = await v2Api.getStorageLocationById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/locations/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch storage location'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch storage location'));
     }
   },
@@ -593,14 +624,27 @@ export const inventoryApi = {
    * @param {string} id - Location ID
    * @returns {Promise<Array>} Stock items at location
    */
-  getLocationStock: async (id) => {
+  getLocationStock: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 storage location stock contract');
+        const response = await v2Api.getStorageLocationStock({ id }, {
+          query: {
+            limit: boundedLimit(options.page_size || options.limit || 25),
+            ...(options.cursor ? { cursor: options.cursor } : {}),
+          },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2StorageLocationStock);
       }
 
       return await apiClient.get(`/inventory/locations/${id}/stock/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch location stock'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch location stock'));
     }
   },

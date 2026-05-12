@@ -1010,12 +1010,35 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getStorageLocationById": {
+    "operationId": "getStorageLocationById",
+    "method": "GET",
+    "path": "/api/v2/inventory/storage-locations/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getStorageLocations": {
     "operationId": "getStorageLocations",
     "method": "GET",
     "path": "/api/v2/inventory/storage-locations",
     "pathParamNames": [],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getStorageLocationStock": {
+    "operationId": "getStorageLocationStock",
+    "method": "GET",
+    "path": "/api/v2/inventory/storage-locations/{id}/stock",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getSystemDeploymentCapabilities": {
@@ -2066,7 +2089,9 @@ export function createGeneratedClient(request) {
     getStockRequisitions: createOperation(request, operations.getStockRequisitions),
     getStockTransferById: createOperation(request, operations.getStockTransferById),
     getStockTransfers: createOperation(request, operations.getStockTransfers),
+    getStorageLocationById: createOperation(request, operations.getStorageLocationById),
     getStorageLocations: createOperation(request, operations.getStorageLocations),
+    getStorageLocationStock: createOperation(request, operations.getStorageLocationStock),
     getSystemDeploymentCapabilities: createOperation(request, operations.getSystemDeploymentCapabilities),
     getTreatmentSheets: createOperation(request, operations.getTreatmentSheets),
     getTriageQueue: createOperation(request, operations.getTriageQueue),

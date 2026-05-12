@@ -133,6 +133,18 @@ pub struct InventoryItemStockLocationItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct StorageLocationStockItem {
+    pub item_id: Uuid,
+    pub item_name: String,
+    pub location_id: Uuid,
+    pub location_name: String,
+    pub quantity_on_hand: i64,
+    pub batch_count: i64,
+    pub earliest_expiry: Option<NaiveDate>,
+    pub last_received_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct StockTransferListItem {
     pub id: Uuid,
     pub item_id: Uuid,

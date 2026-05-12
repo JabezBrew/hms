@@ -29,6 +29,14 @@ pub fn routes() -> Router<AppState> {
             get(inventory::list_locations),
         )
         .route(
+            "/api/v2/inventory/storage-locations/:id",
+            get(inventory::get_location),
+        )
+        .route(
+            "/api/v2/inventory/storage-locations/:id/stock",
+            get(inventory::list_location_stock),
+        )
+        .route(
             "/api/v2/inventory/stock-batches",
             get(inventory::list_batches).post(inventory::create_batch),
         )

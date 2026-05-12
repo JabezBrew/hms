@@ -267,6 +267,8 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/inventory/items/{id}/stock-movements",
         "/api/v2/inventory/items/{id}/stock-by-location",
         "/api/v2/inventory/storage-locations",
+        "/api/v2/inventory/storage-locations/{id}",
+        "/api/v2/inventory/storage-locations/{id}/stock",
         "/api/v2/inventory/stock-batches",
         "/api/v2/inventory/stock-movements",
         "/api/v2/inventory/transfers",
@@ -2023,6 +2025,26 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .and_then(|location| location["id"].as_str())
         .expect("pharmacy location exists");
 
+    let location_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/storage-locations/{pharmacy_location_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("location detail succeeds");
+    assert_eq!(location_detail_response.status(), StatusCode::OK);
+    let location_detail_body = json_body(location_detail_response).await;
+    assert_eq!(location_detail_body["data"]["id"], pharmacy_location_id);
+    assert_eq!(location_detail_body["data"]["code"], "PHARM");
+    assert_eq!(location_detail_body["data"]["name"], "Pharmacy Store");
+
     let batch_response = app
         .clone()
         .oneshot(
@@ -2126,6 +2148,32 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .any(|row| row["item_id"] == paracetamol_id
             && row["location_id"] == pharmacy_location_id
             && row["quantity_on_hand"] == 100));
+
+    let location_stock = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/storage-locations/{pharmacy_location_id}/stock?limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("location stock succeeds");
+    assert_eq!(location_stock.status(), StatusCode::OK);
+    let location_stock_body = json_body(location_stock).await;
+    assert_eq!(location_stock_body["page"]["limit"], 10);
+    assert!(location_stock_body["data"]
+        .as_array()
+        .expect("location stock is an array")
+        .iter()
+        .any(|row| row["item_id"] == paracetamol_id
+            && row["location_id"] == pharmacy_location_id
+            && row["quantity_on_hand"] == 100
+            && row["batch_count"] == 1));
 
     let transfer_response = app
         .clone()
@@ -2545,6 +2593,8 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         format!("/api/v2/inventory/items/{paracetamol_id}/stock-batches?limit=1"),
         format!("/api/v2/inventory/items/{paracetamol_id}/stock-movements?limit=1"),
         format!("/api/v2/inventory/items/{paracetamol_id}/stock-by-location"),
+        format!("/api/v2/inventory/storage-locations/{pharmacy_location_id}"),
+        format!("/api/v2/inventory/storage-locations/{pharmacy_location_id}/stock?limit=1"),
         format!("/api/v2/inventory/transfers/{transfer_id}"),
         format!("/api/v2/inventory/requisitions/{requisition_id}"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}"),

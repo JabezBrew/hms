@@ -14,7 +14,7 @@ use hms_domain::inventory::{
     InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
     InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem, StockBatchListItem,
     StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
-    StorageLocationListItem,
+    StorageLocationListItem, StorageLocationStockItem,
 };
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -157,6 +157,52 @@ pub async fn list_locations(
             )
         })?,
     )))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}", operation_id = "getStorageLocationById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID")), responses((status = 200, body = ObjectResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_location(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StorageLocationListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
+    let location = state
+        .get_storage_location(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "storage_location_load_failed",
+                "Location could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("storage_location_not_found", "Location could not be found.")
+        })?;
+    Ok(Json(object(location)))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}/stock", operation_id = "getStorageLocationStock", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StorageLocationStockItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn list_location_stock(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<InventoryListQuery>,
+) -> Result<Json<ListResponse<StorageLocationStockItem>>, ApiError> {
+    require_inventory_list_access(&user, state.facility_id())?;
+    ensure_location_exists(&state, id).await?;
+    let (cursor, page_size) = page_request(query)?;
+    let rows = state
+        .list_storage_location_stock(id, cursor, page_size as i64 + 1)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "storage_location_stock_failed",
+                "Location stock could not be loaded.",
+            )
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.last_received_at, item.item_id)
+    })))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/stock-batches", operation_id = "getStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -846,6 +892,22 @@ async fn ensure_item_exists(state: &AppState, item_id: Uuid) -> Result<(), ApiEr
         .map_err(|_| ApiError::conflict("inventory_item_load_failed", "Item could not be loaded."))?
         .ok_or_else(|| {
             ApiError::not_found("inventory_item_not_found", "Item could not be found.")
+        })?;
+    Ok(())
+}
+
+async fn ensure_location_exists(state: &AppState, location_id: Uuid) -> Result<(), ApiError> {
+    state
+        .get_storage_location(location_id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "storage_location_load_failed",
+                "Location could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("storage_location_not_found", "Location could not be found.")
         })?;
     Ok(())
 }

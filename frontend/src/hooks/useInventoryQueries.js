@@ -301,7 +301,7 @@ export function useStorageLocations(filters = {}) {
 export function useStorageLocation(id) {
   return useQuery({
     queryKey: inventoryKeys.locationDetail(id),
-    queryFn: () => inventoryApi.getStorageLocation(id),
+    queryFn: ({ signal }) => inventoryApi.getStorageLocation(id, { signal }),
     enabled: !!id,
   });
 }
@@ -314,7 +314,7 @@ export function useStorageLocation(id) {
 export function useLocationStock(id) {
   return useQuery({
     queryKey: inventoryKeys.locationStock(id),
-    queryFn: () => inventoryApi.getLocationStock(id),
+    queryFn: ({ signal }) => inventoryApi.getLocationStock(id, { signal }),
     enabled: !!id,
     staleTime: 30 * 1000,
   });

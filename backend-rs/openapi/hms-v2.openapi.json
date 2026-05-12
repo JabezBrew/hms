@@ -7812,6 +7812,70 @@
         ],
         "type": "object"
       },
+      "ListResponse_StorageLocationStockItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "batch_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "earliest_expiry": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "item_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "item_name": {
+                  "type": "string"
+                },
+                "last_received_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "location_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "location_name": {
+                  "type": "string"
+                },
+                "quantity_on_hand": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "item_id",
+                "item_name",
+                "location_id",
+                "location_name",
+                "quantity_on_hand",
+                "batch_count",
+                "last_received_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_TreatmentSheetListItem": {
         "properties": {
           "data": {
@@ -12299,6 +12363,36 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_StorageLocationListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_TreatmentSheetListItem": {
         "properties": {
           "data": {
@@ -14557,6 +14651,53 @@
           "id",
           "code",
           "name"
+        ],
+        "type": "object"
+      },
+      "StorageLocationStockItem": {
+        "properties": {
+          "batch_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "earliest_expiry": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "item_name": {
+            "type": "string"
+          },
+          "last_received_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "quantity_on_hand": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "item_name",
+          "location_id",
+          "location_name",
+          "quantity_on_hand",
+          "batch_count",
+          "last_received_at"
         ],
         "type": "object"
       },
@@ -21229,6 +21370,164 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/{id}": {
+      "get": {
+        "operationId": "getStorageLocationById",
+        "parameters": [
+          {
+            "description": "Storage location ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StorageLocationListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/storage-locations/{id}/stock": {
+      "get": {
+        "operationId": "getStorageLocationStock",
+        "parameters": [
+          {
+            "description": "Storage location ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_StorageLocationStockItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

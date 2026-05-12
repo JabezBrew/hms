@@ -368,6 +368,59 @@ describe('Rust V2 inventory bridge', () => {
     );
   });
 
+  it('loads storage location detail and location stock through generated Rust V2 endpoints', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'location-1',
+          code: 'PHARM',
+          name: 'Pharmacy Store',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            item_id: 'item-1',
+            item_name: 'Paracetamol 500mg',
+            location_id: 'location-1',
+            location_name: 'Pharmacy Store',
+            quantity_on_hand: 100,
+            batch_count: 1,
+            earliest_expiry: '2027-01-31',
+            last_received_at: '2026-05-12T08:00:00Z',
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getStorageLocation('location-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      id: 'location-1',
+      code: 'PHARM',
+      name: 'Pharmacy Store',
+    });
+    await expect(inventoryApi.getLocationStock('location-1', {
+      page_size: 20,
+      signal: controller.signal,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        item_id: 'item-1',
+        item_name: 'Paracetamol 500mg',
+        location_id: 'location-1',
+        quantity_on_hand: 100,
+      }),
+    ]);
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/inventory/storage-locations/location-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/storage-locations/location-1/stock?limit=20', 'GET', controller.signal],
+    ]);
+  });
+
   it('loads inventory item tab data through generated item-scoped Rust V2 endpoints', async () => {
     const controller = new AbortController();
     globalThis.fetch
