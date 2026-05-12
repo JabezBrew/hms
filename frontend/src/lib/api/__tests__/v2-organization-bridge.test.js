@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clinicalUnitsApi, clinicsApi, unitTypesApi } from '../organization';
+import {
+  clinicalUnitsApi,
+  clinicSchedulesApi,
+  departmentDutyTypesApi,
+  dutyRosterApi,
+  leadershipRolesApi,
+  rosterEntriesApi,
+  unitTypesApi,
+  validationRulesApi,
+  clinicsApi,
+} from '../organization';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '../v2/client';
 
 describe('Rust V2 organization bridge', () => {
@@ -172,7 +182,7 @@ describe('Rust V2 organization bridge', () => {
       'http://localhost:8080/api/v2/admin/org-units?limit=100',
       expect.objectContaining({ method: 'GET' }),
     );
-    expect(response).toEqual([
+    expect(response).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'department',
         code: 'department',
@@ -185,6 +195,165 @@ describe('Rust V2 organization bridge', () => {
         name: 'Ward',
         can_be_root: false,
       }),
+    ]));
+  });
+
+  it('returns default unit types when Rust org units are empty', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await unitTypesApi.list();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/org-units?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response.map((unitType) => unitType.code)).toEqual([
+      'facility',
+      'department',
+      'ward',
+      'clinic',
+      'service',
+      'administrative',
     ]);
+  });
+
+  it('creates clinical units through Rust admin org units with the V2 payload shape', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'unit-3',
+            code: 'PHARM',
+            name: 'Pharmacy',
+            unit_type: 'service',
+            is_active: true,
+            parent_unit_id: 'unit-1',
+            parent_unit_name: 'Clinical Services',
+            created_at: '2026-05-12T04:31:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await clinicalUnitsApi.create({
+      code: 'PHARM',
+      name: 'Pharmacy',
+      unit_type_code: 'service',
+      parentId: 'unit-1',
+      ignored_legacy_field: 'not-sent',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/org-units',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'PHARM',
+          name: 'Pharmacy',
+          unit_type: 'service',
+          parent_unit_id: 'unit-1',
+        }),
+      }),
+    );
+    expect(response).toEqual({
+      id: 'unit-3',
+      code: 'PHARM',
+      name: 'Pharmacy',
+      unit_type: 'service',
+      unit_type_code: 'service',
+      unit_type_name: 'Service',
+      unit_category: 'clinical',
+      is_active: true,
+      parent_unit_id: 'unit-1',
+      parent_unit_name: 'Clinical Services',
+      parentId: 'unit-1',
+      created_at: '2026-05-12T04:31:00Z',
+    });
+  });
+
+  it('derives org-unit hierarchy helpers from the Rust flat org-unit list', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'root',
+              code: 'CLINICAL',
+              name: 'Clinical Services',
+              unit_type: 'department',
+              is_active: true,
+              parent_unit_id: null,
+              parent_unit_name: null,
+            },
+            {
+              id: 'ward-1',
+              code: 'MWA',
+              name: 'Medical Ward A',
+              unit_type: 'ward',
+              is_active: true,
+              parent_unit_id: 'root',
+              parent_unit_name: 'Clinical Services',
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await clinicalUnitsApi.children('root');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/org-units?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual([
+      expect.objectContaining({
+        id: 'ward-1',
+        parentId: 'root',
+      }),
+    ]);
+  });
+
+  it('does not call legacy Django endpoints for unsupported Rust V2 organization lists', async () => {
+    await expect(leadershipRolesApi.list()).resolves.toEqual([]);
+    await expect(departmentDutyTypesApi.list()).resolves.toEqual([]);
+    await expect(clinicSchedulesApi.list()).resolves.toEqual([]);
+    await expect(dutyRosterApi.onDuty()).resolves.toEqual([]);
+    await expect(validationRulesApi.templates()).resolves.toEqual([]);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for unsupported Rust V2 organization mutations instead of calling Django', async () => {
+    await expect(leadershipRolesApi.create({ name: 'Head Nurse' })).rejects.toThrow(
+      /Rust V2 .* leadership roles/i,
+    );
+    await expect(rosterEntriesApi.generate('unit-1', { month: '2026-05' })).rejects.toThrow(
+      /Rust V2 .* roster entries/i,
+    );
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
