@@ -257,6 +257,273 @@ describe('Rust V2 billing bridge', () => {
     ]);
   });
 
+  it('loads invoice, payment, and claim list pages through Rust V2 bounded endpoints', async () => {
+    const issuedAt = '2026-05-12T08:00:00Z';
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'invoice-1',
+              patient_id: 'patient-1',
+              patient_code: 'P-0001',
+              invoice_number: 'INV-1',
+              status: 'issued',
+              gross_amount_minor: 10000,
+              paid_amount_minor: 4000,
+              balance_minor: 6000,
+              currency: 'GHS',
+              issued_at: issuedAt,
+            },
+          ],
+          page: { limit: 20, has_next: true, next_cursor: 'next-invoice' },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'payment-1',
+              invoice_id: 'invoice-1',
+              receipt_number: 'RCT-1',
+              amount_minor: 4000,
+              currency: 'GHS',
+              method: 'cash',
+              status: 'recorded',
+              paid_at: issuedAt,
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'claim-1',
+              invoice_id: 'invoice-1',
+              patient_id: 'patient-1',
+              patient_code: 'P-0001',
+              claim_number: 'CLM-1',
+              status: 'ready',
+              amount_minor: 3000,
+              currency: 'GHS',
+              created_at: issuedAt,
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      );
+
+    const invoices = await billingApi.getInvoices({ page_size: 20 });
+    const payments = await billingApi.getPayments({ page_size: 20 });
+    const claims = await billingApi.getClaims({ page_size: 20 });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/invoices?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/payments?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/nhis/claims?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(invoices).toEqual({
+      count: 2,
+      next: 'next-invoice',
+      previous: null,
+      results: [expect.objectContaining({ id: 'invoice-1', total_amount: 100 })],
+    });
+    expect(payments.results).toEqual([
+      expect.objectContaining({ id: 'payment-1', amount: 40, payment_method: 'cash' }),
+    ]);
+    expect(claims.results).toEqual([
+      expect.objectContaining({ id: 'claim-1', claimed_amount: 30, patient_name: 'P-0001' }),
+    ]);
+  });
+
+  it('loads NHIS batches and remittance imports through Rust V2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'batch-1',
+              batch_number: 'BATCH-1',
+              status: 'exported',
+              claim_count: 2,
+              total_amount_minor: 25000,
+              currency: 'GHS',
+              exported_at: '2026-05-12T08:30:00Z',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'remit-1',
+              batch_id: 'batch-1',
+              reference: 'REM-1',
+              status: 'imported',
+              total_paid_minor: 20000,
+              currency: 'GHS',
+              imported_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      );
+
+    const batches = await billingApi.getNhisClaimBatches({ page_size: 20 });
+    const remittances = await billingApi.getRemittanceImportJobs({ page_size: 20 });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/nhis/batches?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/nhis/remittance-imports?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(batches.results).toEqual([
+      expect.objectContaining({
+        id: 'batch-1',
+        batch_number: 'BATCH-1',
+        total_claimed_amount: 250,
+        total_amount: 250,
+      }),
+    ]);
+    expect(remittances.results).toEqual([
+      expect.objectContaining({
+        id: 'remit-1',
+        file_name: 'REM-1',
+        total_paid: 200,
+      }),
+    ]);
+  });
+
+  it('loads billing services and synthesizes service categories from Rust V2 catalog data', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'service-1',
+              code: 'CONS-GEN',
+              name: 'General Consultation',
+              service_kind: 'consultation',
+              active: true,
+            },
+          ],
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'price-1',
+              service_id: 'service-1',
+              service_code: 'CONS-GEN',
+              service_name: 'General Consultation',
+              amount_minor: 7500,
+              currency: 'GHS',
+              active: true,
+            },
+          ],
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'service-1',
+              code: 'CONS-GEN',
+              name: 'General Consultation',
+              service_kind: 'consultation',
+              active: true,
+            },
+          ],
+          meta: {},
+        }),
+      );
+
+    const services = await billingApi.getServices({ page_size: 200, is_active: true });
+    const categories = await billingApi.getServiceCategories({ page_size: 200 });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/service-catalog',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/service-prices',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/billing/service-catalog',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(services.results).toEqual([
+      expect.objectContaining({
+        id: 'service-1',
+        service_price_id: 'price-1',
+        category: 'consultation',
+        category_name: 'Consultation',
+        base_price: 75,
+        is_active: true,
+      }),
+    ]);
+    expect(categories.results).toEqual([
+      expect.objectContaining({ id: 'consultation', name: 'Consultation', is_active: true }),
+    ]);
+  });
+
+  it('uses V2-safe empty shapes for billing surfaces that do not have Rust contracts yet', async () => {
+    const [paymentIntents, settlements, exports, aging, dso, queue, providers, plans, insurances] = await Promise.all([
+      billingApi.getPaymentIntents({ page_size: 20 }),
+      billingApi.getSettlementBatches({ page_size: 20 }),
+      billingApi.getNhisExportJobs({ page_size: 20 }),
+      billingApi.getInsuranceAging(),
+      billingApi.getInsuranceDSO(),
+      billingApi.getRemittanceQueue(),
+      billingApi.getInsuranceProviders({ page_size: 200 }),
+      billingApi.getInsurancePlans({ page_size: 200 }),
+      billingApi.getPatientInsurances({ page_size: 20 }),
+    ]);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(paymentIntents).toEqual({ count: 0, next: null, previous: null, results: [] });
+    expect(settlements).toEqual({ count: 0, next: null, previous: null, results: [] });
+    expect(exports).toEqual({ count: 0, next: null, previous: null, results: [] });
+    expect(aging).toEqual({ bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0, total: 0 });
+    expect(dso).toEqual({ dso_days: null, total_balance: 0 });
+    expect(queue).toEqual({ summary: [] });
+    expect(providers).toEqual({ count: 0, next: null, previous: null, results: [] });
+    expect(plans).toEqual({ count: 0, next: null, previous: null, results: [] });
+    expect(insurances).toEqual({ count: 0, next: null, previous: null, results: [] });
+  });
+
   it('loads billing settings and current cash session from Rust V2 cash controls', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(

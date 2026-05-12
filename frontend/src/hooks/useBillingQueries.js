@@ -137,7 +137,7 @@ export function useRecentPayments(params = {}) {
 export function useInvoices(filters = {}) {
   return useQuery({
     queryKey: billingKeys.invoiceList(filters),
-    queryFn: () => billingApi.getInvoices(filters),
+    queryFn: ({ signal }) => billingApi.getInvoices(filters, { signal }),
   });
 }
 
@@ -274,7 +274,7 @@ export function useGenerateClaim() {
 export function useClaims(filters = {}) {
   return useQuery({
     queryKey: billingKeys.claimList(filters),
-    queryFn: () => billingApi.getClaims(filters),
+    queryFn: ({ signal }) => billingApi.getClaims(filters, { signal }),
   });
 }
 
@@ -338,7 +338,7 @@ export function useUpdateClaimStatus() {
 export function usePayments(filters = {}) {
   return useQuery({
     queryKey: billingKeys.paymentList(filters),
-    queryFn: () => billingApi.getPayments(filters),
+    queryFn: ({ signal }) => billingApi.getPayments(filters, { signal }),
   });
 }
 
@@ -364,7 +364,7 @@ export function useGenerateReceipt() {
 export function usePaymentIntents(filters = {}) {
   return useQuery({
     queryKey: billingKeys.paymentIntentList(filters),
-    queryFn: () => billingApi.getPaymentIntents(filters),
+    queryFn: ({ signal }) => billingApi.getPaymentIntents(filters, { signal }),
   });
 }
 
@@ -385,7 +385,7 @@ export function useCreatePaymentIntent() {
 export function useSettlementBatches(filters = {}) {
   return useQuery({
     queryKey: billingKeys.settlementBatchList(filters),
-    queryFn: () => billingApi.getSettlementBatches(filters),
+    queryFn: ({ signal }) => billingApi.getSettlementBatches(filters, { signal }),
   });
 }
 
@@ -404,7 +404,7 @@ export function useSettlementLines(batchId, filters = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.settlementLines(batchId, filters),
-    queryFn: () => billingApi.getSettlementLines(batchId, filters),
+    queryFn: ({ signal }) => billingApi.getSettlementLines(batchId, filters, { signal }),
     enabled: !!batchId && enabled,
   });
 }
@@ -504,7 +504,7 @@ export function useCreateCashMovement() {
 export function useServices(params = {}) {
   return useQuery({
     queryKey: billingKeys.serviceList(params),
-    queryFn: () => billingApi.getServices(params),
+    queryFn: ({ signal }) => billingApi.getServices(params, { signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes - services don't change frequently
   });
 }
@@ -513,7 +513,7 @@ export function useServiceCategories(params = {}) {
   const shouldUseImmutableCache = !hasMeaningfulQueryParams(params);
   return useQuery({
     queryKey: billingKeys.serviceCategoryList(params),
-    queryFn: () => billingApi.getServiceCategories(params),
+    queryFn: ({ signal }) => billingApi.getServiceCategories(params, { signal }),
     ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
@@ -565,7 +565,7 @@ export function useUpdateService() {
 export function useServicesByCategory() {
   return useQuery({
     queryKey: billingKeys.servicesByCategory(),
-    queryFn: () => billingApi.getServicesByCategory(),
+    queryFn: ({ signal }) => billingApi.getServicesByCategory({ signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -574,7 +574,7 @@ export function usePayerServiceCodes(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.payerServiceCodeList(params),
-    queryFn: () => billingApi.getPayerServiceCodes(params),
+    queryFn: ({ signal }) => billingApi.getPayerServiceCodes(params, { signal }),
     enabled,
   });
 }
@@ -611,7 +611,7 @@ export function useUpdatePayerServiceCode() {
 export function useBillingRules(filters = {}) {
   return useQuery({
     queryKey: billingKeys.billingRuleList(filters),
-    queryFn: () => billingApi.getBillingRules(filters),
+    queryFn: ({ signal }) => billingApi.getBillingRules(filters, { signal }),
   });
 }
 
@@ -790,7 +790,7 @@ export function useUpdateFacilityBillingSettings() {
 export function usePatientInsurances(filters = {}) {
   return useQuery({
     queryKey: billingKeys.patientInsuranceList(filters),
-    queryFn: () => billingApi.getPatientInsurances(filters),
+    queryFn: ({ signal }) => billingApi.getPatientInsurances(filters, { signal }),
   });
 }
 
@@ -817,7 +817,7 @@ export function usePatientInsurance(patientId, params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.patientInsurance(patientId, params),
-    queryFn: () => billingApi.getPatientInsurance(patientId, params),
+    queryFn: ({ signal }) => billingApi.getPatientInsurance(patientId, params, { signal }),
     enabled: !!patientId && enabled,
   });
 }
@@ -898,7 +898,7 @@ export function useInsuranceProviders(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.insuranceProviders(params),
-    queryFn: () => billingApi.getInsuranceProviders(params),
+    queryFn: ({ signal }) => billingApi.getInsuranceProviders(params, { signal }),
     enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes - providers don't change often
   });
@@ -913,7 +913,7 @@ export function useInsurancePlans(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.insurancePlans(params),
-    queryFn: () => billingApi.getInsurancePlans(params),
+    queryFn: ({ signal }) => billingApi.getInsurancePlans(params, { signal }),
     enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
@@ -926,7 +926,7 @@ export function useInsurancePlans(params = {}, options = {}) {
 export function useNhisClaimBatches(filters = {}) {
   return useQuery({
     queryKey: billingKeys.nhisBatchList(filters),
-    queryFn: () => billingApi.getNhisClaimBatches(filters),
+    queryFn: ({ signal }) => billingApi.getNhisClaimBatches(filters, { signal }),
   });
 }
 
@@ -970,14 +970,14 @@ export function useExportNhisClaimBatch() {
 export function useNhisExportJobs(filters = {}) {
   return useQuery({
     queryKey: billingKeys.nhisExportJobList(filters),
-    queryFn: () => billingApi.getNhisExportJobs(filters),
+    queryFn: ({ signal }) => billingApi.getNhisExportJobs(filters, { signal }),
   });
 }
 
 export function useRemittanceImportJobs(filters = {}) {
   return useQuery({
     queryKey: billingKeys.nhisRemittanceJobList(filters),
-    queryFn: () => billingApi.getRemittanceImportJobs(filters),
+    queryFn: ({ signal }) => billingApi.getRemittanceImportJobs(filters, { signal }),
   });
 }
 
@@ -998,7 +998,7 @@ export function useRemittanceLines(jobId, filters = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.nhisRemittanceLines(jobId, filters),
-    queryFn: () => billingApi.getRemittanceLines(jobId, filters),
+    queryFn: ({ signal }) => billingApi.getRemittanceLines(jobId, filters, { signal }),
     enabled: !!jobId && enabled,
   });
 }
@@ -1011,7 +1011,7 @@ export function useNhisMappingImportJobs(filters = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.nhisMappingImportJobList(filters),
-    queryFn: () => billingApi.getNhisMappingImportJobs(filters),
+    queryFn: ({ signal }) => billingApi.getNhisMappingImportJobs(filters, { signal }),
     enabled,
   });
 }
@@ -1053,7 +1053,7 @@ export function useInsuranceAging(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.nhisInsuranceAging(params),
-    queryFn: () => billingApi.getInsuranceAging(params),
+    queryFn: ({ signal }) => billingApi.getInsuranceAging(params, { signal }),
     enabled,
     staleTime: 60 * 1000,
   });
@@ -1063,7 +1063,7 @@ export function useInsuranceDSO(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.nhisInsuranceDso(params),
-    queryFn: () => billingApi.getInsuranceDSO(params),
+    queryFn: ({ signal }) => billingApi.getInsuranceDSO(params, { signal }),
     enabled,
     staleTime: 60 * 1000,
   });
@@ -1073,7 +1073,7 @@ export function useRemittanceQueue(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.nhisRemittanceQueue(),
-    queryFn: () => billingApi.getRemittanceQueue(),
+    queryFn: ({ signal }) => billingApi.getRemittanceQueue({ signal }),
     enabled,
     staleTime: 60 * 1000,
   });

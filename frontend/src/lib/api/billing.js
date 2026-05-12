@@ -66,7 +66,12 @@ function adaptV2Payment(payment) {
   }
   return {
     ...payment,
+    invoice: payment.invoice_id,
+    invoice_number: payment.invoice_number || payment.invoice_id,
+    patient_id: payment.patient_id || null,
+    patient_mrn: payment.patient_code || '',
     payment_date: payment.paid_at,
+    created_at: payment.created_at || payment.paid_at,
     payment_method: payment.method,
     amount: minorToMajor(payment.amount_minor),
     patient_name: payment.patient_display_name
@@ -94,8 +99,164 @@ function adaptV2CashSession(session) {
   };
 }
 
+function emptyPage() {
+  return { count: 0, next: null, previous: null, results: [] };
+}
+
+function v2Page(response, mapper = (item) => item) {
+  const results = v2List(response).map(mapper);
+  return {
+    count: results.length + (response?.page?.has_next ? 1 : 0),
+    next: response?.page?.has_next ? response?.page?.next_cursor || null : null,
+    previous: null,
+    results,
+  };
+}
+
 function v2List(response) {
   return Array.isArray(response?.data) ? response.data : [];
+}
+
+function titleCase(value) {
+  return String(value || '')
+    .split('_')
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
+}
+
+function normalizeCursor(params = {}) {
+  return params.cursor || params.next_cursor || null;
+}
+
+function normalizePatientId(params = {}) {
+  return params.patient_id || params.patient || null;
+}
+
+function adaptV2Claim(claim) {
+  if (!claim) {
+    return claim;
+  }
+  return {
+    ...claim,
+    patient: claim.patient_id,
+    patient_name: claim.patient_display_name || claim.patient_name || claim.patient_code || 'Unknown patient',
+    patient_mrn: claim.patient_code,
+    invoice: claim.invoice_id,
+    invoice_number: claim.invoice_number || claim.invoice_id,
+    insurance_provider: claim.insurance_provider || 'NHIS',
+    claimed_amount: minorToMajor(claim.amount_minor),
+    approved_amount: minorToMajor(claim.approved_amount_minor),
+    total_amount: minorToMajor(claim.amount_minor),
+    submitted_at: claim.submitted_at || null,
+  };
+}
+
+function adaptV2NhisBatch(batch) {
+  if (!batch) {
+    return batch;
+  }
+  return {
+    ...batch,
+    batch: batch.batch_number,
+    period_start: batch.period_start || batch.created_at,
+    period_end: batch.period_end || batch.exported_at || batch.created_at,
+    total_claimed_amount: minorToMajor(batch.total_amount_minor),
+    total_amount: minorToMajor(batch.total_amount_minor),
+  };
+}
+
+function adaptV2RemittanceImport(job) {
+  if (!job) {
+    return job;
+  }
+  return {
+    ...job,
+    created_at: job.created_at || job.imported_at,
+    file_name: job.file_name || job.reference,
+    payer_name: job.payer_name || job.batch_number || job.batch_id,
+    total_paid: minorToMajor(job.total_paid_minor),
+  };
+}
+
+function adaptV2ServiceCatalogItem(item, price) {
+  if (!item) {
+    return item;
+  }
+  const active = item.active !== false && price?.active !== false;
+  const amount = price ? minorToMajor(price.amount_minor) : 0;
+  return {
+    ...item,
+    id: item.id,
+    service_id: item.id,
+    service_price_id: price?.id || null,
+    category: item.service_kind,
+    category_name: titleCase(item.service_kind) || 'Other',
+    base_price: amount,
+    total_price: amount,
+    price: amount,
+    currency: price?.currency || 'GHS',
+    is_active: active,
+    active,
+  };
+}
+
+function filterV2Services(services, params = {}) {
+  const isActiveFilter = params.is_active;
+  const search = String(params.search || '').trim().toLowerCase();
+  return services.filter((service) => {
+    if (isActiveFilter !== undefined && isActiveFilter !== null && isActiveFilter !== '') {
+      const shouldBeActive = isActiveFilter === true || isActiveFilter === 'true' || isActiveFilter === '1';
+      if (service.is_active !== shouldBeActive) {
+        return false;
+      }
+    }
+    if (!search) {
+      return true;
+    }
+    return [service.name, service.code, service.category_name]
+      .some((value) => String(value || '').toLowerCase().includes(search));
+  });
+}
+
+async function getV2ServicesPage(params = {}, options = {}) {
+  const [catalogResponse, priceResponse] = await Promise.all([
+    v2Api.getBillingServiceCatalog({ signal: options.signal }),
+    v2Api.getBillingServicePrices({ signal: options.signal }),
+  ]);
+  const pricesByServiceId = new Map(
+    v2List(priceResponse).map((price) => [price.service_id, price]),
+  );
+  const services = filterV2Services(
+    v2List(catalogResponse).map((item) => adaptV2ServiceCatalogItem(item, pricesByServiceId.get(item.id))),
+    params,
+  );
+  return {
+    ...emptyPage(),
+    count: services.length,
+    results: services,
+  };
+}
+
+function v2ServiceCategoriesPage(catalogResponse, params = {}) {
+  const search = String(params.search || '').trim().toLowerCase();
+  const categories = Array.from(new Set(v2List(catalogResponse).map((item) => item.service_kind).filter(Boolean)))
+    .map((serviceKind) => ({
+      id: serviceKind,
+      name: titleCase(serviceKind) || 'Other',
+      description: '',
+      is_active: true,
+    }))
+    .filter((category) => !search || category.name.toLowerCase().includes(search));
+  return {
+    ...emptyPage(),
+    count: categories.length,
+    results: categories,
+  };
+}
+
+function emptyAgingSnapshot() {
+  return { bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0, total: 0 };
 }
 
 function isSameLocalDay(value, reference = new Date()) {
@@ -268,13 +429,29 @@ export const billingApi = {
    * @param {number} params.page_size - Page size
    * @returns {Promise<Object>} Paginated invoices with count, next, previous, results
    */
-  getInvoices: async (params = {}) => {
+  getInvoices: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const patientId = normalizePatientId(params);
+        const response = await v2Api.getBillingInvoices({
+          query: {
+            limit: normalizeLimit(params, 20),
+            cursor: normalizeCursor(params),
+            ...(patientId ? { patient_id: patientId } : {}),
+          },
+          signal: options.signal,
+        });
+        return v2Page(response, adaptV2Invoice);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/invoices/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch invoices');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch invoices'));
     }
   },
@@ -344,10 +521,35 @@ export const billingApi = {
    */
   createInvoice: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const firstItem = (Array.isArray(data.items) ? data.items : [])
+          .find((item) => item?.service || item?.service_price_id);
+        if (!firstItem) {
+          throw new Error('Select at least one billable service.');
+        }
+        let servicePriceId = firstItem.service_price_id || null;
+        if (!servicePriceId) {
+          const services = await getV2ServicesPage({ is_active: true });
+          servicePriceId = services.results.find((service) => service.id === firstItem.service)?.service_price_id;
+        }
+        if (!servicePriceId) {
+          throw new Error('Selected service does not have an active Rust V2 price.');
+        }
+        const response = await v2Api.postBillingInvoices({
+          patient_id: data.patient_id || data.patient,
+          service_price_id: servicePriceId,
+          quantity: Number.parseInt(String(firstItem.quantity || 1), 10) || 1,
+        });
+        return adaptV2Invoice(response?.data);
+      }
+
       return await apiClient.post('/billing/invoices/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create invoice');
+      }
       throw new Error(handleApiError(error, 'Failed to create invoice'));
     }
   },
@@ -378,10 +580,23 @@ export const billingApi = {
    */
   recordPayment: async (invoiceId, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postBillingPayments({
+          invoice_id: invoiceId,
+          amount_minor: data.amount_minor ?? majorToMinor(data.amount),
+          method: data.method || data.payment_method || 'cash',
+          cash_session_id: data.cash_session_id || null,
+        });
+        return adaptV2Payment(response?.data);
+      }
+
       return await apiClient.post(`/billing/invoices/${invoiceId}/mark_as_paid/`, data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to record payment');
+      }
       throw new Error(handleApiError(error, 'Failed to record payment'));
     }
   },
@@ -393,8 +608,16 @@ export const billingApi = {
    */
   generateClaim: async (invoiceId) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postNhisClaims({ invoice_id: invoiceId });
+        return adaptV2Claim(response?.data);
+      }
+
       return await apiClient.post(`/billing/invoices/${invoiceId}/generate_claim/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to generate claim');
+      }
       throw new Error(handleApiError(error, 'Failed to generate claim'));
     }
   },
@@ -405,6 +628,10 @@ export const billingApi = {
 
   getPaymentIntents: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payment-intents/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -429,6 +656,10 @@ export const billingApi = {
 
   getSettlementBatches: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/settlements/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -453,6 +684,10 @@ export const billingApi = {
 
   getSettlementLines: async (batchId, params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/settlements/${batchId}/lines/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -627,13 +862,29 @@ export const billingApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated claims with count, next, previous, results
    */
-  getClaims: async (params = {}) => {
+  getClaims: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const patientId = normalizePatientId(params);
+        const response = await v2Api.getNhisClaims({
+          query: {
+            limit: normalizeLimit(params, 20),
+            cursor: normalizeCursor(params),
+            ...(patientId ? { patient_id: patientId } : {}),
+          },
+          signal: options.signal,
+        });
+        return v2Page(response, adaptV2Claim);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/claims/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch claims');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch claims'));
     }
   },
@@ -672,46 +923,95 @@ export const billingApi = {
   // NHIS (Claim-it) + AR
   // =========================================================================
 
-  getNhisClaimBatches: async (params = {}) => {
+  getNhisClaimBatches: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const patientId = normalizePatientId(params);
+        const response = await v2Api.getNhisBatches({
+          query: {
+            limit: normalizeLimit(params, 20),
+            cursor: normalizeCursor(params),
+            ...(patientId ? { patient_id: patientId } : {}),
+          },
+          signal: options.signal,
+        });
+        return v2Page(response, adaptV2NhisBatch);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/batches/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch NHIS claim batches');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch NHIS claim batches'));
     }
   },
 
-  createNhisClaimBatch: async (data) => {
+  createNhisClaimBatch: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        if (!Array.isArray(data.claim_ids) || data.claim_ids.length === 0) {
+          throw new Error('Rust V2 NHIS batch creation requires selected claim IDs.');
+        }
+        const response = await v2Api.postNhisBatches(
+          { claim_ids: data.claim_ids },
+          { signal: options.signal },
+        );
+        return adaptV2NhisBatch(response?.data);
+      }
+
       return await apiClient.post('/billing/nhis/batches/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create NHIS claim batch');
+      }
       throw new Error(handleApiError(error, 'Failed to create NHIS claim batch'));
     }
   },
 
   lintNhisClaimBatch: async (batchId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return { summary: [] };
+      }
+
       return await apiClient.post(`/billing/nhis/batches/${batchId}/lint/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to lint NHIS claim batch'));
     }
   },
 
-  exportNhisClaimBatch: async (batchId, data = {}) => {
+  exportNhisClaimBatch: async (batchId, data = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postNhisBatchExport(
+          { id: batchId },
+          { signal: options.signal },
+        );
+        return response?.data;
+      }
+
       return await apiClient.post(`/billing/nhis/batches/${batchId}/export/`, data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to export NHIS claim batch');
+      }
       throw new Error(handleApiError(error, 'Failed to export NHIS claim batch'));
     }
   },
 
   getNhisExportJobs: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/exports/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -728,18 +1028,38 @@ export const billingApi = {
     }
   },
 
-  getRemittanceImportJobs: async (params = {}) => {
+  getRemittanceImportJobs: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const patientId = normalizePatientId(params);
+        const response = await v2Api.getNhisRemittanceImports({
+          query: {
+            limit: normalizeLimit(params, 20),
+            cursor: normalizeCursor(params),
+            ...(patientId ? { patient_id: patientId } : {}),
+          },
+          signal: options.signal,
+        });
+        return v2Page(response, adaptV2RemittanceImport);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/remittances/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch remittance imports');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch remittance imports'));
     }
   },
 
   importRemittance: async ({ payerId, file }) => {
     try {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 remittance imports require a structured batch remittance payload.');
+      }
+
       const form = new FormData();
       form.append('payer', payerId);
       form.append('file', file);
@@ -747,12 +1067,20 @@ export const billingApi = {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowAbortError(error);
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to import remittance'));
     }
   },
 
   getRemittanceLines: async (jobId, params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/remittances/${jobId}/lines/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -763,6 +1091,10 @@ export const billingApi = {
 
   getInsuranceAging: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyAgingSnapshot();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/ar/insurance_aging/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -773,6 +1105,10 @@ export const billingApi = {
 
   getInsuranceDSO: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return { dso_days: null, total_balance: 0 };
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/ar/insurance_dso/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -783,6 +1119,10 @@ export const billingApi = {
 
   getRemittanceQueue: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        return { summary: [] };
+      }
+
       return await apiClient.get('/billing/nhis/ar/remittance_queue/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch remittance queue'));
@@ -798,13 +1138,29 @@ export const billingApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated payments with count, next, previous, results
    */
-  getPayments: async (params = {}) => {
+  getPayments: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const patientId = normalizePatientId(params);
+        const response = await v2Api.getBillingPayments({
+          query: {
+            limit: normalizeLimit(params, 20),
+            cursor: normalizeCursor(params),
+            ...(patientId ? { patient_id: patientId } : {}),
+          },
+          signal: options.signal,
+        });
+        return v2Page(response, adaptV2Payment);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payments/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch payments');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch payments'));
     }
   },
@@ -852,12 +1208,20 @@ export const billingApi = {
   // Services
   // =========================================================================
 
-  getServiceCategories: async (params = {}) => {
+  getServiceCategories: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getBillingServiceCatalog({ signal: options.signal });
+        return v2ServiceCategoriesPage(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/service-categories/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch service categories');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch service categories'));
     }
   },
@@ -885,12 +1249,19 @@ export const billingApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated services
    */
-  getServices: async (params = {}) => {
+  getServices: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await getV2ServicesPage(params, options);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/services/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch services');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch services'));
     }
   },
@@ -917,10 +1288,27 @@ export const billingApi = {
    * Get services grouped by category
    * @returns {Promise<Array>} Services grouped by category
    */
-  getServicesByCategory: async () => {
+  getServicesByCategory: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const servicesPage = await getV2ServicesPage({ is_active: true }, options);
+        return servicesPage.results.reduce((groups, service) => {
+          const category = service.category_name || 'Other';
+          const group = groups.find((candidate) => candidate.category === category);
+          if (group) {
+            group.services.push(service);
+          } else {
+            groups.push({ category, services: [service] });
+          }
+          return groups;
+        }, []);
+      }
+
       return await apiClient.get('/billing/services/by_category/');
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch services by category');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch services by category'));
     }
   },
@@ -931,6 +1319,10 @@ export const billingApi = {
 
   getPayerServiceCodes: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payer-service-codes/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -963,6 +1355,10 @@ export const billingApi = {
 
   getNhisMappingImportJobs: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/mapping-imports/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -1015,13 +1411,25 @@ export const billingApi = {
    * @param {boolean} params.is_active - Filter by active status
    * @returns {Promise<Object>} Paginated billing rules with count, next, previous, results
    */
-  getBillingRules: async (params = {}) => {
+  getBillingRules: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getBillingRules({ signal: options.signal });
+        return v2Page(response, (rule) => ({
+          ...rule,
+          rule_type: rule.rule_type,
+          is_active: rule.active !== false,
+        }));
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/billing-rules/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch billing rules');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch billing rules'));
     }
   },
@@ -1156,6 +1564,10 @@ export const billingApi = {
    */
   getPatientInsurances: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/patient-insurances/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -1172,6 +1584,10 @@ export const billingApi = {
    */
   getPatientInsurance: async (patientId, params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
+
       const queryParams = { patient_id: patientId, ...params };
       const queryString = new URLSearchParams(queryParams).toString();
       return await apiClient.get(`/billing/patient-insurances/for_patient/?${queryString}`);
@@ -1246,6 +1662,10 @@ export const billingApi = {
    */
   getInsuranceProviders: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/insurance-providers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -1261,6 +1681,10 @@ export const billingApi = {
    */
   getInsurancePlans: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPage();
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/insurance-plans/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
