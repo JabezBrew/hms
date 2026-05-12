@@ -213,6 +213,111 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
 }
 
 #[tokio::test]
+async fn ward_board_can_be_filtered_by_ward() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let first_ward_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM wards WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("ward exists");
+    let second_ward_id = uuid::Uuid::new_v4();
+    let second_bed_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO wards (id, facility_id, code, name, status)
+        VALUES ($1, $2, 'isolation', 'Isolation Ward', $3)
+        "#,
+    )
+    .bind(second_ward_id)
+    .bind(facility_id)
+    .bind(hms_db::codec::encode(WardStatus::Active).expect("ward status encodes"))
+    .execute(&pool)
+    .await
+    .expect("second ward inserts");
+    sqlx::query(
+        r#"
+        INSERT INTO beds (id, facility_id, ward_id, bed_code, status)
+        VALUES ($1, $2, $3, 'I-01', $4)
+        "#,
+    )
+    .bind(second_bed_id)
+    .bind(facility_id)
+    .bind(second_ward_id)
+    .bind(hms_db::codec::encode(BedStatus::Available).expect("bed status encodes"))
+    .execute(&pool)
+    .await
+    .expect("second ward bed inserts");
+    let ward_ids = [first_ward_id, second_ward_id];
+    let patient_ids = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 2",
+    )
+    .bind(facility_id)
+    .fetch_all(&pool)
+    .await
+    .expect("patients exist");
+    assert!(patient_ids.len() >= 2);
+
+    for (patient_id, ward_id) in patient_ids.iter().zip(ward_ids.iter()) {
+        let admission_case = hms_db::ward::create_admission_case(
+            &pool,
+            NewAdmissionCase {
+                id: uuid::Uuid::new_v4(),
+                facility_id,
+                patient_id: *patient_id,
+                ward_id: *ward_id,
+                actor_user_id: owner_id,
+            },
+        )
+        .await
+        .expect("admission case is created");
+        hms_db::ward::activate_admission_case(&pool, facility_id, admission_case.id, owner_id)
+            .await
+            .expect("activation query succeeds")
+            .expect("case is activated");
+    }
+
+    let all_board = hms_db::ward::list_ward_board(&pool, facility_id, None, None, 25)
+        .await
+        .expect("ward board list succeeds");
+    assert!(all_board.iter().any(|item| item.ward_id == ward_ids[0]));
+    assert!(all_board.iter().any(|item| item.ward_id == ward_ids[1]));
+
+    let scoped_board =
+        hms_db::ward::list_ward_board(&pool, facility_id, Some(ward_ids[0]), None, 25)
+            .await
+            .expect("ward-scoped board list succeeds");
+    assert!(!scoped_board.is_empty());
+    assert!(scoped_board.iter().all(|item| item.ward_id == ward_ids[0]));
+    assert!(!scoped_board.iter().any(|item| item.ward_id == ward_ids[1]));
+}
+
+#[tokio::test]
 async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scoped() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

@@ -16,7 +16,7 @@ use hms_domain::ward::{
     DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
     MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, PatientVitalsListItem,
     ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
-    WardBoardItem, WardListItem, WardSectionListItem, WardStockRequestListItem,
+    WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem, WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -243,7 +243,7 @@ pub async fn create_bed(
     operation_id = "getWardBoard",
     tag = "wards",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(WardBoardQuery),
     responses(
         (status = 200, description = "Ward board", body = ListResponse<WardBoardItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -253,12 +253,15 @@ pub async fn create_bed(
 pub async fn ward_board(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<WardBoardQuery>,
 ) -> Result<Json<ListResponse<WardBoardItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::WardView)?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_ward_board(cursor, page_size as i64 + 1)
+        .list_ward_board(query.ward_id, cursor, page_size as i64 + 1)
         .await
         .map_err(|_| ApiError::conflict("ward_board_failed", "Ward board could not be loaded."))?;
 

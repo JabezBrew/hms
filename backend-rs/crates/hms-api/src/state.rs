@@ -2360,10 +2360,12 @@ impl AppState {
 
     pub async fn list_ward_board(
         &self,
+        ward_id: Option<Uuid>,
         cursor: Option<WardCursor>,
         limit: i64,
     ) -> Result<Vec<WardBoardItem>> {
-        hms_db::ward::list_ward_board(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::ward::list_ward_board(&self.inner.pool, self.facility_id(), ward_id, cursor, limit)
+            .await
     }
 
     pub async fn get_admission_context(

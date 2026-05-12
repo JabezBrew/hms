@@ -651,6 +651,7 @@ pub async fn create_bed(pool: &PgPool, bed: NewBed) -> anyhow::Result<BedListIte
 pub async fn list_ward_board(
     pool: &PgPool,
     facility_id: Uuid,
+    ward_id: Option<Uuid>,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<WardBoardItem>> {
@@ -658,6 +659,11 @@ pub async fn list_ward_board(
     query.push(" WHERE admission_cases.facility_id = ");
     query.push_bind(facility_id);
     query.push(" AND admission_cases.status IN ('admitted', 'discharge_pending')");
+
+    if let Some(ward_id) = ward_id {
+        query.push(" AND admission_cases.ward_id = ");
+        query.push_bind(ward_id);
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (admission_cases.admitted_at, admission_cases.id) > (");

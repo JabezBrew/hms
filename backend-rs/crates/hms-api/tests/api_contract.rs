@@ -320,6 +320,15 @@ async fn openapi_contains_foundation_paths() {
     ] {
         assert!(paths.contains_key(path), "missing OpenAPI path {path}");
     }
+    let ward_board_parameters = paths["/api/v2/wards/board"]["get"]["parameters"]
+        .as_array()
+        .expect("ward board parameters exist");
+    assert!(
+        ward_board_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "ward_id"),
+        "ward board exposes ward_id filter for ward-scoped UI routes"
+    );
 }
 
 #[tokio::test]

@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -169,6 +169,14 @@ pub struct WardBoardItem {
     pub admitted_at: DateTime<Utc>,
     pub open_nursing_task_count: i64,
     pub due_medication_count: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct WardBoardQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub ward_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

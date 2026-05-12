@@ -911,7 +911,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "ward_id"
     ],
     "hasBody": false
   },

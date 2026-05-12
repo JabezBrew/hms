@@ -26710,10 +26710,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -26723,10 +26720,16 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ward_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
