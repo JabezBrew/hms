@@ -1,5 +1,7 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { fetchChronicleContext } from '@/hooks/useChronicleContext';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
 
@@ -188,6 +190,145 @@ function normalizeTimelinePage(data) {
   };
 }
 
+function timelineTimestamp(entry) {
+  return entry.timestamp || entry.recorded_at || entry.updated_at || entry.created_at || '';
+}
+
+function mapChartEntryValue(entry) {
+  const data = {};
+  const fieldByType = {
+    temperature: 'temperature',
+    pulse: 'heart_rate',
+    respiratory_rate: 'respiratory_rate',
+    blood_pressure: 'blood_pressure',
+    oxygen_saturation: 'oxygen_saturation',
+    weight: 'weight',
+  };
+  const field = fieldByType[entry.entry_type];
+  if (field) {
+    data[field] = entry.value;
+  }
+  return data;
+}
+
+function buildV2TimelineEntries(context = {}) {
+  const notes = Array.isArray(context.notes) ? context.notes : [];
+  const prescriptions = Array.isArray(context.prescriptions) ? context.prescriptions : [];
+  const chartEntries = Array.isArray(context.chart_entries) ? context.chart_entries : [];
+  const problems = Array.isArray(context.problems) ? context.problems : [];
+  const allergies = Array.isArray(context.allergies) ? context.allergies : [];
+
+  return [
+    ...notes.map((note) => ({
+      ...note,
+      type: note.note_type || 'progress_note',
+      entry_type: 'note',
+      title: note.title || 'Clinical note',
+      content: note.title || '',
+      timestamp: note.updated_at,
+      data: note,
+    })),
+    ...prescriptions.map((prescription) => ({
+      ...prescription,
+      type: 'prescription',
+      entry_type: 'prescription',
+      title: prescription.medication_name || 'Prescription',
+      content: [prescription.dose, prescription.frequency].filter(Boolean).join(' - '),
+      timestamp: prescription.prescribed_at,
+      medication_name: prescription.medication_name,
+      dosage: prescription.dosage || prescription.dose,
+      dose: prescription.dosage || prescription.dose,
+      data: {
+        ...prescription,
+        dosage: prescription.dosage || prescription.dose,
+      },
+    })),
+    ...chartEntries.map((entry) => {
+      const vitalsData = mapChartEntryValue(entry);
+      return {
+        ...entry,
+        ...vitalsData,
+        type: 'vitals',
+        entry_type: 'vitals',
+        title: 'Vital sign',
+        content: [entry.entry_type, entry.value, entry.unit].filter(Boolean).join(' '),
+        timestamp: entry.measured_at,
+        data: vitalsData,
+      };
+    }),
+    ...problems.map((problem) => ({
+      ...problem,
+      type: 'problem',
+      entry_type: 'problem',
+      title: problem.name || problem.label || 'Problem',
+      content: problem.name || problem.label || '',
+      timestamp: problem.created_at,
+      data: {
+        ...problem,
+        name: problem.name || problem.label,
+      },
+    })),
+    ...allergies.map((allergy) => ({
+      ...allergy,
+      type: 'allergy',
+      entry_type: 'allergy',
+      title: allergy.substance || 'Allergy',
+      content: [allergy.substance, allergy.reaction].filter(Boolean).join(' - '),
+      timestamp: allergy.created_at,
+      data: allergy,
+    })),
+  ].sort((left, right) => String(timelineTimestamp(right)).localeCompare(String(timelineTimestamp(left))));
+}
+
+function matchesTimelineType(entry, type) {
+  if (!type || type === 'all') {
+    return true;
+  }
+  if (type === 'notes' || type === 'progress_note') {
+    return entry.entry_type === 'note';
+  }
+  if (type === 'prescriptions' || type === 'medications') {
+    return entry.entry_type === 'prescription';
+  }
+  return entry.entry_type === type || entry.type === type;
+}
+
+function matchesTimelineSearch(entry, search) {
+  const normalizedSearch = String(search || '').trim().toLowerCase();
+  if (!normalizedSearch) {
+    return true;
+  }
+  return [
+    entry.title,
+    entry.content,
+    entry.medication_name,
+    entry.label,
+    entry.name,
+    entry.substance,
+    entry.value,
+    entry.status,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedSearch));
+}
+
+function buildV2TimelinePage(context, options = {}) {
+  const pageSize = Number(options.page_size || options.pageSize || 20);
+  const page = Math.max(Number(options.page || 1), 1);
+  const filteredEntries = buildV2TimelineEntries(context)
+    .filter((entry) => matchesTimelineType(entry, options.type))
+    .filter((entry) => matchesTimelineSearch(entry, options.search));
+  const startIndex = (page - 1) * pageSize;
+  const results = filteredEntries.slice(startIndex, startIndex + pageSize);
+
+  return normalizeTimelinePage({
+    results,
+    count: filteredEntries.length,
+    page,
+    page_size: pageSize,
+    has_next: startIndex + pageSize < filteredEntries.length,
+    has_previous: page > 1,
+  });
+}
+
 /**
  * Fetch patient timeline with pagination
  * @param {string} patientId - Patient ID
@@ -195,6 +336,11 @@ function normalizeTimelinePage(data) {
  * @returns {Promise} - Paginated timeline data
  */
 export async function fetchTimelinePage(patientId, options = {}, requestOptions = {}) {
+  if (isRustV2ApiMode()) {
+    const context = await fetchChronicleContext(patientId, { signal: requestOptions.signal });
+    return buildV2TimelinePage(context, options);
+  }
+
   const endpoint = buildTimelineEndpoint(patientId, options);
 
   // Use getWithPagination to get the full response including pagination info
@@ -244,7 +390,18 @@ export async function fetchAllTimelineEntries(patientId, options = {}, requestOp
  * @param {string} patientId - Patient ID
  * @returns {Promise} - Timeline statistics
  */
-async function fetchTimelineStats(patientId) {
+export async function fetchTimelineStats(patientId, options = {}) {
+  if (isRustV2ApiMode()) {
+    const context = await fetchChronicleContext(patientId, { signal: options.signal });
+    return {
+      total: buildV2TimelineEntries(context).length,
+      notes: Array.isArray(context?.notes) ? context.notes.length : 0,
+      prescriptions: Array.isArray(context?.prescriptions) ? context.prescriptions.length : 0,
+      vitals: Array.isArray(context?.chart_entries) ? context.chart_entries.length : 0,
+      problems: Array.isArray(context?.problems) ? context.problems.length : 0,
+      allergies: Array.isArray(context?.allergies) ? context.allergies.length : 0,
+    };
+  }
   return apiClient.get(`/clinical-notes/chronicle/${patientId}/stats/`);
 }
 
@@ -313,7 +470,7 @@ export function usePatientTimeline(patientId, options = {}) {
 export function useTimelineStats(patientId) {
   return useQuery({
     queryKey: timelineKeys.stats(patientId),
-    queryFn: () => fetchTimelineStats(patientId),
+    queryFn: ({ signal }) => fetchTimelineStats(patientId, { signal }),
     enabled: !!patientId,
     staleTime: 60000, // Stats are stale after 1 minute
   });
