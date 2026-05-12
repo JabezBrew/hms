@@ -81,4 +81,71 @@ describe('Rust V2 wards bridge', () => {
       },
     ]);
   });
+
+  it('loads admitted ward patients through Rust ward board data for existing ward dashboards', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              admission_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              ward_id: 'ward-1',
+              ward_name: 'General Ward',
+              bed_id: 'bed-1',
+              bed_code: 'G-01',
+              admission_status: 'admitted',
+              admitted_at: '2026-05-12T08:00:00Z',
+              open_nursing_task_count: 2,
+              due_medication_count: 1,
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await wardsApi.getAdmissions({
+      ward: 'ward-1',
+      status: 'admitted',
+      page_size: 200,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board?limit=100&ward_id=ward-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer access-token-123',
+          'X-Facility-Code': 'HMS',
+        }),
+      }),
+    );
+    expect(response).toEqual([
+      expect.objectContaining({
+        id: 'admission-1',
+        patient_id: 'patient-1',
+        status: 'admitted',
+        bed: expect.objectContaining({
+          id: 'bed-1',
+          bed_number: 'G-01',
+        }),
+        patient: expect.objectContaining({
+          id: 'patient-1',
+          medical_record_number: 'MRN-001',
+          user: expect.objectContaining({
+            full_name: 'Ama Mensah',
+          }),
+        }),
+      }),
+    ]);
+  });
 });

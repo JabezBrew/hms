@@ -53,8 +53,57 @@ function adaptV2Bed(bed) {
   };
 }
 
+function adaptV2WardBoardAdmission(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || item.name || 'Unnamed patient';
+  const bedLabel = item.bed_code || item.bed_number || '';
+  const admissionId = item.admission_id || item.id;
+  const status = item.admission_status || item.status;
+
+  return {
+    ...item,
+    id: admissionId,
+    admission_id: admissionId,
+    patient_id: item.patient_id,
+    patient_name: patientName,
+    ward: item.ward_id,
+    ward_id: item.ward_id,
+    ward_name: item.ward_name || '',
+    bed_id: item.bed_id ?? null,
+    bed: item.bed_id
+      ? {
+          id: item.bed_id,
+          bed_number: bedLabel,
+          bed_code: bedLabel,
+          name: bedLabel,
+          ward: item.ward_id,
+          ward_id: item.ward_id,
+        }
+      : null,
+    status,
+    admission_status: status,
+    admitted_at: item.admitted_at,
+    open_nursing_task_count: item.open_nursing_task_count ?? 0,
+    due_medication_count: item.due_medication_count ?? 0,
+    patient: {
+      id: item.patient_id,
+      medical_record_number: item.patient_code || '',
+      patient_code: item.patient_code || '',
+      name: patientName,
+      display_name: patientName,
+      user: {
+        full_name: patientName,
+      },
+    },
+  };
+}
+
 function v2ListData(response) {
   return Array.isArray(response?.data) ? response.data : [];
+}
+
+function shouldUseWardBoardAdmissions(params = {}) {
+  const status = String(params.status || '').toLowerCase();
+  return Boolean(params.ward || params.ward_id) && (!status || status === 'admitted');
 }
 
 function rethrowV2Error(error, message) {
@@ -324,6 +373,33 @@ export const wardsApi = {
    * @returns {Promise<Array>} List of admissions
    */
   getAdmissions: async (params = {}, options = {}) => {
+    if (isRustV2ApiMode()) {
+      try {
+        if (shouldUseWardBoardAdmissions(params)) {
+          const response = await v2Api.getWardBoard({
+            query: {
+              limit: normalizeV2Limit(params),
+              cursor: params.cursor ?? params.next_cursor,
+              ward_id: params.ward_id ?? params.ward,
+            },
+            signal: options.signal,
+          });
+          return v2ListData(response).map(adaptV2WardBoardAdmission);
+        }
+
+        const response = await v2Api.getAdmissionCases({
+          query: {
+            limit: normalizeV2Limit(params),
+            cursor: params.cursor ?? params.next_cursor,
+          },
+          signal: options.signal,
+        });
+        return v2ListData(response).map(adaptV2WardBoardAdmission);
+      } catch (error) {
+        rethrowV2Error(error, 'Failed to fetch admissions');
+      }
+    }
+
     try {
       const response = await apiClient.getWithPagination('/wards/admissions/', {
         ...options,
