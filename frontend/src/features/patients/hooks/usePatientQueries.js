@@ -23,7 +23,7 @@ export const patientKeys = {
 export function usePatients(filters = {}) {
   return useQuery({
     queryKey: patientKeys.list(filters),
-    queryFn: () => patientsApi.getPatients(filters),
+    queryFn: ({ signal }) => patientsApi.getPatients(filters, { signal }),
   });
 }
 
@@ -36,7 +36,7 @@ export function usePatient(id, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: patientKeys.detail(id),
-    queryFn: () => patientsApi.getPatient(id),
+    queryFn: ({ signal }) => patientsApi.getPatient(id, { signal }),
     enabled: !!id && enabled, // Only run the query if we have an ID
     staleTime: 5 * 60 * 1000, // 5 minutes - patient demographics don't change frequently
   });
@@ -51,7 +51,7 @@ export function usePatientDemographics(id, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: [...patientKeys.detail(id), 'demographics'],
-    queryFn: () => patientsApi.getPatientDemographics(id),
+    queryFn: ({ signal }) => patientsApi.getPatientDemographics(id, { signal }),
     enabled: !!id && enabled,
     staleTime: 5 * 60 * 1000,
   });
@@ -232,7 +232,7 @@ export function usePatientSearch(params = {}, options = {}) {
 export function useRecentPatients(limit = 10) {
   return useQuery({
     queryKey: [...patientKeys.recent(), { limit }],
-    queryFn: () => patientsApi.getRecentPatients({ limit }),
+    queryFn: ({ signal }) => patientsApi.getRecentPatients({ limit }, { signal }),
     staleTime: 30 * 1000, // 30 seconds - recent patients change frequently
   });
 }
@@ -246,7 +246,7 @@ export function useRecentPatients(limit = 10) {
 export function useContextPatients(params = {}) {
   return useQuery({
     queryKey: patientKeys.context(params),
-    queryFn: () => patientsApi.getContextPatients(params),
+    queryFn: ({ signal }) => patientsApi.getContextPatients(params, { signal }),
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -296,7 +296,7 @@ export function useUpdatePatientWithFHIR() {
 export function usePatientValidationRules() {
   return useQuery({
     queryKey: patientKeys.validation(),
-    queryFn: () => patientsApi.getValidationRules(),
+    queryFn: ({ signal }) => patientsApi.getValidationRules({ signal }),
     ...immutableMetadataQueryOptions(),
   });
 }

@@ -137,6 +137,122 @@ function getV2PatientListQuery(params = {}) {
   return query;
 }
 
+function compactDefined(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== ''),
+  );
+}
+
+function normalizeDateOnly(value) {
+  if (!value) {
+    return undefined;
+  }
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+  const normalized = String(value).trim();
+  return normalized ? normalized.slice(0, 10) : undefined;
+}
+
+function normalizePatientSex(value) {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (['female', 'f'].includes(normalized)) {
+    return 'female';
+  }
+  if (['male', 'm'].includes(normalized)) {
+    return 'male';
+  }
+  if (['other', 'unknown'].includes(normalized)) {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizePatientStatus(value) {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (['active', 'inactive', 'deceased'].includes(normalized)) {
+    return normalized;
+  }
+  if (normalized === 'admitted' || normalized === 'registered') {
+    return 'active';
+  }
+  return undefined;
+}
+
+function pickPatientPayloadSource(data = {}) {
+  const localData = data?.local_data || {};
+  return {
+    ...(localData.user_details || {}),
+    ...(localData.user || {}),
+    ...localData,
+    ...data,
+  };
+}
+
+function normalizeCreatePatientPayload(data = {}) {
+  const source = pickPatientPayloadSource(data);
+  const payload = {
+    first_name: String(source.first_name || '').trim(),
+    last_name: String(source.last_name || '').trim(),
+    date_of_birth: normalizeDateOnly(source.date_of_birth || source.birth_date),
+    sex: normalizePatientSex(source.sex || source.gender) || 'unknown',
+  };
+
+  if (!payload.first_name || !payload.last_name || !payload.date_of_birth) {
+    throw new Error('First name, last name, and date of birth are required to register a patient in Rust V2');
+  }
+
+  return payload;
+}
+
+function normalizeUpdatePatientPayload(data = {}) {
+  const source = pickPatientPayloadSource(data);
+  return compactDefined({
+    first_name: source.first_name ? String(source.first_name).trim() : undefined,
+    last_name: source.last_name ? String(source.last_name).trim() : undefined,
+    date_of_birth: normalizeDateOnly(source.date_of_birth || source.birth_date),
+    sex: normalizePatientSex(source.sex || source.gender),
+    status: normalizePatientStatus(source.status || source.registry_status),
+  });
+}
+
+function adaptV2PatientContextListItem(patient) {
+  return {
+    id: patient.id,
+    updated_at: patient.updated_at,
+    created_at: patient.updated_at,
+    medical_record_number: patient.patient_code,
+    name: patient.display_name,
+    date_of_birth: birthYearToDate(patient.birth_year),
+    gender: patient.sex,
+    patient_location: null,
+    active_clinic_names: [],
+    registry_status: patient.status,
+    context_kind: patient.context_kind,
+  };
+}
+
+function adaptV2ContextPatientsResponse(response, params = {}) {
+  const limit = Number(response?.page?.limit || params.limit || 10);
+  const results = Array.isArray(response?.data)
+    ? response.data.map(adaptV2PatientContextListItem)
+    : [];
+  return {
+    results,
+    count: results.length + (response?.page?.has_next ? 1 : 0),
+    next: response?.page?.next_cursor || null,
+    previous: null,
+    next_cursor: response?.page?.next_cursor || null,
+    page_size: limit,
+  };
+}
+
 /**
  * Patients API service
  */
@@ -147,10 +263,13 @@ export const patientsApi = {
    * @param {Object} params - Query parameters for filtering (page, page_size, etc.)
    * @returns {Promise<Object>} Paginated list of patients
    */
-  getPatients: async (params = {}) => {
+  getPatients: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatients({ query: getV2PatientListQuery(params) });
+        const response = await v2Api.getPatients({
+          query: getV2PatientListQuery(params),
+          signal: options.signal,
+        });
         return adaptV2PatientListResponse(response, params);
       }
 
@@ -171,10 +290,10 @@ export const patientsApi = {
    * @param {string} id - Patient ID
    * @returns {Promise<Object>} Patient data with local_data and fhir_data
    */
-  getPatient: async (id) => {
+  getPatient: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatientById({ id });
+        const response = await v2Api.getPatientById({ id }, { signal: options.signal });
         return adaptV2PatientDetail(response?.data);
       }
       return await apiClient.get(`/patients/${id}/get_patient/`);
@@ -192,10 +311,10 @@ export const patientsApi = {
    * @param {string} id - Patient ID
    * @returns {Promise<Object>} Patient demographics data
    */
-  getPatientDemographics: async (id) => {
+  getPatientDemographics: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getPatientById({ id });
+        const response = await v2Api.getPatientById({ id }, { signal: options.signal });
         return adaptV2PatientDetail(response?.data);
       }
       return await apiClient.get(`/patients/${id}/demographics/`);
@@ -213,10 +332,21 @@ export const patientsApi = {
    * @param {Object} data - Patient data
    * @returns {Promise<Object>} Created patient data
    */
-  createPatient: async (data) => {
+  createPatient: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postPatients(
+          normalizeCreatePatientPayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2PatientDetail(response?.data);
+      }
       return await apiClient.post('/patients/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create patient'));
+      }
       throw new Error(handleApiError(error, 'Failed to create patient'));
     }
   },
@@ -227,10 +357,22 @@ export const patientsApi = {
    * @param {Object} data - Patient data to update (wrap in local_data for backend)
    * @returns {Promise<Object>} Updated patient data
    */
-  updatePatient: async (id, data) => {
+  updatePatient: async (id, data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.patchPatientById(
+          { id },
+          normalizeUpdatePatientPayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2PatientDetail(response?.data);
+      }
       return await apiClient.put(`/patients/${id}/update_patient/`, { local_data: data });
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to update patient'));
+      }
       throw new Error(handleApiError(error, 'Failed to update patient'));
     }
   },
@@ -241,6 +383,9 @@ export const patientsApi = {
    * @returns {Promise<void>}
    */
   deletePatient: async (id) => {
+    if (isRustV2ApiMode()) {
+      throw new Error('Patient deletion is not supported by Rust V2');
+    }
     try {
       return await apiClient.delete(`/patients/${id}/delete_patient/`);
     } catch (error) {
@@ -254,6 +399,9 @@ export const patientsApi = {
    * @returns {Promise<Array>} Medical history data
    */
   getPatientHistory: async (id) => {
+    if (isRustV2ApiMode()) {
+      return [];
+    }
     try {
       return await apiClient.get(`/patients/${id}/history/`);
     } catch (error) {
@@ -325,12 +473,24 @@ export const patientsApi = {
    * @param {number} params.limit - Maximum number of results (default: 10, max: 20)
    * @returns {Promise<Array>} List of recent patients
    */
-  getRecentPatients: async (params = {}) => {
+  getRecentPatients: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const limit = Math.min(Math.max(Number(params.limit || 10), 1), 20);
+        const response = await v2Api.getPatients({
+          query: { limit },
+          signal: options.signal,
+        });
+        return adaptV2PatientListResponse(response, { limit }).results;
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/patients/recent/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch recent patients'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch recent patients'));
     }
   },
@@ -342,6 +502,9 @@ export const patientsApi = {
    * @returns {Promise<Object>} Break-glass response
    */
   requestBreakGlass: async (id, data) => {
+    if (isRustV2ApiMode()) {
+      throw new Error('Break-glass access is not supported by Rust V2');
+    }
     return apiClient.post(`/patients/${id}/break-glass/`, data);
   },
 
@@ -351,12 +514,23 @@ export const patientsApi = {
    * @param {Object} params - Query parameters (e.g., ward for nurses)
    * @returns {Promise<Object>} Context patients with metadata
    */
-  getContextPatients: async (params = {}) => {
+  getContextPatients: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPatientContextList({
+          query: getV2PatientListQuery({ limit: 10, ...params }),
+          signal: options.signal,
+        });
+        return adaptV2ContextPatientsResponse(response, params);
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/dashboards/my-context-patients/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch context patients'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch context patients'));
     }
   },
@@ -366,10 +540,21 @@ export const patientsApi = {
    * @param {Object} data - Patient registration data
    * @returns {Promise<Object>} Registered patient data
    */
-  registerPatient: async (data) => {
+  registerPatient: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postPatients(
+          normalizeCreatePatientPayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2PatientDetail(response?.data);
+      }
       return await apiClient.post('/patients/register/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to register patient'));
+      }
       throw new Error(handleApiError(error, 'Failed to register patient'));
     }
   },
@@ -380,10 +565,22 @@ export const patientsApi = {
    * @param {Object} data - Patient data with FHIR information
    * @returns {Promise<Object>} Updated patient data
    */
-  updatePatientWithFHIR: async (id, data) => {
+  updatePatientWithFHIR: async (id, data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.patchPatientById(
+          { id },
+          normalizeUpdatePatientPayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2PatientDetail(response?.data);
+      }
       return await apiClient.put(`/patients/${id}/update_patient/`, data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to update patient'));
+      }
       throw new Error(handleApiError(error, 'Failed to update patient'));
     }
   },

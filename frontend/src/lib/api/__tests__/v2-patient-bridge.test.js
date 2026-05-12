@@ -152,4 +152,212 @@ describe('Rust V2 patient bridge', () => {
       }),
     ]);
   });
+
+  it('registers patients through Rust /api/v2 with the generated patient DTO', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            display_name: 'Ama Mensah',
+            first_name: 'Ama',
+            last_name: 'Mensah',
+            date_of_birth: '1989-04-15',
+            sex: 'female',
+            status: 'active',
+            created_at: '2026-05-12T08:00:00Z',
+            updated_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 201,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.registerPatient({
+      first_name: 'Ama',
+      last_name: 'Mensah',
+      date_of_birth: '1989-04-15',
+      gender: 'Female',
+      phone_number: '0240000000',
+      admission_details: {
+        admission_type: 'outpatient',
+        clinic_id: 'clinic-1',
+      },
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer access-token-123',
+          'Content-Type': 'application/json',
+          'X-Facility-Code': 'HMS',
+        }),
+        body: JSON.stringify({
+          first_name: 'Ama',
+          last_name: 'Mensah',
+          date_of_birth: '1989-04-15',
+          sex: 'female',
+        }),
+      }),
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: 'patient-1',
+        medical_record_number: 'MRN-MAIN-2026-000001',
+        first_name: 'Ama',
+        last_name: 'Mensah',
+        gender: 'female',
+        local_data: expect.objectContaining({
+          id: 'patient-1',
+          gender: 'female',
+        }),
+      }),
+    );
+  });
+
+  it('creates patients through the same Rust V2 patient contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'patient-2',
+            patient_code: 'MRN-MAIN-2026-000002',
+            display_name: 'Kojo Asare',
+            first_name: 'Kojo',
+            last_name: 'Asare',
+            date_of_birth: '1975-01-20',
+            sex: 'male',
+            status: 'active',
+            created_at: '2026-05-12T08:00:00Z',
+            updated_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 201,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.createPatient({
+      local_data: {
+        first_name: 'Kojo',
+        last_name: 'Asare',
+        date_of_birth: '1975-01-20',
+        gender: 'male',
+      },
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          first_name: 'Kojo',
+          last_name: 'Asare',
+          date_of_birth: '1975-01-20',
+          sex: 'male',
+        }),
+      }),
+    );
+    expect(response.local_data).toEqual(
+      expect.objectContaining({
+        id: 'patient-2',
+        medical_record_number: 'MRN-MAIN-2026-000002',
+      }),
+    );
+  });
+
+  it('updates patient demographics through Rust /api/v2 patients', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            display_name: 'Ama Owusu',
+            first_name: 'Ama',
+            last_name: 'Owusu',
+            date_of_birth: '1989-04-15',
+            sex: 'female',
+            status: 'active',
+            created_at: '2026-05-12T08:00:00Z',
+            updated_at: '2026-05-12T09:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await patientsApi.updatePatientWithFHIR('patient-1', {
+      local_data: {
+        last_name: 'Owusu',
+        gender: 'Female',
+        phone_number: '0240000000',
+      },
+      fhir_data: {
+        telecom: [{ value: '0240000000' }],
+      },
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/patient-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({
+          last_name: 'Owusu',
+          sex: 'female',
+        }),
+      }),
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: 'patient-1',
+        last_name: 'Owusu',
+        updated_at: '2026-05-12T09:00:00Z',
+      }),
+    );
+  });
+
+  it('preserves AbortError from Rust patient write calls', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError);
+
+    await expect(
+      patientsApi.createPatient(
+        {
+          first_name: 'Ama',
+          last_name: 'Mensah',
+          date_of_birth: '1989-04-15',
+          sex: 'female',
+        },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toBe(abortError);
+  });
+
+  it('does not fall back to legacy patient-only actions without a Rust V2 contract', async () => {
+    await expect(patientsApi.deletePatient('patient-1')).rejects.toThrow(
+      'Patient deletion is not supported by Rust V2',
+    );
+    await expect(patientsApi.getPatientHistory('patient-1')).resolves.toEqual([]);
+    await expect(patientsApi.requestBreakGlass('patient-1', { reason: 'care continuity' })).rejects.toThrow(
+      'Break-glass access is not supported by Rust V2',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
