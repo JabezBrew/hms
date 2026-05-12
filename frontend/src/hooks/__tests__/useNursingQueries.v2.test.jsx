@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useActiveAlerts, usePatientMonitoring } from '../useNursingQueries';
+import { useActiveAlerts, usePatientMonitoring, usePendingDispensingGrouped } from '../useNursingQueries';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 
 function createWrapper() {
@@ -169,5 +169,47 @@ describe('Rust V2 nursing dashboard hooks', () => {
         }),
       }),
     ]);
+  });
+
+  it('loads the pharmacy dispensing surface from Rust V2 without exposing dispensed records as pending work', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'dispense-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              item_id: 'item-1',
+              item_name: 'Paracetamol 500mg',
+              location_id: 'location-1',
+              quantity: 10,
+              status: 'dispensed',
+              dispensed_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => usePendingDispensingGrouped(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data).toEqual([]));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/pharmacy/dispenses?limit=50',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
   });
 });

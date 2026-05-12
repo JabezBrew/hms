@@ -81,6 +81,20 @@ function adaptV2NursingAlert(item = {}) {
   };
 }
 
+async function getV2PendingPharmacyQueue({ signal } = {}) {
+  try {
+    await v2Api.getPharmacyDispenses({
+      query: { limit: 50 },
+      signal,
+    });
+    // Rust V2 currently exposes completed pharmacy dispenses, not a pending
+    // prescription dispensing queue. Do not surface completed dispenses as work.
+    return [];
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load pharmacy dispensing queue');
+  }
+}
+
 export const nursingKeys = {
   patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
   patientMonitoringAll: () => keyWith('patient-monitoring'),
@@ -713,7 +727,10 @@ export const useGenerateMAR = () => {
 export const usePendingDispensing = (patientId = null) => {
   return useQuery({
     queryKey: nursingKeys.pendingDispensing(patientId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2PendingPharmacyQueue({ signal });
+      }
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/pending/${params}`);
       return response;
@@ -726,7 +743,10 @@ export const usePendingDispensing = (patientId = null) => {
 export const usePendingDispensingGrouped = (patientId = null) => {
   return useQuery({
     queryKey: nursingKeys.pendingDispensingGrouped(patientId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2PendingPharmacyQueue({ signal });
+      }
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/pending-grouped/${params}`);
       return response;
@@ -739,7 +759,10 @@ export const usePendingDispensingGrouped = (patientId = null) => {
 export const useReadyForAdmin = (patientId = null) => {
   return useQuery({
     queryKey: nursingKeys.readyForAdmin(patientId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2PendingPharmacyQueue({ signal });
+      }
       const params = patientId ? `?patient=${patientId}` : '';
       const response = await apiClient.get(`/pharmacy/dispensing/ready-for-admin/${params}`);
       return response;
