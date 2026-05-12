@@ -3,7 +3,7 @@ import { ChevronRight, FileText, Pill, FlaskConical, CalendarDays } from 'lucide
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { problemsApi } from '@/features/problems/api';
 import { cn } from '@/lib/utils';
 
 const KIND_META = {
@@ -16,11 +16,16 @@ const KIND_META = {
 function useGroupedView(patientId) {
   return useQuery({
     queryKey: ['problems', 'grouped', patientId],
-    queryFn: ({ signal }) =>
-      apiClient.get('/problems/grouped-by-problem/', {
-        signal,
-        params: { patient: patientId },
-      }),
+    queryFn: async ({ signal }) => {
+      const problems = await problemsApi.listForPatient(patientId, {}, { signal });
+      return {
+        groups: problems.map((problem) => ({
+          problem,
+          entry_count: 0,
+          entries: [],
+        })),
+      };
+    },
     enabled: !!patientId,
     staleTime: 30_000,
   });
