@@ -221,4 +221,160 @@ describe('Rust V2 laboratory bridge', () => {
       }),
     ]);
   });
+
+  it('routes laboratory write workflows through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'order-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          priority: 'urgent',
+          status: 'ordered',
+          ordered_at: '2026-05-12T08:00:00Z',
+          test_count: 1,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{
+          id: 'specimen-1',
+          order_id: 'order-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          specimen_type: 'blood',
+          status: 'collected',
+          collected_at: '2026-05-12T08:10:00Z',
+        }],
+        page: { limit: 25, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'specimen-2',
+          order_id: 'order-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          specimen_type: 'urine',
+          status: 'collected',
+          collected_at: '2026-05-12T08:20:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'result-1',
+          order_id: 'order-1',
+          specimen_id: 'specimen-2',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          test_id: 'test-1',
+          test_name: 'Malaria RDT',
+          value: 'negative',
+          unit: null,
+          status: 'entered',
+          entered_at: '2026-05-12T08:30:00Z',
+          verified_at: null,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'result-1',
+          order_id: 'order-1',
+          specimen_id: 'specimen-2',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          test_id: 'test-1',
+          test_name: 'Malaria RDT',
+          value: 'negative',
+          unit: null,
+          status: 'verified',
+          entered_at: '2026-05-12T08:30:00Z',
+          verified_at: '2026-05-12T08:40:00Z',
+        },
+        meta: {},
+      }));
+
+    await expect(laboratoryApi.createLabOrder({
+      patient: 'patient-1',
+      tests: ['test-1'],
+      priority: 'urgent',
+    })).resolves.toMatchObject({ id: 'order-1', patient: 'patient-1' });
+    await expect(laboratoryApi.getLabSpecimens({ page_size: 25 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'specimen-1', order: 'order-1' })],
+    });
+    await expect(laboratoryApi.createLabSpecimen({
+      order: 'order-1',
+      specimen_type: 'urine',
+    })).resolves.toMatchObject({ id: 'specimen-2', order: 'order-1' });
+    await expect(laboratoryApi.createLabResult({
+      specimen: 'specimen-2',
+      test: 'test-1',
+      value: 'negative',
+    })).resolves.toMatchObject({ id: 'result-1', specimen: 'specimen-2' });
+    await expect(laboratoryApi.verifyLabResult('result-1')).resolves.toMatchObject({
+      id: 'result-1',
+      is_verified: true,
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+      [
+        'http://localhost:8080/api/v2/laboratory/orders',
+        'POST',
+        JSON.stringify({
+          patient_id: 'patient-1',
+          test_ids: ['test-1'],
+          panel_ids: [],
+          priority: 'urgent',
+        }),
+      ],
+      [
+        'http://localhost:8080/api/v2/laboratory/specimens?limit=25',
+        'GET',
+        undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/laboratory/specimens',
+        'POST',
+        JSON.stringify({
+          order_id: 'order-1',
+          specimen_type: 'urine',
+        }),
+      ],
+      [
+        'http://localhost:8080/api/v2/laboratory/results',
+        'POST',
+        JSON.stringify({
+          specimen_id: 'specimen-2',
+          test_id: 'test-1',
+          value: 'negative',
+          unit: null,
+        }),
+      ],
+      [
+        'http://localhost:8080/api/v2/laboratory/results/result-1/verify',
+        'POST',
+        undefined,
+      ],
+    ]);
+  });
+
+  it('fails closed for laboratory actions without generated Rust V2 contracts', async () => {
+    await expect(laboratoryApi.getLabOrder('order-1')).rejects.toThrow('/api/v2 laboratory order detail contract');
+    await expect(laboratoryApi.submitLabOrder('order-1')).rejects.toThrow('/api/v2 laboratory order status contract');
+    await expect(laboratoryApi.collectLabOrder('order-1')).rejects.toThrow('/api/v2 laboratory order status contract');
+    await expect(laboratoryApi.bulkCreateResults({ results: [] })).rejects.toThrow('/api/v2 laboratory bulk result contract');
+    await expect(laboratoryApi.createLabTest({ name: 'Custom test' })).rejects.toThrow('/api/v2 laboratory catalog mutation contract');
+    await expect(laboratoryApi.updateLabPanel('panel-1', { name: 'Panel' })).rejects.toThrow('/api/v2 laboratory panel mutation contract');
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
+
+function jsonResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}

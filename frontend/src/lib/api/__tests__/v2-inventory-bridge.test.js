@@ -346,6 +346,144 @@ describe('Rust V2 inventory bridge', () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('routes inventory creation workflows through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'requested',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'draft',
+          created_at: '2026-05-12T08:05:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'grn-1',
+          purchase_order_id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'received',
+          received_at: '2026-05-12T08:10:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'transfer-1',
+          item_id: 'item-1',
+          item_name: 'Paracetamol',
+          from_location_id: 'location-1',
+          to_location_id: 'location-2',
+          quantity: 5,
+          status: 'requested',
+          created_at: '2026-05-12T08:15:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'register-1',
+          item_id: 'item-2',
+          item_name: 'Morphine',
+          location_id: 'location-1',
+          movement_type: 'dispense',
+          quantity_delta: -1,
+          balance_after: 9,
+          witness_user_id: 'user-2',
+          created_at: '2026-05-12T08:20:00Z',
+        },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.createRequisition({
+      requesting_location: 'location-1',
+    })).resolves.toMatchObject({ id: 'req-1' });
+    await expect(inventoryApi.createPurchaseOrder({
+      supplier: { name: 'Acme Medical' },
+    })).resolves.toMatchObject({ id: 'po-1' });
+    await expect(inventoryApi.createGRN({
+      purchase_order: 'po-1',
+    })).resolves.toMatchObject({ id: 'grn-1' });
+    await expect(inventoryApi.createTransferRequest({
+      item: 'item-1',
+      from_location: 'location-1',
+      to_location: 'location-2',
+      quantity: '5',
+    })).resolves.toMatchObject({ id: 'transfer-1' });
+    await expect(inventoryApi.dispenseControlledSubstance({
+      item: 'item-2',
+      location: 'location-1',
+      quantity: 1,
+      witness: 'user-2',
+    })).resolves.toMatchObject({ id: 'register-1', quantity_delta: -1 });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions',
+        'POST',
+        JSON.stringify({ requesting_location_id: 'location-1' }),
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/purchase-orders',
+        'POST',
+        JSON.stringify({ supplier_name: 'Acme Medical' }),
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/goods-received-notes',
+        'POST',
+        JSON.stringify({ purchase_order_id: 'po-1' }),
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/transfers',
+        'POST',
+        JSON.stringify({
+          item_id: 'item-1',
+          from_location_id: 'location-1',
+          to_location_id: 'location-2',
+          quantity: 5,
+        }),
+      ],
+      [
+        'http://localhost:8080/api/v2/pharmacy/controlled-substances/register',
+        'POST',
+        JSON.stringify({
+          item_id: 'item-2',
+          location_id: 'location-1',
+          movement_type: 'dispense',
+          quantity_delta: -1,
+          witness_user_id: 'user-2',
+        }),
+      ],
+    ]);
+  });
+
+  it('fails closed for inventory actions without generated Rust V2 contracts', async () => {
+    await expect(inventoryApi.getInventoryItem('item-1')).rejects.toThrow('/api/v2 inventory item detail contract');
+    await expect(inventoryApi.createCategory({ name: 'Medication' })).rejects.toThrow('/api/v2 inventory category mutation contract');
+    await expect(inventoryApi.createSupplier({ name: 'Acme Medical' })).rejects.toThrow('/api/v2 supplier contract');
+    await expect(inventoryApi.createStorageLocation({ name: 'Main Store' })).rejects.toThrow('/api/v2 storage location mutation contract');
+    await expect(inventoryApi.createInventoryItem({ name: 'Paracetamol' })).rejects.toThrow('/api/v2 inventory item mutation contract');
+    await expect(inventoryApi.createStockMovement({ item: 'item-1' })).rejects.toThrow('/api/v2 stock movement mutation contract');
+    await expect(inventoryApi.submitRequisition('req-1')).rejects.toThrow('/api/v2 stock requisition action contract');
+    await expect(inventoryApi.approvePurchaseOrder('po-1')).rejects.toThrow('/api/v2 purchase order action contract');
+    await expect(inventoryApi.acceptGRN('grn-1')).rejects.toThrow('/api/v2 goods received note action contract');
+    await expect(inventoryApi.approveTransferRequest('transfer-1')).rejects.toThrow('/api/v2 stock transfer action contract');
+    await expect(inventoryApi.createStandingOrder({})).rejects.toThrow('/api/v2 standing order contract');
+    await expect(inventoryApi.createInventoryAudit({})).rejects.toThrow('/api/v2 inventory audit contract');
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
 
 function jsonResponse(payload) {

@@ -139,6 +139,7 @@ function adaptV2LabResult(item = {}) {
   return {
     ...item,
     order: item.order_id,
+    specimen: item.specimen_id,
     patient: item.patient_id,
     patient_mrn: patientCode,
     patient_name: patientName,
@@ -206,6 +207,68 @@ function buildV2LabResultQuery(params = {}) {
   return query;
 }
 
+function buildV2LabSpecimenQuery(params = {}) {
+  const query = { limit: normalizeV2Limit(params) };
+  const cursor = getCursorForParams('specimens', params);
+  if (cursor) query.cursor = cursor;
+  return query;
+}
+
+function pickEntityId(value) {
+  if (value && typeof value === 'object') {
+    return value.id || value.value || null;
+  }
+  return value || null;
+}
+
+function pickEntityIds(value) {
+  const items = Array.isArray(value) ? value : [];
+  return items.map(pickEntityId).filter(Boolean);
+}
+
+function rustV2Unsupported(contractName) {
+  return Promise.reject(new Error(`${contractName} is unavailable in Rust V2 mode.`));
+}
+
+function v2Object(response, adapter = (item) => item) {
+  return adapter(response?.data || {});
+}
+
+function adaptV2LabSpecimen(item = {}) {
+  return {
+    ...item,
+    order: item.order_id,
+    patient: item.patient_id,
+    patient_mrn: item.patient_code,
+    collected_date: item.collected_at,
+  };
+}
+
+function buildV2LabOrderPayload(data = {}) {
+  return {
+    patient_id: pickEntityId(data.patient_id ?? data.patient),
+    test_ids: pickEntityIds(data.test_ids ?? data.tests),
+    panel_ids: pickEntityIds(data.panel_ids ?? data.panels),
+    priority: data.priority || 'routine',
+  };
+}
+
+function buildV2SpecimenPayload(data = {}) {
+  return {
+    order_id: pickEntityId(data.order_id ?? data.order),
+    specimen_type: data.specimen_type || data.type || 'sample',
+  };
+}
+
+function buildV2LabResultPayload(data = {}) {
+  return {
+    specimen_id: pickEntityId(data.specimen_id ?? data.specimen),
+    test_id: pickEntityId(data.test_id ?? data.test),
+    value: String(data.value ?? data.result_value ?? ''),
+    unit: data.unit ?? null,
+  };
+}
+
 export const laboratoryApi = {
   // ========== Lab Tests ==========
 
@@ -237,6 +300,10 @@ export const laboratoryApi = {
 
   getLabTest: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory catalog detail contract');
+      }
+
       return await apiClient.get(`/laboratory/tests/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch lab test'));
@@ -250,6 +317,10 @@ export const laboratoryApi = {
    */
   createLabTest: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory catalog mutation contract');
+      }
+
       return await apiClient.post('/laboratory/tests/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create lab test'));
@@ -264,6 +335,10 @@ export const laboratoryApi = {
    */
   updateLabTest: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory catalog mutation contract');
+      }
+
       return await apiClient.patch(`/laboratory/tests/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update lab test'));
@@ -278,6 +353,10 @@ export const laboratoryApi = {
    */
   customizeLabTest: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory catalog mutation contract');
+      }
+
       return await apiClient.post(`/laboratory/tests/${id}/customize/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to customize lab test'));
@@ -291,6 +370,10 @@ export const laboratoryApi = {
    */
   resetLabTestToDefaults: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory catalog mutation contract');
+      }
+
       return await apiClient.post(`/laboratory/tests/${id}/reset_to_defaults/`, { confirm: true });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to reset lab test'));
@@ -304,6 +387,10 @@ export const laboratoryApi = {
    */
   deleteLabTest: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory catalog mutation contract');
+      }
+
       return await apiClient.delete(`/laboratory/tests/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to delete lab test'));
@@ -335,6 +422,10 @@ export const laboratoryApi = {
 
   getLabPanel: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory panel detail contract');
+      }
+
       return await apiClient.get(`/laboratory/panels/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch lab panel'));
@@ -348,6 +439,10 @@ export const laboratoryApi = {
    */
   createLabPanel: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory panel mutation contract');
+      }
+
       return await apiClient.post('/laboratory/panels/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create lab panel'));
@@ -362,6 +457,10 @@ export const laboratoryApi = {
    */
   updateLabPanel: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory panel mutation contract');
+      }
+
       return await apiClient.patch(`/laboratory/panels/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update lab panel'));
@@ -376,6 +475,10 @@ export const laboratoryApi = {
    */
   customizeLabPanel: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory panel mutation contract');
+      }
+
       return await apiClient.post(`/laboratory/panels/${id}/customize/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to customize lab panel'));
@@ -389,6 +492,10 @@ export const laboratoryApi = {
    */
   resetLabPanelToDefaults: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory panel mutation contract');
+      }
+
       return await apiClient.post(`/laboratory/panels/${id}/reset_to_defaults/`, { confirm: true });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to reset lab panel'));
@@ -402,6 +509,10 @@ export const laboratoryApi = {
    */
   deleteLabPanel: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory panel mutation contract');
+      }
+
       return await apiClient.delete(`/laboratory/panels/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to delete lab panel'));
@@ -456,6 +567,10 @@ export const laboratoryApi = {
 
   getLabOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order detail contract');
+      }
+
       return await apiClient.get(`/laboratory/orders/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch lab order'));
@@ -464,14 +579,26 @@ export const laboratoryApi = {
 
   createLabOrder: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postLaboratoryOrders(buildV2LabOrderPayload(data));
+        return v2Object(response, adaptV2LabOrder);
+      }
+
       return await apiClient.post('/laboratory/orders/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create lab order');
+      }
       throw new Error(handleApiError(error, 'Failed to create lab order'));
     }
   },
 
   updateLabOrder: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order mutation contract');
+      }
+
       return await apiClient.patch(`/laboratory/orders/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update lab order'));
@@ -480,6 +607,10 @@ export const laboratoryApi = {
 
   submitLabOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order status contract');
+      }
+
       return await apiClient.post(`/laboratory/orders/${id}/submit/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to submit lab order'));
@@ -488,6 +619,10 @@ export const laboratoryApi = {
 
   collectLabOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order status contract');
+      }
+
       return await apiClient.post(`/laboratory/orders/${id}/collect/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to mark order as collected'));
@@ -496,6 +631,10 @@ export const laboratoryApi = {
 
   receiveLabOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order status contract');
+      }
+
       return await apiClient.post(`/laboratory/orders/${id}/receive/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to receive order'));
@@ -504,6 +643,10 @@ export const laboratoryApi = {
 
   startProcessingLabOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order status contract');
+      }
+
       return await apiClient.post(`/laboratory/orders/${id}/start_processing/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to start processing'));
@@ -512,6 +655,10 @@ export const laboratoryApi = {
 
   completeLabOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order status contract');
+      }
+
       return await apiClient.post(`/laboratory/orders/${id}/complete/`, {});
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to complete order'));
@@ -520,6 +667,10 @@ export const laboratoryApi = {
 
   cancelLabOrder: async (id, cancellationReason) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory order status contract');
+      }
+
       return await apiClient.post(`/laboratory/orders/${id}/cancel/`, {
         cancellation_reason: cancellationReason,
       });
@@ -532,10 +683,21 @@ export const laboratoryApi = {
 
   getLabSpecimens: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratorySpecimens({
+          query: buildV2LabSpecimenQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('specimens', response, params, adaptV2LabSpecimen);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/specimens/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch specimens');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch specimens'));
     }
@@ -543,6 +705,10 @@ export const laboratoryApi = {
 
   getLabSpecimen: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory specimen detail contract');
+      }
+
       return await apiClient.get(`/laboratory/specimens/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch specimen'));
@@ -551,14 +717,26 @@ export const laboratoryApi = {
 
   createLabSpecimen: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postLaboratorySpecimens(buildV2SpecimenPayload(data));
+        return v2Object(response, adaptV2LabSpecimen);
+      }
+
       return await apiClient.post('/laboratory/specimens/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create specimen');
+      }
       throw new Error(handleApiError(error, 'Failed to create specimen'));
     }
   },
 
   receiveLabSpecimen: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory specimen action contract');
+      }
+
       return await apiClient.post(`/laboratory/specimens/${id}/receive/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to receive specimen'));
@@ -613,6 +791,10 @@ export const laboratoryApi = {
 
   getLabResult: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory result detail contract');
+      }
+
       return await apiClient.get(`/laboratory/results/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch lab result'));
@@ -621,18 +803,34 @@ export const laboratoryApi = {
 
   createLabResult: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postLaboratoryResults(buildV2LabResultPayload(data));
+        return v2Object(response, adaptV2LabResult);
+      }
+
       return await apiClient.post('/laboratory/results/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create lab result');
+      }
       throw new Error(handleApiError(error, 'Failed to create lab result'));
     }
   },
 
   verifyLabResult: async (id, verificationNotes = '') => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postLaboratoryResultVerify({ id });
+        return v2Object(response, adaptV2LabResult);
+      }
+
       return await apiClient.post(`/laboratory/results/${id}/verify/`, {
         verification_notes: verificationNotes,
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to verify result');
+      }
       throw new Error(handleApiError(error, 'Failed to verify result'));
     }
   },
@@ -647,6 +845,10 @@ export const laboratoryApi = {
    */
   bulkCreateResults: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory bulk result contract');
+      }
+
       return await apiClient.post('/laboratory/results/bulk/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to save lab results'));
@@ -663,6 +865,10 @@ export const laboratoryApi = {
    */
   bulkVerifyResults: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 laboratory bulk result contract');
+      }
+
       return await apiClient.post('/laboratory/results/bulk-verify/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to verify lab results'));
