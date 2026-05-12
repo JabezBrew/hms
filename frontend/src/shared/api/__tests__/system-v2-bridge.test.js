@@ -88,4 +88,162 @@ describe('Rust V2 system bridge', () => {
       department_rosters: true,
     });
   });
+
+  it('lists Rust V2 global feature overrides without calling the old settings endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              feature: 'patients',
+              enabled: false,
+              profile_default: true,
+              override_enabled: false,
+              updated_at: '2026-05-12T08:00:00Z',
+              updated_by_user_id: 'user-1',
+            },
+            {
+              feature: 'appointments',
+              enabled: true,
+              profile_default: true,
+              override_enabled: null,
+              updated_at: null,
+              updated_by_user_id: null,
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await systemApi.getFeatureEntitlements(
+      { page_size: 200 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/features',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual({
+      results: [
+        expect.objectContaining({
+          id: 'patients',
+          feature_key: 'patients',
+          scope: 'global',
+          is_enabled: false,
+          source: 'global_override',
+        }),
+      ],
+      count: 1,
+      next: null,
+      previous: null,
+    });
+  });
+
+  it('creates a global feature override through the Rust V2 feature patch endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            feature: 'patients',
+            enabled: true,
+            profile_default: false,
+            override_enabled: true,
+            updated_at: '2026-05-12T08:00:00Z',
+            updated_by_user_id: 'user-1',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await systemApi.createFeatureEntitlement({
+      scope: 'global',
+      feature_key: 'patients',
+      is_enabled: true,
+      reason: 'Enable patient module',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/features/patients',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: true }),
+      }),
+    );
+    expect(response).toMatchObject({
+      id: 'patients',
+      feature_key: 'patients',
+      is_enabled: true,
+    });
+  });
+
+  it('updates a global feature override through the Rust V2 feature patch endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            feature: 'patients',
+            enabled: false,
+            profile_default: true,
+            override_enabled: false,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await systemApi.updateFeatureEntitlement('patients', {
+      is_enabled: false,
+      reason: 'Temporarily disable',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/features/patients',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: false }),
+      }),
+    );
+    expect(response).toMatchObject({
+      id: 'patients',
+      feature_key: 'patients',
+      is_enabled: false,
+    });
+  });
+
+  it('fails closed for facility feature overrides because Rust V2 exposes only global feature overrides', async () => {
+    await expect(
+      systemApi.createFeatureEntitlement({
+        scope: 'facility',
+        facility: 'facility-1',
+        feature_key: 'patients',
+        is_enabled: true,
+      }),
+    ).rejects.toThrow(/facility feature overrides/i);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for deleting feature overrides because Rust V2 has no unset contract yet', async () => {
+    await expect(
+      systemApi.deleteFeatureEntitlement('patients'),
+    ).rejects.toThrow(/does not expose feature override deletion/i);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
