@@ -164,7 +164,7 @@ export function usePatientInvoices(patientId, params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.patientInvoices(patientId, params),
-    queryFn: () => billingApi.getPatientInvoices(patientId, params),
+    queryFn: ({ signal }) => billingApi.getPatientInvoices(patientId, params, { signal }),
     enabled: !!patientId && enabled,
   });
 }

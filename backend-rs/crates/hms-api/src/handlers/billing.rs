@@ -79,9 +79,13 @@ pub async fn list_invoices(
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let patient_id = query.patient_id;
+    if let Some(patient_id) = patient_id {
+        let _patient = load_patient_for_access(&state, &user, patient_id).await?;
+    }
     let (cursor, page_size) = page_request(query)?;
     let rows = state
-        .list_billing_invoices(cursor, page_size as i64 + 1)
+        .list_billing_invoices(patient_id, cursor, page_size as i64 + 1)
         .await
         .map_err(|_| ApiError::conflict("invoice_list_failed", "Invoices could not be loaded."))?;
     Ok(Json(page_response(rows, page_size, |item| {

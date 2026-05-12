@@ -1,4 +1,15 @@
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
+
+const DEFAULT_BILLING_PAGE_SIZE = 25;
+
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
 
 function generateIdempotencyKey() {
   try {
@@ -9,6 +20,43 @@ function generateIdempotencyKey() {
     // ignore
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function minorToMajor(value) {
+  return Number(value || 0) / 100;
+}
+
+function adaptV2Invoice(invoice) {
+  if (!invoice) {
+    return invoice;
+  }
+  return {
+    id: invoice.id,
+    patient: invoice.patient_id,
+    patient_id: invoice.patient_id,
+    patient_mrn: invoice.patient_code,
+    patient_code: invoice.patient_code,
+    invoice_number: invoice.invoice_number,
+    status: invoice.status,
+    currency: invoice.currency,
+    issued_at: invoice.issued_at,
+    created_at: invoice.issued_at,
+    gross_amount_minor: invoice.gross_amount_minor,
+    paid_amount_minor: invoice.paid_amount_minor,
+    balance_minor: invoice.balance_minor,
+    total_amount: minorToMajor(invoice.gross_amount_minor),
+    amount_paid: minorToMajor(invoice.paid_amount_minor),
+    balance_due: minorToMajor(invoice.balance_minor),
+  };
+}
+
+function normalizeLimit(params = {}, fallback = DEFAULT_BILLING_PAGE_SIZE) {
+  const rawLimit = params.limit || params.page_size || fallback;
+  const parsed = Number.parseInt(String(rawLimit), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, 100);
 }
 
 /**
@@ -133,12 +181,28 @@ export const billingApi = {
    * @param {Object} params - Additional query parameters
    * @returns {Promise<Array>} Patient invoices
    */
-  getPatientInvoices: async (patientId, params = {}) => {
+  getPatientInvoices: async (patientId, params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getBillingInvoices({
+          query: {
+            limit: normalizeLimit(params),
+            cursor: params.cursor || params.next_cursor,
+            patient_id: patientId,
+          },
+          signal: options.signal,
+        });
+        return Array.isArray(response?.data) ? response.data.map(adaptV2Invoice) : [];
+      }
+
       const queryParams = { patient_id: patientId, ...params };
       const queryString = new URLSearchParams(queryParams).toString();
       return await apiClient.get(`/billing/invoices/for_patient/?${queryString}`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch patient invoices'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch patient invoices'));
     }
   },

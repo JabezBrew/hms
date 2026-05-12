@@ -313,12 +313,17 @@ pub async fn list_billing_rules(
 pub async fn list_invoices(
     pool: &PgPool,
     facility_id: Uuid,
+    patient_id: Option<Uuid>,
     cursor: Option<BillingCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<InvoiceListItem>> {
     let mut query = invoice_query();
     query.push(" WHERE invoices.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(patient_id) = patient_id {
+        query.push(" AND invoices.patient_id = ");
+        query.push_bind(patient_id);
+    }
     apply_cursor(&mut query, "invoices.issued_at", "invoices.id", cursor);
     query.push(" ORDER BY invoices.issued_at DESC, invoices.id DESC LIMIT ");
     query.push_bind(limit);

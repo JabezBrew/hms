@@ -1529,10 +1529,18 @@ impl AppState {
 
     pub async fn list_billing_invoices(
         &self,
+        patient_id: Option<Uuid>,
         cursor: Option<BillingCursor>,
         limit: i64,
     ) -> Result<Vec<InvoiceListItem>> {
-        hms_db::billing::list_invoices(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::billing::list_invoices(
+            &self.inner.pool,
+            self.facility_id(),
+            patient_id,
+            cursor,
+            limit,
+        )
+        .await
     }
 
     pub async fn create_billing_invoice(

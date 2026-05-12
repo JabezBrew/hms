@@ -176,7 +176,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -187,7 +188,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -198,7 +200,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -241,7 +244,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -506,7 +510,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -517,7 +522,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -528,7 +534,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id"
     ],
     "hasBody": false
   },

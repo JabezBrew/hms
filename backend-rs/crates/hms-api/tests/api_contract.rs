@@ -2261,6 +2261,41 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     let receipts = json_body(receipts_response).await;
     assert_eq!(receipts["data"][0]["amount_minor"], gross_amount);
 
+    let patient_invoices_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/billing/invoices?limit=10&patient_id={patient_id}"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient invoice list succeeds");
+    assert_eq!(patient_invoices_response.status(), StatusCode::OK);
+    let patient_invoices = json_body(patient_invoices_response).await;
+    assert_eq!(patient_invoices["data"][0]["patient_id"], patient_id);
+
+    let missing_patient_id = Uuid::new_v4();
+    let missing_patient_invoices = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/billing/invoices?limit=10&patient_id={missing_patient_id}"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("missing patient invoice list succeeds");
+    assert_eq!(missing_patient_invoices.status(), StatusCode::NOT_FOUND);
+
     let claim_response = app
         .clone()
         .oneshot(

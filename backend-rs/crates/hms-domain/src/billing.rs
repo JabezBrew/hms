@@ -83,6 +83,7 @@ pub enum CashSessionStatus {
 pub struct BillingListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

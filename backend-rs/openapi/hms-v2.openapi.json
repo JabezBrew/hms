@@ -569,6 +569,13 @@
               "integer",
               "null"
             ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -17310,6 +17317,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -17531,6 +17550,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -17675,6 +17706,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -17816,6 +17859,18 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
                 "null"
               ]
             }
@@ -20841,6 +20896,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -21052,6 +21119,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -21183,6 +21262,18 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
                 "null"
               ]
             }
