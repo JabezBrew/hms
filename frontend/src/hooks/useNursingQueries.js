@@ -7,6 +7,7 @@ import { keyWith } from '@/shared/lib/queryKeys';
 
 const MAX_MONITORING_PAGE_SIZE = 50;
 const MAX_VITALS_PAGE_SIZE = 50;
+const MAX_TASK_PAGE_SIZE = 50;
 const MAX_HANDOFF_PAGE_SIZE = 50;
 
 function rethrowAbortError(error) {
@@ -106,6 +107,52 @@ function adaptV2NursingAlert(item = {}) {
   };
 }
 
+function legacyTaskStatus(status) {
+  if (status === 'open') return 'pending';
+  return status || 'pending';
+}
+
+function rustTaskStatus(status) {
+  if (status === 'pending' || status === 'in_progress' || status === 'overdue') return 'open';
+  return status;
+}
+
+function rustTaskType(taskType) {
+  if (
+    taskType === 'ward_round' ||
+    taskType === 'observation' ||
+    taskType === 'medication' ||
+    taskType === 'handoff'
+  ) {
+    return taskType;
+  }
+  return 'observation';
+}
+
+function adaptV2NursingTask(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
+  const dueAt = item.due_at || item.scheduled_time || null;
+  const taskType = item.task_type || 'observation';
+  return {
+    ...item,
+    admission: item.admission_case_id,
+    admission_case_id: item.admission_case_id,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_name: patientName,
+    patient_display_name: patientName,
+    description: item.description || `${taskType.replaceAll('_', ' ')} task`,
+    task_type: taskType,
+    status: legacyTaskStatus(item.status),
+    due_at: dueAt,
+    scheduled_time: dueAt,
+    priority: item.priority || 'medium',
+    assigned_to_name: item.assigned_to_name || '',
+  };
+}
+
 function adaptV2PatientVitals(item = {}) {
   return {
     ...item,
@@ -117,6 +164,25 @@ function adaptV2PatientVitals(item = {}) {
     oxygen_saturation: item.oxygen_saturation,
     blood_pressure_systolic: item.systolic_bp,
     blood_pressure_diastolic: item.diastolic_bp,
+  };
+}
+
+function normalizeV2TaskPayload(data = {}) {
+  const admissionCaseId = data.admission_case_id || data.admission_id || data.admission;
+  const dueAt = data.due_at || data.scheduled_time;
+  if (!admissionCaseId) {
+    throw new Error('Admission case is required to create a Rust V2 nursing task');
+  }
+  if (!dueAt) {
+    throw new Error('Due time is required to create a Rust V2 nursing task');
+  }
+
+  const assignedTo = data.assigned_to_user_id || data.assigned_to || null;
+  return {
+    admission_case_id: admissionCaseId,
+    task_type: rustTaskType(data.task_type),
+    due_at: new Date(dueAt).toISOString(),
+    assigned_to_user_id: assignedTo || null,
   };
 }
 
@@ -153,6 +219,43 @@ function handoffMatchesFilters(handoff, filters = {}) {
     return false;
   }
   return true;
+}
+
+function taskMatchesFilters(task, filters = {}) {
+  const patient = filters.patient || filters.patient_id;
+  if (patient && task.patient_id !== patient) {
+    return false;
+  }
+  const status = filters.status;
+  if (status && status !== 'all' && rustTaskStatus(status) !== rustTaskStatus(task.status)) {
+    return false;
+  }
+  const taskType = filters.task_type;
+  if (taskType && taskType !== 'all' && rustTaskType(taskType) !== rustTaskType(task.task_type)) {
+    return false;
+  }
+  const priority = filters.priority;
+  if (priority && priority !== 'all' && task.priority !== priority) {
+    return false;
+  }
+  if (filters.date && task.scheduled_time?.slice(0, 10) !== filters.date) {
+    return false;
+  }
+  return true;
+}
+
+async function getV2NursingTasks(filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getNursingTasks({
+      query: { limit: MAX_TASK_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .map(adaptV2NursingTask)
+      .filter((task) => taskMatchesFilters(task, filters));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load nursing tasks');
+  }
 }
 
 async function getV2Handoffs(filters = {}, { signal } = {}) {
@@ -266,7 +369,8 @@ export const nursingKeys = {
   vitalSignsTrends: (patientId, days, encounterId, admissionId, startDate, endDate) =>
     keyWith('vital-signs-trends', patientId, days, encounterId, admissionId, startDate, endDate),
   vitalSignsTrendsByPatient: (patientId) => keyWith('vital-signs-trends', patientId),
-  nursingTasks: (patient, status, ward, date) => keyWith('nursing-tasks', patient, status, ward, date),
+  nursingTasks: (patient, status, ward, date, taskType, priority) =>
+    keyWith('nursing-tasks', patient, status, ward, date, taskType, priority),
   nursingTasksAll: () => keyWith('nursing-tasks'),
   nursingTasksToday: () => keyWith('nursing-tasks-today'),
   nursingAlerts: (patient, ward, severity, status) => keyWith('nursing-alerts', patient, ward, severity, status),
@@ -543,12 +647,16 @@ export const useCreateVitalSigns = () => {
 
 export const useNursingTasks = (filters = {}) => {
   // Extract filter values to use as stable primitives in query key
-  const { patient, status, ward, date } = filters;
+  const { patient, status, ward, date, task_type, priority } = filters;
 
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
-    queryKey: nursingKeys.nursingTasks(patient, status, ward, date),
-    queryFn: async () => {
+    queryKey: nursingKeys.nursingTasks(patient, status, ward, date, task_type, priority),
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2NursingTasks(filters, { signal });
+      }
+
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/tasks/?${params.toString()}`);
       // Ensure we always return an array
@@ -564,7 +672,11 @@ export const useNursingTasks = (filters = {}) => {
 export const useTodayTasks = () => {
   return useQuery({
     queryKey: nursingKeys.nursingTasksToday(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2NursingTasks({ date: new Date().toISOString().slice(0, 10) }, { signal });
+      }
+
       const response = await apiClient.get('/nursing/tasks/today/');
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
@@ -580,6 +692,15 @@ export const useCreateNursingTask = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postNursingTasks(normalizeV2TaskPayload(data));
+          return adaptV2NursingTask(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to create nursing task');
+        }
+      }
+
       const response = await apiClient.post('/nursing/tasks/', data);
       return response.data;
     },
@@ -596,6 +717,15 @@ export const useCompleteTask = () => {
 
   return useMutation({
     mutationFn: async ({ taskId, data }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postNursingTaskComplete({ id: taskId });
+          return adaptV2NursingTask(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to complete nursing task');
+        }
+      }
+
       const response = await apiClient.post(`/nursing/tasks/${taskId}/complete/`, data);
       return response.data;
     },
@@ -612,6 +742,18 @@ export const useUpdateTask = () => {
 
   return useMutation({
     mutationFn: async ({ taskId, data }) => {
+      if (isRustV2ApiMode()) {
+        if (data?.status === 'completed' || data?.complete === true) {
+          try {
+            const response = await v2Api.postNursingTaskComplete({ id: taskId });
+            return adaptV2NursingTask(response?.data);
+          } catch (error) {
+            rethrowV2Error(error, 'Failed to complete nursing task');
+          }
+        }
+        throw new Error('Rust V2 does not expose general nursing task edits yet.');
+      }
+
       const response = await apiClient.patch(`/nursing/tasks/${taskId}/`, data);
       return response.data;
     },

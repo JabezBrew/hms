@@ -4,11 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   useActiveAlerts,
+  useCompleteTask,
+  useCreateNursingTask,
   useCreateShiftHandoff,
   useCreateVitalSigns,
+  useNursingTasks,
   usePatientMonitoring,
   usePendingDispensingGrouped,
   useShiftHandoffs,
+  useTodayTasks,
   useVitalSigns,
   useVitalSignsTrends,
 } from '../useNursingQueries';
@@ -180,6 +184,209 @@ describe('Rust V2 nursing dashboard hooks', () => {
         }),
       }),
     ]);
+  });
+
+  it('loads nursing tasks from Rust V2 and adapts open tasks for the current UI', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'task-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              task_type: 'observation',
+              status: 'open',
+              due_at: '2026-05-12T11:00:00Z',
+            },
+            {
+              id: 'task-2',
+              admission_case_id: 'admission-2',
+              patient_id: 'patient-2',
+              patient_code: 'MRN-002',
+              patient_display_name: 'Kojo Mensah',
+              task_type: 'medication',
+              status: 'completed',
+              due_at: '2026-05-12T12:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useNursingTasks({ patient: 'patient-1', status: 'pending' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'task-1',
+        patient: 'patient-1',
+        patient_id: 'patient-1',
+        patient_mrn: 'MRN-001',
+        patient_name: 'Ama Mensah',
+        admission: 'admission-1',
+        task_type: 'observation',
+        status: 'pending',
+        scheduled_time: '2026-05-12T11:00:00Z',
+      }),
+    ]);
+  });
+
+  it('loads today nursing tasks from Rust V2 using a bounded page', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'task-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              task_type: 'observation',
+              status: 'open',
+              due_at: `${today}T11:00:00Z`,
+            },
+            {
+              id: 'task-2',
+              admission_case_id: 'admission-2',
+              patient_id: 'patient-2',
+              patient_code: 'MRN-002',
+              patient_display_name: 'Kojo Mensah',
+              task_type: 'medication',
+              status: 'open',
+              due_at: `${tomorrow}T12:00:00Z`,
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useTodayTasks(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data[0]).toEqual(expect.objectContaining({ id: 'task-1' }));
+  });
+
+  it('creates nursing tasks through the Rust V2 task contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'task-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            task_type: 'observation',
+            status: 'open',
+            due_at: '2026-05-12T11:00:00.000Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useCreateNursingTask(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        admission_case_id: 'admission-1',
+        task_type: 'assessment',
+        scheduled_time: '2026-05-12T11:00:00.000Z',
+        assigned_to: 'user-1',
+        description: 'Check post-op observations',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          admission_case_id: 'admission-1',
+          task_type: 'observation',
+          due_at: '2026-05-12T11:00:00.000Z',
+          assigned_to_user_id: 'user-1',
+        }),
+      }),
+    );
+  });
+
+  it('completes nursing tasks through the Rust V2 complete action', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'task-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            task_type: 'observation',
+            status: 'completed',
+            due_at: '2026-05-12T11:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useCompleteTask(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ taskId: 'task-1', data: { completion_notes: 'Done' } });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks/task-1/complete',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('loads the pharmacy dispensing surface from Rust V2 without exposing dispensed records as pending work', async () => {

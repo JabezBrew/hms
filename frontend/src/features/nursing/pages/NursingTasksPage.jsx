@@ -156,8 +156,10 @@ export default function NursingTasksPage() {
     }
 
     try {
+      const selectedPatient = patients.find((patient) => patient.patient_id === newTask.patient);
       await createMutation.mutateAsync({
         patient: newTask.patient,
+        admission_case_id: selectedPatient?.admission_id || selectedPatient?.admission?.id,
         task_type: newTask.task_type,
         description: newTask.description,
         scheduled_time: newTask.scheduled_time,
