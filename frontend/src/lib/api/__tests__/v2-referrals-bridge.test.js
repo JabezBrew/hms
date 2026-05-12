@@ -318,4 +318,32 @@ describe('Rust V2 referrals bridge', () => {
       referralsApi.getReferrals({}, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
   });
+
+  it('preserves AbortError from Rust referral page queries without logging API errors', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    globalThis.fetch
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError);
+
+    try {
+      await expect(
+        referralsApi.getReferralInbox({ signal: new AbortController().signal }),
+      ).rejects.toBe(abortError);
+      await expect(
+        referralsApi.getReferralsSent({ signal: new AbortController().signal }),
+      ).rejects.toBe(abortError);
+      await expect(
+        referralsApi.getReferralSlaDashboard({ signal: new AbortController().signal }),
+      ).rejects.toBe(abortError);
+      await expect(
+        referralsApi.getClinicWaitlistSummary({ signal: new AbortController().signal }),
+      ).rejects.toBe(abortError);
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });

@@ -310,6 +310,7 @@ export const referralsApi = {
       }
       return await apiClient.get('/referrals/inbox/', options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referral inbox'));
     }
   },
@@ -343,6 +344,7 @@ export const referralsApi = {
       }
       return await apiClient.get('/referrals/sent/', options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch sent referrals'));
     }
   },
@@ -370,6 +372,7 @@ export const referralsApi = {
       }
       return await apiClient.get(`/referrals/${id}/sla-state/`, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referral SLA state'));
     }
   },
@@ -393,6 +396,7 @@ export const referralsApi = {
       }
       return await apiClient.get('/referrals/sla-dashboard/', options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch referral SLA dashboard'));
     }
   },
@@ -481,6 +485,7 @@ export const referralsApi = {
       }
       return await apiClient.get('/referrals/clinic-waitlist/summary/', options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch waitlist summary'));
     }
   },
