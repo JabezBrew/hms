@@ -8,6 +8,7 @@ import { keyWith } from '@/shared/lib/queryKeys';
 const MAX_MONITORING_PAGE_SIZE = 50;
 const MAX_VITALS_PAGE_SIZE = 50;
 const MAX_TASK_PAGE_SIZE = 50;
+const MAX_ALERT_PAGE_SIZE = 50;
 const MAX_HANDOFF_PAGE_SIZE = 50;
 
 function rethrowAbortError(error) {
@@ -94,9 +95,18 @@ function adaptV2NursingAlert(item = {}) {
   const patientName = item.patient_display_name || 'Unknown Patient';
   return {
     ...item,
+    admission: item.admission_case_id,
+    admission_case_id: item.admission_case_id,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_name: patientName,
+    patient_display_name: patientName,
     alert_type: 'nursing_alert',
     message: item.title || 'Nursing alert',
     acknowledged: Boolean(item.acknowledged_at) || item.status === 'acknowledged',
+    resolved: item.status === 'resolved',
     patient_details: {
       id: item.patient_id,
       medical_record_number: item.patient_code || '',
@@ -242,6 +252,36 @@ function taskMatchesFilters(task, filters = {}) {
     return false;
   }
   return true;
+}
+
+function alertMatchesFilters(alert, filters = {}) {
+  const patient = filters.patient || filters.patient_id;
+  if (patient && alert.patient_id !== patient) {
+    return false;
+  }
+  const severity = filters.severity;
+  if (severity && severity !== 'all' && alert.severity !== severity) {
+    return false;
+  }
+  const status = filters.status;
+  if (status && status !== 'all' && alert.status !== status) {
+    return false;
+  }
+  return true;
+}
+
+async function getV2NursingAlerts(filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getNursingAlerts({
+      query: { limit: MAX_ALERT_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .map(adaptV2NursingAlert)
+      .filter((alert) => alertMatchesFilters(alert, filters));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load nursing alerts');
+  }
 }
 
 async function getV2NursingTasks(filters = {}, { signal } = {}) {
@@ -773,7 +813,11 @@ export const useNursingAlerts = (filters = {}) => {
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
     queryKey: nursingKeys.nursingAlerts(patient, ward, severity, status),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2NursingAlerts(filters, { signal });
+      }
+
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/alerts/?${params.toString()}`);
       // Ensure we always return an array
@@ -792,17 +836,8 @@ export const useActiveAlerts = () => {
     queryKey: nursingKeys.nursingAlertsActive(),
     queryFn: async ({ signal }) => {
       if (isRustV2ApiMode()) {
-        try {
-          const response = await v2Api.getNursingAlerts({
-            query: { limit: 50 },
-            signal,
-          });
-          return (Array.isArray(response?.data) ? response.data : [])
-            .map(adaptV2NursingAlert)
-            .filter((alert) => !alert.acknowledged && alert.status !== 'resolved');
-        } catch (error) {
-          rethrowV2Error(error, 'Failed to load active nursing alerts');
-        }
+        const alerts = await getV2NursingAlerts({}, { signal });
+        return alerts.filter((alert) => !alert.acknowledged && alert.status !== 'resolved');
       }
 
       // Use getWithPagination to avoid auto-extraction of results
@@ -831,6 +866,15 @@ export const useAcknowledgeAlert = () => {
 
   return useMutation({
     mutationFn: async ({ alertId, notes }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postNursingAlertAcknowledge({ id: alertId });
+          return adaptV2NursingAlert(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to acknowledge nursing alert');
+        }
+      }
+
       const response = await apiClient.post(`/nursing/alerts/${alertId}/acknowledge/`, {
         resolution_notes: notes,
       });

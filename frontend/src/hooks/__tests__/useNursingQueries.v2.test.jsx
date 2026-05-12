@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   useActiveAlerts,
+  useAcknowledgeAlert,
   useCompleteTask,
   useCreateNursingTask,
   useCreateShiftHandoff,
   useCreateVitalSigns,
+  useNursingAlerts,
   useNursingTasks,
   usePatientMonitoring,
   usePendingDispensingGrouped,
@@ -184,6 +186,111 @@ describe('Rust V2 nursing dashboard hooks', () => {
         }),
       }),
     ]);
+  });
+
+  it('loads filtered nursing alerts from Rust V2 and adapts patient details', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'alert-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              severity: 'high',
+              title: 'High fever watch',
+              status: 'open',
+              created_at: '2026-05-12T09:00:00Z',
+              acknowledged_at: null,
+            },
+            {
+              id: 'alert-2',
+              admission_case_id: 'admission-2',
+              patient_id: 'patient-2',
+              patient_code: 'MRN-002',
+              patient_display_name: 'Kojo Mensah',
+              severity: 'low',
+              title: 'Routine review',
+              status: 'acknowledged',
+              created_at: '2026-05-12T10:00:00Z',
+              acknowledged_at: '2026-05-12T10:10:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useNursingAlerts({ patient: 'patient-1', severity: 'high', status: 'open' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/alerts?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'alert-1',
+        patient: 'patient-1',
+        patient_mrn: 'MRN-001',
+        patient_name: 'Ama Mensah',
+        message: 'High fever watch',
+        severity: 'high',
+        acknowledged: false,
+      }),
+    ]);
+  });
+
+  it('acknowledges nursing alerts through the Rust V2 alert action', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'alert-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            severity: 'high',
+            title: 'High fever watch',
+            status: 'acknowledged',
+            created_at: '2026-05-12T09:00:00Z',
+            acknowledged_at: '2026-05-12T09:10:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useAcknowledgeAlert(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ alertId: 'alert-1', notes: 'Seen' });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/alerts/alert-1/acknowledge',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('loads nursing tasks from Rust V2 and adapts open tasks for the current UI', async () => {
