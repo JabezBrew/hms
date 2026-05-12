@@ -29,7 +29,7 @@ import {
 import { useTriageActions } from '@/hooks/useVisitQueries';
 import { clinicsApi } from '@/features/clinics/api';
 import { appointmentsApi } from '@/features/appointments/api';
-import { apiClient } from '@/lib/api-client';
+import { staffApi } from '@/lib/api/staff';
 import { useAuth } from '@/lib/auth';
 import { keyWith } from '@/shared/lib/queryKeys';
 
@@ -95,7 +95,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
   // Fetch practitioners for selected clinic
   const { data: practitioners, isLoading: practitionersLoading } = useQuery({
     queryKey: triageAssignKeys.practitioners(clinicId),
-    queryFn: () => apiClient.get(`/organization/clinics/${clinicId}/practitioners/`),
+    queryFn: ({ signal }) => staffApi.getPractitioners({ clinic: clinicId, page_size: 100 }, { signal }),
     enabled: open && Boolean(clinicId),
   });
 

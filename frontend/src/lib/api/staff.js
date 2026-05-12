@@ -68,6 +68,43 @@ function adaptV2StaffListItem(item = {}) {
   };
 }
 
+function adaptV2PractitionerListItem(item = {}) {
+  const displayName = item.display_name || item.name || 'Unknown Practitioner';
+  const { firstName, lastName } = splitDisplayName(displayName);
+  return {
+    ...item,
+    id: item.id,
+    staff: item.staff_id,
+    staff_id: item.staff_id,
+    user_id: item.user_id,
+    name: displayName,
+    employee_id: item.employee_id || '',
+    license_number: item.license_number || '',
+    specialization: item.specialization || '',
+    qualification: item.qualification || '',
+    is_active: item.is_active ?? true,
+    user_details: {
+      id: item.user_id,
+      first_name: firstName,
+      last_name: lastName,
+      user_type: 'doctor',
+      is_active: item.is_active ?? true,
+    },
+  };
+}
+
+function practitionerMatchesQuery(practitioner, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  return [
+    practitioner.name,
+    practitioner.employee_id,
+    practitioner.license_number,
+    practitioner.specialization,
+    practitioner.qualification,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+}
+
 /**
  * Staff API service
  */
@@ -200,7 +237,24 @@ export const staffApi = {
    * Get practitioners (doctors, nurses)
    * @returns {Promise<Array>} List of practitioners
    */
-  getPractitioners: async (params = {}) => {
+  getPractitioners: async (params = {}, options = {}) => {
+    if (isRustV2ApiMode()) {
+      try {
+        const response = await v2Api.getAdminPractitioners({
+          query: getStaffListQuery(params),
+          signal: options.signal || params.signal,
+        });
+        return Array.isArray(response?.data)
+          ? response.data.map(adaptV2PractitionerListItem)
+          : [];
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to fetch practitioners'));
+      }
+    }
+
     try {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/users/practitioners/${queryString ? `?${queryString}` : ''}`;
@@ -220,6 +274,11 @@ export const staffApi = {
     try {
       if (!query || query.length < 2) {
         return [];
+      }
+
+      if (isRustV2ApiMode()) {
+        const practitioners = await staffApi.getPractitioners({ limit: 100 });
+        return practitioners.filter((practitioner) => practitionerMatchesQuery(practitioner, query));
       }
 
       const params = new URLSearchParams({
