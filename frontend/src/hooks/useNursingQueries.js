@@ -47,6 +47,9 @@ function adaptV2WardBoardMonitoringItem(item = {}) {
   return {
     patient_id: item.patient_id,
     patient_name: patientName,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_display_name: patientName,
     ward_id: item.ward_id,
     ward_name: item.ward_name || '',
     admission_id: item.admission_id,
@@ -1060,7 +1063,22 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
 export const usePatientDetail = (patientId) => {
   return useQuery({
     queryKey: nursingKeys.patientDetail(patientId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.getWardBoard({
+            query: { limit: MAX_MONITORING_PAGE_SIZE },
+            signal,
+          });
+          const rows = Array.isArray(response?.data)
+            ? response.data.map(adaptV2WardBoardMonitoringItem)
+            : [];
+          return rows.find((row) => row.patient_id === patientId) || {};
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to load patient monitoring detail');
+        }
+      }
+
       const response = await apiClient.get(`/nursing/monitoring/patient_detail/?patient=${patientId}`);
       // Ensure we always return an object
       const data = response?.data ?? response;

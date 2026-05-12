@@ -34,6 +34,7 @@ import {
   useNursingAlerts,
   useNursingTasks,
   useOverdueMedications,
+  usePatientDetail,
   usePatientMAR,
   usePatientMonitoring,
   usePendingDispensingGrouped,
@@ -163,6 +164,54 @@ describe('Rust V2 nursing dashboard hooks', () => {
         }),
       ],
     });
+  });
+
+  it('loads patient monitoring detail from the bounded Rust ward board contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              admission_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              ward_id: 'ward-1',
+              ward_name: 'General Ward',
+              bed_id: 'bed-1',
+              bed_code: 'G-01',
+              admission_status: 'admitted',
+              admitted_at: '2026-05-12T08:00:00Z',
+              open_nursing_task_count: 2,
+              due_medication_count: 1,
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => usePatientDetail('patient-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data?.patient_id).toBe('patient-1'));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual(expect.objectContaining({
+      patient_name: 'Ama Mensah',
+      patient_mrn: 'MRN-001',
+      ward_name: 'General Ward',
+      pending_tasks: expect.arrayContaining([expect.objectContaining({ status: 'open' })]),
+    }));
   });
 
   it('loads active alerts from Rust nursing alerts and adapts patient details', async () => {
