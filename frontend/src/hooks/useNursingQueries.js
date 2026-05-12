@@ -1,8 +1,85 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { v2Api } from '@/lib/api/v2/client';
+import { handleV2ApiError } from '@/lib/api/v2/errors';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { keyWith } from '@/shared/lib/queryKeys';
 
 const MAX_MONITORING_PAGE_SIZE = 50;
+
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function rethrowV2Error(error, message) {
+  rethrowAbortError(error);
+  throw new Error(handleV2ApiError(error, message));
+}
+
+function repeatedItems(count, factory) {
+  const safeCount = Math.max(0, Number.parseInt(count, 10) || 0);
+  return Array.from({ length: safeCount }, (_, index) => factory(index));
+}
+
+function adaptV2WardBoardMonitoringItem(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || item.name || 'Unknown Patient';
+  const bedNumber = item.bed_code || item.bed_number || '';
+
+  return {
+    patient: {
+      id: item.patient_id,
+      medical_record_number: item.patient_code || '',
+      user: {
+        full_name: patientName,
+      },
+      user_details: {
+        full_name: patientName,
+      },
+    },
+    admission: {
+      id: item.admission_id,
+      status: item.admission_status,
+      admitted_at: item.admitted_at,
+      bed_details: {
+        id: item.bed_id ?? null,
+        bed_number: bedNumber,
+        ward_details: {
+          id: item.ward_id,
+          name: item.ward_name || '',
+        },
+      },
+    },
+    latest_vitals: null,
+    active_alerts: [],
+    pending_tasks: repeatedItems(item.open_nursing_task_count, (index) => ({
+      id: `${item.admission_id || item.patient_id}-task-${index + 1}`,
+      status: 'open',
+    })),
+    medications_due: repeatedItems(item.due_medication_count, (index) => ({
+      id: `${item.admission_id || item.patient_id}-med-${index + 1}`,
+      status: 'scheduled',
+    })),
+  };
+}
+
+function adaptV2NursingAlert(item = {}) {
+  const patientName = item.patient_display_name || 'Unknown Patient';
+  return {
+    ...item,
+    alert_type: 'nursing_alert',
+    message: item.title || 'Nursing alert',
+    acknowledged: Boolean(item.acknowledged_at) || item.status === 'acknowledged',
+    patient_details: {
+      id: item.patient_id,
+      medical_record_number: item.patient_code || '',
+      user_details: {
+        full_name: patientName,
+      },
+    },
+  };
+}
 
 export const nursingKeys = {
   patientMonitoring: (wardId, page, pageSize) => keyWith('patient-monitoring', wardId, page, pageSize),
@@ -68,7 +145,32 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
 
   return useQuery({
     queryKey: nursingKeys.patientMonitoring(wardId, page, normalizedPageSize),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.getWardBoard({
+            query: {
+              limit: normalizedPageSize,
+              ...(wardId ? { ward_id: wardId } : {}),
+            },
+            signal,
+          });
+          const results = Array.isArray(response?.data)
+            ? response.data.map(adaptV2WardBoardMonitoringItem)
+            : [];
+          const hasNext = Boolean(response?.page?.has_next);
+          return {
+            count: results.length + (hasNext ? 1 : 0),
+            page,
+            page_size: normalizedPageSize,
+            total_pages: hasNext ? page + 1 : Math.max(1, page),
+            results,
+          };
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to load patient monitoring data');
+        }
+      }
+
       const params = new URLSearchParams();
       if (wardId) params.append('ward', wardId);
       params.append('page', page.toString());
@@ -343,7 +445,21 @@ export const useNursingAlerts = (filters = {}) => {
 export const useActiveAlerts = () => {
   return useQuery({
     queryKey: nursingKeys.nursingAlertsActive(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.getNursingAlerts({
+            query: { limit: 50 },
+            signal,
+          });
+          return (Array.isArray(response?.data) ? response.data : [])
+            .map(adaptV2NursingAlert)
+            .filter((alert) => !alert.acknowledged && alert.status !== 'resolved');
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to load active nursing alerts');
+        }
+      }
+
       // Use getWithPagination to avoid auto-extraction of results
       const data = await apiClient.getWithPagination('/nursing/alerts/active/');
 
