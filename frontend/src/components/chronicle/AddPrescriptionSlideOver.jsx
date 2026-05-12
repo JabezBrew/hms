@@ -24,13 +24,12 @@ import {
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { useSafetyCheck, usePatientAllergies, useDrugForms } from "@/hooks/useDrugSafetyQueries";
 import { DrugSafetyDialog } from "@/components/drug-safety/DrugSafetyDialog";
 import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutocomplete";
 import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
-import { invalidatePrescriptionMutationQueries } from "@/hooks/usePrescriptionMutations";
+import { createPrescription, invalidatePrescriptionMutationQueries } from "@/hooks/usePrescriptionMutations";
 import { nursingKeys } from "@/hooks/useNursingQueries";
 import { emitOnboardingEvent } from "@/features/onboarding";
 
@@ -130,7 +129,7 @@ const AddPrescriptionSlideOver = ({
   // API mutation
   const createPrescriptionMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await apiClient.post('/clinical-notes/prescriptions/', data);
+      const response = await createPrescription(data);
       return response;
     },
     onSuccess: (data) => {
