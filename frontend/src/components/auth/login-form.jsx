@@ -2,7 +2,7 @@ import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
 import { useNavigate } from 'react-router-dom';
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useAuth } from "../../lib/auth.jsx"
 import { Button } from "../ui/button"
@@ -16,6 +16,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const isSubmittingRef = useRef(false)
   const { login, mfaSession } = useAuth()
   const navigate = useNavigate();
 
@@ -25,6 +26,10 @@ export function LoginForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingRef.current) {
+      return;
+    }
+    isSubmittingRef.current = true;
     setIsLoading(true);
 
     try {
@@ -37,6 +42,7 @@ export function LoginForm() {
     } catch {
       // Error is already handled in the auth provider
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   }

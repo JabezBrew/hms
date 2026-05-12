@@ -8,7 +8,7 @@ use hms_domain::care::{
     AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
     CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateEncounterRequest,
     CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterStatus, TriageListItem,
-    UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitStatus,
+    UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -63,7 +63,7 @@ pub async fn list_appointments(
     operation_id = "getClinics",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(VisitListQuery),
     responses(
         (status = 200, description = "Clinics list", body = ListResponse<ClinicListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -277,18 +277,46 @@ pub async fn cancel_appointment(
 pub async fn list_visits(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<VisitListQuery>,
 ) -> Result<Json<ListResponse<VisitListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let (cursor, page_size) = page_request(query)?;
+    let clinic_id = query.clinic_id;
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_visits(cursor, page_size as i64 + 1)
+        .list_visits(clinic_id, cursor, page_size as i64 + 1)
         .await
         .map_err(|_| ApiError::conflict("visit_list_failed", "Visits could not be loaded."))?;
 
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.checked_in_at, item.id)
     })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/visits/{id}",
+    operation_id = "getVisitById",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Visit id")),
+    responses(
+        (status = 200, description = "Visit detail", body = ObjectResponse<VisitListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Visit not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_visit(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
+    require_action_permission(&user, state.facility_id(), PermissionCode::AppointmentView)?;
+    let visit = load_visit_for_access(&state, &user, id).await?;
+    Ok(Json(object(visit)))
 }
 
 #[utoipa::path(
@@ -316,7 +344,12 @@ pub async fn check_in_visit(
     )?;
     let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
     let visit = state
-        .check_in_visit(payload.patient_id, payload.appointment_id, user.id)
+        .check_in_visit(
+            payload.patient_id,
+            payload.appointment_id,
+            payload.clinic_id,
+            user.id,
+        )
         .await
         .map_err(|_| {
             ApiError::conflict("visit_check_in_failed", "Visit could not be checked in.")

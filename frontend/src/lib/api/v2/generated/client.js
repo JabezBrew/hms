@@ -268,10 +268,7 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/clinics",
     "pathParamNames": [],
-    "queryParamNames": [
-      "cursor",
-      "limit"
-    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getClinicWaitlist": {
@@ -832,15 +829,22 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getVisitById": {
+    "operationId": "getVisitById",
+    "method": "GET",
+    "path": "/api/v2/visits/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getVisits": {
     "operationId": "getVisits",
     "method": "GET",
     "path": "/api/v2/visits",
     "pathParamNames": [],
-    "queryParamNames": [
-      "cursor",
-      "limit"
-    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getWardBeds": {
@@ -1796,6 +1800,7 @@ export function createGeneratedClient(request) {
     getSystemDeploymentCapabilities: createOperation(request, operations.getSystemDeploymentCapabilities),
     getTreatmentSheets: createOperation(request, operations.getTreatmentSheets),
     getTriageQueue: createOperation(request, operations.getTriageQueue),
+    getVisitById: createOperation(request, operations.getVisitById),
     getVisits: createOperation(request, operations.getVisits),
     getWardBeds: createOperation(request, operations.getWardBeds),
     getWardBoard: createOperation(request, operations.getWardBoard),

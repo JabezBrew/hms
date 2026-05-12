@@ -77,7 +77,7 @@ export function useWaitingRoom(clinicId, options = {}) {
 
   return useQuery({
     queryKey: visitKeys.waitingRoom(clinicId),
-    queryFn: () => visitsApi.waitingRoom(clinicId),
+    queryFn: ({ signal }) => visitsApi.waitingRoom(clinicId, { signal }),
     refetchInterval: 10000, // Poll every 10 seconds
     refetchIntervalInBackground: false,
     staleTime: 5000,
@@ -94,7 +94,7 @@ export function useVisit(encounterId, options = {}) {
 
   return useQuery({
     queryKey: visitKeys.detail(encounterId),
-    queryFn: () => visitsApi.get(encounterId),
+    queryFn: ({ signal }) => visitsApi.get(encounterId, { signal }),
     staleTime: 30000,
     ...options,
     enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(encounterId),
@@ -218,7 +218,7 @@ export function useTriageQueue(filters = {}, options = {}) {
 
   return useQuery({
     queryKey: triageKeys.list(filters),
-    queryFn: () => triageApi.list(filters),
+    queryFn: ({ signal }) => triageApi.list({ ...filters, signal }),
     refetchInterval: 15000, // Poll every 15 seconds
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -235,7 +235,7 @@ export function useTriageEntry(id, options = {}) {
 
   return useQuery({
     queryKey: triageKeys.detail(id),
-    queryFn: () => triageApi.get(id),
+    queryFn: ({ signal }) => triageApi.get(id, { signal }),
     staleTime: 30000,
     ...options,
     enabled: (options.enabled ?? true) && Boolean(facilityCode) && Boolean(id),

@@ -798,6 +798,13 @@
               "null"
             ]
           },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "patient_id": {
             "format": "uuid",
             "type": "string"
@@ -7481,6 +7488,13 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "clinic_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -11636,6 +11650,13 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "clinic_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -13877,6 +13898,13 @@
             "format": "date-time",
             "type": "string"
           },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -13903,6 +13931,32 @@
           "status",
           "checked_in_at"
         ],
+        "type": "object"
+      },
+      "VisitListQuery": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "VisitStatus": {
@@ -17822,9 +17876,9 @@
         "operationId": "getClinics",
         "parameters": [
           {
-            "in": "query",
+            "in": "path",
             "name": "cursor",
-            "required": false,
+            "required": true,
             "schema": {
               "type": [
                 "string",
@@ -17833,14 +17887,26 @@
             }
           },
           {
-            "in": "query",
+            "in": "path",
             "name": "limit",
-            "required": false,
+            "required": true,
             "schema": {
               "format": "int32",
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "clinic_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
                 "null"
               ]
             }
@@ -25235,9 +25301,9 @@
         "operationId": "getVisits",
         "parameters": [
           {
-            "in": "query",
+            "in": "path",
             "name": "cursor",
-            "required": false,
+            "required": true,
             "schema": {
               "type": [
                 "string",
@@ -25246,9 +25312,9 @@
             }
           },
           {
-            "in": "query",
+            "in": "path",
             "name": "limit",
-            "required": false,
+            "required": true,
             "schema": {
               "format": "int32",
               "minimum": 0,
@@ -25344,6 +25410,73 @@
               }
             },
             "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
+    "/api/v2/visits/{id}": {
+      "get": {
+        "operationId": "getVisitById",
+        "parameters": [
+          {
+            "description": "Visit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_VisitListItem"
+                }
+              }
+            },
+            "description": "Visit detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Visit not found"
           }
         },
         "security": [

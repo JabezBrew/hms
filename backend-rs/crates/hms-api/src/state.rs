@@ -2018,10 +2018,18 @@ impl AppState {
 
     pub async fn list_visits(
         &self,
+        clinic_id: Option<Uuid>,
         cursor: Option<CareCursor>,
         limit: i64,
     ) -> Result<Vec<VisitListItem>> {
-        hms_db::care::list_visits(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::care::list_visits(
+            &self.inner.pool,
+            self.facility_id(),
+            clinic_id,
+            cursor,
+            limit,
+        )
+        .await
     }
 
     pub async fn get_visit(&self, visit_id: Uuid) -> Result<Option<VisitListItem>> {
@@ -2032,6 +2040,7 @@ impl AppState {
         &self,
         patient_id: Uuid,
         appointment_id: Option<Uuid>,
+        clinic_id: Option<Uuid>,
         actor_user_id: Uuid,
     ) -> Result<VisitListItem> {
         hms_db::care::check_in_visit(
@@ -2041,6 +2050,7 @@ impl AppState {
                 facility_id: self.facility_id(),
                 patient_id,
                 appointment_id,
+                clinic_id,
                 created_by_user_id: actor_user_id,
             },
         )

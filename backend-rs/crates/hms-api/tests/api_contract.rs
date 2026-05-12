@@ -229,6 +229,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/appointments/{id}/cancel",
         "/api/v2/clinics",
         "/api/v2/visits",
+        "/api/v2/visits/{id}",
         "/api/v2/visits/check-in",
         "/api/v2/visits/{id}/call",
         "/api/v2/visits/{id}/start-consultation",
@@ -3811,6 +3812,9 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     assert_eq!(clinics_body["data"][0]["code"], "general");
     assert_eq!(clinics_body["data"][0]["name"], "General Clinic");
     assert_eq!(clinics_body["data"][0]["is_active"], true);
+    let clinic_id = clinics_body["data"][0]["id"]
+        .as_str()
+        .expect("clinic id exists");
 
     let patient_response = app
         .clone()
@@ -3954,7 +3958,8 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
                 .body(Body::from(
                     json!({
                         "patient_id": patient_id,
-                        "appointment_id": appointment_id
+                        "appointment_id": appointment_id,
+                        "clinic_id": clinic_id
                     })
                     .to_string(),
                 ))
@@ -3966,6 +3971,7 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     let visit_body = json_body(visit_response).await;
     let visit_id = visit_body["data"]["id"].as_str().expect("visit id exists");
     assert_eq!(visit_body["data"]["status"], "waiting");
+    assert_eq!(visit_body["data"]["clinic_id"], clinic_id);
 
     for (path, expected_status) in [
         (format!("/api/v2/visits/{visit_id}/call"), "called"),
@@ -4007,6 +4013,46 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     assert_eq!(visits.status(), StatusCode::OK);
     let visits_body = json_body(visits).await;
     assert_eq!(visits_body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(visits_body["data"][0]["clinic_id"], clinic_id);
+
+    let filtered_visits = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/visits?limit=10&clinic_id={clinic_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinic-filtered visits list succeeds");
+    assert_eq!(filtered_visits.status(), StatusCode::OK);
+    let filtered_visits_body = json_body(filtered_visits).await;
+    assert_eq!(filtered_visits_body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(filtered_visits_body["data"][0]["id"], visit_id);
+
+    let other_clinic_visits = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/visits?limit=10&clinic_id={}",
+                    Uuid::new_v4()
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("other clinic visits list succeeds");
+    assert_eq!(other_clinic_visits.status(), StatusCode::OK);
+    let other_clinic_visits_body = json_body(other_clinic_visits).await;
+    assert_eq!(
+        other_clinic_visits_body["data"].as_array().unwrap().len(),
+        0
+    );
 
     let triage_response = app
         .clone()

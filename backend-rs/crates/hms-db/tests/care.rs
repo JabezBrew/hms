@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use hms_db::care::{AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter};
+use hms_db::care::{AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter, NewVisit};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{AppointmentStatus, EncounterStatus, EncounterType};
 use hms_domain::deployment::DeploymentProfile;
@@ -210,4 +210,101 @@ async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() 
             .expect("cross-facility lookup succeeds")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn visit_repository_filters_waiting_room_by_clinic() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_ids = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 2",
+    )
+    .bind(facility_id)
+    .fetch_all(&pool)
+    .await
+    .expect("patients exist");
+    assert_eq!(patient_ids.len(), 2);
+
+    let general_clinic_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM clinics WHERE facility_id = $1 AND code = 'general'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("general clinic exists");
+    let overflow_clinic_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO clinics (id, facility_id, code, name) VALUES ($1, $2, 'overflow', 'Overflow Clinic')",
+    )
+    .bind(overflow_clinic_id)
+    .bind(facility_id)
+    .execute(&pool)
+    .await
+    .expect("overflow clinic is created");
+
+    let general_visit = hms_db::care::check_in_visit(
+        &pool,
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id: patient_ids[0],
+            appointment_id: None,
+            clinic_id: Some(general_clinic_id),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("general visit is checked in");
+    let overflow_visit = hms_db::care::check_in_visit(
+        &pool,
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id: patient_ids[1],
+            appointment_id: None,
+            clinic_id: Some(overflow_clinic_id),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("overflow visit is checked in");
+
+    let general_visits =
+        hms_db::care::list_visits(&pool, facility_id, Some(general_clinic_id), None, 10)
+            .await
+            .expect("general clinic visits load");
+    assert_eq!(general_visits.len(), 1);
+    assert_eq!(general_visits[0].id, general_visit.id);
+    assert_eq!(general_visits[0].clinic_id, Some(general_clinic_id));
+
+    let overflow_visits =
+        hms_db::care::list_visits(&pool, facility_id, Some(overflow_clinic_id), None, 10)
+            .await
+            .expect("overflow clinic visits load");
+    assert_eq!(overflow_visits.len(), 1);
+    assert_eq!(overflow_visits[0].id, overflow_visit.id);
+    assert_eq!(overflow_visits[0].clinic_id, Some(overflow_clinic_id));
 }

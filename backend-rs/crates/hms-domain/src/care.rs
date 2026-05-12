@@ -71,6 +71,13 @@ pub struct CursorListQuery {
     pub limit: Option<u8>,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct VisitListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub clinic_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct ClinicListItem {
     pub id: Uuid,
@@ -112,6 +119,7 @@ pub struct VisitListItem {
     pub patient_code: String,
     pub patient_display_name: String,
     pub appointment_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
     pub status: VisitStatus,
     pub checked_in_at: DateTime<Utc>,
 }
@@ -120,6 +128,7 @@ pub struct VisitListItem {
 pub struct CheckInVisitRequest {
     pub patient_id: Uuid,
     pub appointment_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

@@ -41,6 +41,7 @@ pub struct NewVisit {
     pub facility_id: Uuid,
     pub patient_id: Uuid,
     pub appointment_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
     pub created_by_user_id: Uuid,
 }
 
@@ -110,6 +111,7 @@ struct VisitRow {
     patient_code: String,
     patient_display_name: String,
     appointment_id: Option<Uuid>,
+    clinic_id: Option<Uuid>,
     status: String,
     checked_in_at: DateTime<Utc>,
 }
@@ -410,6 +412,7 @@ pub async fn cancel_appointment(
 pub async fn list_visits(
     pool: &PgPool,
     facility_id: Uuid,
+    clinic_id: Option<Uuid>,
     cursor: Option<CareCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<VisitListItem>> {
@@ -420,6 +423,7 @@ pub async fn list_visits(
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                visits.appointment_id,
+               visits.clinic_id,
                visits.status,
                visits.checked_in_at
         FROM visits
@@ -430,6 +434,11 @@ pub async fn list_visits(
     query.push_bind(facility_id);
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
+
+    if let Some(clinic_id) = clinic_id {
+        query.push(" AND visits.clinic_id = ");
+        query.push_bind(clinic_id);
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (visits.checked_in_at, visits.id) > (");
@@ -458,6 +467,7 @@ pub async fn get_visit(
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                visits.appointment_id,
+               visits.clinic_id,
                visits.status,
                visits.checked_in_at
         FROM visits
@@ -476,7 +486,7 @@ pub async fn get_visit(
 }
 
 pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<VisitListItem> {
-    let clinic_id = default_clinic_id(pool, visit.facility_id).await?;
+    let clinic_id = resolve_visit_clinic_id(pool, visit.facility_id, visit.clinic_id).await?;
     let mut transaction = pool.begin().await?;
     let row = sqlx::query_as::<_, VisitRow>(
         r#"
@@ -494,6 +504,7 @@ pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<Vi
             RETURNING id,
                       patient_id,
                       appointment_id,
+                      clinic_id,
                       status,
                       checked_in_at
         )
@@ -502,6 +513,7 @@ pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<Vi
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                inserted.appointment_id,
+               inserted.clinic_id,
                inserted.status,
                inserted.checked_in_at
         FROM inserted
@@ -575,6 +587,7 @@ pub async fn update_visit_status(
             RETURNING id,
                       patient_id,
                       appointment_id,
+                      clinic_id,
                       status,
                       checked_in_at
         )
@@ -583,6 +596,7 @@ pub async fn update_visit_status(
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.appointment_id,
+               updated.clinic_id,
                updated.status,
                updated.checked_in_at
         FROM updated
@@ -1113,6 +1127,32 @@ async fn default_clinic_id(pool: &PgPool, facility_id: Uuid) -> anyhow::Result<O
     .await?)
 }
 
+async fn resolve_visit_clinic_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    clinic_id: Option<Uuid>,
+) -> anyhow::Result<Option<Uuid>> {
+    if let Some(clinic_id) = clinic_id {
+        return sqlx::query_scalar(
+            r#"
+            SELECT id
+            FROM clinics
+            WHERE facility_id = $1
+              AND id = $2
+              AND is_active = TRUE
+            "#,
+        )
+        .bind(facility_id)
+        .bind(clinic_id)
+        .fetch_optional(pool)
+        .await?
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("clinic is not active in facility"));
+    }
+
+    default_clinic_id(pool, facility_id).await
+}
+
 fn appointment_from_row(row: AppointmentRow) -> anyhow::Result<AppointmentListItem> {
     Ok(AppointmentListItem {
         id: row.id,
@@ -1133,6 +1173,7 @@ fn visit_from_row(row: VisitRow) -> anyhow::Result<VisitListItem> {
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         appointment_id: row.appointment_id,
+        clinic_id: row.clinic_id,
         status: codec::decode(&row.status)?,
         checked_in_at: row.checked_in_at,
     })
