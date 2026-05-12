@@ -121,7 +121,9 @@ export function ResetPasswordConfirmForm() {
     <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[400px]">
       <div className="flex flex-col space-y-2 text-center">
         <h1 className="text-2xl font-semibold">Create New Password</h1>
-        <p className="text-sm text-muted-foreground">Enter a new password for {userEmail}</p>
+        <p className="text-sm text-muted-foreground">
+          {userEmail ? `Enter a new password for ${userEmail}` : 'Enter a new password to complete the reset.'}
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="grid gap-4">

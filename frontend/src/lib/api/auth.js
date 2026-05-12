@@ -76,6 +76,35 @@ function adaptV2AuthTokenResponse(response) {
   };
 }
 
+function adaptV2AuthUser(user) {
+  if (!user) return user;
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  const [firstName, lastName] = splitDisplayName(user.display_name, user.email);
+  return {
+    id: user.id,
+    email: user.email,
+    first_name: firstName,
+    last_name: lastName,
+    display_name: user.display_name,
+    phone_number: '',
+    user_type: inferUserTypeFromV2Permissions(permissions),
+    facility_id: user.facility_id,
+    facility_code: user.facility_code,
+    active_profile: user.active_profile,
+    permissions,
+    features: Array.isArray(user.features) ? user.features : [],
+    patient_visibility: Array.isArray(user.patient_visibility) ? user.patient_visibility : [],
+    password_change_required: Boolean(user.password_change_required),
+    admin_access: {
+      capabilities: permissions,
+    },
+  };
+}
+
+function unsupportedInRustV2(message) {
+  return Promise.reject(new Error(message));
+}
+
 /**
  * Authentication API service
  */
@@ -126,8 +155,18 @@ export const authApi = {
    */
   requestPasswordReset: async (email) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postAuthPasswordResetRequest({
+          email,
+          facility_code: getDefaultFacilityCode(),
+        });
+        return response?.data || response;
+      }
       return await apiClient.post('/auth/password-reset/', { email });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Password reset request failed'));
+      }
       throw new Error(handleApiError(error, 'Password reset request failed'));
     }
   },
@@ -139,8 +178,17 @@ export const authApi = {
    */
   validateResetToken: async (token) => {
     try {
+      if (isRustV2ApiMode()) {
+        if (!token) {
+          return { valid: false, detail: 'No reset token provided.' };
+        }
+        return { valid: true, email: '', rust_v2_unverified: true };
+      }
       return await apiClient.post('/auth/password-reset/validate-token/', { token });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Token validation failed'));
+      }
       throw new Error(handleApiError(error, 'Token validation failed'));
     }
   },
@@ -154,12 +202,25 @@ export const authApi = {
    */
   resetPassword: async (token, password, passwordConfirm) => {
     try {
+      if (isRustV2ApiMode()) {
+        if (password !== passwordConfirm) {
+          throw new Error('Passwords do not match');
+        }
+        const response = await v2Api.postAuthPasswordResetComplete({
+          token,
+          new_password: password,
+        });
+        return response?.data || response;
+      }
       return await apiClient.post('/auth/password-reset/confirm/', {
         token,
         password,
         password_confirm: passwordConfirm
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Password reset failed'));
+      }
       throw new Error(handleApiError(error, 'Password reset failed'));
     }
   },
@@ -170,8 +231,15 @@ export const authApi = {
    */
   getProfile: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getAuthMe();
+        return adaptV2AuthUser(response?.data);
+      }
       return await apiClient.get('/auth/profile/');
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to get user profile'));
+      }
       throw new Error(handleApiError(error, 'Failed to get user profile'));
     }
   },
@@ -183,8 +251,14 @@ export const authApi = {
    */
   updateProfile: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose profile updates yet');
+      }
       return await apiClient.patch('/auth/profile/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to update profile'));
+      }
       throw new Error(handleApiError(error, 'Failed to update profile'));
     }
   },
@@ -233,95 +307,161 @@ export const authApi = {
    */
   adminForceResetPassword: async (userId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose user-id password reset administration yet');
+      }
       return await apiClient.post('/auth/admin/force-reset/', { user_id: userId });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Password reset failed'));
+      }
       throw new Error(handleApiError(error, 'Password reset failed'));
     }
   },
 
   mfaStatus: async (mfaSession = null) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       const headers = mfaSession ? { 'X-MFA-Session': mfaSession } : undefined;
       return await apiClient.get('/auth/mfa/status/', { headers });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to load MFA status'));
+      }
       throw new Error(handleApiError(error, 'Failed to load MFA status'));
     }
   },
 
   mfaTotpStart: async (mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/totp/start/', { mfa_session: mfaSession });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to start TOTP setup'));
+      }
       throw new Error(handleApiError(error, 'Failed to start TOTP setup'));
     }
   },
 
   mfaTotpConfirm: async (code, mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/totp/confirm/', { code, mfa_session: mfaSession });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to confirm TOTP'));
+      }
       throw new Error(handleApiError(error, 'Failed to confirm TOTP'));
     }
   },
 
   mfaTotpVerify: async (code, mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/totp/verify/', { code, mfa_session: mfaSession });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to verify TOTP'));
+      }
       throw new Error(handleApiError(error, 'Failed to verify TOTP'));
     }
   },
 
   mfaRecoveryGenerate: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/recovery/', {});
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to generate recovery codes'));
+      }
       throw new Error(handleApiError(error, 'Failed to generate recovery codes'));
     }
   },
 
   mfaRecoveryVerify: async (code, mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/recovery/verify/', { code, mfa_session: mfaSession });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to verify recovery code'));
+      }
       throw new Error(handleApiError(error, 'Failed to verify recovery code'));
     }
   },
 
   mfaWebAuthnRegistrationOptions: async (mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/webauthn/registration/options/', { mfa_session: mfaSession });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to start WebAuthn registration'));
+      }
       throw new Error(handleApiError(error, 'Failed to start WebAuthn registration'));
     }
   },
 
   mfaWebAuthnRegistrationVerify: async (credential, mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/webauthn/registration/verify/', {
         credential,
         mfa_session: mfaSession,
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to verify WebAuthn registration'));
+      }
       throw new Error(handleApiError(error, 'Failed to verify WebAuthn registration'));
     }
   },
 
   mfaWebAuthnAuthOptions: async (mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/webauthn/authentication/options/', { mfa_session: mfaSession });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to start WebAuthn authentication'));
+      }
       throw new Error(handleApiError(error, 'Failed to start WebAuthn authentication'));
     }
   },
 
   mfaWebAuthnAuthVerify: async (credential, mfaSession) => {
     try {
+      if (isRustV2ApiMode()) {
+        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+      }
       return await apiClient.post('/auth/mfa/webauthn/authentication/verify/', {
         credential,
         mfa_session: mfaSession,
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to verify WebAuthn authentication'));
+      }
       throw new Error(handleApiError(error, 'Failed to verify WebAuthn authentication'));
     }
   },

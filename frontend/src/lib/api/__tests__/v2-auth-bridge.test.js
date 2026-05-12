@@ -131,4 +131,111 @@ describe('Rust V2 auth bridge', () => {
       facility_code: 'HMS',
     });
   });
+
+  it('loads the current profile through /api/v2/auth/me', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'user-1',
+            email: 'owner@hms.local',
+            display_name: 'HMS Owner',
+            facility_id: 'facility-1',
+            facility_code: 'HMS',
+            active_profile: 'hospital',
+            permissions: ['system.deployment_capabilities.view'],
+            features: ['patient_chronicle'],
+            patient_visibility: ['demographics'],
+            session_version: 1,
+            permission_version: 1,
+            password_change_required: false,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const profile = await authApi.getProfile();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/auth/me',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(profile).toMatchObject({
+      id: 'user-1',
+      email: 'owner@hms.local',
+      first_name: 'HMS',
+      last_name: 'Owner',
+      facility_code: 'HMS',
+    });
+  });
+
+  it('requests and completes password reset through /api/v2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { accepted: true }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { completed: true }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    await expect(authApi.requestPasswordReset('owner@hms.local')).resolves.toMatchObject({
+      accepted: true,
+    });
+    await expect(authApi.resetPassword('reset-token', 'NewPassword123!', 'NewPassword123!')).resolves.toMatchObject({
+      completed: true,
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/auth/password-reset/request',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          email: 'owner@hms.local',
+          facility_code: 'HMS',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/auth/password-reset/complete',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          token: 'reset-token',
+          new_password: 'NewPassword123!',
+        }),
+      }),
+    );
+  });
+
+  it('allows reset-token submission when Rust V2 has no token pre-validation endpoint', async () => {
+    await expect(authApi.validateResetToken('reset-token')).resolves.toEqual({
+      valid: true,
+      email: '',
+      rust_v2_unverified: true,
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for Rust V2 auth operations that are not exposed yet', async () => {
+    await expect(authApi.updateProfile({ first_name: 'HMS' })).rejects.toThrow(
+      'Rust V2 does not expose profile updates yet',
+    );
+    await expect(authApi.mfaStatus()).rejects.toThrow(
+      'Rust V2 does not expose MFA management yet',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
