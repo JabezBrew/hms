@@ -257,6 +257,95 @@ describe('Rust V2 inventory bridge', () => {
       inventoryApi.getDashboardMetrics({}, { signal: new AbortController().signal }),
     ).rejects.toBe(abortError);
   });
+
+  it('routes inventory list pages through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'cat-1', name: 'Medication' }], meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'item-1', name: 'Paracetamol' }], meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'loc-1', name: 'Main Store' }], meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'req-1', status: 'requested' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'po-1', supplier_name: 'Acme Medical' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'grn-1', status: 'received' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'internal-req-1', status: 'requested' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'transfer-1', status: 'requested' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'register-1', item_name: 'Morphine', balance_on_hand: 5 }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getCategories()).resolves.toEqual([
+      expect.objectContaining({ id: 'cat-1' }),
+    ]);
+    await expect(inventoryApi.getInventoryItems({ page_size: 24 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'item-1' })],
+    });
+    await expect(inventoryApi.getStorageLocations({ page_size: 24 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'loc-1' })],
+    });
+    await expect(inventoryApi.getRequisitions({ page_size: 20 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'req-1' })],
+    });
+    await expect(inventoryApi.getPurchaseOrders({ page_size: 20 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'po-1' })],
+    });
+    await expect(inventoryApi.getGRNs({ page_size: 20 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'grn-1' })],
+    });
+    await expect(inventoryApi.getInternalRequisitions({ page_size: 20 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'internal-req-1' })],
+    });
+    await expect(inventoryApi.getTransferRequests({ page_size: 20 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'transfer-1' })],
+    });
+    await expect(inventoryApi.getControlledRegisters({ page_size: 20 })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'register-1' })],
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:8080/api/v2/inventory/categories',
+      'http://localhost:8080/api/v2/inventory/items',
+      'http://localhost:8080/api/v2/inventory/storage-locations',
+      'http://localhost:8080/api/v2/inventory/requisitions?limit=20',
+      'http://localhost:8080/api/v2/inventory/purchase-orders?limit=20',
+      'http://localhost:8080/api/v2/inventory/goods-received-notes?limit=20',
+      'http://localhost:8080/api/v2/inventory/requisitions?limit=20',
+      'http://localhost:8080/api/v2/inventory/transfers?limit=20',
+      'http://localhost:8080/api/v2/pharmacy/controlled-substances/register?limit=20',
+    ]);
+  });
+
+  it('returns safe local fallbacks for inventory screens without a Rust V2 contract', async () => {
+    await expect(inventoryApi.getSuppliers()).resolves.toMatchObject({ results: [], count: 0 });
+    await expect(inventoryApi.getStandingOrders()).resolves.toMatchObject({ results: [], count: 0 });
+    await expect(inventoryApi.getConsumptionAnalytics()).resolves.toMatchObject({
+      period: '30d',
+      results: [],
+      total_consumption: 0,
+    });
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
 
 function jsonResponse(payload) {

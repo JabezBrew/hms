@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clinicalUnitsApi, clinicsApi } from '../organization';
+import { clinicalUnitsApi, clinicsApi, unitTypesApi } from '../organization';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '../v2/client';
 
 describe('Rust V2 organization bridge', () => {
@@ -129,6 +129,62 @@ describe('Rust V2 organization bridge', () => {
         booking_mode: 'clinic_pool',
         waitlist_enabled: false,
       },
+    ]);
+  });
+
+  it('derives unit types from Rust org units without calling Django unit-type endpoints', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'unit-1',
+              code: 'OPD',
+              name: 'Outpatient Department',
+              unit_type: 'department',
+              is_active: true,
+              parent_unit_id: null,
+              parent_unit_name: null,
+            },
+            {
+              id: 'unit-2',
+              code: 'MWA',
+              name: 'Medical Ward A',
+              unit_type: 'ward',
+              is_active: true,
+              parent_unit_id: 'unit-1',
+              parent_unit_name: 'Outpatient Department',
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await unitTypesApi.list();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/org-units?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual([
+      expect.objectContaining({
+        id: 'department',
+        code: 'department',
+        name: 'Department',
+        can_be_root: true,
+      }),
+      expect.objectContaining({
+        id: 'ward',
+        code: 'ward',
+        name: 'Ward',
+        can_be_root: false,
+      }),
     ]);
   });
 });

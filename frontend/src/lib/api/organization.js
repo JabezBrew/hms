@@ -69,6 +69,49 @@ function filterV2Clinics(clinics, params = {}) {
   });
 }
 
+const DEFAULT_V2_UNIT_TYPES = [
+  {
+    id: 'facility',
+    code: 'facility',
+    name: 'Facility',
+    can_be_root: true,
+  },
+  {
+    id: 'department',
+    code: 'department',
+    name: 'Department',
+    can_be_root: true,
+  },
+  {
+    id: 'ward',
+    code: 'ward',
+    name: 'Ward',
+    can_be_root: false,
+  },
+  {
+    id: 'clinic',
+    code: 'clinic',
+    name: 'Clinic',
+    can_be_root: false,
+  },
+  {
+    id: 'administrative',
+    code: 'administrative',
+    name: 'Administrative',
+    can_be_root: true,
+  },
+];
+
+function unitTypeFromCode(code) {
+  const normalized = String(code || '').trim().toLowerCase();
+  return DEFAULT_V2_UNIT_TYPES.find((unitType) => unitType.code === normalized) || {
+    id: normalized,
+    code: normalized,
+    name: titleCase(normalized),
+    can_be_root: false,
+  };
+}
+
 async function listV2OrgUnits(params = {}) {
   const response = await v2Api.getAdminOrgUnits({
     query: {
@@ -97,6 +140,21 @@ async function listV2Clinics(params = {}) {
   return filterV2Clinics(clinics, params);
 }
 
+async function listV2UnitTypes(params = {}) {
+  const units = await listV2OrgUnits(params);
+  const seen = new Set();
+  const unitTypes = [];
+  for (const unit of units) {
+    const code = unit.unit_type_code || unit.unit_type;
+    if (!code || seen.has(code)) {
+      continue;
+    }
+    seen.add(code);
+    unitTypes.push(unitTypeFromCode(code));
+  }
+  return unitTypes;
+}
+
 function unsupportedInRustV2(message) {
   return Promise.reject(new Error(message));
 }
@@ -109,7 +167,12 @@ function unsupportedInRustV2(message) {
  * Unit Types API
  */
 export const unitTypesApi = {
-  list: (params = {}) => apiClient.get('/organization/unit-types/', { params }),
+  list: (params = {}) => {
+    if (isRustV2ApiMode()) {
+      return listV2UnitTypes(params);
+    }
+    return apiClient.get('/organization/unit-types/', { params });
+  },
   get: (id) => apiClient.get(`/organization/unit-types/${id}/`),
   create: (data) => apiClient.post('/organization/unit-types/', data),
   update: (id, data) => apiClient.patch(`/organization/unit-types/${id}/`, data),

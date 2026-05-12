@@ -216,10 +216,20 @@ export const laboratoryApi = {
    */
   getLabTests: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratoryTestCatalog({
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('test-catalog', response, params, (item) => item);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/tests/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab tests');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab tests'));
     }
@@ -304,10 +314,20 @@ export const laboratoryApi = {
 
   getLabPanels: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getLaboratoryPanels({
+          signal: options.signal,
+        });
+        return adaptV2PaginatedResponse('panels', response, params, (item) => item);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/laboratory/panels/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab panels');
+      }
       rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab panels'));
     }

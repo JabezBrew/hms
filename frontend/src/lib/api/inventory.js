@@ -86,6 +86,43 @@ function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, par
   };
 }
 
+function adaptV2PaginatedList(response, params = {}, adapter = (item) => item) {
+  const results = Array.isArray(response?.data) ? response.data.map(adapter) : [];
+  const limit = Number(response?.page?.limit || params.page_size || params.limit || results.length || 25);
+  const currentPage = Number(params.page || 1);
+  const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+  const estimatedTotal = response?.page
+    ? ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0)
+    : results.length;
+
+  return {
+    count: estimatedTotal,
+    total: estimatedTotal,
+    count_exact: !hasNext,
+    page: currentPage,
+    page_size: limit,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
+    next: hasNext ? response.page.next_cursor : null,
+    previous: currentPage > 1 ? String(currentPage - 1) : null,
+    next_cursor: response?.page?.next_cursor || null,
+    results,
+  };
+}
+
+function emptyPaginatedList(params = {}) {
+  return adaptV2PaginatedList({ data: [], meta: {} }, params);
+}
+
+function buildV2CursorQuery(params = {}, fallback = 25) {
+  const query = {};
+  const cursor = params.cursor || params.next_cursor;
+  if (cursor) {
+    query.cursor = cursor;
+  }
+  query.limit = boundedLimit(params.limit || params.page_size, fallback);
+  return query;
+}
+
 /**
  * Inventory API service
  *
@@ -236,10 +273,18 @@ export const inventoryApi = {
    */
   getCategories: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryCategories();
+        return unwrapV2List(response);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/categories/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch categories'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch categories'));
     }
   },
@@ -295,6 +340,10 @@ export const inventoryApi = {
    */
   getSuppliers: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPaginatedList(params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/suppliers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -357,10 +406,23 @@ export const inventoryApi = {
    */
   getStorageLocations: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStorageLocations({
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/locations/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch storage locations'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch storage locations'));
     }
   },
@@ -461,10 +523,23 @@ export const inventoryApi = {
    */
   getInventoryItems: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryItems({
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch inventory items'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inventory items'));
     }
   },
@@ -742,10 +817,20 @@ export const inventoryApi = {
    */
   getRequisitions: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockRequisitions({
+          query: buildV2CursorQuery(params, 20),
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/requisitions/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch requisitions'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch requisitions'));
     }
   },
@@ -857,10 +942,20 @@ export const inventoryApi = {
    */
   getPurchaseOrders: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPurchaseOrders({
+          query: buildV2CursorQuery(params, 20),
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/purchase-orders/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch purchase orders'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch purchase orders'));
     }
   },
@@ -944,10 +1039,20 @@ export const inventoryApi = {
    */
   getGRNs: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getGoodsReceivedNotes({
+          query: buildV2CursorQuery(params, 20),
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/grns/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch GRNs'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch GRNs'));
     }
   },
@@ -1046,10 +1151,24 @@ export const inventoryApi = {
    */
   getInternalRequisitions: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockRequisitions({
+          query: buildV2CursorQuery(params, 20),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/internal-requisitions/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch internal requisitions'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch internal requisitions'));
     }
   },
@@ -1158,6 +1277,10 @@ export const inventoryApi = {
    */
   getStandingOrders: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return emptyPaginatedList(params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/standing-orders/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -1257,10 +1380,20 @@ export const inventoryApi = {
    */
   getTransferRequests: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockTransfers({
+          query: buildV2CursorQuery(params, 20),
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/transfer-requests/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch transfer requests'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch transfer requests'));
     }
   },
@@ -1358,10 +1491,20 @@ export const inventoryApi = {
    */
   getControlledRegisters: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getControlledSubstanceRegister({
+          query: buildV2CursorQuery(params, 20),
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-registers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch controlled registers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch controlled registers'));
     }
   },
@@ -1542,6 +1685,15 @@ export const inventoryApi = {
    */
   getConsumptionAnalytics: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return {
+          period: params.period || '30d',
+          results: [],
+          total_consumption: 0,
+          total_value: 0,
+        };
+      }
+
       const queryString = new URLSearchParams(params).toString();
       return await apiClient.get(`/inventory/analytics/consumption/?${queryString}`);
     } catch (error) {

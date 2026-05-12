@@ -88,6 +88,14 @@ const settingsApi = {
 
   getMfaStatus: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        return {
+          totp_enrolled: false,
+          webauthn_enrolled: false,
+          recovery_codes_remaining: 0,
+          rust_v2_unsupported: true,
+        };
+      }
       return await authApi.mfaStatus();
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch MFA status'));

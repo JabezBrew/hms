@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useProfile, useUserSessions } from '../useSettingsQueries';
+import { useMfaStatus, useProfile, useUserSessions } from '../useSettingsQueries';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 
 describe('Rust V2 settings queries', () => {
@@ -96,6 +96,20 @@ describe('Rust V2 settings queries', () => {
 
     expect(result.current.data).toEqual({
       results: [],
+      rust_v2_unsupported: true,
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not call legacy MFA endpoints when Rust V2 has no MFA management contract', async () => {
+    const { result } = renderHook(() => useMfaStatus(), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual({
+      totp_enrolled: false,
+      webauthn_enrolled: false,
+      recovery_codes_remaining: 0,
       rust_v2_unsupported: true,
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();

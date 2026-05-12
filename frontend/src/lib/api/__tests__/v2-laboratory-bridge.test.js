@@ -148,4 +148,77 @@ describe('Rust V2 laboratory bridge', () => {
       }),
     ]);
   });
+
+  it('loads catalog tests and panels through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'test-1',
+                code: 'MAL-RDT',
+                name: 'Malaria RDT',
+                specimen_type: 'blood',
+                is_active: true,
+              },
+            ],
+            page: { limit: 24, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'panel-1',
+                code: 'ANC',
+                name: 'Antenatal panel',
+                test_count: 3,
+                is_active: true,
+              },
+            ],
+            page: { limit: 24, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const tests = await laboratoryApi.getLabTests({ page: 1, page_size: 24 });
+    const panels = await laboratoryApi.getLabPanels({ page: 1, page_size: 24 });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/laboratory/test-catalog',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/laboratory/panels',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(tests.results).toEqual([
+      expect.objectContaining({
+        id: 'test-1',
+        name: 'Malaria RDT',
+        specimen_type: 'blood',
+      }),
+    ]);
+    expect(panels.results).toEqual([
+      expect.objectContaining({
+        id: 'panel-1',
+        name: 'Antenatal panel',
+      }),
+    ]);
+  });
 });

@@ -68,6 +68,24 @@ export default function MFAStatus() {
     );
   }
 
+  if (mfaStatus?.rust_v2_unsupported) {
+    return (
+      <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-muted/30">
+        <div className="p-2.5 rounded-lg shrink-0 bg-muted border border-border">
+          <ShieldOff className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="font-display text-sm font-medium text-foreground">
+            MFA Management Unavailable
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            This Rust V2 build has not exposed account MFA management yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const hasTotp = Boolean(mfaStatus?.totp_enrolled);
   const hasWebAuthn = Boolean(mfaStatus?.webauthn_enrolled);
   const hasMfa = hasTotp || hasWebAuthn;
