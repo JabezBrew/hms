@@ -2149,6 +2149,30 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
             && row["location_id"] == pharmacy_location_id
             && row["quantity_on_hand"] == 100));
 
+    let location_filtered_items = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/items?location={pharmacy_location_id}&limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("location-filtered item list succeeds");
+    assert_eq!(location_filtered_items.status(), StatusCode::OK);
+    let location_filtered_items_body = json_body(location_filtered_items).await;
+    assert_eq!(location_filtered_items_body["page"]["limit"], 10);
+    let location_filtered_rows = location_filtered_items_body["data"]
+        .as_array()
+        .expect("location-filtered inventory items are an array");
+    assert!(location_filtered_rows.iter().any(|row| {
+        row["id"] == paracetamol_id && row["total_stock"] == 100 && row["sku"] == "PARA500"
+    }));
+
     let location_stock = app
         .clone()
         .oneshot(
@@ -2504,6 +2528,8 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(controlled_count_body["data"]["quantity_delta"], -1);
     assert_eq!(controlled_count_body["data"]["balance_after"], 8);
     assert_eq!(controlled_count_body["data"]["current_balance"], 8);
+    assert_eq!(controlled_count_body["data"]["has_discrepancy"], true);
+    assert_eq!(controlled_count_body["data"]["discrepancy_count"], 1);
 
     let controlled_register_list_response = app
         .clone()
@@ -2530,6 +2556,8 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(controlled_summary["entry_count"], 3);
     assert_eq!(controlled_summary["total_received"], 10);
     assert_eq!(controlled_summary["total_dispensed"], 1);
+    assert_eq!(controlled_summary["has_discrepancy"], true);
+    assert_eq!(controlled_summary["discrepancy_count"], 1);
 
     let patient_response = app
         .clone()
@@ -2593,6 +2621,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         format!("/api/v2/inventory/items/{paracetamol_id}/stock-batches?limit=1"),
         format!("/api/v2/inventory/items/{paracetamol_id}/stock-movements?limit=1"),
         format!("/api/v2/inventory/items/{paracetamol_id}/stock-by-location"),
+        format!("/api/v2/inventory/items?location={pharmacy_location_id}&limit=1"),
         format!("/api/v2/inventory/storage-locations/{pharmacy_location_id}"),
         format!("/api/v2/inventory/storage-locations/{pharmacy_location_id}/stock?limit=1"),
         format!("/api/v2/inventory/transfers/{transfer_id}"),

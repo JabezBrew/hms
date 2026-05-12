@@ -1330,9 +1330,16 @@
             "format": "int64",
             "type": "integer"
           },
+          "discrepancy_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "entry_count": {
             "format": "int64",
             "type": "integer"
+          },
+          "has_discrepancy": {
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -1397,6 +1404,8 @@
           "total_dispensed",
           "total_received",
           "total_wastage",
+          "has_discrepancy",
+          "discrepancy_count",
           "created_at"
         ],
         "type": "object"
@@ -3197,6 +3206,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "category_name": {
+            "type": "string"
+          },
           "code": {
             "type": "string"
           },
@@ -3207,24 +3219,54 @@
             "format": "uuid",
             "type": "string"
           },
+          "is_controlled": {
+            "type": "boolean"
+          },
           "item_type": {
             "$ref": "#/components/schemas/InventoryItemType"
           },
           "name": {
             "type": "string"
           },
+          "nearest_expiry": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sku": {
+            "type": "string"
+          },
+          "total_stock": {
+            "format": "int64",
+            "type": "integer"
+          },
           "unit": {
+            "type": "string"
+          },
+          "unit_of_measure": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
             "type": "string"
           }
         },
         "required": [
           "id",
           "category_id",
+          "category_name",
           "code",
+          "sku",
           "name",
           "item_type",
           "unit",
-          "controlled"
+          "unit_of_measure",
+          "controlled",
+          "is_controlled",
+          "total_stock",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -3261,6 +3303,51 @@
           "controlled_substance"
         ],
         "type": "string"
+      },
+      "InventoryItemsQuery": {
+        "properties": {
+          "category": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "location": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "InventoryListQuery": {
         "properties": {
@@ -4758,9 +4845,16 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "discrepancy_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "entry_count": {
                   "format": "int64",
                   "type": "integer"
+                },
+                "has_discrepancy": {
+                  "type": "boolean"
                 },
                 "id": {
                   "format": "uuid",
@@ -4825,6 +4919,8 @@
                 "total_dispensed",
                 "total_received",
                 "total_wastage",
+                "has_discrepancy",
+                "discrepancy_count",
                 "created_at"
               ],
               "type": "object"
@@ -5328,6 +5424,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "category_name": {
+                  "type": "string"
+                },
                 "code": {
                   "type": "string"
                 },
@@ -5338,24 +5437,54 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "is_controlled": {
+                  "type": "boolean"
+                },
                 "item_type": {
                   "$ref": "#/components/schemas/InventoryItemType"
                 },
                 "name": {
                   "type": "string"
                 },
+                "nearest_expiry": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sku": {
+                  "type": "string"
+                },
+                "total_stock": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "unit": {
+                  "type": "string"
+                },
+                "unit_of_measure": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
                   "type": "string"
                 }
               },
               "required": [
                 "id",
                 "category_id",
+                "category_name",
                 "code",
+                "sku",
                 "name",
                 "item_type",
                 "unit",
-                "controlled"
+                "unit_of_measure",
+                "controlled",
+                "is_controlled",
+                "total_stock",
+                "updated_at"
               ],
               "type": "object"
             },
@@ -9793,9 +9922,16 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "discrepancy_count": {
+                "format": "int64",
+                "type": "integer"
+              },
               "entry_count": {
                 "format": "int64",
                 "type": "integer"
+              },
+              "has_discrepancy": {
+                "type": "boolean"
               },
               "id": {
                 "format": "uuid",
@@ -9860,6 +9996,8 @@
               "total_dispensed",
               "total_received",
               "total_wastage",
+              "has_discrepancy",
+              "discrepancy_count",
               "created_at"
             ],
             "type": "object"
@@ -10427,6 +10565,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "category_name": {
+                "type": "string"
+              },
               "code": {
                 "type": "string"
               },
@@ -10437,24 +10578,54 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "is_controlled": {
+                "type": "boolean"
+              },
               "item_type": {
                 "$ref": "#/components/schemas/InventoryItemType"
               },
               "name": {
                 "type": "string"
               },
+              "nearest_expiry": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sku": {
+                "type": "string"
+              },
+              "total_stock": {
+                "format": "int64",
+                "type": "integer"
+              },
               "unit": {
+                "type": "string"
+              },
+              "unit_of_measure": {
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
                 "type": "string"
               }
             },
             "required": [
               "id",
               "category_id",
+              "category_name",
               "code",
+              "sku",
               "name",
               "item_type",
               "unit",
-              "controlled"
+              "unit_of_measure",
+              "controlled",
+              "is_controlled",
+              "total_stock",
+              "updated_at"
             ],
             "type": "object"
           },
@@ -20390,6 +20561,78 @@
     "/api/v2/inventory/items": {
       "get": {
         "operationId": "getInventoryItems",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

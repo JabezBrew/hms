@@ -20,6 +20,14 @@ pub struct InventoryCursor {
     pub id: Uuid,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct InventoryItemFilters {
+    pub search: Option<String>,
+    pub category_id: Option<Uuid>,
+    pub location_id: Option<Uuid>,
+    pub stock_status: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewStockBatch {
     pub id: Uuid,
@@ -111,11 +119,15 @@ struct CategoryRow {
 struct ItemRow {
     id: Uuid,
     category_id: Uuid,
+    category_name: String,
     code: String,
     name: String,
     item_type: String,
     unit: String,
     controlled: bool,
+    total_stock: i64,
+    nearest_expiry: Option<chrono::NaiveDate>,
+    updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -205,6 +217,8 @@ struct ControlledRow {
     total_dispensed: i64,
     total_received: i64,
     total_wastage: i64,
+    has_discrepancy: bool,
+    discrepancy_count: i64,
     witness_user_id: Option<Uuid>,
     created_at: DateTime<Utc>,
 }
@@ -293,19 +307,77 @@ pub async fn list_categories(
 pub async fn list_items(
     pool: &PgPool,
     facility_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
+    filters: InventoryItemFilters,
 ) -> anyhow::Result<Vec<InventoryItemListItem>> {
-    let rows = sqlx::query_as::<_, ItemRow>(
+    let mut query = item_query();
+    query.push(" WHERE inventory_items.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND inventory_items.is_active = TRUE");
+    if let Some(search) = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        let search = format!("%{}%", search.to_lowercase());
+        query.push(" AND (LOWER(inventory_items.name) LIKE ");
+        query.push_bind(search.clone());
+        query.push(" OR LOWER(inventory_items.code) LIKE ");
+        query.push_bind(search);
+        query.push(")");
+    }
+    if let Some(category_id) = filters.category_id {
+        query.push(" AND inventory_items.category_id = ");
+        query.push_bind(category_id);
+    }
+    if let Some(location_id) = filters.location_id {
+        query.push(" AND stock_batches.location_id = ");
+        query.push_bind(location_id);
+    }
+    apply_cursor(
+        &mut query,
+        "inventory_items.updated_at",
+        "inventory_items.id",
+        cursor,
+    );
+    query.push(
         r#"
-        SELECT id, category_id, code, name, item_type, unit, controlled
-        FROM inventory_items
-        WHERE facility_id = $1 AND is_active = TRUE
-        ORDER BY code ASC
-        LIMIT 100
+        GROUP BY inventory_items.id,
+                 inventory_items.category_id,
+                 inventory_categories.name,
+                 inventory_items.code,
+                 inventory_items.name,
+                 inventory_items.item_type,
+                 inventory_items.unit,
+                 inventory_items.controlled,
+                 inventory_items.updated_at
         "#,
-    )
-    .bind(facility_id)
-    .fetch_all(pool)
-    .await?;
+    );
+    match filters.stock_status.as_deref() {
+        Some("out_of_stock") => {
+            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) = 0");
+        }
+        Some("low_stock") => {
+            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) <= 0");
+        }
+        Some("in_stock") => {
+            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) > 0");
+        }
+        Some("expiring") => {
+            query
+                .push(" HAVING MIN(stock_batches.expires_on) <= CURRENT_DATE + INTERVAL '30 days'");
+        }
+        _ if filters.location_id.is_some() => {
+            query.push(" HAVING COALESCE(SUM(stock_batches.quantity_on_hand), 0) > 0");
+        }
+        _ => {}
+    }
+    query.push(" ORDER BY inventory_items.updated_at DESC, inventory_items.id DESC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = query.build_query_as::<ItemRow>().fetch_all(pool).await?;
     rows.into_iter().map(item_from_row).collect()
 }
 
@@ -314,18 +386,31 @@ pub async fn get_item(
     facility_id: Uuid,
     item_id: Uuid,
 ) -> anyhow::Result<Option<InventoryItemListItem>> {
-    let row = sqlx::query_as::<_, ItemRow>(
+    let mut query = item_query();
+    query.push(" WHERE inventory_items.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND inventory_items.id = ");
+    query.push_bind(item_id);
+    query.push(" AND inventory_items.is_active = TRUE");
+    query.push(
         r#"
-        SELECT id, category_id, code, name, item_type, unit, controlled
-        FROM inventory_items
-        WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+        GROUP BY inventory_items.id,
+                 inventory_items.category_id,
+                 inventory_categories.name,
+                 inventory_items.code,
+                 inventory_items.name,
+                 inventory_items.item_type,
+                 inventory_items.unit,
+                 inventory_items.controlled,
+                 inventory_items.updated_at
         LIMIT 1
         "#,
-    )
-    .bind(facility_id)
-    .bind(item_id)
-    .fetch_optional(pool)
-    .await?;
+    );
+
+    let row = query
+        .build_query_as::<ItemRow>()
+        .fetch_optional(pool)
+        .await?;
 
     row.map(item_from_row).transpose()
 }
@@ -827,7 +912,8 @@ pub async fn list_controlled_register(
                    count(*)::bigint AS entry_count,
                    coalesce(sum(CASE WHEN movement_type = 'dispense' THEN abs(quantity_delta) ELSE 0 END), 0)::bigint AS total_dispensed,
                    coalesce(sum(CASE WHEN movement_type = 'receipt' THEN quantity_delta ELSE 0 END), 0)::bigint AS total_received,
-                   coalesce(sum(CASE WHEN movement_type = 'adjustment' AND quantity_delta < 0 THEN abs(quantity_delta) ELSE 0 END), 0)::bigint AS total_wastage
+                   coalesce(sum(CASE WHEN movement_type = 'adjustment' AND quantity_delta < 0 THEN abs(quantity_delta) ELSE 0 END), 0)::bigint AS total_wastage,
+                   count(*) FILTER (WHERE movement_type = 'count' AND quantity_delta <> 0)::bigint AS discrepancy_count
             FROM controlled_substance_register
             WHERE facility_id = "#,
     );
@@ -869,6 +955,8 @@ pub async fn list_controlled_register(
                register_stats.total_dispensed,
                register_stats.total_received,
                register_stats.total_wastage,
+               register_stats.discrepancy_count > 0 AS has_discrepancy,
+               register_stats.discrepancy_count,
                latest.witness_user_id,
                latest.created_at
         FROM latest
@@ -1393,6 +1481,30 @@ async fn fetch_dispense_by_id(
         .transpose()
 }
 
+fn item_query() -> QueryBuilder<'static, Postgres> {
+    QueryBuilder::new(
+        r#"
+        SELECT inventory_items.id,
+               inventory_items.category_id,
+               inventory_categories.name AS category_name,
+               inventory_items.code,
+               inventory_items.name,
+               inventory_items.item_type,
+               inventory_items.unit,
+               inventory_items.controlled,
+               COALESCE(SUM(stock_batches.quantity_on_hand), 0)::BIGINT AS total_stock,
+               MIN(stock_batches.expires_on) FILTER (
+                   WHERE stock_batches.quantity_on_hand > 0
+               ) AS nearest_expiry,
+               inventory_items.updated_at
+        FROM inventory_items
+        INNER JOIN inventory_categories ON inventory_categories.id = inventory_items.category_id
+        LEFT JOIN stock_batches ON stock_batches.item_id = inventory_items.id
+            AND stock_batches.facility_id = inventory_items.facility_id
+        "#,
+    )
+}
+
 fn batch_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::new(
         r#"
@@ -1532,6 +1644,24 @@ fn controlled_query() -> QueryBuilder<'static, Postgres> {
                      AND stats.movement_type = 'adjustment'
                      AND stats.quantity_delta < 0
                ) AS total_wastage,
+               (
+                   SELECT count(*)::bigint
+                   FROM controlled_substance_register AS stats
+                   WHERE stats.facility_id = controlled_substance_register.facility_id
+                     AND stats.item_id = controlled_substance_register.item_id
+                     AND stats.location_id = controlled_substance_register.location_id
+                     AND stats.movement_type = 'count'
+                     AND stats.quantity_delta <> 0
+               ) > 0 AS has_discrepancy,
+               (
+                   SELECT count(*)::bigint
+                   FROM controlled_substance_register AS stats
+                   WHERE stats.facility_id = controlled_substance_register.facility_id
+                     AND stats.item_id = controlled_substance_register.item_id
+                     AND stats.location_id = controlled_substance_register.location_id
+                     AND stats.movement_type = 'count'
+                     AND stats.quantity_delta <> 0
+               ) AS discrepancy_count,
                controlled_substance_register.witness_user_id,
                controlled_substance_register.created_at
         FROM controlled_substance_register
@@ -1610,11 +1740,18 @@ fn item_from_row(row: ItemRow) -> anyhow::Result<InventoryItemListItem> {
     Ok(InventoryItemListItem {
         id: row.id,
         category_id: row.category_id,
-        code: row.code,
+        category_name: row.category_name,
+        code: row.code.clone(),
+        sku: row.code,
         name: row.name,
         item_type: codec::decode(&row.item_type)?,
-        unit: row.unit,
+        unit: row.unit.clone(),
+        unit_of_measure: row.unit,
         controlled: row.controlled,
+        is_controlled: row.controlled,
+        total_stock: row.total_stock,
+        nearest_expiry: row.nearest_expiry,
+        updated_at: row.updated_at,
     })
 }
 
@@ -1734,6 +1871,8 @@ fn controlled_from_row(row: ControlledRow) -> anyhow::Result<ControlledSubstance
         total_dispensed: row.total_dispensed,
         total_received: row.total_received,
         total_wastage: row.total_wastage,
+        has_discrepancy: row.has_discrepancy,
+        discrepancy_count: row.discrepancy_count,
         witness_user_id: row.witness_user_id,
         created_at: row.created_at,
     })

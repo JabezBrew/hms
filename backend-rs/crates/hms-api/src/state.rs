@@ -1818,8 +1818,14 @@ impl AppState {
         .await
     }
 
-    pub async fn list_inventory_items(&self) -> Result<Vec<InventoryItemListItem>> {
-        hms_db::inventory::list_items(&self.inner.pool, self.facility_id()).await
+    pub async fn list_inventory_items(
+        &self,
+        cursor: Option<InventoryCursor>,
+        limit: i64,
+        filters: hms_db::inventory::InventoryItemFilters,
+    ) -> Result<Vec<InventoryItemListItem>> {
+        hms_db::inventory::list_items(&self.inner.pool, self.facility_id(), cursor, limit, filters)
+            .await
     }
 
     pub async fn get_inventory_item(&self, item_id: Uuid) -> Result<Option<InventoryItemListItem>> {

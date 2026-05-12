@@ -161,6 +161,23 @@ function adaptV2ControlledRegister(register) {
     total_dispensed: toNumber(register?.total_dispensed),
     total_received: toNumber(register?.total_received),
     total_wastage: toNumber(register?.total_wastage),
+    has_discrepancy: Boolean(register?.has_discrepancy),
+    discrepancy_count: toNumber(register?.discrepancy_count),
+  };
+}
+
+function adaptV2ControlledDiscrepancy(entry, registerId) {
+  const discrepancyAmount = toNumber(entry?.quantity ?? entry?.quantity_delta);
+  return {
+    id: entry?.id,
+    controlled_register: registerId,
+    register: registerId,
+    status: 'pending',
+    expected_balance: toNumber(entry?.balance_before),
+    actual_count: toNumber(entry?.balance_after),
+    discrepancy_amount: discrepancyAmount,
+    notes: entry?.notes || null,
+    created_at: entry?.created_at || null,
   };
 }
 
@@ -215,6 +232,24 @@ function buildV2CursorQuery(params = {}, fallback = 25) {
     query.cursor = cursor;
   }
   query.limit = boundedLimit(params.limit || params.page_size, fallback);
+  return query;
+}
+
+function buildV2InventoryItemsQuery(params = {}) {
+  const query = {};
+  if (params.search) {
+    query.search = params.search;
+  }
+  if (params.category) {
+    query.category = params.category;
+  }
+  if (params.location) {
+    query.location = params.location;
+  }
+  if (params.status || params.stock_status) {
+    query.status = params.status || params.stock_status;
+  }
+  Object.assign(query, buildV2CursorQuery(params, 24));
   return query;
 }
 
@@ -743,6 +778,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getInventoryItems({
+          query: buildV2InventoryItemsQuery(params),
           signal: options.signal,
         });
         return adaptV2PaginatedList(response, params);
@@ -2258,10 +2294,23 @@ export const inventoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated discrepancies
    */
-  getControlledDiscrepancies: async (params = {}) => {
+  getControlledDiscrepancies: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPaginatedList(params);
+        const registerId = pickEntityId(params.register_id ?? params.register);
+        if (!registerId) {
+          return emptyPaginatedList(params);
+        }
+        const response = await v2Api.getControlledSubstanceRegisterEntries({ id: registerId }, {
+          query: buildV2CursorQuery(params),
+          signal: options.signal || params.signal,
+        });
+        return adaptV2PaginatedList({
+          ...response,
+          data: unwrapV2List(response)
+            .filter((entry) => entry?.entry_type === 'count' && toNumber(entry?.quantity) !== 0)
+            .map((entry) => adaptV2ControlledDiscrepancy(entry, registerId)),
+        }, params);
       }
 
       const queryString = new URLSearchParams(params).toString();

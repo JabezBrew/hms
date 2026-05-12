@@ -324,7 +324,7 @@ describe('Rust V2 inventory bridge', () => {
 
     expect(globalThis.fetch.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:8080/api/v2/inventory/categories',
-      'http://localhost:8080/api/v2/inventory/items',
+      'http://localhost:8080/api/v2/inventory/items?limit=24',
       'http://localhost:8080/api/v2/inventory/storage-locations',
       'http://localhost:8080/api/v2/inventory/requisitions?limit=20',
       'http://localhost:8080/api/v2/inventory/purchase-orders?limit=20',
@@ -366,6 +366,57 @@ describe('Rust V2 inventory bridge', () => {
         signal: controller.signal,
       }),
     );
+  });
+
+  it('threads location filters through the Rust V2 inventory item list', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({
+      data: [
+        {
+          id: 'item-1',
+          category_id: 'category-1',
+          category_name: 'Medication',
+          code: 'PARA500',
+          sku: 'PARA500',
+          name: 'Paracetamol 500mg',
+          item_type: 'medication',
+          unit: 'tablet',
+          unit_of_measure: 'tablet',
+          controlled: false,
+          is_controlled: false,
+          total_stock: 100,
+          nearest_expiry: '2027-01-31',
+        },
+      ],
+      page: { limit: 24, has_next: false, next_cursor: null },
+      meta: {},
+    }));
+
+    await expect(inventoryApi.getInventoryItems({
+      location: 'location-1',
+      page_size: 24,
+    }, {
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      results: [
+        expect.objectContaining({
+          id: 'item-1',
+          sku: 'PARA500',
+          total_stock: 100,
+          nearest_expiry: '2027-01-31',
+        }),
+      ],
+    });
+
+    const [url, init] = globalThis.fetch.mock.calls[0];
+    const requestUrl = new URL(url);
+    expect(`${requestUrl.origin}${requestUrl.pathname}`).toBe('http://localhost:8080/api/v2/inventory/items');
+    expect(requestUrl.searchParams.get('location')).toBe('location-1');
+    expect(requestUrl.searchParams.get('limit')).toBe('24');
+    expect(init).toEqual(expect.objectContaining({
+      method: 'GET',
+      signal: controller.signal,
+    }));
   });
 
   it('loads storage location detail and location stock through generated Rust V2 endpoints', async () => {
@@ -654,6 +705,33 @@ describe('Rust V2 inventory bridge', () => {
           created_at: '2026-05-12T08:35:00Z',
         },
         meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'entry-1',
+            entry_number: 1,
+            entry_type: 'receipt',
+            quantity: 10,
+            balance_before: 0,
+            balance_after: 10,
+            witness_user_id: null,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          {
+            id: 'count-entry-1',
+            entry_number: 3,
+            entry_type: 'count',
+            quantity: -1,
+            balance_before: 9,
+            balance_after: 8,
+            notes: 'count mismatch',
+            witness_user_id: 'user-2',
+            created_at: '2026-05-12T08:35:00Z',
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
       }));
 
     await expect(inventoryApi.getControlledRegisterEntries('entry-2', {
@@ -696,6 +774,20 @@ describe('Rust V2 inventory bridge', () => {
       movement_type: 'count',
       balance_after: 8,
     });
+    await expect(inventoryApi.getControlledDiscrepancies({ register: 'entry-2', page_size: 20 }, {
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      results: [
+        expect.objectContaining({
+          id: 'count-entry-1',
+          status: 'pending',
+          controlled_register: 'entry-2',
+          expected_balance: 9,
+          actual_count: 8,
+          discrepancy_amount: -1,
+        }),
+      ],
+    });
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal, init.body])).toEqual([
       [
@@ -719,6 +811,12 @@ describe('Rust V2 inventory bridge', () => {
           witness_user_id: 'user-2',
           notes: null,
         }),
+      ],
+      [
+        'http://localhost:8080/api/v2/pharmacy/controlled-substances/register/entry-2/entries?limit=20',
+        'GET',
+        controller.signal,
+        undefined,
       ],
     ]);
   });

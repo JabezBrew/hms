@@ -75,11 +75,18 @@ pub struct InventoryCategoryListItem {
 pub struct InventoryItemListItem {
     pub id: Uuid,
     pub category_id: Uuid,
+    pub category_name: String,
     pub code: String,
+    pub sku: String,
     pub name: String,
     pub item_type: InventoryItemType,
     pub unit: String,
+    pub unit_of_measure: String,
     pub controlled: bool,
+    pub is_controlled: bool,
+    pub total_stock: i64,
+    pub nearest_expiry: Option<NaiveDate>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -221,6 +228,8 @@ pub struct ControlledSubstanceRegisterItem {
     pub total_dispensed: i64,
     pub total_received: i64,
     pub total_wastage: i64,
+    pub has_discrepancy: bool,
+    pub discrepancy_count: i64,
     pub witness_user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
@@ -287,4 +296,14 @@ pub struct CreatePharmacyDispenseRequest {
 pub struct InventoryListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct InventoryItemsQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub category: Option<Uuid>,
+    pub location: Option<Uuid>,
+    pub status: Option<String>,
 }

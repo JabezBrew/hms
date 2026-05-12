@@ -91,6 +91,7 @@ export default function ItemsPage() {
   const tab = searchParams.get('status') || 'all';
   const category = searchParams.get('category') || '';
   const supplier = searchParams.get('supplier') || '';
+  const location = searchParams.get('location') || '';
   const sortBy = searchParams.get('ordering') || '-updated_at';
   const page = parseInt(searchParams.get('page') || '1', 10);
   const pageSize = parseInt(searchParams.get('page_size') || '24', 10);
@@ -115,6 +116,7 @@ export default function ItemsPage() {
     ...(tab !== 'all' && { status: tab }),
     ...(category && { category }),
     ...(supplier && { supplier }),
+    ...(location && { location }),
   };
 
   // Fetch data
@@ -230,7 +232,7 @@ export default function ItemsPage() {
     setSelectAll(false);
   };
 
-  const hasActiveFilters = debouncedSearch || tab !== 'all' || category || supplier;
+  const hasActiveFilters = debouncedSearch || tab !== 'all' || category || supplier || location;
 
   // Selection handlers
   const toggleItemSelection = (itemId) => {

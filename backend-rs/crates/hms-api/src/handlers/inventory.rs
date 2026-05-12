@@ -12,8 +12,8 @@ use hms_domain::inventory::{
     CreatePharmacyDispenseRequest, CreatePurchaseOrderRequest, CreateStockBatchRequest,
     CreateStockRequisitionRequest, CreateStockTransferRequest, GoodsReceivedNoteListItem,
     InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
-    InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem, StockBatchListItem,
-    StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
+    InventoryItemsQuery, InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem,
+    StockBatchListItem, StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
     StorageLocationListItem, StorageLocationStockItem,
 };
 use hms_domain::patients::PatientRecord;
@@ -45,17 +45,29 @@ pub async fn list_categories(
     )))
 }
 
-#[utoipa::path(get, path = "/api/v2/inventory/items", operation_id = "getInventoryItems", tag = "inventory", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/inventory/items", operation_id = "getInventoryItems", tag = "inventory", security(("bearerAuth" = [])), params(InventoryItemsQuery), responses((status = 200, body = ListResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_items(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<InventoryItemsQuery>,
 ) -> Result<Json<ListResponse<InventoryItemListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    Ok(Json(static_list(
-        state.list_inventory_items().await.map_err(|_| {
+    let (cursor, page_size) = inventory_items_page_request(&query)?;
+    let filters = hms_db::inventory::InventoryItemFilters {
+        search: query.search.clone(),
+        category_id: query.category,
+        location_id: query.location,
+        stock_status: query.status.clone(),
+    };
+    let rows = state
+        .list_inventory_items(cursor, page_size as i64 + 1, filters)
+        .await
+        .map_err(|_| {
             ApiError::conflict("inventory_item_list_failed", "Items could not be loaded.")
-        })?,
-    )))
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.updated_at, item.id)
+    })))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}", operation_id = "getInventoryItemById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ObjectResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -863,6 +875,20 @@ fn has_permission(user: &AuthUser, permission: PermissionCode) -> bool {
 }
 
 fn page_request(query: InventoryListQuery) -> Result<(Option<InventoryCursor>, u8), ApiError> {
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let cursor = query
+        .cursor
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(decode_cursor)
+        .transpose()?;
+    Ok((cursor, limit))
+}
+
+fn inventory_items_page_request(
+    query: &InventoryItemsQuery,
+) -> Result<(Option<InventoryCursor>, u8), ApiError> {
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let cursor = query
         .cursor

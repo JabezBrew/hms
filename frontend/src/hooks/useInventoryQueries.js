@@ -1538,7 +1538,7 @@ export function useRecordControlledCount() {
 export function useControlledDiscrepancies(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.controlledDiscrepancyList(filters),
-    queryFn: () => inventoryApi.getControlledDiscrepancies(filters),
+    queryFn: ({ signal }) => inventoryApi.getControlledDiscrepancies(filters, { signal }),
     staleTime: 30 * 1000,
   });
 }

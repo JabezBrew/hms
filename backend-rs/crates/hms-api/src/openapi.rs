@@ -371,6 +371,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::inventory::InventoryItemListItem,
         hms_domain::inventory::InventoryItemStockLocationItem,
         hms_domain::inventory::InventoryItemType,
+        hms_domain::inventory::InventoryItemsQuery,
         hms_domain::inventory::InventoryListQuery,
         hms_domain::inventory::PharmacyDispenseListItem,
         hms_domain::inventory::PurchaseOrderListItem,

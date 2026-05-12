@@ -474,7 +474,14 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/inventory/items",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "category",
+      "location",
+      "status"
+    ],
     "hasBody": false
   },
   "getInventoryItemStockBatches": {
