@@ -1,4 +1,90 @@
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function unwrapV2List(response) {
+  return Array.isArray(response?.data) ? response.data : [];
+}
+
+function boundedLimit(value, fallback = 25) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(Math.floor(parsed), 100);
+}
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError';
+}
+
+function daysUntilDate(dateValue) {
+  if (!dateValue) {
+    return null;
+  }
+  const [year, month, day] = String(dateValue).split('-').map(Number);
+  if (!year || !month || !day) {
+    return null;
+  }
+  const target = Date.UTC(year, month - 1, day);
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.ceil((target - today) / DAY_MS);
+}
+
+function isExpiringWithin(batch, days) {
+  const remainingDays = daysUntilDate(batch?.expires_on);
+  return remainingDays !== null && remainingDays >= 0 && remainingDays <= days;
+}
+
+function adaptV2StockBatch(batch) {
+  const quantity = toNumber(batch?.quantity_on_hand);
+  return {
+    id: batch?.item_id || batch?.id,
+    batch_id: batch?.id,
+    item_id: batch?.item_id,
+    name: batch?.item_name || 'Inventory item',
+    item_name: batch?.item_name || 'Inventory item',
+    sku: batch?.batch_number || '',
+    batch_number: batch?.batch_number || '',
+    location_id: batch?.location_id,
+    location_name: batch?.location_name,
+    stock_level: quantity,
+    total_stock: quantity,
+    current_stock: quantity,
+    quantity_on_hand: quantity,
+    reorder_level: 0,
+    shortfall: quantity <= 0 ? 1 : 0,
+    expiry_date: batch?.expires_on || null,
+    expires_on: batch?.expires_on || null,
+    days_until_expiry: daysUntilDate(batch?.expires_on),
+  };
+}
+
+function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, params = {}) {
+  const expiringDays = boundedLimit(params.days, 30);
+  const lowStockCount = batches.filter((batch) => toNumber(batch?.quantity_on_hand) <= 0).length;
+
+  return {
+    total_items: items.length,
+    low_stock_count: lowStockCount,
+    expiring_soon_count: batches.filter((batch) => isExpiringWithin(batch, expiringDays)).length,
+    expiring_count: batches.filter((batch) => isExpiringWithin(batch, expiringDays)).length,
+    total_stock_value: 0,
+    total_value: 0,
+    pending_requisitions: requisitions.filter((item) => item?.status === 'requested').length,
+    pending_grns: grns.filter((item) => item?.status === 'received').length,
+    discrepancies: 0,
+  };
+}
 
 /**
  * Inventory API service
@@ -28,12 +114,43 @@ export const inventoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Dashboard metrics (total items, low stock, expiring, value)
    */
-  getDashboardMetrics: async (params = {}) => {
+  getDashboardMetrics: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const [itemsResponse, batchesResponse, requisitionsResponse, grnsResponse] = await Promise.all([
+          v2Api.getInventoryItems({ signal: options.signal }),
+          v2Api.getStockBatches({
+            query: { limit: boundedLimit(params.limit, 100) },
+            signal: options.signal,
+          }),
+          v2Api.getStockRequisitions({
+            query: { limit: boundedLimit(params.limit, 100) },
+            signal: options.signal,
+          }),
+          v2Api.getGoodsReceivedNotes({
+            query: { limit: boundedLimit(params.limit, 100) },
+            signal: options.signal,
+          }),
+        ]);
+
+        return calculateV2DashboardMetrics({
+          items: unwrapV2List(itemsResponse),
+          batches: unwrapV2List(batchesResponse),
+          requisitions: unwrapV2List(requisitionsResponse),
+          grns: unwrapV2List(grnsResponse),
+        }, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/analytics/dashboard/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch dashboard metrics'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch dashboard metrics'));
     }
   },
@@ -44,12 +161,30 @@ export const inventoryApi = {
    * @param {number} params.limit - Maximum results (default: 10)
    * @returns {Promise<Array>} Items with low stock
    */
-  getLowStockAlerts: async (params = {}) => {
+  getLowStockAlerts: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const limit = boundedLimit(params.limit, 10);
+        const response = await v2Api.getStockBatches({
+          query: { limit },
+          signal: options.signal,
+        });
+        return unwrapV2List(response)
+          .filter((batch) => toNumber(batch?.quantity_on_hand) <= 0)
+          .map(adaptV2StockBatch)
+          .slice(0, limit);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/low_stock/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch low stock alerts'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch low stock alerts'));
     }
   },
@@ -61,12 +196,31 @@ export const inventoryApi = {
    * @param {number} params.limit - Maximum results
    * @returns {Promise<Array>} Items expiring soon
    */
-  getExpiringItems: async (params = {}) => {
+  getExpiringItems: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const limit = boundedLimit(params.limit, 10);
+        const days = boundedLimit(params.days, 30);
+        const response = await v2Api.getStockBatches({
+          query: { limit },
+          signal: options.signal,
+        });
+        return unwrapV2List(response)
+          .filter((batch) => isExpiringWithin(batch, days))
+          .map(adaptV2StockBatch)
+          .slice(0, limit);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/expiring_soon/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch expiring items'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch expiring items'));
     }
   },

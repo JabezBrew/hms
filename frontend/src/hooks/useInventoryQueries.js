@@ -122,7 +122,7 @@ export const inventoryKeys = {
 export function useInventoryDashboardMetrics(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.dashboardMetrics(params),
-    queryFn: () => inventoryApi.getDashboardMetrics(params),
+    queryFn: ({ signal }) => inventoryApi.getDashboardMetrics(params, { signal }),
     staleTime: 30 * 1000, // 30 seconds - dashboard refreshes frequently
   });
 }
@@ -135,7 +135,7 @@ export function useInventoryDashboardMetrics(params = {}) {
 export function useLowStockAlerts(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.lowStockAlerts(params),
-    queryFn: () => inventoryApi.getLowStockAlerts(params),
+    queryFn: ({ signal }) => inventoryApi.getLowStockAlerts(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -148,7 +148,7 @@ export function useLowStockAlerts(params = {}) {
 export function useExpiringItems(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.expiringItems(params),
-    queryFn: () => inventoryApi.getExpiringItems(params),
+    queryFn: ({ signal }) => inventoryApi.getExpiringItems(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
