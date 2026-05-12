@@ -38,7 +38,17 @@ vi.mock('@/features/patients/prefetch', () => ({
 
 vi.mock('@/components/ui/VirtualizedTable', () => ({
   default: ({ rows, columns }) => (
-    <div>{(rows || []).map((_, i) => <div key={i} />)}</div>
+    <div>
+      {(rows || []).map((row, rowIndex) => (
+        <div key={row.id || rowIndex}>
+          {(columns || []).map((column) => (
+            <div key={column.key}>
+              {column.render ? column.render(row) : row[column.key]}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   ),
 }))
 
@@ -61,5 +71,14 @@ describe('MyPatientsPage PHI prefetch', () => {
   it('does NOT prefetch patient chart data on mount even when patients are present', () => {
     renderPage()
     expect(vi.mocked(prefetchPatientChronicleData)).not.toHaveBeenCalled()
+  })
+
+  it('hides curated-list actions when Rust V2 mode is active', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    const { queryByText, getByText } = renderPage()
+
+    expect(getByText('Open Registry')).toBeInTheDocument()
+    expect(queryByText('Add from Registry')).not.toBeInTheDocument()
+    expect(queryByText('Remove')).not.toBeInTheDocument()
   })
 })

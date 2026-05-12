@@ -21,6 +21,7 @@ import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageShell } from "@/shared/components/page/PageShell";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   prefetchMyPatientsRoute,
   prefetchPatientRegistryRoute,
@@ -39,6 +40,7 @@ import {
 const MyPatientsPage = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
+  const rustV2Mode = isRustV2ApiMode();
   const pageMeta = usePageMeta({
     title: 'My Patients | Hospital Management System',
     breadcrumbs: [
@@ -140,25 +142,30 @@ const MyPatientsPage = () => {
     navigate('/patients');
   };
 
-  const myPatientColumns = useMemo(() => ([
-    {
-      key: "pinned",
-      header: "",
-      width: "56px",
-      render: (patient) => (
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-          onClick={(event) => {
-            event.stopPropagation();
-            handleTogglePin(patient._listEntryId);
-          }}
-        >
-          <Pin className={cn("h-4 w-4", patient._isPinned && "fill-current text-primary")} />
-        </button>
-      ),
-    },
-    {
+  const myPatientColumns = useMemo(() => {
+    const columns = [];
+
+    if (!rustV2Mode) {
+      columns.push({
+        key: "pinned",
+        header: "",
+        width: "56px",
+        render: (patient) => (
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleTogglePin(patient._listEntryId);
+            }}
+          >
+            <Pin className={cn("h-4 w-4", patient._isPinned && "fill-current text-primary")} />
+          </button>
+        ),
+      });
+    }
+
+    columns.push({
       key: "patient",
       header: "Patient",
       width: "240px",
@@ -170,20 +177,22 @@ const MyPatientsPage = () => {
           </p>
         </div>
       ),
-    },
-    {
+    });
+
+    columns.push({
       key: "notes",
-      header: "Notes",
+      header: rustV2Mode ? "Context" : "Notes",
       width: "260px",
       render: (patient) => (
         <span className="truncate text-sm text-muted-foreground">
           {patient._listNotes || "No notes"}
         </span>
       ),
-    },
-    {
+    });
+
+    columns.push({
       key: "added",
-      header: "Added",
+      header: rustV2Mode ? "Updated" : "Added",
       width: "180px",
       render: (patient) => (
         <span className="font-mono text-sm text-muted-foreground">
@@ -194,21 +203,23 @@ const MyPatientsPage = () => {
           }) : "—"}
         </span>
       ),
-    },
-    {
+    });
+
+    columns.push({
       key: "status",
       header: "Status",
       width: "120px",
       render: (patient) => (
         <Badge variant="outline" className="text-xs">
-          {patient._isPinned ? "Pinned" : "Tracked"}
+          {rustV2Mode ? "Context" : patient._isPinned ? "Pinned" : "Tracked"}
         </Badge>
       ),
-    },
-    {
+    });
+
+    columns.push({
       key: "actions",
       header: "",
-      width: "240px",
+      width: rustV2Mode ? "160px" : "240px",
       render: (patient) => (
         <div className="flex items-center justify-end gap-2">
           <Button
@@ -233,29 +244,33 @@ const MyPatientsPage = () => {
           >
             Consult
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs text-destructive"
-            onClick={(event) => {
-              event.stopPropagation();
-              const patientId = patient?.id || patient?.patient_profile;
-              handleRemoveFromMyPatients(patientId);
-            }}
-          >
-            Remove
-          </Button>
+          {!rustV2Mode && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-destructive"
+              onClick={(event) => {
+                event.stopPropagation();
+                const patientId = patient?.id || patient?.patient_profile;
+                handleRemoveFromMyPatients(patientId);
+              }}
+            >
+              Remove
+            </Button>
+          )}
         </div>
       ),
-    },
-  ]), []);
+    });
+
+    return columns;
+  }, [rustV2Mode]);
 
   return (
     <PageShell>
       {pageMeta}
       <PageHeader
         title="My Patients"
-        description={`${stats.total} patients${stats.pinned > 0 ? ` · ${stats.pinned} pinned` : ''}`}
+        description={`${stats.total} patients${!rustV2Mode && stats.pinned > 0 ? ` · ${stats.pinned} pinned` : ''}`}
         size="md"
         actions={(
           <Button
@@ -265,7 +280,7 @@ const MyPatientsPage = () => {
             className="font-mono text-xs w-full sm:w-auto"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Add from Registry
+            {rustV2Mode ? 'Open Registry' : 'Add from Registry'}
           </Button>
         )}
       >
