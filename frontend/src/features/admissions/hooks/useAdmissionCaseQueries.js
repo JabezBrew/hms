@@ -32,7 +32,7 @@ export function useAdmissionCases(filters = {}, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: admissionCaseKeys.list(filters),
-    queryFn: () => admissionsApi.getCases(filters),
+    queryFn: ({ signal }) => admissionsApi.getCases(filters, { signal }),
     enabled,
   })
 }

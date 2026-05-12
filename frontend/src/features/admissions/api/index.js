@@ -1,4 +1,7 @@
 import { apiClient, handleApiError } from '@/lib/api-client'
+import { handleV2ApiError } from '@/lib/api/v2/errors'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+import { v2Api } from '@/lib/api/v2/client'
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -10,6 +13,58 @@ function normalizeListResponse(response) {
   if (Array.isArray(response)) return response
   if (Array.isArray(response?.results)) return response.results
   return []
+}
+
+function normalizeLimit(params = {}, fallback = 25) {
+  const value = Number(params.page_size || params.limit || fallback)
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(Math.max(value, 1), 100)
+}
+
+function adaptV2AdmissionCase(item) {
+  if (!item) {
+    return item
+  }
+  const requestedBedLabel = item.bed_code
+    ? `${item.ward_name || 'Ward'} · Bed ${item.bed_code}`
+    : item.ward_name || null
+
+  return {
+    id: item.id,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_name: item.patient_display_name,
+    medical_record_number: item.patient_code,
+    requested_ward: item.ward_id,
+    requested_ward_name: item.ward_name,
+    requested_bed: item.bed_id,
+    requested_bed_label: requestedBedLabel,
+    status: item.status,
+    requested_at: item.created_at,
+    ready_for_activation_at: item.status === 'ready_for_activation' ? item.created_at : null,
+    admission_source: 'direct',
+    admission_id: null,
+    admitted_at: item.admitted_at,
+    discharged_at: item.discharged_at,
+    blockers: [],
+    tasks: [],
+    active_reservation: item.bed_id
+      ? {
+          ward: item.ward_id,
+          ward_name: item.ward_name,
+          bed: item.bed_id,
+          bed_number: item.bed_code,
+          reserved_at: item.created_at,
+        }
+      : null,
+    can_activate: item.status === 'ready_for_activation',
+  }
+}
+
+function adaptV2AdmissionCaseList(response) {
+  return Array.isArray(response?.data)
+    ? response.data.map(adaptV2AdmissionCase)
+    : []
 }
 
 export const admissionsApi = {
@@ -58,7 +113,25 @@ export const admissionsApi = {
     }
   },
 
-  getCases: (params = {}) => apiClient.get('/admissions/cases/', { params }),
+  getCases: async (params = {}, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const query = { limit: normalizeLimit(params) }
+        if (params.cursor || params.next_cursor) {
+          query.cursor = params.cursor || params.next_cursor
+        }
+        const response = await v2Api.getAdmissionCases({ query, signal: options.signal })
+        return adaptV2AdmissionCaseList(response)
+      }
+      return await apiClient.get('/admissions/cases/', { ...options, params })
+    } catch (error) {
+      rethrowAbortError(error)
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch admission cases'))
+      }
+      throw new Error(handleApiError(error, 'Failed to fetch admission cases'))
+    }
+  },
   getCase: (id) => apiClient.get(`/admissions/cases/${id}/`),
   getTasks: (params = {}) => apiClient.get('/admissions/tasks/', { params }),
   startCase: (data) => apiClient.post('/admissions/cases/start/', data),
