@@ -368,6 +368,105 @@ describe('Rust V2 inventory bridge', () => {
     );
   });
 
+  it('loads procurement and controlled detail records through generated Rust V2 endpoints', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'requested',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-1',
+          requesting_location_id: 'location-2',
+          requesting_location_name: 'Ward Store',
+          status: 'requested',
+          created_at: '2026-05-12T08:05:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'draft',
+          created_at: '2026-05-12T08:10:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'grn-1',
+          purchase_order_id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'received',
+          received_at: '2026-05-12T08:15:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'transfer-1',
+          item_id: 'item-1',
+          item_name: 'Paracetamol',
+          from_location_id: 'location-1',
+          to_location_id: 'location-2',
+          quantity: 5,
+          status: 'requested',
+          created_at: '2026-05-12T08:20:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'register-1',
+          item_id: 'item-2',
+          item_name: 'Morphine',
+          location_id: 'location-1',
+          movement_type: 'dispense',
+          quantity_delta: -1,
+          balance_after: 9,
+          witness_user_id: 'user-2',
+          created_at: '2026-05-12T08:25:00Z',
+        },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getRequisition('req-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'req-1' });
+    await expect(inventoryApi.getInternalRequisition('internal-req-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'internal-req-1' });
+    await expect(inventoryApi.getPurchaseOrder('po-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'po-1' });
+    await expect(inventoryApi.getGRN('grn-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'grn-1' });
+    await expect(inventoryApi.getTransferRequest('transfer-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'transfer-1' });
+    await expect(inventoryApi.getControlledRegister('register-1', {
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'register-1' });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/inventory/requisitions/req-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/requisitions/internal-req-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/purchase-orders/po-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/goods-received-notes/grn-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/transfers/transfer-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/pharmacy/controlled-substances/register/register-1', 'GET', controller.signal],
+    ]);
+  });
+
   it('returns safe local fallbacks for inventory screens without a Rust V2 contract', async () => {
     await expect(inventoryApi.getSuppliers()).resolves.toMatchObject({ results: [], count: 0 });
     await expect(inventoryApi.getStandingOrders()).resolves.toMatchObject({ results: [], count: 0 });

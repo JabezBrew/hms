@@ -308,6 +308,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getControlledSubstanceRegisterById": {
+    "operationId": "getControlledSubstanceRegisterById",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/controlled-substances/register/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getDashboardSnapshot": {
     "operationId": "getDashboardSnapshot",
     "method": "GET",
@@ -368,6 +378,16 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getGoodsReceivedNoteById": {
+    "operationId": "getGoodsReceivedNoteById",
+    "method": "GET",
+    "path": "/api/v2/inventory/goods-received-notes/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getGoodsReceivedNotes": {
@@ -738,6 +758,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getPurchaseOrderById": {
+    "operationId": "getPurchaseOrderById",
+    "method": "GET",
+    "path": "/api/v2/inventory/purchase-orders/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getPurchaseOrders": {
     "operationId": "getPurchaseOrders",
     "method": "GET",
@@ -829,6 +859,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getStockRequisitionById": {
+    "operationId": "getStockRequisitionById",
+    "method": "GET",
+    "path": "/api/v2/inventory/requisitions/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getStockRequisitions": {
     "operationId": "getStockRequisitions",
     "method": "GET",
@@ -838,6 +878,16 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getStockTransferById": {
+    "operationId": "getStockTransferById",
+    "method": "GET",
+    "path": "/api/v2/inventory/transfers/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getStockTransfers": {
@@ -1831,12 +1881,14 @@ export function createGeneratedClient(request) {
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
     getConsents: createOperation(request, operations.getConsents),
     getControlledSubstanceRegister: createOperation(request, operations.getControlledSubstanceRegister),
+    getControlledSubstanceRegisterById: createOperation(request, operations.getControlledSubstanceRegisterById),
     getDashboardSnapshot: createOperation(request, operations.getDashboardSnapshot),
     getDischarges: createOperation(request, operations.getDischarges),
     getEncounterById: createOperation(request, operations.getEncounterById),
     getEncounterCareTeam: createOperation(request, operations.getEncounterCareTeam),
     getEncounters: createOperation(request, operations.getEncounters),
     getFluidBalanceEntries: createOperation(request, operations.getFluidBalanceEntries),
+    getGoodsReceivedNoteById: createOperation(request, operations.getGoodsReceivedNoteById),
     getGoodsReceivedNotes: createOperation(request, operations.getGoodsReceivedNotes),
     getHandoffs: createOperation(request, operations.getHandoffs),
     getHealthAlive: createOperation(request, operations.getHealthAlive),
@@ -1871,6 +1923,7 @@ export function createGeneratedClient(request) {
     getPatientValidationRules: createOperation(request, operations.getPatientValidationRules),
     getPatientVitals: createOperation(request, operations.getPatientVitals),
     getPharmacyDispenses: createOperation(request, operations.getPharmacyDispenses),
+    getPurchaseOrderById: createOperation(request, operations.getPurchaseOrderById),
     getPurchaseOrders: createOperation(request, operations.getPurchaseOrders),
     getRealtimeSubscriptions: createOperation(request, operations.getRealtimeSubscriptions),
     getReferralById: createOperation(request, operations.getReferralById),
@@ -1880,7 +1933,9 @@ export function createGeneratedClient(request) {
     getStaffDirectory: createOperation(request, operations.getStaffDirectory),
     getStockBatches: createOperation(request, operations.getStockBatches),
     getStockMovements: createOperation(request, operations.getStockMovements),
+    getStockRequisitionById: createOperation(request, operations.getStockRequisitionById),
     getStockRequisitions: createOperation(request, operations.getStockRequisitions),
+    getStockTransferById: createOperation(request, operations.getStockTransferById),
     getStockTransfers: createOperation(request, operations.getStockTransfers),
     getStorageLocations: createOperation(request, operations.getStorageLocations),
     getSystemDeploymentCapabilities: createOperation(request, operations.getSystemDeploymentCapabilities),

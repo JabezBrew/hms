@@ -398,6 +398,14 @@ pub async fn list_transfers(
     rows.into_iter().map(transfer_from_row).collect()
 }
 
+pub async fn get_transfer(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<StockTransferListItem>> {
+    fetch_transfer_by_id(pool, facility_id, id).await
+}
+
 pub async fn create_transfer(
     pool: &PgPool,
     transfer: NewStockTransfer,
@@ -449,6 +457,14 @@ pub async fn list_requisitions(
     rows.into_iter().map(requisition_from_row).collect()
 }
 
+pub async fn get_requisition(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    fetch_requisition_by_id(pool, facility_id, id).await
+}
+
 pub async fn create_requisition(
     pool: &PgPool,
     requisition: NewStockRequisition,
@@ -490,6 +506,14 @@ pub async fn list_purchase_orders(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(purchase_order_from_row).collect()
+}
+
+pub async fn get_purchase_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<PurchaseOrderListItem>> {
+    fetch_purchase_order_by_id(pool, facility_id, id).await
 }
 
 pub async fn create_purchase_order(
@@ -535,6 +559,14 @@ pub async fn list_grns(
     query.push_bind(limit);
     let rows = query.build_query_as::<GrnRow>().fetch_all(pool).await?;
     rows.into_iter().map(grn_from_row).collect()
+}
+
+pub async fn get_grn(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<GoodsReceivedNoteListItem>> {
+    fetch_grn_by_id(pool, facility_id, id).await
 }
 
 pub async fn create_grn(
@@ -583,6 +615,14 @@ pub async fn list_controlled_register(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(controlled_from_row).collect()
+}
+
+pub async fn get_controlled_register_entry(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<ControlledSubstanceRegisterItem>> {
+    fetch_controlled_by_id(pool, facility_id, id).await
 }
 
 pub async fn create_controlled_movement(

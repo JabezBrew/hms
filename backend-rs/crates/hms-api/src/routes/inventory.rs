@@ -29,20 +29,40 @@ pub fn routes() -> Router<AppState> {
             get(inventory::list_transfers).post(inventory::create_transfer),
         )
         .route(
+            "/api/v2/inventory/transfers/:id",
+            get(inventory::get_transfer),
+        )
+        .route(
             "/api/v2/inventory/requisitions",
             get(inventory::list_requisitions).post(inventory::create_requisition),
+        )
+        .route(
+            "/api/v2/inventory/requisitions/:id",
+            get(inventory::get_requisition),
         )
         .route(
             "/api/v2/inventory/purchase-orders",
             get(inventory::list_purchase_orders).post(inventory::create_purchase_order),
         )
         .route(
+            "/api/v2/inventory/purchase-orders/:id",
+            get(inventory::get_purchase_order),
+        )
+        .route(
             "/api/v2/inventory/goods-received-notes",
             get(inventory::list_grns).post(inventory::create_grn),
         )
         .route(
+            "/api/v2/inventory/goods-received-notes/:id",
+            get(inventory::get_grn),
+        )
+        .route(
             "/api/v2/pharmacy/controlled-substances/register",
             get(inventory::list_controlled_register).post(inventory::create_controlled_movement),
+        )
+        .route(
+            "/api/v2/pharmacy/controlled-substances/register/:id",
+            get(inventory::get_controlled_register_entry),
         )
         .route(
             "/api/v2/pharmacy/dispenses",

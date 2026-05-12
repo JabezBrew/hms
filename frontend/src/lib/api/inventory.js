@@ -1057,14 +1057,23 @@ export const inventoryApi = {
    * @param {string} id - Requisition ID
    * @returns {Promise<Object>} Requisition data with items
    */
-  getRequisition: async (id) => {
+  getRequisition: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition detail contract');
+        const response = await v2Api.getStockRequisitionById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/requisitions/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch requisition'));
     }
   },
@@ -1214,14 +1223,23 @@ export const inventoryApi = {
    * @param {string} id - Purchase order ID
    * @returns {Promise<Object>} Purchase order data with items
    */
-  getPurchaseOrder: async (id) => {
+  getPurchaseOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 purchase order detail contract');
+        const response = await v2Api.getPurchaseOrderById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/purchase-orders/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch purchase order'));
     }
   },
@@ -1335,14 +1353,23 @@ export const inventoryApi = {
    * @param {string} id - GRN ID
    * @returns {Promise<Object>} GRN data with items
    */
-  getGRN: async (id) => {
+  getGRN: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 goods received note detail contract');
+        const response = await v2Api.getGoodsReceivedNoteById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/grns/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch GRN'));
     }
   },
@@ -1482,11 +1509,20 @@ export const inventoryApi = {
   getInternalRequisition: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition detail contract');
+        const response = await v2Api.getStockRequisitionById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/internal-requisitions/${id}/`, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch internal requisition'));
     }
   },
@@ -1760,14 +1796,23 @@ export const inventoryApi = {
    * @param {string} id - Transfer request ID
    * @returns {Promise<Object>} Transfer request data
    */
-  getTransferRequest: async (id) => {
+  getTransferRequest: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock transfer detail contract');
+        const response = await v2Api.getStockTransferById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/transfer-requests/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch transfer request'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch transfer request'));
     }
   },
@@ -1899,14 +1944,23 @@ export const inventoryApi = {
    * @param {string} id - Register ID
    * @returns {Promise<Object>} Register data
    */
-  getControlledRegister: async (id) => {
+  getControlledRegister: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 controlled substance register detail contract');
+        const response = await v2Api.getControlledSubstanceRegisterById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/inventory/controlled-registers/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch controlled register'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch controlled register'));
     }
   },

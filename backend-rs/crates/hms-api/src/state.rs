@@ -1852,6 +1852,13 @@ impl AppState {
         hms_db::inventory::list_transfers(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
+    pub async fn get_stock_transfer(
+        &self,
+        transfer_id: Uuid,
+    ) -> Result<Option<StockTransferListItem>> {
+        hms_db::inventory::get_transfer(&self.inner.pool, self.facility_id(), transfer_id).await
+    }
+
     pub async fn create_stock_transfer(
         &self,
         item_id: Uuid,
@@ -1884,6 +1891,14 @@ impl AppState {
             .await
     }
 
+    pub async fn get_stock_requisition(
+        &self,
+        requisition_id: Uuid,
+    ) -> Result<Option<StockRequisitionListItem>> {
+        hms_db::inventory::get_requisition(&self.inner.pool, self.facility_id(), requisition_id)
+            .await
+    }
+
     pub async fn create_stock_requisition(
         &self,
         requesting_location_id: Uuid,
@@ -1910,6 +1925,18 @@ impl AppState {
             .await
     }
 
+    pub async fn get_purchase_order(
+        &self,
+        purchase_order_id: Uuid,
+    ) -> Result<Option<PurchaseOrderListItem>> {
+        hms_db::inventory::get_purchase_order(
+            &self.inner.pool,
+            self.facility_id(),
+            purchase_order_id,
+        )
+        .await
+    }
+
     pub async fn create_purchase_order(
         &self,
         supplier_name: String,
@@ -1933,6 +1960,13 @@ impl AppState {
         limit: i64,
     ) -> Result<Vec<GoodsReceivedNoteListItem>> {
         hms_db::inventory::list_grns(&self.inner.pool, self.facility_id(), cursor, limit).await
+    }
+
+    pub async fn get_goods_received_note(
+        &self,
+        grn_id: Uuid,
+    ) -> Result<Option<GoodsReceivedNoteListItem>> {
+        hms_db::inventory::get_grn(&self.inner.pool, self.facility_id(), grn_id).await
     }
 
     pub async fn create_goods_received_note(
@@ -1962,6 +1996,18 @@ impl AppState {
             self.facility_id(),
             cursor,
             limit,
+        )
+        .await
+    }
+
+    pub async fn get_controlled_substance_register_entry(
+        &self,
+        entry_id: Uuid,
+    ) -> Result<Option<ControlledSubstanceRegisterItem>> {
+        hms_db::inventory::get_controlled_register_entry(
+            &self.inner.pool,
+            self.facility_id(),
+            entry_id,
         )
         .await
     }

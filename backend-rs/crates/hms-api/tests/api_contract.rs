@@ -262,10 +262,15 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/inventory/stock-batches",
         "/api/v2/inventory/stock-movements",
         "/api/v2/inventory/transfers",
+        "/api/v2/inventory/transfers/{id}",
         "/api/v2/inventory/requisitions",
+        "/api/v2/inventory/requisitions/{id}",
         "/api/v2/inventory/purchase-orders",
+        "/api/v2/inventory/purchase-orders/{id}",
         "/api/v2/inventory/goods-received-notes",
+        "/api/v2/inventory/goods-received-notes/{id}",
         "/api/v2/pharmacy/controlled-substances/register",
+        "/api/v2/pharmacy/controlled-substances/register/{id}",
         "/api/v2/pharmacy/dispenses",
         "/api/v2/billing/service-catalog",
         "/api/v2/billing/service-prices",
@@ -1977,6 +1982,25 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .await
         .expect("stock transfer create succeeds");
     assert_eq!(transfer_response.status(), StatusCode::OK);
+    let transfer_body = json_body(transfer_response).await;
+    let transfer_id = transfer_body["data"]["id"]
+        .as_str()
+        .expect("transfer id exists");
+    let transfer_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/inventory/transfers/{transfer_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock transfer detail succeeds");
+    assert_eq!(transfer_detail_response.status(), StatusCode::OK);
+    let transfer_detail_body = json_body(transfer_detail_response).await;
+    assert_eq!(transfer_detail_body["data"]["id"], transfer_id);
 
     let requisition_response = app
         .clone()
@@ -1994,6 +2018,25 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .await
         .expect("stock requisition create succeeds");
     assert_eq!(requisition_response.status(), StatusCode::OK);
+    let requisition_body = json_body(requisition_response).await;
+    let requisition_id = requisition_body["data"]["id"]
+        .as_str()
+        .expect("requisition id exists");
+    let requisition_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/inventory/requisitions/{requisition_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition detail succeeds");
+    assert_eq!(requisition_detail_response.status(), StatusCode::OK);
+    let requisition_detail_body = json_body(requisition_detail_response).await;
+    assert_eq!(requisition_detail_body["data"]["id"], requisition_id);
 
     let po_response = app
         .clone()
@@ -2015,6 +2058,23 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let purchase_order_id = po_body["data"]["id"]
         .as_str()
         .expect("purchase order id exists");
+    let po_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/purchase-orders/{purchase_order_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("purchase order detail succeeds");
+    assert_eq!(po_detail_response.status(), StatusCode::OK);
+    let po_detail_body = json_body(po_detail_response).await;
+    assert_eq!(po_detail_body["data"]["id"], purchase_order_id);
 
     let grn_response = app
         .clone()
@@ -2032,6 +2092,23 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .await
         .expect("GRN create succeeds");
     assert_eq!(grn_response.status(), StatusCode::OK);
+    let grn_body = json_body(grn_response).await;
+    let grn_id = grn_body["data"]["id"].as_str().expect("GRN id exists");
+    let grn_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/inventory/goods-received-notes/{grn_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("GRN detail succeeds");
+    assert_eq!(grn_detail_response.status(), StatusCode::OK);
+    let grn_detail_body = json_body(grn_detail_response).await;
+    assert_eq!(grn_detail_body["data"]["id"], grn_id);
 
     let controlled_receipt = app
         .clone()
@@ -2105,7 +2182,27 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .expect("controlled dispense succeeds");
     assert_eq!(controlled_dispense.status(), StatusCode::OK);
     let controlled_body = json_body(controlled_dispense).await;
+    let controlled_id = controlled_body["data"]["id"]
+        .as_str()
+        .expect("controlled register id exists");
     assert_eq!(controlled_body["data"]["balance_after"], 9);
+    let controlled_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/pharmacy/controlled-substances/register/{controlled_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled register detail succeeds");
+    assert_eq!(controlled_detail_response.status(), StatusCode::OK);
+    let controlled_detail_body = json_body(controlled_detail_response).await;
+    assert_eq!(controlled_detail_body["data"]["id"], controlled_id);
 
     let patient_response = app
         .clone()
@@ -2164,6 +2261,28 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .await
         .expect("inventory item detail denial succeeds");
     assert_eq!(detail_denied.status(), StatusCode::FORBIDDEN);
+
+    for denied_path in [
+        format!("/api/v2/inventory/transfers/{transfer_id}"),
+        format!("/api/v2/inventory/requisitions/{requisition_id}"),
+        format!("/api/v2/inventory/purchase-orders/{purchase_order_id}"),
+        format!("/api/v2/inventory/goods-received-notes/{grn_id}"),
+        format!("/api/v2/pharmacy/controlled-substances/register/{controlled_id}"),
+    ] {
+        let denied_detail = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(denied_path)
+                    .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("inventory detail denial succeeds");
+        assert_eq!(denied_detail.status(), StatusCode::FORBIDDEN);
+    }
 
     let denied = app
         .clone()

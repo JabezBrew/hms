@@ -183,6 +183,28 @@ pub async fn list_transfers(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v2/inventory/transfers/{id}", operation_id = "getStockTransferById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock transfer ID")), responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_transfer(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockTransferListItem>>, ApiError> {
+    require_inventory_list_access(&user, state.facility_id())?;
+    let transfer = state
+        .get_stock_transfer(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_transfer_load_failed",
+                "Transfer could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("stock_transfer_not_found", "Transfer could not be found.")
+        })?;
+    Ok(Json(object(transfer)))
+}
+
 #[utoipa::path(post, path = "/api/v2/inventory/transfers", operation_id = "postStockTransfers", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockTransferRequest, responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_transfer(
     State(state): State<AppState>,
@@ -231,6 +253,31 @@ pub async fn list_requisitions(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v2/inventory/requisitions/{id}", operation_id = "getStockRequisitionById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_requisition(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    require_inventory_list_access(&user, state.facility_id())?;
+    let requisition = state
+        .get_stock_requisition(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_load_failed",
+                "Requisition could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "stock_requisition_not_found",
+                "Requisition could not be found.",
+            )
+        })?;
+    Ok(Json(object(requisition)))
+}
+
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions", operation_id = "postStockRequisitions", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockRequisitionRequest, responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_requisition(
     State(state): State<AppState>,
@@ -270,6 +317,31 @@ pub async fn list_purchase_orders(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.created_at, item.id)
     })))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/purchase-orders/{id}", operation_id = "getPurchaseOrderById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_purchase_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
+    require_inventory_list_access(&user, state.facility_id())?;
+    let purchase_order = state
+        .get_purchase_order(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "purchase_order_load_failed",
+                "Purchase order could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "purchase_order_not_found",
+                "Purchase order could not be found.",
+            )
+        })?;
+    Ok(Json(object(purchase_order)))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders", operation_id = "postPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), request_body = CreatePurchaseOrderRequest, responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -312,6 +384,31 @@ pub async fn list_grns(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.received_at, item.id)
     })))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/goods-received-notes/{id}", operation_id = "getGoodsReceivedNoteById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_grn(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
+    require_inventory_list_access(&user, state.facility_id())?;
+    let grn = state
+        .get_goods_received_note(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "goods_received_note_load_failed",
+                "Goods received note could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "goods_received_note_not_found",
+                "Goods received note could not be found.",
+            )
+        })?;
+    Ok(Json(object(grn)))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes", operation_id = "postGoodsReceivedNotes", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateGoodsReceivedNoteRequest, responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -357,6 +454,31 @@ pub async fn list_controlled_register(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.created_at, item.id)
     })))
+}
+
+#[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}", operation_id = "getControlledSubstanceRegisterById", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_controlled_register_entry(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
+    require_inventory_list_access(&user, state.facility_id())?;
+    let entry = state
+        .get_controlled_substance_register_entry(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_register_load_failed",
+                "Controlled register entry could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "controlled_register_not_found",
+                "Controlled register entry could not be found.",
+            )
+        })?;
+    Ok(Json(object(entry)))
 }
 
 #[utoipa::path(post, path = "/api/v2/pharmacy/controlled-substances/register", operation_id = "postControlledSubstanceRegister", tag = "pharmacy", security(("bearerAuth" = [])), request_body = CreateControlledSubstanceMovementRequest, responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
