@@ -7,6 +7,7 @@ import { keyWith } from '@/shared/lib/queryKeys';
 
 const MAX_MONITORING_PAGE_SIZE = 50;
 const MAX_VITALS_PAGE_SIZE = 50;
+const MAX_HANDOFF_PAGE_SIZE = 50;
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -29,6 +30,13 @@ function adaptV2WardBoardMonitoringItem(item = {}) {
   const bedNumber = item.bed_code || item.bed_number || '';
 
   return {
+    patient_id: item.patient_id,
+    patient_name: patientName,
+    ward_id: item.ward_id,
+    ward_name: item.ward_name || '',
+    admission_id: item.admission_id,
+    bed_id: item.bed_id ?? null,
+    bed_number: bedNumber,
     patient: {
       id: item.patient_id,
       medical_record_number: item.patient_code || '',
@@ -65,6 +73,22 @@ function adaptV2WardBoardMonitoringItem(item = {}) {
   };
 }
 
+function adaptV2Handoff(item = {}) {
+  return {
+    ...item,
+    ward: item.ward_id,
+    ward_id: item.ward_id,
+    ward_name: item.ward_name || '',
+    from_nurse: item.from_user_id,
+    from_user_id: item.from_user_id,
+    to_nurse: item.to_user_id,
+    to_user_id: item.to_user_id,
+    shift_type: item.shift_label,
+    shift_label: item.shift_label,
+    shift_date: item.created_at ? String(item.created_at).slice(0, 10) : null,
+  };
+}
+
 function adaptV2NursingAlert(item = {}) {
   const patientName = item.patient_display_name || 'Unknown Patient';
   return {
@@ -94,6 +118,55 @@ function adaptV2PatientVitals(item = {}) {
     blood_pressure_systolic: item.systolic_bp,
     blood_pressure_diastolic: item.diastolic_bp,
   };
+}
+
+function normalizeV2HandoffPayload(data = {}) {
+  const wardId = data.ward_id || data.ward;
+  const toUserId = data.to_user_id || data.to_nurse;
+  const shiftLabel = data.shift_label || data.shift_type;
+  if (!wardId) {
+    throw new Error('Ward is required to create a Rust V2 shift handoff');
+  }
+  if (!toUserId) {
+    throw new Error('Receiving nurse is required to create a Rust V2 shift handoff');
+  }
+  if (!shiftLabel) {
+    throw new Error('Shift label is required to create a Rust V2 shift handoff');
+  }
+  return {
+    ward_id: wardId,
+    to_user_id: toUserId,
+    shift_label: shiftLabel,
+  };
+}
+
+function handoffMatchesFilters(handoff, filters = {}) {
+  const ward = filters.ward || filters.ward_id;
+  if (ward && handoff.ward_id !== ward) {
+    return false;
+  }
+  const shift = filters.shift || filters.shift_type || filters.shift_label;
+  if (shift && handoff.shift_label !== shift) {
+    return false;
+  }
+  if (filters.date && handoff.shift_date !== filters.date) {
+    return false;
+  }
+  return true;
+}
+
+async function getV2Handoffs(filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getHandoffs({
+      query: { limit: MAX_HANDOFF_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .map(adaptV2Handoff)
+      .filter((handoff) => handoffMatchesFilters(handoff, filters));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load shift handoffs');
+  }
 }
 
 function normalizeVitalSignsLimit(value) {
@@ -933,7 +1006,11 @@ export const useShiftHandoffs = (filters = {}) => {
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
     queryKey: nursingKeys.shiftHandoffs(ward, date, shift),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2Handoffs(filters, { signal });
+      }
+
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/handoffs/?${params.toString()}`);
       // apiClient.get returns data directly, not response.data
@@ -949,7 +1026,11 @@ export const useShiftHandoffs = (filters = {}) => {
 export const useTodayHandoffs = () => {
   return useQuery({
     queryKey: nursingKeys.shiftHandoffsToday(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2Handoffs({ date: new Date().toISOString().slice(0, 10) }, { signal });
+      }
+
       const response = await apiClient.get('/nursing/handoffs/today/');
       // apiClient.get returns data directly or response.data depending on implementation
       // Ensure we always return an array (not undefined)
@@ -965,6 +1046,15 @@ export const useCreateShiftHandoff = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postHandoffs(normalizeV2HandoffPayload(data));
+          return adaptV2Handoff(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to create shift handoff');
+        }
+      }
+
       const response = await apiClient.post('/nursing/handoffs/', data);
       return response.data;
     },
@@ -980,6 +1070,18 @@ export const useUpdateShiftHandoff = () => {
 
   return useMutation({
     mutationFn: async ({ handoffId, data }) => {
+      if (isRustV2ApiMode()) {
+        if (data?.status === 'completed' || data?.complete === true) {
+          try {
+            const response = await v2Api.postHandoffComplete({ id: handoffId });
+            return adaptV2Handoff(response?.data);
+          } catch (error) {
+            rethrowV2Error(error, 'Failed to complete shift handoff');
+          }
+        }
+        throw new Error('Rust V2 does not expose general shift handoff edits yet.');
+      }
+
       const response = await apiClient.patch(`/nursing/handoffs/${handoffId}/`, data);
       return response.data;
     },

@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   useActiveAlerts,
+  useCreateShiftHandoff,
   useCreateVitalSigns,
   usePatientMonitoring,
   usePendingDispensingGrouped,
+  useShiftHandoffs,
   useVitalSigns,
   useVitalSignsTrends,
 } from '../useNursingQueries';
@@ -109,6 +111,8 @@ describe('Rust V2 nursing dashboard hooks', () => {
             medical_record_number: 'MRN-001',
             user: expect.objectContaining({ full_name: 'Ama Mensah' }),
           }),
+          patient_id: 'patient-1',
+          ward_id: 'ward-1',
           admission: expect.objectContaining({
             id: 'admission-1',
             bed_details: expect.objectContaining({
@@ -403,5 +407,115 @@ describe('Rust V2 nursing dashboard hooks', () => {
         temperature: 37.5,
       }),
     ]);
+  });
+
+  it('loads shift handoffs from Rust V2 and filters the bounded page for the current ward UI', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'handoff-1',
+              ward_id: 'ward-1',
+              ward_name: 'General Ward',
+              from_user_id: 'user-1',
+              to_user_id: 'user-2',
+              shift_label: 'night',
+              status: 'draft',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            {
+              id: 'handoff-2',
+              ward_id: 'ward-2',
+              ward_name: 'Maternity Ward',
+              from_user_id: 'user-3',
+              to_user_id: 'user-4',
+              shift_label: 'day',
+              status: 'completed',
+              created_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useShiftHandoffs({ ward: 'ward-1', shift: 'night' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/handoffs?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'handoff-1',
+        ward: 'ward-1',
+        ward_id: 'ward-1',
+        shift_type: 'night',
+        to_nurse: 'user-2',
+      }),
+    ]);
+  });
+
+  it('creates shift handoffs through the Rust V2 handoff contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'handoff-1',
+            ward_id: 'ward-1',
+            ward_name: 'General Ward',
+            from_user_id: 'user-1',
+            to_user_id: 'user-2',
+            shift_label: 'night',
+            status: 'draft',
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useCreateShiftHandoff(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        ward_id: 'ward-1',
+        to_nurse: 'user-2',
+        shift_type: 'night',
+        patient_condition: 'Stable',
+        pending_tasks: 'Continue monitoring',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/handoffs',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          ward_id: 'ward-1',
+          to_user_id: 'user-2',
+          shift_label: 'night',
+        }),
+      }),
+    );
   });
 });

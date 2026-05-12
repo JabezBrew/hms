@@ -211,6 +211,7 @@ export default function ShiftHandoffPage() {
     try {
       await createMutation.mutateAsync({
         patient: selectedPatient.patient_id,
+        ward_id: selectedPatient.ward_id,
         shift_date: format(new Date(), 'yyyy-MM-dd'),
         shift_type: formData.shift_type,
         to_nurse: formData.to_nurse,
