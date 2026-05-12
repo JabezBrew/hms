@@ -26,6 +26,15 @@ function minorToMajor(value) {
   return Number(value || 0) / 100;
 }
 
+function majorToMinor(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function rethrowV2Error(error, message) {
+  rethrowAbortError(error);
+  throw new Error(handleV2ApiError(error, message));
+}
+
 function adaptV2Invoice(invoice) {
   if (!invoice) {
     return invoice;
@@ -36,6 +45,7 @@ function adaptV2Invoice(invoice) {
     patient_id: invoice.patient_id,
     patient_mrn: invoice.patient_code,
     patient_code: invoice.patient_code,
+    patient_name: invoice.patient_display_name || invoice.patient_name || invoice.patient_code || 'Unknown patient',
     invoice_number: invoice.invoice_number,
     status: invoice.status,
     currency: invoice.currency,
@@ -47,6 +57,88 @@ function adaptV2Invoice(invoice) {
     total_amount: minorToMajor(invoice.gross_amount_minor),
     amount_paid: minorToMajor(invoice.paid_amount_minor),
     balance_due: minorToMajor(invoice.balance_minor),
+  };
+}
+
+function adaptV2Payment(payment) {
+  if (!payment) {
+    return payment;
+  }
+  return {
+    ...payment,
+    payment_date: payment.paid_at,
+    payment_method: payment.method,
+    amount: minorToMajor(payment.amount_minor),
+    patient_name: payment.patient_display_name
+      || payment.patient_name
+      || payment.patient_code
+      || payment.receipt_number
+      || 'Billing payment',
+  };
+}
+
+function adaptV2CashSession(session) {
+  if (!session) {
+    return session;
+  }
+  return {
+    ...session,
+    opening_float_amount: minorToMajor(session.opening_float_minor),
+    expected_cash_amount: minorToMajor(session.expected_cash_minor),
+    counted_cash_amount: session.counted_cash_minor === null || session.counted_cash_minor === undefined
+      ? null
+      : minorToMajor(session.counted_cash_minor),
+    variance_amount: session.variance_minor === null || session.variance_minor === undefined
+      ? null
+      : minorToMajor(session.variance_minor),
+  };
+}
+
+function v2List(response) {
+  return Array.isArray(response?.data) ? response.data : [];
+}
+
+function isSameLocalDay(value, reference = new Date()) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    && date.getFullYear() === reference.getFullYear()
+    && date.getMonth() === reference.getMonth()
+    && date.getDate() === reference.getDate();
+}
+
+function isWithinLastSevenDays(value, reference = new Date()) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return false;
+  }
+  const start = new Date(reference);
+  start.setDate(reference.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+  return date >= start && date <= reference;
+}
+
+function calculateV2DashboardMetrics(invoices, payments, claims) {
+  const today = new Date();
+  const invoicesToday = invoices.filter((invoice) => isSameLocalDay(invoice.issued_at, today));
+  const paymentsToday = payments.filter((payment) => isSameLocalDay(payment.paid_at, today));
+  const weekPayments = payments.filter((payment) => isWithinLastSevenDays(payment.paid_at, today));
+  const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance_minor || 0) > 0);
+  const pendingClaims = claims.filter((claim) => ['draft', 'ready', 'submitted'].includes(claim.status));
+  const averageInvoiceMinor = invoices.length > 0
+    ? invoices.reduce((sum, invoice) => sum + Number(invoice.gross_amount_minor || 0), 0) / invoices.length
+    : 0;
+
+  return {
+    revenue_today: minorToMajor(paymentsToday.reduce((sum, payment) => sum + Number(payment.amount_minor || 0), 0)),
+    revenue_this_week: minorToMajor(weekPayments.reduce((sum, payment) => sum + Number(payment.amount_minor || 0), 0)),
+    outstanding_amount: minorToMajor(outstandingInvoices.reduce((sum, invoice) => sum + Number(invoice.balance_minor || 0), 0)),
+    outstanding_invoices: outstandingInvoices.length,
+    pending_claims: pendingClaims.length,
+    pending_claims_amount: minorToMajor(pendingClaims.reduce((sum, claim) => sum + Number(claim.amount_minor || 0), 0)),
+    invoices_created_today: invoicesToday.length,
+    payments_received_today: paymentsToday.length,
+    unique_patients_billed: new Set(invoicesToday.map((invoice) => invoice.patient_id).filter(Boolean)).size,
+    average_invoice_amount: minorToMajor(averageInvoiceMinor),
   };
 }
 
@@ -80,12 +172,28 @@ export const billingApi = {
    * @param {string} params.facility - Optional facility ID filter
    * @returns {Promise<Object>} Dashboard metrics
    */
-  getDashboardMetrics: async (params = {}) => {
+  getDashboardMetrics: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const [invoiceResponse, paymentResponse, claimResponse] = await Promise.all([
+          v2Api.getBillingInvoices({ query: { limit: 100 }, signal: options.signal }),
+          v2Api.getBillingPayments({ query: { limit: 100 }, signal: options.signal }),
+          v2Api.getNhisClaims({ query: { limit: 100 }, signal: options.signal }),
+        ]);
+        return calculateV2DashboardMetrics(
+          v2List(invoiceResponse),
+          v2List(paymentResponse),
+          v2List(claimResponse),
+        );
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/dashboard/metrics/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch dashboard metrics');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch dashboard metrics'));
     }
   },
@@ -97,12 +205,23 @@ export const billingApi = {
    * @param {string} params.facility - Optional facility ID filter
    * @returns {Promise<Array>} Recent invoices
    */
-  getRecentInvoices: async (params = {}) => {
+  getRecentInvoices: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getBillingInvoices({
+          query: { limit: normalizeLimit(params, 10) },
+          signal: options.signal,
+        });
+        return v2List(response).map(adaptV2Invoice);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/dashboard/recent_invoices/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch recent invoices');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch recent invoices'));
     }
   },
@@ -114,12 +233,23 @@ export const billingApi = {
    * @param {string} params.facility - Optional facility ID filter
    * @returns {Promise<Array>} Recent payments
    */
-  getRecentPayments: async (params = {}) => {
+  getRecentPayments: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getBillingPayments({
+          query: { limit: normalizeLimit(params, 10) },
+          signal: options.signal,
+        });
+        return v2List(response).map(adaptV2Payment);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/dashboard/recent_payments/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch recent payments');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch recent payments'));
     }
   },
@@ -337,46 +467,135 @@ export const billingApi = {
 
   getCashSessions: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getCashSessions({
+          query: {
+            limit: normalizeLimit(params),
+            cursor: params.cursor || params.next_cursor,
+          },
+          signal: params.signal,
+        });
+        const results = v2List(response).map(adaptV2CashSession);
+        return {
+          count: results.length + (response?.page?.has_next ? 1 : 0),
+          next: response?.page?.next_cursor || null,
+          previous: null,
+          results,
+        };
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/cash-sessions/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch cash sessions');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch cash sessions'));
     }
   },
 
-  getCurrentCashSession: async () => {
+  getCurrentCashSession: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getCashSessions({
+          query: { limit: 10 },
+          signal: options.signal,
+        });
+        const session = v2List(response)
+          .map(adaptV2CashSession)
+          .find((candidate) => candidate.status === 'open') || null;
+        return { session };
+      }
+
       return await apiClient.get('/billing/cash-sessions/current/');
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch current cash session');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch current cash session'));
     }
   },
 
-  getCashSessionTotals: async (sessionId) => {
+  getCashSessionTotals: async (sessionId, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getCashSessions({
+          query: { limit: 100 },
+          signal: options.signal,
+        });
+        const session = v2List(response)
+          .map(adaptV2CashSession)
+          .find((candidate) => candidate.id === sessionId);
+        return {
+          expected_cash_amount: session?.expected_cash_amount || 0,
+          opening_float_amount: session?.opening_float_amount || 0,
+          counted_cash_amount: session?.counted_cash_amount ?? null,
+          variance_amount: session?.variance_amount ?? null,
+        };
+      }
+
       return await apiClient.get(`/billing/cash-sessions/${sessionId}/totals/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch cash session totals');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch cash session totals'));
     }
   },
 
-  openCashSession: async (data) => {
+  openCashSession: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        let drawerId = data.drawer_id;
+        if (!drawerId) {
+          const drawers = v2List(await v2Api.getCashDrawers({ signal: options.signal }));
+          drawerId = drawers.find((drawer) => drawer.active)?.id || drawers[0]?.id;
+        }
+        if (!drawerId) {
+          throw new Error('No active cash drawer is configured.');
+        }
+        const response = await v2Api.postCashSessions(
+          {
+            drawer_id: drawerId,
+            opening_float_minor: data.opening_float_minor ?? majorToMinor(data.opening_float_amount),
+          },
+          { signal: options.signal },
+        );
+        return adaptV2CashSession(response?.data);
+      }
+
       return await apiClient.post('/billing/cash-sessions/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to open cash session');
+      }
       throw new Error(handleApiError(error, 'Failed to open cash session'));
     }
   },
 
-  closeCashSession: async (sessionId, data) => {
+  closeCashSession: async (sessionId, data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postCashSessionClose(
+          { id: sessionId },
+          {
+            counted_cash_minor: data.counted_cash_minor ?? majorToMinor(data.counted_cash_amount),
+          },
+          { signal: options.signal },
+        );
+        return adaptV2CashSession(response?.data);
+      }
+
       return await apiClient.post(`/billing/cash-sessions/${sessionId}/close/`, data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to close cash session');
+      }
       throw new Error(handleApiError(error, 'Failed to close cash session'));
     }
   },
@@ -882,13 +1101,29 @@ export const billingApi = {
    * @param {string} facilityId - Facility ID
    * @returns {Promise<Object>} Billing settings
    */
-  getFacilityBillingSettings: async (facilityId) => {
+  getFacilityBillingSettings: async (facilityId, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getCashDrawers({ signal: options.signal });
+        const drawers = v2List(response);
+        return [
+          {
+            id: 'rust-v2-cash-controls',
+            facility: facilityId || null,
+            cash_control_enabled: drawers.some((drawer) => drawer.active),
+            cash_drawer_count: drawers.length,
+          },
+        ];
+      }
+
       const endpoint = facilityId
         ? `/billing/billing-settings/?facility=${facilityId}`
         : '/billing/billing-settings/';
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch billing settings');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch billing settings'));
     }
   },

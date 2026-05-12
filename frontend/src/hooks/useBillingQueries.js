@@ -94,7 +94,7 @@ export const billingKeys = {
 export function useBillingDashboardMetrics(params = {}) {
   return useQuery({
     queryKey: billingKeys.dashboardMetrics(params),
-    queryFn: () => billingApi.getDashboardMetrics(params),
+    queryFn: ({ signal }) => billingApi.getDashboardMetrics(params, { signal }),
     staleTime: 30 * 1000, // 30 seconds - dashboard data refreshes frequently
   });
 }
@@ -107,7 +107,7 @@ export function useBillingDashboardMetrics(params = {}) {
 export function useRecentInvoices(params = {}) {
   return useQuery({
     queryKey: billingKeys.recentInvoices(params),
-    queryFn: () => billingApi.getRecentInvoices(params),
+    queryFn: ({ signal }) => billingApi.getRecentInvoices(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -120,7 +120,7 @@ export function useRecentInvoices(params = {}) {
 export function useRecentPayments(params = {}) {
   return useQuery({
     queryKey: billingKeys.recentPayments(params),
-    queryFn: () => billingApi.getRecentPayments(params),
+    queryFn: ({ signal }) => billingApi.getRecentPayments(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -416,7 +416,7 @@ export function useSettlementLines(batchId, filters = {}, options = {}) {
 export function useCashSessions(filters = {}) {
   return useQuery({
     queryKey: billingKeys.cashSessionList(filters),
-    queryFn: () => billingApi.getCashSessions(filters),
+    queryFn: ({ signal }) => billingApi.getCashSessions({ ...filters, signal }),
   });
 }
 
@@ -424,7 +424,7 @@ export function useCurrentCashSession(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.currentCashSession(),
-    queryFn: () => billingApi.getCurrentCashSession(),
+    queryFn: ({ signal }) => billingApi.getCurrentCashSession({ signal }),
     enabled,
     staleTime: 5 * 1000,
   });
@@ -434,7 +434,7 @@ export function useCashSessionTotals(sessionId, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: billingKeys.cashSessionTotals(sessionId),
-    queryFn: () => billingApi.getCashSessionTotals(sessionId),
+    queryFn: ({ signal }) => billingApi.getCashSessionTotals(sessionId, { signal }),
     enabled: !!sessionId && enabled,
     staleTime: 5 * 1000,
   });
@@ -739,7 +739,7 @@ export function useDeleteBillingRule() {
 export function useFacilityBillingSettings(facilityId) {
   return useQuery({
     queryKey: billingKeys.facilityBillingSettings(facilityId),
-    queryFn: () => billingApi.getFacilityBillingSettings(facilityId),
+    queryFn: ({ signal }) => billingApi.getFacilityBillingSettings(facilityId, { signal }),
     enabled: !!facilityId,
     staleTime: 5 * 60 * 1000, // 5 minutes - settings don't change often
   });
@@ -752,7 +752,7 @@ export function useFacilityBillingSettings(facilityId) {
 export function useActiveFacilityBillingSettings() {
   return useQuery({
     queryKey: billingKeys.activeFacilityBillingSettings(),
-    queryFn: () => billingApi.getFacilityBillingSettings(),
+    queryFn: ({ signal }) => billingApi.getFacilityBillingSettings(null, { signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
