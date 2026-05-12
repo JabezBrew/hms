@@ -101,6 +101,51 @@ function adaptV2SnapshotToLegacyAdminMonitor() {
   };
 }
 
+function adaptV2SnapshotToMyWork(response, params = {}) {
+  const snapshot = extractV2Snapshot(response);
+  return {
+    date: params.date || new Date().toISOString().slice(0, 10),
+    user_name: null,
+    current_patient: null,
+    upcoming: [],
+    completed: [],
+    metrics: snapshot.metrics || [],
+    meta: {
+      deployment_profile: snapshot.deployment_profile || null,
+      generated_at: snapshot.generated_at || null,
+    },
+  };
+}
+
+function adaptV2AppointmentForDashboard(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
+  return {
+    ...item,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_name: patientName,
+    patient_display_name: patientName,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    start_time: item.starts_at,
+    end_time: item.ends_at,
+  };
+}
+
+function adaptV2AppointmentsToClinicSchedule(response, params = {}) {
+  const date = params.date || new Date().toISOString().slice(0, 10);
+  const appointments = (response?.data || [])
+    .map(adaptV2AppointmentForDashboard)
+    .filter((appointment) => !params.date || appointment.start_time?.slice(0, 10) === params.date);
+  return {
+    date,
+    appointments,
+    current_patient: appointments.find((appointment) => appointment.status === 'checked_in') || null,
+    upcoming: appointments.filter((appointment) => appointment.status === 'scheduled'),
+    completed: appointments.filter((appointment) => appointment.status === 'completed'),
+  };
+}
+
 function adaptV2WardsToCapacity(response) {
   const wards = (response?.data || []).map((ward) => {
     const totalBeds = Number(ward.active_bed_count || 0);
@@ -220,9 +265,15 @@ export const dashboardsApi = {
    */
   getMyWorkDashboard: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return adaptV2SnapshotToMyWork(await v2Api.getDashboardSnapshot(), params);
+      }
       const endpoint = `/dashboards/my-work/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch my work dashboard'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch my work dashboard'));
     }
   },
@@ -234,9 +285,18 @@ export const dashboardsApi = {
    */
   getClinicSchedule: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return adaptV2AppointmentsToClinicSchedule(
+          await v2Api.getAppointments({ query: { limit: 50 } }),
+          params,
+        );
+      }
       const endpoint = `/dashboards/clinic/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch clinic schedule'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch clinic schedule'));
     }
   },
