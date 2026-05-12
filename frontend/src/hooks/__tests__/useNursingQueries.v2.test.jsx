@@ -6,11 +6,18 @@ import {
   useActiveAlerts,
   useAcknowledgeAlert,
   useCompleteTask,
+  useAdministerMedication,
+  useCreateAndAdminister,
+  useCreateMedicationAdministration,
   useCreateNursingTask,
   useCreateShiftHandoff,
   useCreateVitalSigns,
+  useMedicationAdministrationHistory,
+  useMedicationAdministrations,
+  useMedicationsDueNow,
   useNursingAlerts,
   useNursingTasks,
+  useOverdueMedications,
   usePatientMonitoring,
   usePendingDispensingGrouped,
   useShiftHandoffs,
@@ -493,6 +500,338 @@ describe('Rust V2 nursing dashboard hooks', () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/nursing/tasks/task-1/complete',
       expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('loads medication administrations from Rust V2 and adapts medication fields for the UI', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'med-admin-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-12T10:00:00Z',
+              administered_at: null,
+              status: 'scheduled',
+            },
+            {
+              id: 'med-admin-2',
+              admission_case_id: 'admission-2',
+              patient_id: 'patient-2',
+              patient_code: 'MRN-002',
+              patient_display_name: 'Kojo Mensah',
+              medication_name: 'Amoxicillin',
+              scheduled_at: '2026-05-12T11:00:00Z',
+              administered_at: '2026-05-12T11:05:00Z',
+              status: 'administered',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useMedicationAdministrations({ patient: 'patient-1', status: 'scheduled' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'med-admin-1',
+        patient: 'patient-1',
+        patient_mrn: 'MRN-001',
+        patient_name: 'Ama Mensah',
+        medication_name: 'Paracetamol',
+        prescription_name: 'Paracetamol',
+        scheduled_time: '2026-05-12T10:00:00Z',
+      }),
+    ]);
+  });
+
+  it('loads medication administration history from Rust V2 as a paginated shape', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'med-admin-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-12T10:00:00Z',
+              administered_at: null,
+              status: 'scheduled',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useMedicationAdministrationHistory({ patient: 'patient-1', page: 1, page_size: 20 }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data?.results).toHaveLength(1));
+
+    expect(result.current.data).toEqual(expect.objectContaining({
+      count: 1,
+      page: 1,
+      total_pages: 1,
+      has_next: false,
+      results: [expect.objectContaining({ id: 'med-admin-1', patient: 'patient-1' })],
+    }));
+  });
+
+  it('loads due and overdue medication administrations from Rust V2 bounded pages', async () => {
+    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const payload = {
+      data: [
+        {
+          id: 'med-admin-1',
+          admission_case_id: 'admission-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          patient_display_name: 'Ama Mensah',
+          medication_name: 'Paracetamol',
+          scheduled_at: past,
+          administered_at: null,
+          status: 'scheduled',
+        },
+        {
+          id: 'med-admin-2',
+          admission_case_id: 'admission-2',
+          patient_id: 'patient-2',
+          patient_code: 'MRN-002',
+          patient_display_name: 'Kojo Mensah',
+          medication_name: 'Amoxicillin',
+          scheduled_at: future,
+          administered_at: null,
+          status: 'scheduled',
+        },
+      ],
+      page: { limit: 50, has_next: false, next_cursor: null },
+      meta: {},
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+
+    const due = renderHook(() => useMedicationsDueNow(), {
+      wrapper: createWrapper(),
+    });
+    const overdue = renderHook(() => useOverdueMedications(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(due.result.current.data).toHaveLength(1));
+    await waitFor(() => expect(overdue.result.current.data).toHaveLength(1));
+
+    expect(due.result.current.data[0]).toEqual(expect.objectContaining({ id: 'med-admin-1' }));
+    expect(overdue.result.current.data[0]).toEqual(expect.objectContaining({ id: 'med-admin-1' }));
+  });
+
+  it('creates medication administrations through the Rust V2 schedule contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'med-admin-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            medication_name: 'Paracetamol',
+            scheduled_at: '2026-05-12T10:00:00.000Z',
+            administered_at: null,
+            status: 'scheduled',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useCreateMedicationAdministration(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        admission_case_id: 'admission-1',
+        medication_name: 'Paracetamol',
+        scheduled_time: '2026-05-12T10:00:00.000Z',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/medication-administrations',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          admission_case_id: 'admission-1',
+          medication_name: 'Paracetamol',
+          scheduled_at: '2026-05-12T10:00:00.000Z',
+        }),
+      }),
+    );
+  });
+
+  it('administers medication administrations through the Rust V2 administer action', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'med-admin-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            medication_name: 'Paracetamol',
+            scheduled_at: '2026-05-12T10:00:00Z',
+            administered_at: '2026-05-12T10:05:00Z',
+            status: 'administered',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useAdministerMedication(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        medicationId: 'med-admin-1',
+        data: { witness_user_id: 'witness-1' },
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/medication-administrations/med-admin-1/administer',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ witness_user_id: 'witness-1' }),
+      }),
+    );
+  });
+
+  it('creates and administers medication administrations by composing Rust V2 schedule and administer actions', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'med-admin-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-12T10:00:00.000Z',
+              administered_at: null,
+              status: 'scheduled',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'med-admin-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-12T10:00:00.000Z',
+              administered_at: '2026-05-12T10:05:00Z',
+              status: 'administered',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const { result } = renderHook(() => useCreateAndAdminister(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        admission_case_id: 'admission-1',
+        medication_name: 'Paracetamol',
+        scheduled_time: '2026-05-12T10:00:00.000Z',
+        witness_user_id: 'witness-1',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/nursing/medication-administrations',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/nursing/medication-administrations/med-admin-1/administer',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ witness_user_id: 'witness-1' }),
+      }),
     );
   });
 

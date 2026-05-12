@@ -9,6 +9,7 @@ const MAX_MONITORING_PAGE_SIZE = 50;
 const MAX_VITALS_PAGE_SIZE = 50;
 const MAX_TASK_PAGE_SIZE = 50;
 const MAX_ALERT_PAGE_SIZE = 50;
+const MAX_MEDICATION_ADMIN_PAGE_SIZE = 50;
 const MAX_HANDOFF_PAGE_SIZE = 50;
 
 function rethrowAbortError(error) {
@@ -163,6 +164,29 @@ function adaptV2NursingTask(item = {}) {
   };
 }
 
+function adaptV2MedicationAdministration(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
+  const scheduledAt = item.scheduled_at || item.scheduled_time || null;
+  const medicationName = item.medication_name || item.prescription_name || 'Medication';
+  return {
+    ...item,
+    admission: item.admission_case_id,
+    admission_case_id: item.admission_case_id,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_name: patientName,
+    patient_display_name: patientName,
+    medication_name: medicationName,
+    prescription_name: medicationName,
+    scheduled_at: scheduledAt,
+    scheduled_time: scheduledAt,
+    administered_at: item.administered_at || null,
+    status: item.status || 'scheduled',
+  };
+}
+
 function adaptV2PatientVitals(item = {}) {
   return {
     ...item,
@@ -174,6 +198,33 @@ function adaptV2PatientVitals(item = {}) {
     oxygen_saturation: item.oxygen_saturation,
     blood_pressure_systolic: item.systolic_bp,
     blood_pressure_diastolic: item.diastolic_bp,
+  };
+}
+
+function normalizeV2MedicationAdministrationPayload(data = {}) {
+  const admissionCaseId = data.admission_case_id || data.admission_id || data.admission;
+  const medicationName = data.medication_name || data.prescription_name || data.medication || data.name;
+  const scheduledAt = data.scheduled_at || data.scheduled_time;
+  if (!admissionCaseId) {
+    throw new Error('Admission case is required to schedule a Rust V2 medication administration');
+  }
+  if (!medicationName) {
+    throw new Error('Medication name is required to schedule a Rust V2 medication administration');
+  }
+  if (!scheduledAt) {
+    throw new Error('Scheduled time is required to schedule a Rust V2 medication administration');
+  }
+
+  return {
+    admission_case_id: admissionCaseId,
+    medication_name: medicationName,
+    scheduled_at: new Date(scheduledAt).toISOString(),
+  };
+}
+
+function normalizeV2MedicationAdministerPayload(data = {}) {
+  return {
+    witness_user_id: data.witness_user_id || data.witness || null,
   };
 }
 
@@ -268,6 +319,49 @@ function alertMatchesFilters(alert, filters = {}) {
     return false;
   }
   return true;
+}
+
+function medicationAdministrationMatchesFilters(item, filters = {}) {
+  const patient = filters.patient || filters.patient_id;
+  if (patient && item.patient_id !== patient) {
+    return false;
+  }
+  const admission = filters.admission || filters.admission_id || filters.admission_case_id;
+  if (admission && item.admission_case_id !== admission) {
+    return false;
+  }
+  const status = filters.status;
+  if (status && status !== 'all' && item.status !== status) {
+    return false;
+  }
+  if (filters.date && item.scheduled_time?.slice(0, 10) !== filters.date) {
+    return false;
+  }
+  if (filters.start_date && item.scheduled_time?.slice(0, 10) < filters.start_date) {
+    return false;
+  }
+  if (filters.end_date && item.scheduled_time?.slice(0, 10) > filters.end_date) {
+    return false;
+  }
+  return true;
+}
+
+function isDueMedicationAdministration(item) {
+  return item.status === 'scheduled' && item.scheduled_time && Date.parse(item.scheduled_time) <= Date.now();
+}
+
+async function getV2MedicationAdministrations(filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getMedicationAdministrations({
+      query: { limit: MAX_MEDICATION_ADMIN_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .map(adaptV2MedicationAdministration)
+      .filter((item) => medicationAdministrationMatchesFilters(item, filters));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load medication administrations');
+  }
 }
 
 async function getV2NursingAlerts(filters = {}, { signal } = {}) {
@@ -897,7 +991,11 @@ export const useMedicationAdministrations = (filters = {}) => {
   return useQuery({
     // Use primitive values in query key to prevent duplicate calls
     queryKey: nursingKeys.medicationAdministrations(patient, admission, date, status),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2MedicationAdministrations(filters, { signal });
+      }
+
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/medications/?${params.toString()}`);
       // apiClient.get returns data directly, not response.data
@@ -932,7 +1030,24 @@ export const useMedicationAdministrationHistory = (filters = {}, options = {}) =
       page,
       page_size,
     ),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const results = await getV2MedicationAdministrations({
+          patient,
+          status,
+          start_date,
+          end_date,
+        }, { signal });
+        return {
+          count: results.length,
+          results,
+          page,
+          total_pages: 1,
+          has_next: false,
+          has_previous: false,
+        };
+      }
+
       const params = new URLSearchParams();
       if (patient) params.append('patient', patient);
       if (status && status !== 'all') params.append('status', status);
@@ -981,7 +1096,12 @@ export const useMedicationAdministrationHistory = (filters = {}, options = {}) =
 export const useMedicationsDueNow = () => {
   return useQuery({
     queryKey: nursingKeys.medicationsDueNow(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const rows = await getV2MedicationAdministrations({ status: 'scheduled' }, { signal });
+        return rows.filter(isDueMedicationAdministration);
+      }
+
       const response = await apiClient.get('/nursing/medications/due_now/');
       // Ensure we always return an array
       const data = response?.data ?? response;
@@ -995,7 +1115,12 @@ export const useMedicationsDueNow = () => {
 export const useOverdueMedications = () => {
   return useQuery({
     queryKey: nursingKeys.medicationsOverdue(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const rows = await getV2MedicationAdministrations({ status: 'scheduled' }, { signal });
+        return rows.filter(isDueMedicationAdministration);
+      }
+
       const response = await apiClient.get('/nursing/medications/overdue/');
       // Ensure we always return an array
       const data = response?.data ?? response;
@@ -1011,6 +1136,17 @@ export const useCreateMedicationAdministration = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postMedicationAdministrations(
+            normalizeV2MedicationAdministrationPayload(data),
+          );
+          return adaptV2MedicationAdministration(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to schedule medication administration');
+        }
+      }
+
       const response = await apiClient.post('/nursing/medications/', data);
       return response.data;
     },
@@ -1027,6 +1163,18 @@ export const useAdministerMedication = () => {
 
   return useMutation({
     mutationFn: async ({ medicationId, data }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postMedicationAdministrationAdminister(
+            { id: medicationId },
+            normalizeV2MedicationAdministerPayload(data),
+          );
+          return adaptV2MedicationAdministration(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to administer medication');
+        }
+      }
+
       const response = await apiClient.post(`/nursing/medications/${medicationId}/administer/`, data);
       return response.data;
     },
@@ -1045,6 +1193,22 @@ export const useCreateAndAdminister = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const created = await v2Api.postMedicationAdministrations(
+            normalizeV2MedicationAdministrationPayload(data),
+          );
+          const createdAdministration = adaptV2MedicationAdministration(created?.data);
+          const administered = await v2Api.postMedicationAdministrationAdminister(
+            { id: createdAdministration.id },
+            normalizeV2MedicationAdministerPayload(data),
+          );
+          return adaptV2MedicationAdministration(administered?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to create and administer medication');
+        }
+      }
+
       // data: { patient_id, prescription_id, scheduled_time, notes? }
       const response = await apiClient.post('/nursing/medications/create-and-administer/', data);
       return response;
