@@ -10,7 +10,17 @@ const MAX_VITALS_PAGE_SIZE = 50;
 const MAX_TASK_PAGE_SIZE = 50;
 const MAX_ALERT_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_PAGE_SIZE = 50;
+const MAX_FLUID_BALANCE_PAGE_SIZE = 50;
 const MAX_HANDOFF_PAGE_SIZE = 50;
+const DEFAULT_FLUID_BALANCE_SETTINGS = {
+  min_daily_intake_target: 1500,
+  max_daily_output_threshold: 3000,
+  negative_balance_alert_threshold: -500,
+  positive_balance_alert_threshold: 2000,
+  enable_intake_alerts: true,
+  enable_output_alerts: true,
+  enable_balance_alerts: true,
+};
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -187,6 +197,46 @@ function adaptV2MedicationAdministration(item = {}) {
   };
 }
 
+function adaptV2FluidBalanceItem(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
+  const base = {
+    source_id: item.id,
+    admission: item.admission_case_id,
+    admission_case_id: item.admission_case_id,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_name: patientName,
+    patient_display_name: patientName,
+    recorded_at: item.recorded_at,
+    net_ml: item.net_ml ?? ((item.intake_ml || 0) - (item.output_ml || 0)),
+  };
+  const records = [];
+  if ((item.intake_ml || 0) > 0) {
+    records.push({
+      ...base,
+      id: `${item.id}:intake`,
+      entry_type: 'intake',
+      volume_ml: item.intake_ml,
+    });
+  }
+  if ((item.output_ml || 0) > 0) {
+    records.push({
+      ...base,
+      id: `${item.id}:output`,
+      entry_type: 'output',
+      volume_ml: item.output_ml,
+    });
+  }
+  return records.length ? records : [{
+    ...base,
+    id: item.id,
+    entry_type: 'intake',
+    volume_ml: 0,
+  }];
+}
+
 function adaptV2PatientVitals(item = {}) {
   return {
     ...item,
@@ -198,6 +248,22 @@ function adaptV2PatientVitals(item = {}) {
     oxygen_saturation: item.oxygen_saturation,
     blood_pressure_systolic: item.systolic_bp,
     blood_pressure_diastolic: item.diastolic_bp,
+  };
+}
+
+function normalizeV2FluidBalancePayload(data = {}) {
+  const admissionCaseId = data.admission_case_id || data.admission_id || data.admission;
+  if (!admissionCaseId) {
+    throw new Error('Admission case is required to record Rust V2 fluid balance');
+  }
+  const volume = Number.parseInt(data.volume_ml ?? data.amount_ml ?? data.amount ?? 0, 10) || 0;
+  const intake = data.intake_ml ?? (data.entry_type === 'intake' ? volume : 0);
+  const output = data.output_ml ?? (data.entry_type === 'output' ? volume : 0);
+  return {
+    admission_case_id: admissionCaseId,
+    recorded_at: new Date(data.recorded_at || Date.now()).toISOString(),
+    intake_ml: Number.parseInt(intake, 10) || 0,
+    output_ml: Number.parseInt(output, 10) || 0,
   };
 }
 
@@ -361,6 +427,106 @@ async function getV2MedicationAdministrations(filters = {}, { signal } = {}) {
       .filter((item) => medicationAdministrationMatchesFilters(item, filters));
   } catch (error) {
     rethrowV2Error(error, 'Failed to load medication administrations');
+  }
+}
+
+function fluidBalanceMatchesFilters(item, patientId, filters = {}) {
+  if (patientId && item.patient_id !== patientId) {
+    return false;
+  }
+  const admission = filters.admission || filters.admission_id || filters.admission_case_id;
+  if (admission && item.admission_case_id !== admission) {
+    return false;
+  }
+  if (filters.date && item.recorded_at?.slice(0, 10) !== filters.date) {
+    return false;
+  }
+  if (filters.start_date && item.recorded_at?.slice(0, 10) < filters.start_date) {
+    return false;
+  }
+  if (filters.end_date && item.recorded_at?.slice(0, 10) > filters.end_date) {
+    return false;
+  }
+  return true;
+}
+
+function summarizeFluidBalance(records = []) {
+  const totalIntake = records
+    .filter((record) => record.entry_type === 'intake')
+    .reduce((sum, record) => sum + (Number(record.volume_ml) || 0), 0);
+  const totalOutput = records
+    .filter((record) => record.entry_type === 'output')
+    .reduce((sum, record) => sum + (Number(record.volume_ml) || 0), 0);
+  return {
+    total_intake: totalIntake,
+    total_output: totalOutput,
+    balance: totalIntake - totalOutput,
+    intake_breakdown: {},
+    output_breakdown: {},
+  };
+}
+
+function fluidBalanceTrendPoints(records = []) {
+  const byDate = new Map();
+  records.forEach((record) => {
+    const date = record.recorded_at?.slice(0, 10);
+    if (!date) return;
+    const point = byDate.get(date) || { date, intake: 0, output: 0, balance: 0 };
+    if (record.entry_type === 'intake') {
+      point.intake += Number(record.volume_ml) || 0;
+    } else if (record.entry_type === 'output') {
+      point.output += Number(record.volume_ml) || 0;
+    }
+    point.balance = point.intake - point.output;
+    byDate.set(date, point);
+  });
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function deriveFluidBalanceAlerts(summary, settings = DEFAULT_FLUID_BALANCE_SETTINGS) {
+  const alerts = [];
+  if (settings.enable_intake_alerts && summary.total_intake < settings.min_daily_intake_target) {
+    alerts.push({
+      type: 'low_intake',
+      severity: 'warning',
+      message: 'Daily intake is below target',
+    });
+  }
+  if (settings.enable_output_alerts && summary.total_output > settings.max_daily_output_threshold) {
+    alerts.push({
+      type: 'high_output',
+      severity: 'warning',
+      message: 'Daily output is above threshold',
+    });
+  }
+  if (settings.enable_balance_alerts && summary.balance < settings.negative_balance_alert_threshold) {
+    alerts.push({
+      type: 'negative_balance',
+      severity: 'warning',
+      message: 'Fluid balance is below threshold',
+    });
+  }
+  if (settings.enable_balance_alerts && summary.balance > settings.positive_balance_alert_threshold) {
+    alerts.push({
+      type: 'positive_balance',
+      severity: 'warning',
+      message: 'Fluid balance is above threshold',
+    });
+  }
+  return alerts;
+}
+
+async function getV2FluidBalanceEntries(patientId, filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getFluidBalanceEntries({
+      query: { limit: MAX_FLUID_BALANCE_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .filter((item) => fluidBalanceMatchesFilters(item, patientId, filters))
+      .flatMap(adaptV2FluidBalanceItem);
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load fluid balance entries');
   }
 }
 
@@ -1674,6 +1840,10 @@ export const useFluidBalance = (patientId, filters = {}, options = {}) => {
       end_date,
     ),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2FluidBalanceEntries(patientId, filters, { signal });
+      }
+
       const params = new URLSearchParams();
       if (patientId) params.append('patient', patientId);
       Object.entries(filters).forEach(([key, value]) => {
@@ -1704,6 +1874,11 @@ export const useFluidBalanceSummary = (patientId, date = null, options = {}) => 
   return useQuery({
     queryKey: nursingKeys.fluidBalanceSummary(patientId, date),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const records = await getV2FluidBalanceEntries(patientId, { date }, { signal });
+        return summarizeFluidBalance(records);
+      }
+
       const params = new URLSearchParams();
       params.append('patient', patientId);
       if (date) params.append('date', date);
@@ -1736,6 +1911,12 @@ export const useTodayFluidBalance = (patientId, options = {}) => {
   return useQuery({
     queryKey: nursingKeys.fluidBalanceToday(patientId),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const today = new Date().toISOString().slice(0, 10);
+        const records = await getV2FluidBalanceEntries(patientId, { date: today }, { signal });
+        return summarizeFluidBalance(records);
+      }
+
       const response = await apiClient.get(`/nursing/fluid-balance/today_balance/?patient=${patientId}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
@@ -1771,6 +1952,15 @@ export const useFluidBalanceTrends = (patientId, filters = {}, options = {}) => 
       end_date,
     ),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const records = await getV2FluidBalanceEntries(patientId, {
+          admission: admission_id || admission,
+          start_date,
+          end_date,
+        }, { signal });
+        return fluidBalanceTrendPoints(records);
+      }
+
       const params = new URLSearchParams();
       params.append('patient', patientId);
       Object.entries(filters).forEach(([key, value]) => {
@@ -1798,6 +1988,15 @@ export const useCreateFluidBalance = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postFluidBalanceEntries(normalizeV2FluidBalancePayload(data));
+          return adaptV2FluidBalanceItem(response?.data)[0];
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to record fluid balance');
+        }
+      }
+
       const response = await apiClient.post('/nursing/fluid-balance/', data);
       // apiClient.post returns data directly, not response.data
       return response?.data ?? response;
@@ -1823,6 +2022,10 @@ export const useDeleteFluidBalance = () => {
 
   return useMutation({
     mutationFn: async (entryId) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 does not expose fluid balance deletion yet.');
+      }
+
       await apiClient.delete(`/nursing/fluid-balance/${entryId}/`);
       return entryId;
     },
@@ -1841,17 +2044,13 @@ export const useFluidBalanceSettings = () => {
   return useQuery({
     queryKey: nursingKeys.fluidBalanceSettings(),
     queryFn: async () => {
+      if (isRustV2ApiMode()) {
+        return DEFAULT_FLUID_BALANCE_SETTINGS;
+      }
+
       const response = await apiClient.get('/settings/fluid-balance/');
       const data = response?.data ?? response;
-      return data ?? {
-        min_daily_intake_target: 1500,
-        max_daily_output_threshold: 3000,
-        negative_balance_alert_threshold: -500,
-        positive_balance_alert_threshold: 2000,
-        enable_intake_alerts: true,
-        enable_output_alerts: true,
-        enable_balance_alerts: true,
-      };
+      return data ?? DEFAULT_FLUID_BALANCE_SETTINGS;
     },
     staleTime: 300000, // 5 minutes - settings don't change often
     refetchOnWindowFocus: false,
@@ -1866,7 +2065,17 @@ export const useFluidBalanceSettings = () => {
 export const useFluidBalanceAlerts = (patientId, date = null) => {
   return useQuery({
     queryKey: nursingKeys.fluidBalanceAlerts(patientId, date),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const records = await getV2FluidBalanceEntries(patientId, { date }, { signal });
+        const summary = summarizeFluidBalance(records);
+        return {
+          alerts: deriveFluidBalanceAlerts(summary),
+          thresholds: DEFAULT_FLUID_BALANCE_SETTINGS,
+          summary,
+        };
+      }
+
       const params = new URLSearchParams();
       params.append('patient', patientId);
       if (date) params.append('date', date);

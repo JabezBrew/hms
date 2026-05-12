@@ -9,9 +9,16 @@ import {
   useAdministerMedication,
   useCreateAndAdminister,
   useCreateMedicationAdministration,
+  useCreateFluidBalance,
   useCreateNursingTask,
   useCreateShiftHandoff,
   useCreateVitalSigns,
+  useDeleteFluidBalance,
+  useFluidBalance,
+  useFluidBalanceAlerts,
+  useFluidBalanceSettings,
+  useFluidBalanceSummary,
+  useFluidBalanceTrends,
   useMedicationAdministrationHistory,
   useMedicationAdministrations,
   useMedicationsDueNow,
@@ -22,6 +29,7 @@ import {
   usePendingDispensingGrouped,
   useShiftHandoffs,
   useTodayTasks,
+  useTodayFluidBalance,
   useVitalSigns,
   useVitalSignsTrends,
 } from '../useNursingQueries';
@@ -833,6 +841,275 @@ describe('Rust V2 nursing dashboard hooks', () => {
         body: JSON.stringify({ witness_user_id: 'witness-1' }),
       }),
     );
+  });
+
+  it('loads fluid balance entries from Rust V2 and expands intake/output records for the UI', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'fluid-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              recorded_at: '2026-05-12T08:00:00Z',
+              intake_ml: 500,
+              output_ml: 0,
+              net_ml: 500,
+            },
+            {
+              id: 'fluid-2',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              recorded_at: '2026-05-12T09:00:00Z',
+              intake_ml: 0,
+              output_ml: 200,
+              net_ml: -200,
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useFluidBalance('patient-1', { date: '2026-05-12' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/fluid-balance?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'fluid-1:intake',
+        source_id: 'fluid-1',
+        patient: 'patient-1',
+        entry_type: 'intake',
+        volume_ml: 500,
+        recorded_at: '2026-05-12T08:00:00Z',
+      }),
+      expect.objectContaining({
+        id: 'fluid-2:output',
+        source_id: 'fluid-2',
+        entry_type: 'output',
+        volume_ml: 200,
+      }),
+    ]);
+  });
+
+  it('derives fluid balance summaries and trends from Rust V2 bounded entries', async () => {
+    const payload = {
+      data: [
+        {
+          id: 'fluid-1',
+          admission_case_id: 'admission-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          patient_display_name: 'Ama Mensah',
+          recorded_at: '2026-05-12T08:00:00Z',
+          intake_ml: 500,
+          output_ml: 0,
+          net_ml: 500,
+        },
+        {
+          id: 'fluid-2',
+          admission_case_id: 'admission-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          patient_display_name: 'Ama Mensah',
+          recorded_at: '2026-05-12T09:00:00Z',
+          intake_ml: 0,
+          output_ml: 200,
+          net_ml: -200,
+        },
+      ],
+      page: { limit: 50, has_next: false, next_cursor: null },
+      meta: {},
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+
+    const summary = renderHook(() => useFluidBalanceSummary('patient-1', '2026-05-12'), {
+      wrapper: createWrapper(),
+    });
+    const today = renderHook(() => useTodayFluidBalance('patient-1'), {
+      wrapper: createWrapper(),
+    });
+    const trends = renderHook(
+      () => useFluidBalanceTrends('patient-1', { start_date: '2026-05-12', end_date: '2026-05-12' }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(summary.result.current.data?.total_intake).toBe(500));
+    await waitFor(() => expect(today.result.current.data?.total_output).toBe(200));
+    await waitFor(() => expect(trends.result.current.data).toHaveLength(1));
+
+    expect(summary.result.current.data).toEqual(expect.objectContaining({
+      total_intake: 500,
+      total_output: 200,
+      balance: 300,
+    }));
+    expect(trends.result.current.data[0]).toEqual(expect.objectContaining({
+      date: '2026-05-12',
+      intake: 500,
+      output: 200,
+      balance: 300,
+    }));
+  });
+
+  it('creates fluid balance entries through the Rust V2 fluid balance contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'fluid-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            recorded_at: '2026-05-12T08:00:00.000Z',
+            intake_ml: 500,
+            output_ml: 0,
+            net_ml: 500,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useCreateFluidBalance(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        admission: 'admission-1',
+        entry_type: 'intake',
+        volume_ml: 500,
+        recorded_at: '2026-05-12T08:00:00.000Z',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/fluid-balance',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          admission_case_id: 'admission-1',
+          recorded_at: '2026-05-12T08:00:00.000Z',
+          intake_ml: 500,
+          output_ml: 0,
+        }),
+      }),
+    );
+  });
+
+  it('fails closed for fluid balance deletion because Rust V2 has no delete contract', async () => {
+    const { result } = renderHook(() => useDeleteFluidBalance(), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync('fluid-1')).rejects.toThrow(
+      'Rust V2 does not expose fluid balance deletion yet.',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses local fluid balance settings defaults in Rust V2 mode', async () => {
+    const { result } = renderHook(() => useFluidBalanceSettings(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data?.min_daily_intake_target).toBe(1500));
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(result.current.data).toEqual(expect.objectContaining({
+      max_daily_output_threshold: 3000,
+      negative_balance_alert_threshold: -500,
+      positive_balance_alert_threshold: 2000,
+    }));
+  });
+
+  it('derives fluid balance alerts from Rust V2 entries and local thresholds', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'fluid-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              recorded_at: '2026-05-12T08:00:00Z',
+              intake_ml: 100,
+              output_ml: 0,
+              net_ml: 100,
+            },
+            {
+              id: 'fluid-2',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              recorded_at: '2026-05-12T09:00:00Z',
+              intake_ml: 0,
+              output_ml: 900,
+              net_ml: -900,
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useFluidBalanceAlerts('patient-1', '2026-05-12'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data?.alerts?.length).toBeGreaterThan(0));
+
+    expect(result.current.data).toEqual(expect.objectContaining({
+      alerts: expect.arrayContaining([expect.objectContaining({ type: 'negative_balance' })]),
+      summary: expect.objectContaining({ total_intake: 100, total_output: 900, balance: -800 }),
+    }));
   });
 
   it('loads the pharmacy dispensing surface from Rust V2 without exposing dispensed records as pending work', async () => {
