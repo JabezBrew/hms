@@ -206,4 +206,30 @@ describe('Rust V2 drug safety allergy bridge', () => {
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('fails closed for drug knowledge and alert operations without Rust V2 contracts', async () => {
+    await expect(
+      drugSafetyApi.checkPrescriptionSafety({
+        patient_id: 'patient-1',
+        medication_name: 'Warfarin',
+      }),
+    ).rejects.toThrow('/api/v2 drug safety check contract is unavailable in Rust V2 mode.');
+
+    await expect(drugSafetyApi.searchDrugs('warfarin')).rejects.toThrow(
+      '/api/v2 drug search contract is unavailable in Rust V2 mode.',
+    );
+    await expect(drugSafetyApi.getDrugForms('11289')).rejects.toThrow(
+      '/api/v2 drug forms contract is unavailable in Rust V2 mode.',
+    );
+    await expect(drugSafetyApi.getAlerts({ patient_id: 'patient-1' })).rejects.toThrow(
+      '/api/v2 drug safety alerts contract is unavailable in Rust V2 mode.',
+    );
+    await expect(drugSafetyApi.getAlert('alert-1')).rejects.toThrow(
+      '/api/v2 drug safety alerts contract is unavailable in Rust V2 mode.',
+    );
+    await expect(drugSafetyApi.overrideAlert('alert-1', 'Clinician reviewed')).rejects.toThrow(
+      '/api/v2 drug safety alerts contract is unavailable in Rust V2 mode.',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

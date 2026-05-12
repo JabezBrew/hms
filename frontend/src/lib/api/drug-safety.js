@@ -98,6 +98,10 @@ function throwRustV2AllergyUnsupported() {
   throw new Error(RUST_V2_ALLERGY_OPERATION_UNSUPPORTED);
 }
 
+function throwRustV2Unsupported(contractName) {
+  throw new Error(`${contractName} is unavailable in Rust V2 mode.`);
+}
+
 export const drugSafetyApi = {
   /**
    * Perform comprehensive drug safety check
@@ -105,6 +109,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Safety check response with alerts
    */
   checkPrescriptionSafety: async (data) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2Unsupported('/api/v2 drug safety check contract');
+    }
     try {
       return await apiClient.post('/drug-safety/safety/check/', data);
     } catch (error) {
@@ -119,6 +126,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Search results { results: [...] }
    */
   searchDrugs: async (query, maxResults = 10) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2Unsupported('/api/v2 drug search contract');
+    }
     try {
       const params = new URLSearchParams({ q: query, max_results: maxResults });
       return await apiClient.get(`/drug-safety/safety/search_drugs/?${params.toString()}`);
@@ -133,6 +143,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Drug forms { forms: [...] }
    */
   getDrugForms: async (rxcui) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2Unsupported('/api/v2 drug forms contract');
+    }
     try {
       const params = new URLSearchParams({ rxcui });
       return await apiClient.get(`/drug-safety/safety/drug_forms/?${params.toString()}`);
@@ -320,6 +333,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Array>} List of safety alerts
    */
   getAlerts: async (params = {}, options = {}) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2Unsupported('/api/v2 drug safety alerts contract');
+    }
     try {
       const response = await apiClient.getWithPagination('/drug-safety/alerts/', {
         ...options,
@@ -338,6 +354,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Alert data
    */
   getAlert: async (id) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2Unsupported('/api/v2 drug safety alerts contract');
+    }
     try {
       return await apiClient.get(`/drug-safety/alerts/${id}/`);
     } catch (error) {
@@ -352,6 +371,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Overridden alert data
    */
   overrideAlert: async (id, overrideReason) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2Unsupported('/api/v2 drug safety alerts contract');
+    }
     try {
       return await apiClient.post(`/drug-safety/alerts/${id}/override/`, {
         override_reason: overrideReason,
