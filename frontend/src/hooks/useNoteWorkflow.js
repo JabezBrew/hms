@@ -6,6 +6,8 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries';
 import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
 import { timelineKeys } from '@/hooks/useTimelineQueries';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 
 /**
  * Derive workflow steps from a template structure
@@ -204,6 +206,7 @@ export function useNoteWorkflow(patientId, options = {}) {
   // Start workflow mutation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId, template, templateRevisionId }) => {
+      ensureRustV2WorkflowSupported('Clinical-note workflow start');
       const data = await apiClient.post('/workflows/clinical-note/start/', {
         patient_id: patientId,
         note_type: template.category || 'custom',  // Send category as note_type
@@ -225,6 +228,7 @@ export function useNoteWorkflow(patientId, options = {}) {
   // Update step mutation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId, stepData, nextStep, noteFields }) => {
+      ensureRustV2WorkflowSupported('Clinical-note workflow step update');
       const data = await apiClient.patch(
         `/workflows/${workflowId}/clinical-note/step/`,
         {
@@ -249,6 +253,7 @@ export function useNoteWorkflow(patientId, options = {}) {
   // Save draft mutation
   const saveDraftMutation = useMutation({
     mutationFn: async ({ workflowId, contextData }) => {
+      ensureRustV2WorkflowSupported('Clinical-note workflow draft save');
       const data = await apiClient.post(
         `/workflows/${workflowId}/save-draft/`,
         {
@@ -367,6 +372,12 @@ export function useNoteWorkflow(patientId, options = {}) {
     setFormData(nextFormData);
 
     setCurrentStep(0);
+
+    if (isRustV2ApiMode()) {
+      setWorkflowId(null);
+      setCurrentStep(1);
+      return;
+    }
 
     try {
       await startWorkflowMutation.mutateAsync({

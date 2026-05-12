@@ -5,6 +5,7 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
 import { timelineKeys } from '@/hooks/useTimelineQueries';
 import { referralKeys } from '@/hooks/useReferralQueries';
+import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 
 // Hoist RegExp patterns to module scope for performance
 const UNDERSCORE_REGEX = /_/g;
@@ -191,6 +192,7 @@ export function useConsultationWorkflow(patientId, options = {}) {
   // Start workflow mutation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId, referralId, appointmentId, encounterId, initialData }) => {
+      ensureRustV2WorkflowSupported('Consultation workflow start');
       const response = await apiClient.post('/workflows/consultation/start/', {
         patient_id: patientId,
         referral_id: referralId || undefined,
@@ -215,6 +217,7 @@ export function useConsultationWorkflow(patientId, options = {}) {
   // Update step mutation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId, stepData }) => {
+      ensureRustV2WorkflowSupported('Consultation workflow step update');
       const response = await apiClient.patch(
         `/workflows/${workflowId}/consultation/step/`,
         { step_data: stepData }
@@ -233,6 +236,7 @@ export function useConsultationWorkflow(patientId, options = {}) {
   // Complete workflow mutation
   const completeWorkflowMutation = useMutation({
     mutationFn: async ({ workflowId, finalData }) => {
+      ensureRustV2WorkflowSupported('Consultation workflow completion');
       const response = await apiClient.post(
         `/workflows/${workflowId}/consultation/complete/`,
         { final_data: finalData }

@@ -4,6 +4,7 @@ import { apiClient } from '@/lib/api-client';
 import { patientKeys } from '@/features/patients/hooks/usePatientQueries';
 import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
 import { timelineKeys } from '@/hooks/useTimelineQueries';
+import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 
 /**
  * Ward Round workflow step definitions
@@ -174,6 +175,7 @@ export function useWardRoundWorkflow(patientId, admissionId, options = {}) {
   // Start workflow mutation
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId, admissionId, initialData }) => {
+      ensureRustV2WorkflowSupported('Ward-round workflow start');
       const response = await apiClient.post('/workflows/ward-round/start/', {
         patient_id: patientId,
         admission_id: admissionId,
@@ -196,6 +198,7 @@ export function useWardRoundWorkflow(patientId, admissionId, options = {}) {
   // Update step mutation
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId, stepData }) => {
+      ensureRustV2WorkflowSupported('Ward-round workflow step update');
       const response = await apiClient.patch(
         `/workflows/${workflowId}/ward-round/step/`,
         { step_data: stepData }
@@ -214,6 +217,7 @@ export function useWardRoundWorkflow(patientId, admissionId, options = {}) {
   // Complete workflow mutation
   const completeWorkflowMutation = useMutation({
     mutationFn: async ({ workflowId, finalData }) => {
+      ensureRustV2WorkflowSupported('Ward-round workflow completion');
       const response = await apiClient.post(
         `/workflows/${workflowId}/ward-round/complete/`,
         { final_data: finalData }

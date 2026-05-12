@@ -6,6 +6,7 @@ import { clinicalNotesKeys } from '@/hooks/useClinicalNotesQueries';
 import { timelineKeys } from '@/hooks/useTimelineQueries';
 import { wardKeys } from '@/features/wards/hooks/useWardQueries';
 import { dischargeKeys } from '@/features/discharge/hooks/useDischargeCaseQueries';
+import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 
 const DISCHARGE_STEPS = [
   {
@@ -167,6 +168,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
 
   const startWorkflowMutation = useMutation({
     mutationFn: async ({ patientId: pid, admissionId: aid, initialData }) => {
+      ensureRustV2WorkflowSupported('Discharge workflow start');
       return apiClient.post('/workflows/discharge/start/', {
         patient_id: pid,
         admission_id: aid,
@@ -188,6 +190,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
 
   const updateStepMutation = useMutation({
     mutationFn: async ({ workflowId: id, stepData }) => {
+      ensureRustV2WorkflowSupported('Discharge workflow step update');
       return apiClient.patch(`/workflows/${id}/discharge/step/`, {
         step_data: stepData,
       });
@@ -204,6 +207,7 @@ export function useDischargeWorkflow(patientId, admissionId) {
 
   const completeWorkflowMutation = useMutation({
     mutationFn: async ({ workflowId: id, finalData, idempotencyKey }) => {
+      ensureRustV2WorkflowSupported('Discharge workflow completion');
       return apiClient.post(`/workflows/${id}/discharge/complete/`, {
         final_data: finalData,
         idempotency_key: idempotencyKey,
