@@ -1,7 +1,18 @@
 import { apiClient, handleApiError } from '@/lib/api-client'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
+
+const RUST_V2_AI_DEFERRED_MESSAGE =
+  'AI assistant features are intentionally deferred in Rust V2 pending product decisions on model provider, PHI boundary, audit retention, safety review, and rollout controls.'
+
+function throwIfRustV2AiDeferred() {
+  if (isRustV2ApiMode()) {
+    throw new Error(RUST_V2_AI_DEFERRED_MESSAGE)
+  }
+}
 
 export const aiAssistantApi = {
   parseOmniIntent: async ({ text, context } = {}) => {
+    throwIfRustV2AiDeferred()
     try {
       return await apiClient.post('/ai/omni/parse/', {
         text,
@@ -13,6 +24,7 @@ export const aiAssistantApi = {
   },
 
   executeOmniPreview: async ({ text, intent, context } = {}) => {
+    throwIfRustV2AiDeferred()
     const payload = {}
     if (text !== undefined && text !== null) {
       payload.text = String(text)
@@ -32,6 +44,7 @@ export const aiAssistantApi = {
   },
 
   interpretLabResult: async ({ resultId, audience = 'clinician' } = {}) => {
+    throwIfRustV2AiDeferred()
     try {
       return await apiClient.post('/ai/labs/interpret/', {
         result_id: resultId,
@@ -43,6 +56,7 @@ export const aiAssistantApi = {
   },
 
   interpretLabOrder: async ({ orderId, audience = 'clinician' } = {}) => {
+    throwIfRustV2AiDeferred()
     try {
       return await apiClient.post('/ai/labs/interpret/', {
         order_id: orderId,
@@ -59,6 +73,7 @@ export const aiAssistantApi = {
     focus = 'handoff',
     encounterId,
   } = {}) => {
+    throwIfRustV2AiDeferred()
     if (!patientId) {
       throw new Error('Patient ID is required for chronicle summary')
     }
@@ -85,6 +100,7 @@ export const aiAssistantApi = {
     encounterId,
     constraints,
   } = {}) => {
+    throwIfRustV2AiDeferred()
     if (!patientId) {
       throw new Error('Patient ID is required for chronicle Q&A')
     }
@@ -117,6 +133,7 @@ export const aiAssistantApi = {
     encounterId,
     prompt,
   } = {}) => {
+    throwIfRustV2AiDeferred()
     if (!patientId) {
       throw new Error('Patient ID is required for note draft generation')
     }
@@ -153,6 +170,7 @@ export const aiAssistantApi = {
     encounterId,
     noteData,
   } = {}) => {
+    throwIfRustV2AiDeferred()
     if (!patientId) {
       throw new Error('Patient ID is required for note lint')
     }
