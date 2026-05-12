@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 import {
   useCreateConsentGrant,
@@ -57,6 +58,11 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
   const consentMutation = useCreateConsentGrant();
   const tokenMutation = useIssueConsentToken();
   const exportMutation = useCreateRecordExport();
+  const rustV2Mode = isRustV2ApiMode();
+  const workflowSteps = useMemo(
+    () => (rustV2Mode ? STEP_CONFIG.filter((step) => step.id === "consent") : STEP_CONFIG),
+    [rustV2Mode]
+  );
 
   const patientName = useMemo(() => {
     if (!patient) return "Patient";
@@ -81,11 +87,13 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
     }
   }, [open]);
 
-  const currentStep = STEP_CONFIG[stepIndex];
-  const identityMissing = !patientIdentityId;
+  const safeStepIndex = Math.min(stepIndex, workflowSteps.length - 1);
+  const currentStep = workflowSteps[safeStepIndex];
+  const patientShareId = patientIdentityId || (rustV2Mode ? patient?.id || patient?.local_data?.id : null);
+  const identityMissing = !patientShareId;
 
   const handleCreateReferral = async () => {
-    if (!patientIdentityId) {
+    if (!patientShareId) {
       toast.error("Missing MPI identity", { description: "Patient identity is required." });
       return;
     }
@@ -96,12 +104,12 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
 
     try {
       const created = await referralMutation.mutateAsync({
-        patient_identity_id: patientIdentityId,
+        patient_identity_id: patientShareId,
         target_facility_code: targetFacilityCode.trim().toUpperCase(),
         reason_code: reasonCode.trim(),
       });
       setReferral(created);
-      setStepIndex(1);
+      setStepIndex((prev) => Math.min(prev + 1, workflowSteps.length - 1));
       toast.success("Referral requested", {
         description: `Referral sent to ${created.target_facility_code}.`,
       });
@@ -111,7 +119,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
   };
 
   const handleGrantConsent = async () => {
-    if (!patientIdentityId) {
+    if (!patientShareId) {
       toast.error("Missing MPI identity", { description: "Patient identity is required." });
       return;
     }
@@ -132,14 +140,15 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
 
     try {
       const created = await consentMutation.mutateAsync({
-        patient_identity_id: patientIdentityId,
+        patient_id: rustV2Mode ? patientShareId : undefined,
+        patient_identity_id: patientShareId,
         target_facility_code: targetFacilityCode.trim().toUpperCase(),
         scope: "full_record",
         reason: consentReason.trim(),
         expires_at: expiresAt,
       });
       setConsent(created);
-      setStepIndex(2);
+      setStepIndex((prev) => Math.min(prev + 1, workflowSteps.length - 1));
       toast.success("Consent granted", {
         description: `Consent active for ${created.target_facility_code}.`,
       });
@@ -174,14 +183,14 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
       toast.error("Token required", { description: "Issue an access token first." });
       return;
     }
-    if (!patientIdentityId) {
+    if (!patientShareId) {
       toast.error("Missing MPI identity");
       return;
     }
 
     try {
       const response = await exportMutation.mutateAsync({
-        patient_identity_id: patientIdentityId,
+        patient_identity_id: patientShareId,
         target_facility_code: consent?.target_facility_code || targetFacilityCode.trim().toUpperCase(),
         consent_token: issuedToken,
       });
@@ -241,10 +250,12 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {!patientIdentityId && (
+        {identityMissing && (
           <Card className="border border-rose-200 bg-rose-50">
             <CardContent className="p-4 text-sm text-rose-700">
-              MPI identity is missing for this patient. Create the patient identity before sharing records.
+              {rustV2Mode
+                ? "Patient record id is missing. Open a valid patient before sharing records."
+                : "MPI identity is missing for this patient. Create the patient identity before sharing records."}
             </CardContent>
           </Card>
         )}
@@ -256,7 +267,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
                 <p className="font-display text-lg text-foreground">{currentStep.title}</p>
               </div>
               <Badge variant="secondary" className="font-mono text-xs">
-                Step {stepIndex + 1} of {STEP_CONFIG.length}
+                Step {safeStepIndex + 1} of {workflowSteps.length}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">{currentStep.description}</p>
@@ -264,10 +275,10 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
         </Card>
 
         <div className="flex items-center gap-3">
-          {STEP_CONFIG.map((step, index) => {
+          {workflowSteps.map((step, index) => {
             const StepIcon = step.icon;
-            const isActive = index === stepIndex;
-            const isDone = index < stepIndex;
+            const isActive = index === safeStepIndex;
+            const isDone = index < safeStepIndex;
             return (
               <div
                 key={step.id}
@@ -301,7 +312,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
             </div>
           </div>
 
-          {stepIndex === 0 && (
+          {currentStep.id === "referral" && (
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase text-muted-foreground">
                 Referral Reason Code
@@ -315,7 +326,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
             </div>
           )}
 
-          {stepIndex === 1 && (
+          {currentStep.id === "consent" && (
             <>
               <div className="space-y-2">
                 <Label className="font-mono text-xs uppercase text-muted-foreground">
@@ -342,7 +353,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
             </>
           )}
 
-          {stepIndex === 2 && (
+          {currentStep.id === "token" && (
             <div className="space-y-3">
               <Label className="font-mono text-xs uppercase text-muted-foreground">
                 Access Token
@@ -422,7 +433,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
           Cancel
         </Button>
         <div className="flex items-center gap-2">
-          {stepIndex > 0 && (
+          {safeStepIndex > 0 && (
             <Button
               variant="outline"
               onClick={() => setStepIndex((prev) => Math.max(prev - 1, 0))}
@@ -432,7 +443,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
             </Button>
           )}
 
-          {stepIndex === 0 && (
+          {currentStep.id === "referral" && (
             <Button
               onClick={handleCreateReferral}
               className="font-mono text-xs"
@@ -442,7 +453,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
             </Button>
           )}
 
-          {stepIndex === 1 && (
+          {currentStep.id === "consent" && (
             <Button
               onClick={handleGrantConsent}
               className="font-mono text-xs"
@@ -452,7 +463,7 @@ const CrossFacilitySharePanel = ({ open, onClose, patient, patientIdentityId }) 
             </Button>
           )}
 
-          {stepIndex === 2 && (
+          {currentStep.id === "token" && (
             <Button
               onClick={issuedToken ? handleCreateExport : handleIssueToken}
               className="font-mono text-xs"
