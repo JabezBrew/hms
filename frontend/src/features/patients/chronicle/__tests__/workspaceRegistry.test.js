@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { labKeys } from '@/features/laboratory/hooks';
 import { drugSafetyKeys } from '@/hooks/useDrugSafetyQueries';
+import { drugSafetyApi } from '@/shared/api/drugSafety';
 import { IMMUTABLE_METADATA_GC_TIME } from '@/lib/react-query';
 import {
   buildChronicleWorkspaceProps,
@@ -128,7 +129,7 @@ describe('chronicle workspace registry', () => {
     });
   });
 
-  it('prefetches prescription workspace dependencies with patient-scoped allergy data', () => {
+  it('prefetches prescription workspace dependencies with patient-scoped allergy data', async () => {
     const loaders = {
       prescription: vi.fn(),
     };
@@ -148,6 +149,17 @@ describe('chronicle workspace registry', () => {
         queryKey: drugSafetyKeys.patientAllergies('patient-1'),
       }),
     );
+
+    const [{ queryFn }] = queryClient.prefetchQuery.mock.calls[0];
+    const allergySpy = vi
+      .spyOn(drugSafetyApi, 'getPatientAllergies')
+      .mockResolvedValueOnce({ count: 0, allergies: [] });
+    const signal = new AbortController().signal;
+
+    await queryFn({ signal });
+
+    expect(allergySpy).toHaveBeenCalledWith('patient-1', { signal });
+    allergySpy.mockRestore();
   });
 
   it('loads the trend review workspace without extra metadata prefetches', () => {

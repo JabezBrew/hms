@@ -72,7 +72,7 @@ export function usePatientAllergies(patientId, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: drugSafetyKeys.patientAllergies(patientId),
-    queryFn: () => drugSafetyApi.getPatientAllergies(patientId),
+    queryFn: ({ signal }) => drugSafetyApi.getPatientAllergies(patientId, { signal }),
     enabled: !!patientId && enabled,
     staleTime: 60000, // 1 minute - allergies don't change often
     refetchOnWindowFocus: false,

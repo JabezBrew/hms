@@ -71,7 +71,7 @@ export function prefetchChronicleWorkspaceResources(
   if (workspaceId === 'prescription' && patientLocalId) {
     void queryClient.prefetchQuery({
       queryKey: drugSafetyKeys.patientAllergies(patientLocalId),
-      queryFn: () => drugSafetyApi.getPatientAllergies(patientLocalId),
+      queryFn: ({ signal }) => drugSafetyApi.getPatientAllergies(patientLocalId, { signal }),
       staleTime: 60 * 1000,
     });
     return;

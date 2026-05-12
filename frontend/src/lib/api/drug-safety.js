@@ -2,6 +2,12 @@
  * Drug Safety API service
  */
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
+
+const RUST_V2_ALLERGY_OPERATION_UNSUPPORTED =
+  'Drug safety allergy operation is not supported by Rust V2';
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -13,6 +19,83 @@ function normalizeListResponse(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.results)) return response.results;
   return [];
+}
+
+function getV2AllergyLimit(params = {}) {
+  const requested = Number(params.limit || params.page_size || 50);
+  return Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 100) : 50;
+}
+
+function adaptV2Allergy(allergy) {
+  const isActive = (allergy.status || 'active') === 'active';
+  return {
+    id: allergy.id,
+    patient: allergy.patient_id,
+    patient_id: allergy.patient_id,
+    allergen_name: allergy.substance,
+    substance: allergy.substance,
+    reaction_description: allergy.reaction || '',
+    severity: allergy.severity || 'unknown',
+    status: allergy.status || 'active',
+    is_active: isActive,
+    allergy_type: 'other',
+    allergy_type_display: 'Other',
+    notes: '',
+    created_at: allergy.created_at,
+    created_by_name: 'HMS V2',
+    verified_by: null,
+    verified_by_name: null,
+    verified_at: null,
+  };
+}
+
+function adaptV2PatientAllergiesResponse(response) {
+  const allergies = Array.isArray(response?.data)
+    ? response.data.map(adaptV2Allergy)
+    : [];
+  return {
+    count: allergies.length + (response?.page?.has_next ? 1 : 0),
+    allergies,
+  };
+}
+
+function normalizeAllergySeverity(value) {
+  const severity = String(value || 'unknown').trim().toLowerCase();
+  if (severity === 'life_threatening' || severity === 'critical') {
+    return 'severe';
+  }
+  if (['mild', 'moderate', 'severe', 'unknown'].includes(severity)) {
+    return severity;
+  }
+  return 'unknown';
+}
+
+function normalizeCreateAllergyPayload(data = {}) {
+  const patientId = data.patient_id || data.patient;
+  const substance = String(data.substance || data.allergen_name || '').trim();
+  if (!patientId) {
+    throw new Error('Patient ID is required to create an allergy in Rust V2');
+  }
+  if (!substance) {
+    throw new Error('Allergen name is required to create an allergy in Rust V2');
+  }
+
+  return {
+    patientId,
+    payload: {
+      substance,
+      reaction: data.reaction || data.reaction_description || null,
+      severity: normalizeAllergySeverity(data.severity),
+    },
+  };
+}
+
+function getPatientIdFromAllergyParams(params = {}) {
+  return params.patient_id || params.patient || params.patientId;
+}
+
+function throwRustV2AllergyUnsupported() {
+  throw new Error(RUST_V2_ALLERGY_OPERATION_UNSUPPORTED);
 }
 
 export const drugSafetyApi = {
@@ -63,11 +146,28 @@ export const drugSafetyApi = {
    * @param {string} patientId - Patient ID
    * @returns {Promise<Object>} Patient allergies { count, allergies: [...] }
    */
-  getPatientAllergies: async (patientId) => {
+  getPatientAllergies: async (patientId, options = {}) => {
+    if (!patientId) {
+      return { count: 0, allergies: [] };
+    }
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPatientAllergies(
+          { patient_id: patientId },
+          {
+            query: { limit: getV2AllergyLimit(options) },
+            signal: options.signal,
+          },
+        );
+        return adaptV2PatientAllergiesResponse(response);
+      }
       const params = new URLSearchParams({ patient_id: patientId });
       return await apiClient.get(`/drug-safety/safety/patient_allergies/?${params.toString()}`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch patient allergies'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch patient allergies'));
     }
   },
@@ -79,6 +179,20 @@ export const drugSafetyApi = {
    */
   getAllergies: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const patientId = getPatientIdFromAllergyParams(params);
+        if (!patientId) {
+          return [];
+        }
+        const response = await v2Api.getPatientAllergies(
+          { patient_id: patientId },
+          {
+            query: { limit: getV2AllergyLimit(params) },
+            signal: options.signal,
+          },
+        );
+        return adaptV2PatientAllergiesResponse(response).allergies;
+      }
       const response = await apiClient.getWithPagination('/drug-safety/allergies/', {
         ...options,
         params,
@@ -86,6 +200,9 @@ export const drugSafetyApi = {
       return normalizeListResponse(response);
     } catch (error) {
       rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch allergies'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch allergies'));
     }
   },
@@ -96,6 +213,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Allergy data
    */
   getAllergy: async (id) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2AllergyUnsupported();
+    }
     try {
       return await apiClient.get(`/drug-safety/allergies/${id}/`);
     } catch (error) {
@@ -108,10 +228,23 @@ export const drugSafetyApi = {
    * @param {Object} data - Allergy data
    * @returns {Promise<Object>} Created allergy data
    */
-  createAllergy: async (data) => {
+  createAllergy: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const { patientId, payload } = normalizeCreateAllergyPayload(data);
+        const response = await v2Api.postPatientAllergies(
+          { patient_id: patientId },
+          payload,
+          { signal: options.signal },
+        );
+        return adaptV2Allergy(response?.data);
+      }
       return await apiClient.post('/drug-safety/allergies/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create allergy'));
+      }
       throw new Error(handleApiError(error, 'Failed to create allergy'));
     }
   },
@@ -123,6 +256,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Updated allergy data
    */
   updateAllergy: async (id, data) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2AllergyUnsupported();
+    }
     try {
       return await apiClient.patch(`/drug-safety/allergies/${id}/`, data);
     } catch (error) {
@@ -136,6 +272,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Empty object or operation outcome
    */
   deleteAllergy: async (id) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2AllergyUnsupported();
+    }
     try {
       return await apiClient.delete(`/drug-safety/allergies/${id}/`);
     } catch (error) {
@@ -149,6 +288,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Verified allergy data
    */
   verifyAllergy: async (id) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2AllergyUnsupported();
+    }
     try {
       return await apiClient.post(`/drug-safety/allergies/${id}/verify/`, {});
     } catch (error) {
@@ -162,6 +304,9 @@ export const drugSafetyApi = {
    * @returns {Promise<Object>} Deactivated allergy data
    */
   deactivateAllergy: async (id) => {
+    if (isRustV2ApiMode()) {
+      throwRustV2AllergyUnsupported();
+    }
     try {
       return await apiClient.post(`/drug-safety/allergies/${id}/deactivate/`, {});
     } catch (error) {
