@@ -2,9 +2,10 @@ use chrono::{DateTime, Utc};
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceRegisterItem, DispenseStatus,
     GoodsReceivedNoteListItem, GoodsReceivedStatus, InventoryCategoryListItem,
-    InventoryItemListItem, PharmacyDispenseListItem, PurchaseOrderListItem, PurchaseOrderStatus,
-    RequisitionStatus, StockBatchListItem, StockMovementListItem, StockMovementType,
-    StockRequisitionListItem, StockTransferListItem, StorageLocationListItem, TransferStatus,
+    InventoryItemListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
+    PurchaseOrderListItem, PurchaseOrderStatus, RequisitionStatus, StockBatchListItem,
+    StockMovementListItem, StockMovementType, StockRequisitionListItem, StockTransferListItem,
+    StorageLocationListItem, TransferStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -208,6 +209,14 @@ struct ItemContextRow {
     controlled: bool,
 }
 
+#[derive(Clone, Debug, FromRow)]
+struct LocationStockRow {
+    item_id: Uuid,
+    location_id: Uuid,
+    location_name: String,
+    quantity_on_hand: i64,
+}
+
 pub async fn list_categories(
     pool: &PgPool,
     facility_id: Uuid,
@@ -307,6 +316,30 @@ pub async fn list_batches(
     Ok(rows.into_iter().map(batch_from_row).collect())
 }
 
+pub async fn list_item_batches(
+    pool: &PgPool,
+    facility_id: Uuid,
+    item_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<StockBatchListItem>> {
+    let mut query = batch_query();
+    query.push(" WHERE stock_batches.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND stock_batches.item_id = ");
+    query.push_bind(item_id);
+    apply_cursor(
+        &mut query,
+        "stock_batches.received_at",
+        "stock_batches.id",
+        cursor,
+    );
+    query.push(" ORDER BY stock_batches.received_at DESC, stock_batches.id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query.build_query_as::<BatchRow>().fetch_all(pool).await?;
+    Ok(rows.into_iter().map(batch_from_row).collect())
+}
+
 pub async fn create_batch(
     pool: &PgPool,
     batch: NewStockBatch,
@@ -372,6 +405,60 @@ pub async fn list_movements(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(movement_from_row).collect()
+}
+
+pub async fn list_item_movements(
+    pool: &PgPool,
+    facility_id: Uuid,
+    item_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<StockMovementListItem>> {
+    let mut query = movement_query();
+    query.push(" WHERE stock_movements.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND stock_movements.item_id = ");
+    query.push_bind(item_id);
+    apply_cursor(
+        &mut query,
+        "stock_movements.created_at",
+        "stock_movements.id",
+        cursor,
+    );
+    query.push(" ORDER BY stock_movements.created_at DESC, stock_movements.id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<MovementRow>()
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(movement_from_row).collect()
+}
+
+pub async fn list_item_stock_by_location(
+    pool: &PgPool,
+    facility_id: Uuid,
+    item_id: Uuid,
+) -> anyhow::Result<Vec<InventoryItemStockLocationItem>> {
+    let rows = sqlx::query_as::<_, LocationStockRow>(
+        r#"
+        SELECT stock_batches.item_id,
+               stock_batches.location_id,
+               storage_locations.name AS location_name,
+               COALESCE(SUM(stock_batches.quantity_on_hand), 0)::BIGINT AS quantity_on_hand
+        FROM stock_batches
+        INNER JOIN storage_locations ON storage_locations.id = stock_batches.location_id
+        WHERE stock_batches.facility_id = $1
+          AND stock_batches.item_id = $2
+        GROUP BY stock_batches.item_id, stock_batches.location_id, storage_locations.name
+        ORDER BY storage_locations.name ASC
+        LIMIT 100
+        "#,
+    )
+    .bind(facility_id)
+    .bind(item_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(location_stock_from_row).collect())
 }
 
 pub async fn list_transfers(
@@ -1171,6 +1258,15 @@ fn movement_from_row(row: MovementRow) -> anyhow::Result<StockMovementListItem> 
         reason: row.reason,
         created_at: row.created_at,
     })
+}
+
+fn location_stock_from_row(row: LocationStockRow) -> InventoryItemStockLocationItem {
+    InventoryItemStockLocationItem {
+        item_id: row.item_id,
+        location_id: row.location_id,
+        location_name: row.location_name,
+        quantity_on_hand: row.quantity_on_hand,
+    }
 }
 
 fn transfer_from_row(row: TransferRow) -> anyhow::Result<StockTransferListItem> {

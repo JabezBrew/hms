@@ -222,6 +222,103 @@ describe('Rust V2 laboratory bridge', () => {
     ]);
   });
 
+  it('loads laboratory detail workflows through generated Rust V2 endpoints with abort signals', async () => {
+    const controller = new AbortController();
+
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'test-1',
+          code: 'MAL-RDT',
+          name: 'Malaria RDT',
+          specimen_type: 'blood',
+          result_unit: null,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'panel-1',
+          code: 'ANC',
+          name: 'Antenatal panel',
+          test_count: 3,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'order-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          priority: 'urgent',
+          status: 'ordered',
+          ordered_at: '2026-05-12T08:00:00Z',
+          test_count: 2,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'specimen-1',
+          order_id: 'order-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          specimen_type: 'blood',
+          status: 'collected',
+          collected_at: '2026-05-12T08:10:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'result-1',
+          order_id: 'order-1',
+          specimen_id: 'specimen-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-001',
+          test_id: 'test-1',
+          test_name: 'Malaria RDT',
+          value: 'negative',
+          unit: null,
+          status: 'entered',
+          entered_at: '2026-05-12T09:00:00Z',
+          verified_at: null,
+        },
+        meta: {},
+      }));
+
+    await expect(laboratoryApi.getLabTest('test-1', { signal: controller.signal })).resolves.toMatchObject({
+      id: 'test-1',
+      name: 'Malaria RDT',
+    });
+    await expect(laboratoryApi.getLabPanel('panel-1', { signal: controller.signal })).resolves.toMatchObject({
+      id: 'panel-1',
+      name: 'Antenatal panel',
+    });
+    await expect(laboratoryApi.getLabOrder('order-1', { signal: controller.signal })).resolves.toMatchObject({
+      id: 'order-1',
+      patient: 'patient-1',
+      tests_count: 2,
+    });
+    await expect(laboratoryApi.getLabSpecimen('specimen-1', { signal: controller.signal })).resolves.toMatchObject({
+      id: 'specimen-1',
+      order: 'order-1',
+    });
+    await expect(laboratoryApi.getLabResult('result-1', { signal: controller.signal })).resolves.toMatchObject({
+      id: 'result-1',
+      specimen: 'specimen-1',
+      is_verified: false,
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/laboratory/test-catalog/test-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/laboratory/panels/panel-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/laboratory/orders/order-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/laboratory/specimens/specimen-1', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/laboratory/results/result-1', 'GET', controller.signal],
+    ]);
+  });
+
   it('routes laboratory write workflows through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({
@@ -361,7 +458,6 @@ describe('Rust V2 laboratory bridge', () => {
   });
 
   it('fails closed for laboratory actions without generated Rust V2 contracts', async () => {
-    await expect(laboratoryApi.getLabOrder('order-1')).rejects.toThrow('/api/v2 laboratory order detail contract');
     await expect(laboratoryApi.submitLabOrder('order-1')).rejects.toThrow('/api/v2 laboratory order status contract');
     await expect(laboratoryApi.collectLabOrder('order-1')).rejects.toThrow('/api/v2 laboratory order status contract');
     await expect(laboratoryApi.bulkCreateResults({ results: [] })).rejects.toThrow('/api/v2 laboratory bulk result contract');

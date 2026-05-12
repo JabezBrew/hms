@@ -298,14 +298,21 @@ export const laboratoryApi = {
     }
   },
 
-  getLabTest: async (id) => {
+  getLabTest: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory catalog detail contract');
+        const response = await v2Api.getLaboratoryTestCatalogById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/laboratory/tests/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab test');
+      }
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab test'));
     }
   },
@@ -420,14 +427,21 @@ export const laboratoryApi = {
     }
   },
 
-  getLabPanel: async (id) => {
+  getLabPanel: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory panel detail contract');
+        const response = await v2Api.getLaboratoryPanelById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
       }
 
       return await apiClient.get(`/laboratory/panels/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab panel');
+      }
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab panel'));
     }
   },
@@ -565,14 +579,21 @@ export const laboratoryApi = {
     }
   },
 
-  getLabOrder: async (id) => {
+  getLabOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory order detail contract');
+        const response = await v2Api.getLaboratoryOrderById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response, adaptV2LabOrder);
       }
 
       return await apiClient.get(`/laboratory/orders/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab order');
+      }
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab order'));
     }
   },
@@ -703,14 +724,21 @@ export const laboratoryApi = {
     }
   },
 
-  getLabSpecimen: async (id) => {
+  getLabSpecimen: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory specimen detail contract');
+        const response = await v2Api.getLaboratorySpecimenById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response, adaptV2LabSpecimen);
       }
 
       return await apiClient.get(`/laboratory/specimens/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch specimen');
+      }
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch specimen'));
     }
   },
@@ -789,14 +817,21 @@ export const laboratoryApi = {
     }
   },
 
-  getLabResult: async (id) => {
+  getLabResult: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory result detail contract');
+        const response = await v2Api.getLaboratoryResultById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response, adaptV2LabResult);
       }
 
       return await apiClient.get(`/laboratory/results/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch lab result');
+      }
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch lab result'));
     }
   },

@@ -13,6 +13,18 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v2/inventory/items", get(inventory::list_items))
         .route("/api/v2/inventory/items/:id", get(inventory::get_item))
         .route(
+            "/api/v2/inventory/items/:id/stock-batches",
+            get(inventory::list_item_batches),
+        )
+        .route(
+            "/api/v2/inventory/items/:id/stock-movements",
+            get(inventory::list_item_movements),
+        )
+        .route(
+            "/api/v2/inventory/items/:id/stock-by-location",
+            get(inventory::list_item_stock_by_location),
+        )
+        .route(
             "/api/v2/inventory/storage-locations",
             get(inventory::list_locations),
         )

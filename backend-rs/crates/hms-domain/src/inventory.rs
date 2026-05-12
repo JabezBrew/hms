@@ -124,6 +124,14 @@ pub struct StockMovementListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InventoryItemStockLocationItem {
+    pub item_id: Uuid,
+    pub location_id: Uuid,
+    pub location_name: String,
+    pub quantity_on_hand: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct StockTransferListItem {
     pub id: Uuid,
     pub item_id: Uuid,

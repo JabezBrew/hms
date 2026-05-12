@@ -3090,6 +3090,32 @@
         ],
         "type": "object"
       },
+      "InventoryItemStockLocationItem": {
+        "properties": {
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "quantity_on_hand": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "location_id",
+          "location_name",
+          "quantity_on_hand"
+        ],
+        "type": "object"
+      },
       "InventoryItemType": {
         "enum": [
           "medication",
@@ -5094,6 +5120,49 @@
                 "item_type",
                 "unit",
                 "controlled"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_InventoryItemStockLocationItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "item_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "location_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "location_name": {
+                  "type": "string"
+                },
+                "quantity_on_hand": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "item_id",
+                "location_id",
+                "location_name",
+                "quantity_on_hand"
               ],
               "type": "object"
             },
@@ -10135,6 +10204,41 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_LabPanelListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "test_count": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "test_count"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_LabResultListItem": {
         "properties": {
           "data": {
@@ -10200,6 +10304,46 @@
               "value",
               "status",
               "entered_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_LabTestCatalogItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "result_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "specimen_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "specimen_type"
             ],
             "type": "object"
           },
@@ -19904,6 +20048,255 @@
         ]
       }
     },
+    "/api/v2/inventory/items/{id}/stock-batches": {
+      "get": {
+        "operationId": "getInventoryItemStockBatches",
+        "parameters": [
+          {
+            "description": "Inventory item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_StockBatchListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/items/{id}/stock-by-location": {
+      "get": {
+        "operationId": "getInventoryItemStockByLocation",
+        "parameters": [
+          {
+            "description": "Inventory item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_InventoryItemStockLocationItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/items/{id}/stock-movements": {
+      "get": {
+        "operationId": "getInventoryItemStockMovements",
+        "parameters": [
+          {
+            "description": "Inventory item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_StockMovementListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/v2/inventory/purchase-orders": {
       "get": {
         "operationId": "getPurchaseOrders",
@@ -20906,6 +21299,73 @@
         ]
       }
     },
+    "/api/v2/laboratory/orders/{id}": {
+      "get": {
+        "operationId": "getLaboratoryOrderById",
+        "parameters": [
+          {
+            "description": "Laboratory order id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_LabOrderListItem"
+                }
+              }
+            },
+            "description": "Laboratory order"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Laboratory order not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
     "/api/v2/laboratory/panels": {
       "get": {
         "operationId": "getLaboratoryPanels",
@@ -20939,6 +21399,73 @@
               }
             },
             "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/panels/{id}": {
+      "get": {
+        "operationId": "getLaboratoryPanelById",
+        "parameters": [
+          {
+            "description": "Laboratory panel id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_LabPanelListItem"
+                }
+              }
+            },
+            "description": "Laboratory panel"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Laboratory panel not found"
           }
         },
         "security": [
@@ -21109,6 +21636,73 @@
               }
             },
             "description": "Specimen not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/results/{id}": {
+      "get": {
+        "operationId": "getLaboratoryResultById",
+        "parameters": [
+          {
+            "description": "Laboratory result id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_LabResultListItem"
+                }
+              }
+            },
+            "description": "Laboratory result"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Result not found"
           }
         },
         "security": [
@@ -21332,6 +21926,73 @@
         ]
       }
     },
+    "/api/v2/laboratory/specimens/{id}": {
+      "get": {
+        "operationId": "getLaboratorySpecimenById",
+        "parameters": [
+          {
+            "description": "Laboratory specimen id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_SpecimenListItem"
+                }
+              }
+            },
+            "description": "Laboratory specimen"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Specimen not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
     "/api/v2/laboratory/test-catalog": {
       "get": {
         "operationId": "getLaboratoryTestCatalog",
@@ -21365,6 +22026,73 @@
               }
             },
             "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/test-catalog/{id}": {
+      "get": {
+        "operationId": "getLaboratoryTestCatalogById",
+        "parameters": [
+          {
+            "description": "Laboratory test catalog item id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_LabTestCatalogItem"
+                }
+              }
+            },
+            "description": "Laboratory test catalog item"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Laboratory test not found"
           }
         },
         "security": [

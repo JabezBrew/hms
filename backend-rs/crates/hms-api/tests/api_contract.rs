@@ -250,14 +250,22 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/patients/{patient_id}/clinical/prescriptions",
         "/api/v2/patients/{patient_id}/clinical/chart-entries",
         "/api/v2/laboratory/test-catalog",
+        "/api/v2/laboratory/test-catalog/{id}",
         "/api/v2/laboratory/panels",
+        "/api/v2/laboratory/panels/{id}",
         "/api/v2/laboratory/orders",
+        "/api/v2/laboratory/orders/{id}",
         "/api/v2/laboratory/specimens",
+        "/api/v2/laboratory/specimens/{id}",
         "/api/v2/laboratory/results",
+        "/api/v2/laboratory/results/{id}",
         "/api/v2/laboratory/results/{id}/verify",
         "/api/v2/inventory/categories",
         "/api/v2/inventory/items",
         "/api/v2/inventory/items/{id}",
+        "/api/v2/inventory/items/{id}/stock-batches",
+        "/api/v2/inventory/items/{id}/stock-movements",
+        "/api/v2/inventory/items/{id}/stock-by-location",
         "/api/v2/inventory/storage-locations",
         "/api/v2/inventory/stock-batches",
         "/api/v2/inventory/stock-movements",
@@ -1605,6 +1613,22 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .as_str()
         .expect("test id exists");
 
+    let test_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/laboratory/test-catalog/{test_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("catalog detail succeeds");
+    assert_eq!(test_detail.status(), StatusCode::OK);
+    let test_detail_body = json_body(test_detail).await;
+    assert_eq!(test_detail_body["data"]["id"], test_id);
+
     let panels = app
         .clone()
         .oneshot(
@@ -1622,6 +1646,22 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     let panel_id = panels_body["data"][0]["id"]
         .as_str()
         .expect("panel id exists");
+
+    let panel_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/laboratory/panels/{panel_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("panel detail succeeds");
+    assert_eq!(panel_detail.status(), StatusCode::OK);
+    let panel_detail_body = json_body(panel_detail).await;
+    assert_eq!(panel_detail_body["data"]["id"], panel_id);
 
     let order_response = app
         .clone()
@@ -1649,6 +1689,23 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     let order_id = order_body["data"]["id"].as_str().expect("order id exists");
     assert_eq!(order_body["data"]["status"], "ordered");
     assert!(order_body["data"]["test_count"].as_i64().unwrap() >= 1);
+
+    let order_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/laboratory/orders/{order_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("lab order detail succeeds");
+    assert_eq!(order_detail.status(), StatusCode::OK);
+    let order_detail_body = json_body(order_detail).await;
+    assert_eq!(order_detail_body["data"]["id"], order_id);
+    assert_eq!(order_detail_body["data"]["patient_id"], patient_id);
 
     let orders = app
         .clone()
@@ -1713,6 +1770,23 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .expect("specimen id exists");
     assert_eq!(specimen_body["data"]["status"], "collected");
 
+    let specimen_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/laboratory/specimens/{specimen_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("specimen detail succeeds");
+    assert_eq!(specimen_detail.status(), StatusCode::OK);
+    let specimen_detail_body = json_body(specimen_detail).await;
+    assert_eq!(specimen_detail_body["data"]["id"], specimen_id);
+    assert_eq!(specimen_detail_body["data"]["order_id"], order_id);
+
     let specimens = app
         .clone()
         .oneshot(
@@ -1754,6 +1828,23 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .as_str()
         .expect("result id exists");
     assert_eq!(result_body["data"]["status"], "entered");
+
+    let result_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/laboratory/results/{result_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("result detail succeeds");
+    assert_eq!(result_detail.status(), StatusCode::OK);
+    let result_detail_body = json_body(result_detail).await;
+    assert_eq!(result_detail_body["data"]["id"], result_id);
+    assert_eq!(result_detail_body["data"]["specimen_id"], specimen_id);
 
     let results = app
         .clone()
@@ -1820,6 +1911,20 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .await
         .expect("laboratory denial succeeds");
     assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let denied_order_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/laboratory/orders/{order_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("laboratory order detail denial succeeds");
+    assert_eq!(denied_order_detail.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -1944,6 +2049,25 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let batch_body = json_body(batch_response).await;
     assert_eq!(batch_body["data"]["quantity_on_hand"], 100);
 
+    let item_batches = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/items/{paracetamol_id}/stock-batches?limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("item stock batches list succeeds");
+    assert_eq!(item_batches.status(), StatusCode::OK);
+    let item_batches_body = json_body(item_batches).await;
+    assert_eq!(item_batches_body["data"][0]["item_id"], paracetamol_id);
+    assert_eq!(item_batches_body["data"][0]["batch_number"], "B-001");
+
     let movements = app
         .clone()
         .oneshot(
@@ -1959,6 +2083,49 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(movements.status(), StatusCode::OK);
     let movements_body = json_body(movements).await;
     assert_eq!(movements_body["data"][0]["movement_type"], "receipt");
+
+    let item_movements = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/items/{paracetamol_id}/stock-movements?limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("item stock movements list succeeds");
+    assert_eq!(item_movements.status(), StatusCode::OK);
+    let item_movements_body = json_body(item_movements).await;
+    assert_eq!(item_movements_body["data"][0]["item_id"], paracetamol_id);
+    assert_eq!(item_movements_body["data"][0]["movement_type"], "receipt");
+
+    let item_stock_by_location = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/items/{paracetamol_id}/stock-by-location"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("item stock by location succeeds");
+    assert_eq!(item_stock_by_location.status(), StatusCode::OK);
+    let item_stock_by_location_body = json_body(item_stock_by_location).await;
+    assert!(item_stock_by_location_body["data"]
+        .as_array()
+        .expect("stock by location is an array")
+        .iter()
+        .any(|row| row["item_id"] == paracetamol_id
+            && row["location_id"] == pharmacy_location_id
+            && row["quantity_on_hand"] == 100));
 
     let transfer_response = app
         .clone()
@@ -2263,6 +2430,9 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(detail_denied.status(), StatusCode::FORBIDDEN);
 
     for denied_path in [
+        format!("/api/v2/inventory/items/{paracetamol_id}/stock-batches?limit=1"),
+        format!("/api/v2/inventory/items/{paracetamol_id}/stock-movements?limit=1"),
+        format!("/api/v2/inventory/items/{paracetamol_id}/stock-by-location"),
         format!("/api/v2/inventory/transfers/{transfer_id}"),
         format!("/api/v2/inventory/requisitions/{requisition_id}"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}"),

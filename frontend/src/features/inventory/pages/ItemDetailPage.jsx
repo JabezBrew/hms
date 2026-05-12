@@ -381,7 +381,7 @@ function BatchesTab({ itemId }) {
         <tbody className="divide-y divide-border">
           {sortedBatches.map((batch, index) => (
             <tr
-              key={batch.id || index}
+              key={batch.batch_id || batch.id || index}
               className={cn(
                 'hover:bg-muted/30 transition-colors',
                 index === 0 && 'bg-emerald-500/5' // Highlight first (FEFO recommended)

@@ -167,6 +167,25 @@ pub async fn list_test_catalog(
     Ok(rows.into_iter().map(test_from_row).collect())
 }
 
+pub async fn get_test_catalog_item(
+    pool: &PgPool,
+    facility_id: Uuid,
+    test_id: Uuid,
+) -> anyhow::Result<Option<LabTestCatalogItem>> {
+    let row = sqlx::query_as::<_, TestRow>(
+        r#"
+        SELECT id, code, name, specimen_type, result_unit
+        FROM lab_tests
+        WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+        "#,
+    )
+    .bind(facility_id)
+    .bind(test_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(test_from_row))
+}
+
 pub async fn list_panels(
     pool: &PgPool,
     facility_id: Uuid,
@@ -189,6 +208,32 @@ pub async fn list_panels(
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(panel_from_row).collect())
+}
+
+pub async fn get_panel_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    panel_id: Uuid,
+) -> anyhow::Result<Option<LabPanelListItem>> {
+    let row = sqlx::query_as::<_, PanelRow>(
+        r#"
+        SELECT lab_panels.id,
+               lab_panels.code,
+               lab_panels.name,
+               COUNT(lab_panel_tests.test_id)::bigint AS test_count
+        FROM lab_panels
+        LEFT JOIN lab_panel_tests ON lab_panel_tests.panel_id = lab_panels.id
+        WHERE lab_panels.facility_id = $1
+          AND lab_panels.id = $2
+          AND lab_panels.is_active = TRUE
+        GROUP BY lab_panels.id, lab_panels.code, lab_panels.name
+        "#,
+    )
+    .bind(facility_id)
+    .bind(panel_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(panel_from_row))
 }
 
 pub async fn list_orders(
@@ -260,6 +305,14 @@ pub async fn create_order(pool: &PgPool, order: NewLabOrder) -> anyhow::Result<L
     fetch_order_by_id(pool, order.facility_id, order.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created lab order was not found"))
+}
+
+pub async fn get_order_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+) -> anyhow::Result<Option<LabOrderListItem>> {
+    fetch_order_by_id(pool, facility_id, order_id).await
 }
 
 pub async fn get_order_context(
@@ -350,6 +403,14 @@ pub async fn create_specimen(
     fetch_specimen_by_id(pool, specimen.facility_id, specimen.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created specimen was not found"))
+}
+
+pub async fn get_specimen_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    specimen_id: Uuid,
+) -> anyhow::Result<Option<SpecimenListItem>> {
+    fetch_specimen_by_id(pool, facility_id, specimen_id).await
 }
 
 pub async fn get_specimen_context(
@@ -477,6 +538,14 @@ pub async fn create_result(
     fetch_result_by_id(pool, result.facility_id, result.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created lab result was not found"))
+}
+
+pub async fn get_result_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    result_id: Uuid,
+) -> anyhow::Result<Option<LabResultListItem>> {
+    fetch_result_by_id(pool, facility_id, result_id).await
 }
 
 pub async fn get_result_context(

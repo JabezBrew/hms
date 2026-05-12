@@ -368,6 +368,88 @@ describe('Rust V2 inventory bridge', () => {
     );
   });
 
+  it('loads inventory item tab data through generated item-scoped Rust V2 endpoints', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'movement-1',
+            item_id: 'item-1',
+            item_name: 'Paracetamol 500mg',
+            location_id: 'location-1',
+            movement_type: 'receipt',
+            quantity: 100,
+            balance_after: 100,
+            reason: 'stock_receipt',
+            created_at: '2026-05-12T08:00:00Z',
+          },
+        ],
+        page: { limit: 50, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'batch-1',
+            item_id: 'item-1',
+            item_name: 'Paracetamol 500mg',
+            location_id: 'location-1',
+            location_name: 'Main Pharmacy',
+            batch_number: 'B-001',
+            expires_on: '2027-01-31',
+            quantity_on_hand: 100,
+            received_at: '2026-05-12T08:00:00Z',
+          },
+        ],
+        page: { limit: 100, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            item_id: 'item-1',
+            location_id: 'location-1',
+            location_name: 'Main Pharmacy',
+            quantity_on_hand: 100,
+          },
+        ],
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getItemMovements('item-1', {
+      page_size: 50,
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'movement-1', item_id: 'item-1' })],
+    });
+    await expect(inventoryApi.getItemExpiryTrackers('item-1', {
+      signal: controller.signal,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        id: 'batch-1',
+        batch_id: 'batch-1',
+        item_id: 'item-1',
+        expiry_date: '2027-01-31',
+      }),
+    ]);
+    await expect(inventoryApi.getItemStockByLocation('item-1', {
+      signal: controller.signal,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        item_id: 'item-1',
+        location_id: 'location-1',
+        quantity_on_hand: 100,
+      }),
+    ]);
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/inventory/items/item-1/stock-movements?limit=50', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/items/item-1/stock-batches?limit=100', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/items/item-1/stock-by-location', 'GET', controller.signal],
+    ]);
+  });
+
   it('loads procurement and controlled detail records through generated Rust V2 endpoints', async () => {
     const controller = new AbortController();
     globalThis.fetch

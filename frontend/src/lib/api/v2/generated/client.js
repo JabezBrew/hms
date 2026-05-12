@@ -454,6 +454,52 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getInventoryItemStockBatches": {
+    "operationId": "getInventoryItemStockBatches",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/{id}/stock-batches",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getInventoryItemStockByLocation": {
+    "operationId": "getInventoryItemStockByLocation",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/{id}/stock-by-location",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getInventoryItemStockMovements": {
+    "operationId": "getInventoryItemStockMovements",
+    "method": "GET",
+    "path": "/api/v2/inventory/items/{id}/stock-movements",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getLaboratoryOrderById": {
+    "operationId": "getLaboratoryOrderById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/orders/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getLaboratoryOrders": {
     "operationId": "getLaboratoryOrders",
     "method": "GET",
@@ -466,11 +512,31 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getLaboratoryPanelById": {
+    "operationId": "getLaboratoryPanelById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/panels/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getLaboratoryPanels": {
     "operationId": "getLaboratoryPanels",
     "method": "GET",
     "path": "/api/v2/laboratory/panels",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getLaboratoryResultById": {
+    "operationId": "getLaboratoryResultById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/results/{id}",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": false
   },
@@ -485,6 +551,16 @@ export const operations = {
       "status",
       "is_verified"
     ],
+    "hasBody": false
+  },
+  "getLaboratorySpecimenById": {
+    "operationId": "getLaboratorySpecimenById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/specimens/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getLaboratorySpecimens": {
@@ -503,6 +579,16 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/laboratory/test-catalog",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getLaboratoryTestCatalogById": {
+    "operationId": "getLaboratoryTestCatalogById",
+    "method": "GET",
+    "path": "/api/v2/laboratory/test-catalog/{id}",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": false
   },
@@ -1896,11 +1982,19 @@ export function createGeneratedClient(request) {
     getInventoryCategories: createOperation(request, operations.getInventoryCategories),
     getInventoryItemById: createOperation(request, operations.getInventoryItemById),
     getInventoryItems: createOperation(request, operations.getInventoryItems),
+    getInventoryItemStockBatches: createOperation(request, operations.getInventoryItemStockBatches),
+    getInventoryItemStockByLocation: createOperation(request, operations.getInventoryItemStockByLocation),
+    getInventoryItemStockMovements: createOperation(request, operations.getInventoryItemStockMovements),
+    getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
     getLaboratoryOrders: createOperation(request, operations.getLaboratoryOrders),
+    getLaboratoryPanelById: createOperation(request, operations.getLaboratoryPanelById),
     getLaboratoryPanels: createOperation(request, operations.getLaboratoryPanels),
+    getLaboratoryResultById: createOperation(request, operations.getLaboratoryResultById),
     getLaboratoryResults: createOperation(request, operations.getLaboratoryResults),
+    getLaboratorySpecimenById: createOperation(request, operations.getLaboratorySpecimenById),
     getLaboratorySpecimens: createOperation(request, operations.getLaboratorySpecimens),
     getLaboratoryTestCatalog: createOperation(request, operations.getLaboratoryTestCatalog),
+    getLaboratoryTestCatalogById: createOperation(request, operations.getLaboratoryTestCatalogById),
     getMedicationAdministrations: createOperation(request, operations.getMedicationAdministrations),
     getMetrics: createOperation(request, operations.getMetrics),
     getMonitoringEvents: createOperation(request, operations.getMonitoringEvents),

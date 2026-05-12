@@ -59,6 +59,49 @@ pub async fn list_test_catalog(
 
 #[utoipa::path(
     get,
+    path = "/api/v2/laboratory/test-catalog/{id}",
+    operation_id = "getLaboratoryTestCatalogById",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory test catalog item id")),
+    responses(
+        (status = 200, description = "Laboratory test catalog item", body = ObjectResponse<LabTestCatalogItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory test not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_test_catalog_item(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabTestCatalogItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let test = state
+        .get_lab_test_catalog_item(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_catalog_item_load_failed",
+                "Laboratory test could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "lab_catalog_item_not_found",
+                "Laboratory test was not found.",
+            )
+        })?;
+
+    Ok(Json(object(test)))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/v2/laboratory/panels",
     operation_id = "getLaboratoryPanels",
     tag = "laboratory",
@@ -86,6 +129,46 @@ pub async fn list_panels(
     })?;
 
     Ok(Json(static_list(panels)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/laboratory/panels/{id}",
+    operation_id = "getLaboratoryPanelById",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory panel id")),
+    responses(
+        (status = 200, description = "Laboratory panel", body = ObjectResponse<LabPanelListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory panel not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_panel(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabPanelListItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let panel = state
+        .get_lab_panel(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_panel_load_failed",
+                "Laboratory panel could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("lab_panel_not_found", "Laboratory panel was not found.")
+        })?;
+
+    Ok(Json(object(panel)))
 }
 
 #[utoipa::path(
@@ -127,6 +210,36 @@ pub async fn list_orders(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.ordered_at, item.id)
     })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/laboratory/orders/{id}",
+    operation_id = "getLaboratoryOrderById",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory order id")),
+    responses(
+        (status = 200, description = "Laboratory order", body = ObjectResponse<LabOrderListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory order not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
+    require_laboratory_list_access(&user, state.facility_id())?;
+    let _context = load_order_for_access(&state, &user, id).await?;
+    let order = state
+        .get_lab_order(id)
+        .await
+        .map_err(|_| ApiError::conflict("lab_order_load_failed", "Lab order could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+
+    Ok(Json(object(order)))
 }
 
 #[utoipa::path(
@@ -213,6 +326,36 @@ pub async fn list_specimens(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/laboratory/specimens/{id}",
+    operation_id = "getLaboratorySpecimenById",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory specimen id")),
+    responses(
+        (status = 200, description = "Laboratory specimen", body = ObjectResponse<SpecimenListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Specimen not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_specimen(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<SpecimenListItem>>, ApiError> {
+    require_laboratory_list_access(&user, state.facility_id())?;
+    let _context = load_specimen_for_access(&state, &user, id).await?;
+    let specimen = state
+        .get_lab_specimen(id)
+        .await
+        .map_err(|_| ApiError::conflict("specimen_load_failed", "Specimen could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("specimen_not_found", "Specimen was not found."))?;
+
+    Ok(Json(object(specimen)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/laboratory/specimens",
     operation_id = "postLaboratorySpecimens",
@@ -286,6 +429,38 @@ pub async fn list_results(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.entered_at, item.id)
     })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/laboratory/results/{id}",
+    operation_id = "getLaboratoryResultById",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory result id")),
+    responses(
+        (status = 200, description = "Laboratory result", body = ObjectResponse<LabResultListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Result not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_result(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabResultListItem>>, ApiError> {
+    require_laboratory_list_access(&user, state.facility_id())?;
+    let _context = load_result_for_access(&state, &user, id).await?;
+    let result = state
+        .get_lab_result(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict("lab_result_load_failed", "Lab result could not be loaded.")
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_result_not_found", "Lab result was not found."))?;
+
+    Ok(Json(object(result)))
 }
 
 #[utoipa::path(

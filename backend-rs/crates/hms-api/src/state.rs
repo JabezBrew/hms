@@ -71,9 +71,9 @@ use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeCha
 use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceRegisterItem, GoodsReceivedNoteListItem,
-    InventoryCategoryListItem, InventoryItemListItem, PharmacyDispenseListItem,
-    PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
-    StockTransferListItem, StorageLocationListItem,
+    InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
+    PharmacyDispenseListItem, PurchaseOrderListItem, StockBatchListItem, StockMovementListItem,
+    StockRequisitionListItem, StockTransferListItem, StorageLocationListItem,
 };
 use hms_domain::laboratory::{
     LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
@@ -1397,8 +1397,20 @@ impl AppState {
         hms_db::laboratory::list_test_catalog(&self.inner.pool, self.facility_id()).await
     }
 
+    pub async fn get_lab_test_catalog_item(
+        &self,
+        test_id: Uuid,
+    ) -> Result<Option<LabTestCatalogItem>> {
+        hms_db::laboratory::get_test_catalog_item(&self.inner.pool, self.facility_id(), test_id)
+            .await
+    }
+
     pub async fn list_lab_panels(&self) -> Result<Vec<LabPanelListItem>> {
         hms_db::laboratory::list_panels(&self.inner.pool, self.facility_id()).await
+    }
+
+    pub async fn get_lab_panel(&self, panel_id: Uuid) -> Result<Option<LabPanelListItem>> {
+        hms_db::laboratory::get_panel_by_id(&self.inner.pool, self.facility_id(), panel_id).await
     }
 
     pub async fn list_lab_orders(
@@ -1415,6 +1427,10 @@ impl AppState {
             filters,
         )
         .await
+    }
+
+    pub async fn get_lab_order(&self, order_id: Uuid) -> Result<Option<LabOrderListItem>> {
+        hms_db::laboratory::get_order_by_id(&self.inner.pool, self.facility_id(), order_id).await
     }
 
     pub async fn create_lab_order(
@@ -1450,6 +1466,11 @@ impl AppState {
         limit: i64,
     ) -> Result<Vec<SpecimenListItem>> {
         hms_db::laboratory::list_specimens(&self.inner.pool, self.facility_id(), cursor, limit)
+            .await
+    }
+
+    pub async fn get_lab_specimen(&self, specimen_id: Uuid) -> Result<Option<SpecimenListItem>> {
+        hms_db::laboratory::get_specimen_by_id(&self.inner.pool, self.facility_id(), specimen_id)
             .await
     }
 
@@ -1495,6 +1516,10 @@ impl AppState {
             filters,
         )
         .await
+    }
+
+    pub async fn get_lab_result(&self, result_id: Uuid) -> Result<Option<LabResultListItem>> {
+        hms_db::laboratory::get_result_by_id(&self.inner.pool, self.facility_id(), result_id).await
     }
 
     pub async fn create_lab_result(
@@ -1811,6 +1836,22 @@ impl AppState {
         hms_db::inventory::list_batches(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
+    pub async fn list_inventory_item_stock_batches(
+        &self,
+        item_id: Uuid,
+        cursor: Option<InventoryCursor>,
+        limit: i64,
+    ) -> Result<Vec<StockBatchListItem>> {
+        hms_db::inventory::list_item_batches(
+            &self.inner.pool,
+            self.facility_id(),
+            item_id,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
     pub async fn create_stock_batch(
         &self,
         item_id: Uuid,
@@ -1842,6 +1883,34 @@ impl AppState {
         limit: i64,
     ) -> Result<Vec<StockMovementListItem>> {
         hms_db::inventory::list_movements(&self.inner.pool, self.facility_id(), cursor, limit).await
+    }
+
+    pub async fn list_inventory_item_stock_movements(
+        &self,
+        item_id: Uuid,
+        cursor: Option<InventoryCursor>,
+        limit: i64,
+    ) -> Result<Vec<StockMovementListItem>> {
+        hms_db::inventory::list_item_movements(
+            &self.inner.pool,
+            self.facility_id(),
+            item_id,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn list_inventory_item_stock_by_location(
+        &self,
+        item_id: Uuid,
+    ) -> Result<Vec<InventoryItemStockLocationItem>> {
+        hms_db::inventory::list_item_stock_by_location(
+            &self.inner.pool,
+            self.facility_id(),
+            item_id,
+        )
+        .await
     }
 
     pub async fn list_stock_transfers(

@@ -92,6 +92,21 @@ function adaptV2StockBatch(batch) {
   };
 }
 
+function adaptV2LocationStock(row) {
+  const quantity = toNumber(row?.quantity_on_hand);
+  return {
+    id: row?.location_id,
+    item_id: row?.item_id,
+    location_id: row?.location_id,
+    location_name: row?.location_name || 'Storage location',
+    name: row?.location_name || 'Storage location',
+    quantity_on_hand: quantity,
+    quantity,
+    available_quantity: quantity,
+    reserved_quantity: 0,
+  };
+}
+
 function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, params = {}) {
   const expiringDays = boundedLimit(params.days, 30);
   const lowStockCount = batches.filter((batch) => toNumber(batch?.quantity_on_hand) <= 0).length;
@@ -695,13 +710,23 @@ export const inventoryApi = {
   getItemMovements: async (id, params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 inventory item movement contract');
+        const response = await v2Api.getInventoryItemStockMovements({ id }, {
+          query: buildV2CursorQuery(params, 50),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/${id}/movements/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch item movements'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch item movements'));
     }
   },
@@ -711,14 +736,27 @@ export const inventoryApi = {
    * @param {string} id - Item ID
    * @returns {Promise<Array>} Expiry tracker entries (batches)
    */
-  getItemExpiryTrackers: async (id) => {
+  getItemExpiryTrackers: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 inventory item expiry contract');
+        const response = await v2Api.getInventoryItemStockBatches({ id }, {
+          query: { limit: boundedLimit(options.limit || options.page_size, 100) },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map((batch) => ({
+          ...adaptV2StockBatch(batch),
+          id: batch?.id || batch?.item_id,
+        }));
       }
 
       return await apiClient.get(`/inventory/items/${id}/expiry_trackers/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch item expiry trackers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch item expiry trackers'));
     }
   },
@@ -728,14 +766,23 @@ export const inventoryApi = {
    * @param {string} id - Item ID
    * @returns {Promise<Array>} Stock quantities by location
    */
-  getItemStockByLocation: async (id) => {
+  getItemStockByLocation: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 inventory item stock-by-location contract');
+        const response = await v2Api.getInventoryItemStockByLocation({ id }, {
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2LocationStock);
       }
 
       return await apiClient.get(`/inventory/items/${id}/stock_by_location/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch item stock by location'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch item stock by location'));
     }
   },
