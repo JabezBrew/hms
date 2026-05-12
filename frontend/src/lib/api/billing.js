@@ -35,6 +35,10 @@ function rethrowV2Error(error, message) {
   throw new Error(handleV2ApiError(error, message));
 }
 
+function rustV2Unsupported(resourceName) {
+  return Promise.reject(new Error(`Rust V2 does not expose ${resourceName} yet.`));
+}
+
 function adaptV2Invoice(invoice) {
   if (!invoice) {
     return invoice;
@@ -79,6 +83,20 @@ function adaptV2Payment(payment) {
       || payment.patient_code
       || payment.receipt_number
       || 'Billing payment',
+  };
+}
+
+function adaptV2Receipt(receipt) {
+  if (!receipt) {
+    return receipt;
+  }
+  return {
+    ...receipt,
+    payment: receipt.payment_id,
+    invoice: receipt.invoice_id,
+    amount: minorToMajor(receipt.amount_minor),
+    receipt_date: receipt.issued_at,
+    created_at: receipt.created_at || receipt.issued_at,
   };
 }
 
@@ -312,6 +330,55 @@ function normalizeLimit(params = {}, fallback = DEFAULT_BILLING_PAGE_SIZE) {
   return Math.min(parsed, 100);
 }
 
+async function findV2Invoice(id, options = {}) {
+  const response = await v2Api.getBillingInvoices({
+    query: { limit: 100 },
+    signal: options.signal,
+  });
+  const invoice = v2List(response).find((candidate) => candidate.id === id || candidate.invoice_number === id);
+  if (!invoice) {
+    throw new Error('Rust V2 invoice was not found in the bounded invoice list.');
+  }
+  return adaptV2Invoice(invoice);
+}
+
+async function findV2Receipt(predicate, options = {}) {
+  const response = await v2Api.getBillingReceipts({
+    query: { limit: 100 },
+    signal: options.signal,
+  });
+  const receipt = v2List(response).find(predicate);
+  if (!receipt) {
+    throw new Error('Rust V2 receipt was not found in the bounded receipt list.');
+  }
+  return adaptV2Receipt(receipt);
+}
+
+async function findV2Claim(id, options = {}) {
+  const response = await v2Api.getNhisClaims({
+    query: { limit: 100 },
+    signal: options.signal,
+  });
+  const claim = v2List(response).find((candidate) => candidate.id === id || candidate.claim_number === id);
+  if (!claim) {
+    throw new Error('Rust V2 claim was not found in the bounded claim list.');
+  }
+  return adaptV2Claim(claim);
+}
+
+async function findV2BillingRule(id, options = {}) {
+  const response = await v2Api.getBillingRules({ signal: options.signal });
+  const rule = v2List(response).find((candidate) => candidate.id === id || candidate.code === id);
+  if (!rule) {
+    throw new Error('Rust V2 billing rule was not found.');
+  }
+  return {
+    ...rule,
+    rule_type: rule.rule_type,
+    is_active: rule.active !== false,
+  };
+}
+
 /**
  * Billing API service
  *
@@ -461,10 +528,17 @@ export const billingApi = {
    * @param {string} id - Invoice ID
    * @returns {Promise<Object>} Invoice data with items and payments
    */
-  getInvoice: async (id) => {
+  getInvoice: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await findV2Invoice(id, options);
+      }
+
       return await apiClient.get(`/billing/invoices/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch invoice');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch invoice'));
     }
   },
@@ -474,10 +548,18 @@ export const billingApi = {
    * @param {string} id - Invoice ID
    * @returns {Promise<Object>} Invoice data for printing
    */
-  getInvoicePrintDetail: async (id) => {
+  getInvoicePrintDetail: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const invoice = await findV2Invoice(id, options);
+        return { ...invoice, items: [], payments: [] };
+      }
+
       return await apiClient.get(`/billing/invoices/${id}/print_detail/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch invoice for printing');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch invoice for printing'));
     }
   },
@@ -562,8 +644,15 @@ export const billingApi = {
    */
   updateInvoice: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('invoice updates');
+      }
+
       return await apiClient.patch(`/billing/invoices/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update invoice');
+      }
       throw new Error(handleApiError(error, 'Failed to update invoice'));
     }
   },
@@ -642,10 +731,17 @@ export const billingApi = {
 
   createPaymentIntent: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('payment intents');
+      }
+
       return await apiClient.post('/billing/payment-intents/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create payment intent');
+      }
       throw new Error(handleApiError(error, 'Failed to create payment intent'));
     }
   },
@@ -670,6 +766,10 @@ export const billingApi = {
 
   importSettlement: async ({ provider = 'hubtel', statement_date = null, file }) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('settlement imports');
+      }
+
       const form = new FormData();
       if (provider) form.append('provider', provider);
       if (statement_date) form.append('statement_date', statement_date);
@@ -678,6 +778,9 @@ export const billingApi = {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to import settlement');
+      }
       throw new Error(handleApiError(error, 'Failed to import settlement'));
     }
   },
@@ -837,18 +940,32 @@ export const billingApi = {
 
   reviewCashSession: async (sessionId, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('cash session review');
+      }
+
       return await apiClient.post(`/billing/cash-sessions/${sessionId}/review/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to review cash session');
+      }
       throw new Error(handleApiError(error, 'Failed to review cash session'));
     }
   },
 
   createCashMovement: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('cash movements');
+      }
+
       return await apiClient.post('/billing/cash-movements/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create cash movement');
+      }
       throw new Error(handleApiError(error, 'Failed to create cash movement'));
     }
   },
@@ -894,10 +1011,17 @@ export const billingApi = {
    * @param {string} id - Claim ID
    * @returns {Promise<Object>} Claim data
    */
-  getClaim: async (id) => {
+  getClaim: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await findV2Claim(id, options);
+      }
+
       return await apiClient.get(`/billing/claims/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch claim');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch claim'));
     }
   },
@@ -913,8 +1037,15 @@ export const billingApi = {
    */
   updateClaimStatus: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('claim status updates');
+      }
+
       return await apiClient.post(`/billing/claims/${id}/update_status/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update claim status');
+      }
       throw new Error(handleApiError(error, 'Failed to update claim status'));
     }
   },
@@ -1022,8 +1153,15 @@ export const billingApi = {
 
   downloadNhisExportJob: async (jobId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('NHIS export downloads');
+      }
+
       return await apiClient.getBlob(`/billing/nhis/exports/${jobId}/download/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to download NHIS export payload');
+      }
       throw new Error(handleApiError(error, 'Failed to download NHIS export payload'));
     }
   },
@@ -1172,8 +1310,15 @@ export const billingApi = {
    */
   generateReceipt: async (paymentId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await findV2Receipt((receipt) => receipt.payment_id === paymentId);
+      }
+
       return await apiClient.post(`/billing/payments/${paymentId}/generate_receipt/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to generate receipt');
+      }
       throw new Error(handleApiError(error, 'Failed to generate receipt'));
     }
   },
@@ -1183,10 +1328,21 @@ export const billingApi = {
    * @param {string} receiptId - Receipt ID
    * @returns {Promise<Object>} Full receipt data with invoice items
    */
-  getReceiptPrintDetail: async (receiptId) => {
+  getReceiptPrintDetail: async (receiptId, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const receipt = await findV2Receipt(
+          (candidate) => candidate.id === receiptId || candidate.receipt_number === receiptId,
+          options,
+        );
+        return { ...receipt, items: [] };
+      }
+
       return await apiClient.get(`/billing/receipts/${receiptId}/print_detail/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch receipt details');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch receipt details'));
     }
   },
@@ -1196,10 +1352,17 @@ export const billingApi = {
    * @param {string} receiptNumber - Receipt number
    * @returns {Promise<Object>} Full receipt data with invoice items
    */
-  getReceiptByNumber: async (receiptNumber) => {
+  getReceiptByNumber: async (receiptNumber, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await findV2Receipt((receipt) => receipt.receipt_number === receiptNumber, options);
+      }
+
       return await apiClient.get(`/billing/receipts/by_receipt_number/?receipt_number=${encodeURIComponent(receiptNumber)}`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch receipt');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch receipt'));
     }
   },
@@ -1228,18 +1391,32 @@ export const billingApi = {
 
   createServiceCategory: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('service category mutations');
+      }
+
       return await apiClient.post('/billing/service-categories/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create service category');
+      }
       throw new Error(handleApiError(error, 'Failed to create service category'));
     }
   },
 
   updateServiceCategory: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('service category mutations');
+      }
+
       return await apiClient.patch(`/billing/service-categories/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update service category');
+      }
       throw new Error(handleApiError(error, 'Failed to update service category'));
     }
   },
@@ -1268,18 +1445,32 @@ export const billingApi = {
 
   createService: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('service catalog mutations');
+      }
+
       return await apiClient.post('/billing/services/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create service');
+      }
       throw new Error(handleApiError(error, 'Failed to create service'));
     }
   },
 
   updateService: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('service catalog mutations');
+      }
+
       return await apiClient.patch(`/billing/services/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update service');
+      }
       throw new Error(handleApiError(error, 'Failed to update service'));
     }
   },
@@ -1333,18 +1524,32 @@ export const billingApi = {
 
   createPayerServiceCode: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('payer service code mutations');
+      }
+
       return await apiClient.post('/billing/payer-service-codes/', data, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create payer service code');
+      }
       throw new Error(handleApiError(error, 'Failed to create payer service code'));
     }
   },
 
   updatePayerServiceCode: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('payer service code mutations');
+      }
+
       return await apiClient.patch(`/billing/payer-service-codes/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update payer service code');
+      }
       throw new Error(handleApiError(error, 'Failed to update payer service code'));
     }
   },
@@ -1369,14 +1574,25 @@ export const billingApi = {
 
   getNhisMappingImportJob: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('NHIS mapping import detail');
+      }
+
       return await apiClient.get(`/billing/nhis/mapping-imports/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch mapping import job');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch mapping import job'));
     }
   },
 
   createNhisMappingImportJob: async ({ payer, seed_services = false, file }) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('NHIS mapping imports');
+      }
+
       const form = new FormData();
       form.append('payer', payer);
       form.append('seed_services', seed_services ? '1' : '0');
@@ -1385,16 +1601,26 @@ export const billingApi = {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create mapping import job');
+      }
       throw new Error(handleApiError(error, 'Failed to create mapping import job'));
     }
   },
 
   applyNhisMappingImportJob: async (id, { force = false } = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('NHIS mapping import apply');
+      }
+
       return await apiClient.post(`/billing/nhis/mapping-imports/${id}/apply/`, { force }, {
         headers: { 'Idempotency-Key': generateIdempotencyKey() },
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to apply mapping import job');
+      }
       throw new Error(handleApiError(error, 'Failed to apply mapping import job'));
     }
   },
@@ -1439,10 +1665,17 @@ export const billingApi = {
    * @param {string} id - Billing rule ID
    * @returns {Promise<Object>} Billing rule data
    */
-  getBillingRule: async (id) => {
+  getBillingRule: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await findV2BillingRule(id, options);
+      }
+
       return await apiClient.get(`/billing/billing-rules/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch billing rule');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch billing rule'));
     }
   },
@@ -1454,8 +1687,15 @@ export const billingApi = {
    */
   createBillingRule: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('billing rule mutations');
+      }
+
       return await apiClient.post('/billing/billing-rules/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create billing rule');
+      }
       throw new Error(handleApiError(error, 'Failed to create billing rule'));
     }
   },
@@ -1468,8 +1708,15 @@ export const billingApi = {
    */
   updateBillingRule: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('billing rule mutations');
+      }
+
       return await apiClient.patch(`/billing/billing-rules/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update billing rule');
+      }
       throw new Error(handleApiError(error, 'Failed to update billing rule'));
     }
   },
@@ -1481,8 +1728,15 @@ export const billingApi = {
    */
   toggleBillingRule: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('billing rule mutations');
+      }
+
       return await apiClient.post(`/billing/billing-rules/${id}/toggle_active/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to toggle billing rule');
+      }
       throw new Error(handleApiError(error, 'Failed to toggle billing rule'));
     }
   },
@@ -1494,8 +1748,15 @@ export const billingApi = {
    */
   deleteBillingRule: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('billing rule mutations');
+      }
+
       return await apiClient.delete(`/billing/billing-rules/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete billing rule');
+      }
       throw new Error(handleApiError(error, 'Failed to delete billing rule'));
     }
   },
@@ -1544,8 +1805,15 @@ export const billingApi = {
    */
   updateFacilityBillingSettings: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('facility billing settings updates');
+      }
+
       return await apiClient.patch(`/billing/billing-settings/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update billing settings');
+      }
       throw new Error(handleApiError(error, 'Failed to update billing settings'));
     }
   },
@@ -1603,8 +1871,15 @@ export const billingApi = {
    */
   getPatientInsuranceById: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('patient insurance detail');
+      }
+
       return await apiClient.get(`/billing/patient-insurances/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch patient insurance');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch patient insurance'));
     }
   },
@@ -1622,8 +1897,15 @@ export const billingApi = {
    */
   createPatientInsurance: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('patient insurance mutations');
+      }
+
       return await apiClient.post('/billing/patient-insurances/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create patient insurance');
+      }
       throw new Error(handleApiError(error, 'Failed to create patient insurance'));
     }
   },
@@ -1636,8 +1918,15 @@ export const billingApi = {
    */
   updatePatientInsurance: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('patient insurance mutations');
+      }
+
       return await apiClient.patch(`/billing/patient-insurances/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update patient insurance');
+      }
       throw new Error(handleApiError(error, 'Failed to update patient insurance'));
     }
   },
@@ -1649,8 +1938,15 @@ export const billingApi = {
    */
   deletePatientInsurance: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('patient insurance mutations');
+      }
+
       return await apiClient.delete(`/billing/patient-insurances/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete patient insurance');
+      }
       throw new Error(handleApiError(error, 'Failed to delete patient insurance'));
     }
   },

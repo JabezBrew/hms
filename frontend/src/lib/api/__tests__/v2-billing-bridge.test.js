@@ -419,6 +419,140 @@ describe('Rust V2 billing bridge', () => {
     ]);
   });
 
+  it('loads billing detail-style reads from bounded Rust V2 lists instead of Django detail endpoints', async () => {
+    const issuedAt = '2026-05-12T08:00:00Z';
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'invoice-1',
+              patient_id: 'patient-1',
+              patient_code: 'P-0001',
+              invoice_number: 'INV-1',
+              status: 'issued',
+              gross_amount_minor: 10000,
+              paid_amount_minor: 4000,
+              balance_minor: 6000,
+              currency: 'GHS',
+              issued_at: issuedAt,
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'receipt-1',
+              payment_id: 'payment-1',
+              invoice_id: 'invoice-1',
+              receipt_number: 'RCT-1',
+              amount_minor: 4000,
+              currency: 'GHS',
+              issued_at: issuedAt,
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'claim-1',
+              invoice_id: 'invoice-1',
+              patient_id: 'patient-1',
+              patient_code: 'P-0001',
+              claim_number: 'CLM-1',
+              status: 'ready',
+              amount_minor: 3000,
+              currency: 'GHS',
+              created_at: issuedAt,
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              id: 'rule-1',
+              code: 'cash-required',
+              name: 'Cash required',
+              rule_type: 'cash_required',
+              active: true,
+            },
+          ],
+          meta: {},
+        }),
+      );
+
+    const invoice = await billingApi.getInvoice('invoice-1');
+    const receipt = await billingApi.getReceiptByNumber('RCT-1');
+    const claim = await billingApi.getClaim('claim-1');
+    const rule = await billingApi.getBillingRule('rule-1');
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/invoices?limit=100',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/receipts?limit=100',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/nhis/claims?limit=100',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/billing/rules',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(invoice).toEqual(expect.objectContaining({ id: 'invoice-1', total_amount: 100 }));
+    expect(receipt).toEqual(expect.objectContaining({ id: 'receipt-1', receipt_number: 'RCT-1', amount: 40 }));
+    expect(claim).toEqual(expect.objectContaining({ id: 'claim-1', claimed_amount: 30 }));
+    expect(rule).toEqual(expect.objectContaining({ id: 'rule-1', is_active: true }));
+  });
+
+  it('fails closed for unsupported Rust V2 billing mutations and downloads instead of calling Django', async () => {
+    await expect(billingApi.updateInvoice('invoice-1', { status: 'void' })).rejects.toThrow(
+      /Rust V2 .* invoice updates/i,
+    );
+    await expect(billingApi.createPaymentIntent({ invoice: 'invoice-1' })).rejects.toThrow(
+      /Rust V2 .* payment intents/i,
+    );
+    await expect(billingApi.reviewCashSession('session-1', { approved: true })).rejects.toThrow(
+      /Rust V2 .* cash session review/i,
+    );
+    await expect(billingApi.updateClaimStatus('claim-1', { status: 'submitted' })).rejects.toThrow(
+      /Rust V2 .* claim status/i,
+    );
+    await expect(billingApi.downloadNhisExportJob('job-1')).rejects.toThrow(
+      /Rust V2 .* NHIS export downloads/i,
+    );
+    await expect(billingApi.createService({ name: 'Consultation' })).rejects.toThrow(
+      /Rust V2 .* service catalog mutations/i,
+    );
+    await expect(billingApi.createPayerServiceCode({ code: 'A1' })).rejects.toThrow(
+      /Rust V2 .* payer service code mutations/i,
+    );
+    await expect(billingApi.createPatientInsurance({ patient: 'patient-1' })).rejects.toThrow(
+      /Rust V2 .* patient insurance mutations/i,
+    );
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('loads billing services and synthesizes service categories from Rust V2 catalog data', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
