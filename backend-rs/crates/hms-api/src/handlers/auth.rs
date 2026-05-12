@@ -1,0 +1,326 @@
+use axum::extract::State;
+use axum::http::header::{COOKIE, SET_COOKIE};
+use axum::http::{HeaderMap, HeaderValue};
+use axum::Json;
+use cookie::{Cookie, SameSite};
+use hms_domain::auth::AuthUser;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+use crate::error::{ApiError, ApiErrorResponse};
+use crate::extractors::AuthenticatedUser;
+use crate::response::{object, ObjectResponse};
+use crate::state::{AppState, LoginOutcome};
+
+const REFRESH_COOKIE_NAME: &str = "hms_refresh";
+const CSRF_COOKIE_NAME: &str = "hms_v2_csrf";
+const CSRF_HEADER_NAME: &str = "x-hms-csrf";
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+    pub facility_code: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AuthTokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in_seconds: u64,
+    pub user: AuthUser,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct LogoutResponse {
+    pub logged_out: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PasswordResetRequest {
+    pub email: String,
+    pub facility_code: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PasswordResetRequestResponse {
+    pub accepted: bool,
+    pub debug_token: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PasswordResetCompleteRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PasswordResetCompleteResponse {
+    pub completed: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/login",
+    operation_id = "postAuthLogin",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login succeeded", body = ObjectResponse<AuthTokenResponse>),
+        (status = 401, description = "Login failed", body = ApiErrorResponse)
+    )
+)]
+pub async fn login(
+    State(state): State<AppState>,
+    Json(payload): Json<LoginRequest>,
+) -> Result<(HeaderMap, Json<ObjectResponse<AuthTokenResponse>>), ApiError> {
+    let outcome = state
+        .login(&payload.email, &payload.password, &payload.facility_code)
+        .await
+        .map_err(|_| ApiError::unauthorized())?
+        .ok_or_else(ApiError::unauthorized)?;
+
+    Ok(auth_response(outcome, state.cookie_secure()))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/refresh",
+    operation_id = "postAuthRefresh",
+    tag = "auth",
+    params(("x-hms-csrf" = String, Header, description = "CSRF token copied from the hms_v2_csrf cookie")),
+    responses(
+        (status = 200, description = "Refresh succeeded", body = ObjectResponse<AuthTokenResponse>),
+        (status = 401, description = "Refresh failed", body = ApiErrorResponse)
+    )
+)]
+pub async fn refresh(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(HeaderMap, Json<ObjectResponse<AuthTokenResponse>>), ApiError> {
+    let refresh_token = read_refresh_cookie(&headers).ok_or_else(ApiError::unauthorized)?;
+    let csrf_token = require_csrf(&headers)?;
+    let outcome = state
+        .refresh(&refresh_token, &csrf_token)
+        .await
+        .map_err(|_| ApiError::unauthorized())?
+        .ok_or_else(ApiError::unauthorized)?;
+
+    Ok(auth_response(outcome, state.cookie_secure()))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/logout",
+    operation_id = "postAuthLogout",
+    tag = "auth",
+    params(("x-hms-csrf" = String, Header, description = "CSRF token copied from the hms_v2_csrf cookie")),
+    responses(
+        (status = 200, description = "Logout succeeded", body = ObjectResponse<LogoutResponse>)
+    )
+)]
+pub async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(HeaderMap, Json<ObjectResponse<LogoutResponse>>), ApiError> {
+    if let Some(refresh_token) = read_refresh_cookie(&headers) {
+        let csrf_token = require_csrf(&headers)?;
+        state
+            .logout(&refresh_token, &csrf_token)
+            .await
+            .map_err(|_| ApiError::unauthorized())?;
+    }
+
+    let mut headers = HeaderMap::new();
+    headers.append(SET_COOKIE, expired_refresh_cookie(state.cookie_secure()));
+    headers.append(SET_COOKIE, expired_csrf_cookie(state.cookie_secure()));
+
+    Ok((headers, Json(object(LogoutResponse { logged_out: true }))))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/auth/me",
+    operation_id = "getAuthMe",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Current user", body = ObjectResponse<AuthUser>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn me(AuthenticatedUser(user): AuthenticatedUser) -> Json<ObjectResponse<AuthUser>> {
+    Json(object(user))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/password-reset/request",
+    operation_id = "postAuthPasswordResetRequest",
+    tag = "auth",
+    request_body = PasswordResetRequest,
+    responses(
+        (status = 200, description = "Password reset request accepted", body = ObjectResponse<PasswordResetRequestResponse>)
+    )
+)]
+pub async fn request_password_reset(
+    State(state): State<AppState>,
+    Json(payload): Json<PasswordResetRequest>,
+) -> Result<Json<ObjectResponse<PasswordResetRequestResponse>>, ApiError> {
+    let outcome = state
+        .request_password_reset(&payload.email, &payload.facility_code)
+        .await
+        .map_err(|_| ApiError::bad_request("password_reset_failed", "Password reset failed."))?;
+
+    Ok(Json(object(PasswordResetRequestResponse {
+        accepted: outcome.accepted,
+        debug_token: outcome.debug_token,
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/password-reset/complete",
+    operation_id = "postAuthPasswordResetComplete",
+    tag = "auth",
+    request_body = PasswordResetCompleteRequest,
+    responses(
+        (status = 200, description = "Password reset completed", body = ObjectResponse<PasswordResetCompleteResponse>),
+        (status = 400, description = "Password reset failed", body = ApiErrorResponse)
+    )
+)]
+pub async fn complete_password_reset(
+    State(state): State<AppState>,
+    Json(payload): Json<PasswordResetCompleteRequest>,
+) -> Result<Json<ObjectResponse<PasswordResetCompleteResponse>>, ApiError> {
+    let completed = state
+        .complete_password_reset(&payload.token, &payload.new_password)
+        .await
+        .map_err(|_| ApiError::bad_request("password_reset_failed", "Password reset failed."))?;
+
+    if !completed {
+        return Err(ApiError::bad_request(
+            "password_reset_invalid",
+            "Password reset token or password is invalid.",
+        ));
+    }
+
+    Ok(Json(object(PasswordResetCompleteResponse { completed })))
+}
+
+fn auth_response(
+    outcome: LoginOutcome,
+    cookie_secure: bool,
+) -> (HeaderMap, Json<ObjectResponse<AuthTokenResponse>>) {
+    let mut headers = HeaderMap::new();
+    headers.append(
+        SET_COOKIE,
+        refresh_cookie(&outcome.refresh_token, cookie_secure),
+    );
+    headers.append(SET_COOKIE, csrf_cookie(&outcome.csrf_token, cookie_secure));
+
+    (
+        headers,
+        Json(object(AuthTokenResponse {
+            access_token: outcome.access_token,
+            token_type: "Bearer".to_owned(),
+            expires_in_seconds: 600,
+            user: outcome.user,
+        })),
+    )
+}
+
+fn refresh_cookie(token: &str, secure: bool) -> HeaderValue {
+    Cookie::build((REFRESH_COOKIE_NAME, token.to_owned()))
+        .http_only(true)
+        .secure(secure)
+        .same_site(SameSite::Lax)
+        .path("/api/v2/auth")
+        .max_age(cookie::time::Duration::hours(12))
+        .build()
+        .to_string()
+        .parse()
+        .expect("refresh cookie value is valid")
+}
+
+fn csrf_cookie(token: &str, secure: bool) -> HeaderValue {
+    Cookie::build((CSRF_COOKIE_NAME, token.to_owned()))
+        .secure(secure)
+        .same_site(SameSite::Lax)
+        .path("/")
+        .max_age(cookie::time::Duration::hours(12))
+        .build()
+        .to_string()
+        .parse()
+        .expect("csrf cookie value is valid")
+}
+
+fn expired_refresh_cookie(secure: bool) -> HeaderValue {
+    Cookie::build((REFRESH_COOKIE_NAME, ""))
+        .http_only(true)
+        .secure(secure)
+        .same_site(SameSite::Lax)
+        .path("/api/v2/auth")
+        .max_age(cookie::time::Duration::seconds(0))
+        .build()
+        .to_string()
+        .parse()
+        .expect("expired refresh cookie value is valid")
+}
+
+fn expired_csrf_cookie(secure: bool) -> HeaderValue {
+    Cookie::build((CSRF_COOKIE_NAME, ""))
+        .secure(secure)
+        .same_site(SameSite::Lax)
+        .path("/")
+        .max_age(cookie::time::Duration::seconds(0))
+        .build()
+        .to_string()
+        .parse()
+        .expect("expired csrf cookie value is valid")
+}
+
+fn read_refresh_cookie(headers: &HeaderMap) -> Option<String> {
+    read_cookie(headers, REFRESH_COOKIE_NAME)
+}
+
+fn read_csrf_cookie(headers: &HeaderMap) -> Option<String> {
+    read_cookie(headers, CSRF_COOKIE_NAME)
+}
+
+fn read_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let parsed = Cookie::parse(cookie.trim()).ok()?;
+                (parsed.name() == name).then(|| parsed.value().to_owned())
+            })
+        })
+}
+
+fn require_csrf(headers: &HeaderMap) -> Result<String, ApiError> {
+    let header = headers
+        .get(CSRF_HEADER_NAME)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::forbidden("csrf_required", "CSRF token is required."))?;
+    let cookie = read_csrf_cookie(headers)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::forbidden("csrf_required", "CSRF token is required."))?;
+
+    if hash_for_compare(&header) != hash_for_compare(&cookie) {
+        return Err(ApiError::forbidden(
+            "csrf_invalid",
+            "CSRF token is invalid.",
+        ));
+    }
+
+    Ok(header)
+}
+
+fn hash_for_compare(value: &str) -> String {
+    crate::state::csrf_compare_hash(value)
+}

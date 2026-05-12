@@ -1,0 +1,22 @@
+pub mod admin;
+pub mod auth;
+pub mod billing;
+pub mod care;
+pub mod clinical;
+pub mod codec;
+pub mod consent;
+pub mod dashboard;
+pub mod events;
+pub mod facilities;
+pub mod inventory;
+pub mod laboratory;
+pub mod migrate;
+pub mod patients;
+pub mod pool;
+pub mod provision;
+pub mod referrals;
+pub mod test_support;
+pub mod transactions;
+pub mod ward;
+
+pub use pool::{connect, PgPool};

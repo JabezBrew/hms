@@ -1,4 +1,7 @@
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -10,6 +13,53 @@ function normalizeListResponse(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.results)) return response.results;
   return [];
+}
+
+function normalizeV2Limit(params = {}, fallback = 100) {
+  const rawLimit = params.limit || params.page_size || fallback;
+  const parsed = Number.parseInt(String(rawLimit), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, 100);
+}
+
+function adaptV2Ward(ward) {
+  const totalBeds = Number(ward.active_bed_count || 0);
+  const occupiedBeds = Number(ward.occupied_bed_count || 0);
+  const availableBeds = Math.max(totalBeds - occupiedBeds, 0);
+  const occupancyRate = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
+
+  return {
+    ...ward,
+    ward_type: ward.ward_type || ward.code || 'ward',
+    description: ward.description || '',
+    total_beds: totalBeds,
+    available_beds_count: availableBeds,
+    occupied_beds_count: occupiedBeds,
+    occupancy_rate: occupancyRate,
+    is_active: ward.status === 'active',
+  };
+}
+
+function adaptV2Bed(bed) {
+  return {
+    ...bed,
+    bed_number: bed.bed_number || bed.bed_code,
+    name: bed.name || bed.bed_code,
+    ward: bed.ward || bed.ward_id,
+    section: bed.section || bed.section_id,
+    is_active: bed.status !== 'closed',
+  };
+}
+
+function v2ListData(response) {
+  return Array.isArray(response?.data) ? response.data : [];
+}
+
+function rethrowV2Error(error, message) {
+  rethrowAbortError(error);
+  throw new Error(handleV2ApiError(error, message));
 }
 
 /**
@@ -35,10 +85,23 @@ export const wardsApi = {
    */
   getWards: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getWards({
+          query: {
+            cursor: params.cursor,
+            limit: normalizeV2Limit(params),
+          },
+          signal: params.signal,
+        });
+        return v2ListData(response).map(adaptV2Ward);
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/wards/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch wards');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch wards'));
     }
   },
@@ -55,6 +118,23 @@ export const wardsApi = {
         return [];
       }
 
+      if (isRustV2ApiMode()) {
+        const term = String(query).trim().toLowerCase();
+        const response = await v2Api.getWards({
+          query: {
+            limit: normalizeV2Limit(filters, 50),
+          },
+          signal: filters.signal,
+        });
+        return v2ListData(response)
+          .map(adaptV2Ward)
+          .filter((ward) => (
+            ward.name?.toLowerCase().includes(term)
+            || ward.code?.toLowerCase().includes(term)
+            || ward.ward_type?.toLowerCase().includes(term)
+          ));
+      }
+
       const params = new URLSearchParams({ q: query });
 
       if (filters.wardType) {
@@ -69,6 +149,9 @@ export const wardsApi = {
 
       return await apiClient.get(`/wards/wards/search/?${params.toString()}`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to search wards');
+      }
       throw new Error(handleApiError(error, 'Failed to search wards'));
     }
   },
@@ -80,8 +163,15 @@ export const wardsApi = {
    */
   getWard: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getWardById({ id });
+        return adaptV2Ward(response?.data || {});
+      }
       return await apiClient.get(`/wards/wards/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch ward');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch ward'));
     }
   },
@@ -133,6 +223,22 @@ export const wardsApi = {
    */
   getBeds: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        if (!params.ward) {
+          return [];
+        }
+        const response = await v2Api.getWardBeds(
+          { id: params.ward },
+          {
+            query: {
+              cursor: params.cursor,
+              limit: normalizeV2Limit(params, 100),
+            },
+            signal: params.signal,
+          },
+        );
+        return v2ListData(response).map(adaptV2Bed);
+      }
       // Check if ward parameter is provided
       if (params.ward) {
         // Use the nested endpoint for a specific ward
@@ -354,8 +460,21 @@ export const wardsApi = {
    */
   getWardSections: async (wardId) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getWardSections({ id: wardId }, { query: { limit: 100 } });
+        return v2ListData(response).map((section) => ({
+          ...section,
+          bed_count: section.active_bed_count || 0,
+          available_beds_count: section.active_bed_count || 0,
+          is_active: section.status === 'active',
+          description: section.description || '',
+        }));
+      }
       return await apiClient.get(`/wards/sections/?ward=${wardId}`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch ward sections');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch ward sections'));
     }
   },
@@ -515,10 +634,17 @@ export const wardsApi = {
    */
   getAvailableBeds: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const beds = await wardsApi.getBeds(params);
+        return beds.filter((bed) => bed.status === 'available');
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/beds/available/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch available beds');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch available beds'));
     }
   },

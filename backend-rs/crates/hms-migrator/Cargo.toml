@@ -1,0 +1,18 @@
+[package]
+name = "hms-migrator"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hms-migrator"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+hms-db = { path = "../hms-db" }
+hms-domain = { path = "../hms-domain" }
+tokio.workspace = true
+uuid.workspace = true

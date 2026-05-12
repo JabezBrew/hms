@@ -4,6 +4,8 @@ import { getAuthValue, removeAuthValue, setAuthValue } from '@/lib/auth-storage'
 import { authApi } from "./api/auth"
 import { notifications } from "./notifications"
 import { setAuthTokenProvider, setFacilityCodeProvider, performTokenRefresh } from "./api-client"
+import { configureV2ApiClient, performV2TokenRefresh } from "./api/v2/client"
+import { isRustV2ApiMode } from "./api/v2/runtime"
 import { queryClient } from './react-query'
 import { getDefaultFacilityCode } from './runtime-config'
 
@@ -151,8 +153,12 @@ export function AuthProvider({ children }) {
       return null
     }
 
-    // Use centralized refresh - this ensures only one refresh request at a time
-    const newToken = await performTokenRefresh()
+    const tokenResponse = isRustV2ApiMode()
+      ? await performV2TokenRefresh()
+      : null
+    const newToken = isRustV2ApiMode()
+      ? tokenResponse?.access_token
+      : await performTokenRefresh()
 
     if (newToken) {
       // Update refresh token issued time on successful refresh
@@ -211,6 +217,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     setAuthTokenProvider(getAccessToken, setAccessToken, handleRefreshFailure)
     setFacilityCodeProvider(() => facilityCode)
+    configureV2ApiClient({
+      getAccessToken,
+      setAccessToken,
+      onRefreshFailure: handleRefreshFailure,
+      getFacilityCode: () => facilityCode,
+    })
   }, [getAccessToken, setAccessToken, handleRefreshFailure, facilityCode])
 
   // Login function

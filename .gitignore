@@ -60,6 +60,7 @@ AGENTS.md
 # Docs
 .junie/
 docs/
+backend-rs/target/
 .claude/
 .codex/
 .opencode/

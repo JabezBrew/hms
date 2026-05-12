@@ -1,0 +1,223 @@
+use chrono::NaiveDate;
+use hms_db::admin::{NewPractitionerProfile, NewStaffAccount};
+use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_domain::deployment::{DeploymentProfile, FeatureKey};
+use uuid::Uuid;
+
+#[tokio::test]
+async fn feature_entitlements_are_facility_scoped_and_override_profile_defaults() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    let baseline = hms_db::admin::list_feature_entitlements(&pool, facility_id)
+        .await
+        .expect("feature entitlements load");
+    let nursing = baseline
+        .iter()
+        .find(|item| item.feature == FeatureKey::Nursing)
+        .expect("nursing feature exists");
+    assert!(nursing.profile_default);
+    assert!(nursing.enabled);
+    assert_eq!(nursing.override_enabled, None);
+
+    let disabled = hms_db::admin::update_feature_entitlement(
+        &pool,
+        facility_id,
+        FeatureKey::Nursing,
+        false,
+        owner_id,
+        Some("feature-test".to_owned()),
+    )
+    .await
+    .expect("feature entitlement updates")
+    .expect("feature entitlement exists");
+    assert!(!disabled.enabled);
+    assert_eq!(disabled.override_enabled, Some(false));
+
+    let effective =
+        hms_db::admin::effective_feature_flags(&pool, facility_id, DeploymentProfile::Hospital)
+            .await
+            .expect("effective flags load");
+    assert_eq!(effective.get(&FeatureKey::Nursing), Some(&false));
+
+    assert!(
+        hms_db::admin::list_feature_entitlements(&pool, uuid::Uuid::new_v4())
+            .await
+            .expect("cross-facility list succeeds")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    let staff = hms_db::admin::create_staff_account(
+        &pool,
+        NewStaffAccount {
+            facility_id,
+            email: "akosua.clinician@hms.local".to_owned(),
+            display_name: "Akosua Clinician".to_owned(),
+            password_hash: "hashed-temporary-password".to_owned(),
+            employee_id: "EMP-HMS-2026-0001".to_owned(),
+            department: "Clinical".to_owned(),
+            position: "Medical Officer".to_owned(),
+            hire_date: NaiveDate::from_ymd_opt(2026, 5, 10).expect("valid hire date"),
+            created_by_user_id: owner_id,
+            practitioner_profile: Some(NewPractitionerProfile {
+                license_number: "MDC/RN/0001".to_owned(),
+                specialization: "Internal Medicine".to_owned(),
+                qualification: "MBChB".to_owned(),
+                fhir_practitioner_id: None,
+            }),
+        },
+        Some("staff-create-test".to_owned()),
+    )
+    .await
+    .expect("staff account is created");
+
+    assert_eq!(staff.email, "akosua.clinician@hms.local");
+    assert!(staff.is_active);
+    assert!(staff.password_change_required);
+    assert_eq!(
+        staff
+            .practitioner_profile
+            .as_ref()
+            .expect("practitioner profile exists")
+            .license_number,
+        "MDC/RN/0001"
+    );
+
+    let listed = hms_db::admin::list_staff_accounts(&pool, facility_id, None, 10)
+        .await
+        .expect("staff list succeeds");
+    assert!(listed.iter().any(|item| item.id == staff.id));
+
+    let directory = hms_db::admin::list_staff_directory(&pool, facility_id, None, 10)
+        .await
+        .expect("staff directory succeeds");
+    assert!(directory
+        .iter()
+        .any(|item| item.user_id == staff.user_id && item.display_name == "Akosua Clinician"));
+    assert!(
+        hms_db::admin::list_staff_accounts(&pool, Uuid::new_v4(), None, 10)
+            .await
+            .expect("cross-facility list succeeds")
+            .is_empty()
+    );
+
+    let forced_reset = hms_db::admin::force_staff_password_reset(
+        &pool,
+        facility_id,
+        staff.id,
+        owner_id,
+        Some("staff-reset-test".to_owned()),
+    )
+    .await
+    .expect("force password reset succeeds")
+    .expect("staff account exists");
+    assert!(forced_reset.password_change_required);
+    assert!(forced_reset.session_version > staff.session_version);
+
+    let updated_profile = hms_db::admin::upsert_practitioner_profile(
+        &pool,
+        facility_id,
+        staff.id,
+        owner_id,
+        NewPractitionerProfile {
+            license_number: "MDC/RN/0002".to_owned(),
+            specialization: "Emergency Medicine".to_owned(),
+            qualification: "MBChB, MWACP".to_owned(),
+            fhir_practitioner_id: Some("Practitioner/hms-0002".to_owned()),
+        },
+        Some("staff-practitioner-test".to_owned()),
+    )
+    .await
+    .expect("practitioner profile upsert succeeds")
+    .expect("staff account exists");
+    assert_eq!(
+        updated_profile
+            .practitioner_profile
+            .expect("practitioner profile exists")
+            .specialization,
+        "Emergency Medicine"
+    );
+
+    let deactivated = hms_db::admin::deactivate_staff_account(
+        &pool,
+        facility_id,
+        staff.id,
+        owner_id,
+        Some("staff-deactivate-test".to_owned()),
+    )
+    .await
+    .expect("deactivate succeeds")
+    .expect("staff account exists");
+    assert!(!deactivated.is_active);
+
+    let active_directory = hms_db::admin::list_staff_directory(&pool, facility_id, None, 10)
+        .await
+        .expect("active staff directory succeeds");
+    assert!(!active_directory
+        .iter()
+        .any(|item| item.user_id == staff.user_id));
+
+    let reactivated = hms_db::admin::reactivate_staff_account(
+        &pool,
+        facility_id,
+        staff.id,
+        owner_id,
+        Some("staff-reactivate-test".to_owned()),
+    )
+    .await
+    .expect("reactivate succeeds")
+    .expect("staff account exists");
+    assert!(reactivated.is_active);
+}

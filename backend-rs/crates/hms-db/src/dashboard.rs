@@ -1,0 +1,270 @@
+use chrono::{DateTime, Utc};
+use hms_domain::dashboard::{
+    DashboardMetric, DashboardSnapshot, NotificationListItem, NotificationPriority,
+};
+use hms_domain::deployment::{DeploymentProfile, FeatureKey, NavigationManifest, PermissionCode};
+use sqlx::{FromRow, QueryBuilder};
+use uuid::Uuid;
+
+use crate::{codec, PgPool};
+
+pub struct NotificationCursor {
+    pub occurred_at: DateTime<Utc>,
+    pub id: Uuid,
+}
+
+pub struct NewNotification {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub recipient_user_id: Uuid,
+    pub notification_type: String,
+    pub title: String,
+    pub body: String,
+    pub priority: NotificationPriority,
+}
+
+#[derive(FromRow)]
+struct SnapshotRow {
+    id: Uuid,
+    deployment_profile: String,
+    metrics: serde_json::Value,
+    generated_at: DateTime<Utc>,
+}
+
+#[derive(FromRow)]
+struct NotificationRow {
+    id: Uuid,
+    notification_type: String,
+    title: String,
+    body: String,
+    priority: String,
+    read_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+}
+
+pub async fn dashboard_snapshot(
+    pool: &PgPool,
+    facility_id: Uuid,
+    profile: DeploymentProfile,
+    navigation: NavigationManifest,
+) -> anyhow::Result<DashboardSnapshot> {
+    let metrics = dashboard_metrics(pool, facility_id).await?;
+    let metrics_json = serde_json::to_value(&metrics)?;
+    let id = Uuid::new_v4();
+    let row = sqlx::query_as::<_, SnapshotRow>(
+        "INSERT INTO dashboard_snapshots (
+            id, facility_id, snapshot_key, deployment_profile, metrics, generated_at
+         )
+         VALUES ($1, $2, 'operations', $3, $4, now())
+         ON CONFLICT (facility_id, snapshot_key) DO UPDATE
+         SET deployment_profile = EXCLUDED.deployment_profile,
+             metrics = EXCLUDED.metrics,
+             generated_at = EXCLUDED.generated_at,
+             updated_at = now()
+         RETURNING id, deployment_profile, metrics, generated_at",
+    )
+    .bind(id)
+    .bind(facility_id)
+    .bind(codec::encode(profile)?)
+    .bind(metrics_json)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(DashboardSnapshot {
+        id: row.id,
+        deployment_profile: codec::decode(&row.deployment_profile)?,
+        generated_at: row.generated_at,
+        metrics: serde_json::from_value(row.metrics)?,
+        navigation,
+    })
+}
+
+pub async fn list_notifications(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    cursor: Option<NotificationCursor>,
+    unread_only: bool,
+    limit: i64,
+) -> anyhow::Result<Vec<NotificationListItem>> {
+    let mut query = QueryBuilder::new(
+        "SELECT id, notification_type, title, body, priority, read_at, created_at
+         FROM notifications
+         WHERE facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(" AND recipient_user_id = ");
+    query.push_bind(user_id);
+    if unread_only {
+        query.push(" AND read_at IS NULL");
+    }
+    if let Some(cursor) = cursor {
+        query.push(" AND (created_at, id) < (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<NotificationRow>()
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(notification_from_row).collect()
+}
+
+pub async fn mark_notification_read(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    notification_id: Uuid,
+    read: bool,
+) -> anyhow::Result<Option<NotificationListItem>> {
+    sqlx::query(
+        "UPDATE notifications
+         SET read_at = CASE WHEN $1 THEN COALESCE(read_at, now()) ELSE NULL END
+         WHERE id = $2 AND facility_id = $3 AND recipient_user_id = $4",
+    )
+    .bind(read)
+    .bind(notification_id)
+    .bind(facility_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    get_notification(pool, facility_id, user_id, notification_id).await
+}
+
+pub async fn insert_notification(
+    pool: &PgPool,
+    notification: NewNotification,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO notifications (
+            id, facility_id, recipient_user_id, notification_type, title, body, priority
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(notification.id)
+    .bind(notification.facility_id)
+    .bind(notification.recipient_user_id)
+    .bind(notification.notification_type)
+    .bind(notification.title)
+    .bind(notification.body)
+    .bind(codec::encode(notification.priority)?)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn audit_realtime_open(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    channel_name: &str,
+    channel_kind: &str,
+) -> anyhow::Result<Uuid> {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO realtime_subscription_audit (
+            id, facility_id, user_id, channel_name, channel_kind
+         )
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(id)
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(channel_name)
+    .bind(channel_kind)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+pub async fn audit_realtime_close(pool: &PgPool, id: Uuid) -> anyhow::Result<()> {
+    sqlx::query("UPDATE realtime_subscription_audit SET closed_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn dashboard_metrics(
+    pool: &PgPool,
+    facility_id: Uuid,
+) -> anyhow::Result<Vec<DashboardMetric>> {
+    let active_patients = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM patients WHERE facility_id = $1 AND status = 'active'",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await?;
+    let waiting_visits = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM visits WHERE facility_id = $1 AND status IN ('waiting', 'called')",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await?;
+    let open_invoices = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM invoices WHERE facility_id = $1 AND status IN ('issued', 'partially_paid')",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(vec![
+        DashboardMetric {
+            key: "active_patients".to_owned(),
+            label: "Active Patients".to_owned(),
+            value: active_patients,
+            feature: FeatureKey::Patients,
+            permission: PermissionCode::PatientDemographicsView,
+        },
+        DashboardMetric {
+            key: "waiting_visits".to_owned(),
+            label: "Waiting Visits".to_owned(),
+            value: waiting_visits,
+            feature: FeatureKey::Appointments,
+            permission: PermissionCode::AppointmentView,
+        },
+        DashboardMetric {
+            key: "open_invoices".to_owned(),
+            label: "Open Invoices".to_owned(),
+            value: open_invoices,
+            feature: FeatureKey::Billing,
+            permission: PermissionCode::BillingView,
+        },
+    ])
+}
+
+async fn get_notification(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    notification_id: Uuid,
+) -> anyhow::Result<Option<NotificationListItem>> {
+    let row = sqlx::query_as::<_, NotificationRow>(
+        "SELECT id, notification_type, title, body, priority, read_at, created_at
+         FROM notifications
+         WHERE id = $1 AND facility_id = $2 AND recipient_user_id = $3",
+    )
+    .bind(notification_id)
+    .bind(facility_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(notification_from_row).transpose()
+}
+
+fn notification_from_row(row: NotificationRow) -> anyhow::Result<NotificationListItem> {
+    Ok(NotificationListItem {
+        id: row.id,
+        notification_type: row.notification_type,
+        title: row.title,
+        body: row.body,
+        priority: codec::decode(&row.priority)?,
+        read_at: row.read_at,
+        created_at: row.created_at,
+    })
+}

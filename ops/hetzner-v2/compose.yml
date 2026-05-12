@@ -1,0 +1,292 @@
+name: ${COMPOSE_PROJECT_NAME:-hms-v2-client}
+
+x-rust-image: &rust-image
+  image: hms-v2-rust-${CLIENT_SLUG:-client}:${VERSION:-latest}
+  build:
+    context: ../../backend-rs
+    dockerfile: Dockerfile
+  environment: &rust-environment
+    HMS_ENV: ${HMS_ENV:-production}
+    HMS_API_LISTEN_ADDR: 0.0.0.0:8080
+    HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}@pgbouncer:6432/${DB_NAME:-hms}
+    HMS_DATABASE_MAX_CONNECTIONS: ${HMS_DATABASE_MAX_CONNECTIONS:-10}
+    HMS_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
+    HMS_FACILITY_NAME: ${HMS_FACILITY_NAME:?set HMS_FACILITY_NAME in ops/hetzner-v2/.env}
+    HMS_DEPLOYMENT_PROFILE: ${HMS_DEPLOYMENT_PROFILE:?set HMS_DEPLOYMENT_PROFILE in ops/hetzner-v2/.env}
+    HMS_JWT_SECRET: ${HMS_JWT_SECRET:?set HMS_JWT_SECRET in ops/hetzner-v2/.env}
+    HMS_COOKIE_SECURE: "true"
+    HMS_AUTO_MIGRATE: "false"
+    HMS_PROVISION_BASELINE: "false"
+    RUST_LOG: ${RUST_LOG:-hms_api=info,hms_worker=info,hms_db=info}
+  networks:
+    - internal
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/hetzner-v2/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/hetzner-v2/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      hms-api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    networks:
+      - edge
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:2019/config/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  frontend:
+    image: hms-v2-frontend-${CLIENT_SLUG:-client}:${VERSION:-latest}
+    build:
+      context: ../../frontend-v2
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: /api
+      V2_API_BASE_URL: /api/v2
+      WS_URL: ${FRONTEND_WS_URL:-}
+      DEFAULT_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
+      MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
+      RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
+    expose:
+      - "80"
+    networks:
+      - edge
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  hms-api:
+    <<: *rust-image
+    command: ["hms-api"]
+    expose:
+      - "8080"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      hms-migrator:
+        condition: service_completed_successfully
+    networks:
+      edge:
+        aliases:
+          - hms-api
+      internal:
+        aliases:
+          - hms-api
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/api/v2/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    mem_limit: 768m
+    cpus: 1.0
+
+  hms-worker:
+    <<: *rust-image
+    command: ["hms-worker"]
+    environment:
+      <<: *rust-environment
+      HMS_WORKER_DATABASE_MAX_CONNECTIONS: ${HMS_WORKER_DATABASE_MAX_CONNECTIONS:-2}
+      HMS_WORKER_POLL_INTERVAL_SECONDS: ${HMS_WORKER_POLL_INTERVAL_SECONDS:-30}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      hms-migrator:
+        condition: service_completed_successfully
+    mem_limit: 384m
+    cpus: 0.50
+
+  hms-migrator:
+    <<: *rust-image
+    command: ["hms-migrator"]
+    restart: "no"
+    environment:
+      <<: *rust-environment
+      HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}@db:5432/${DB_NAME:-hms}
+      HMS_DATABASE_MAX_CONNECTIONS: "2"
+      HMS_PROVISION_BASELINE: ${HMS_PROVISION_BASELINE:-true}
+      HMS_BOOTSTRAP_ADMIN_EMAIL: ${HMS_BOOTSTRAP_ADMIN_EMAIL:?set HMS_BOOTSTRAP_ADMIN_EMAIL in ops/hetzner-v2/.env}
+      HMS_BOOTSTRAP_ADMIN_NAME: ${HMS_BOOTSTRAP_ADMIN_NAME:-HMS Administrator}
+      HMS_BOOTSTRAP_ADMIN_PASSWORD: ${HMS_BOOTSTRAP_ADMIN_PASSWORD:?set HMS_BOOTSTRAP_ADMIN_PASSWORD in ops/hetzner-v2/.env}
+      HMS_SEED_DEMO_DATA: ${HMS_SEED_DEMO_DATA:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-hms}
+      POSTGRES_USER: ${DB_USER:-hms}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=60
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_compression=on
+      - -c
+      - log_min_duration_statement=500
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 1200m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  pgbouncer:
+    image: bitnamilegacy/pgbouncer:1.24.1-debian-12-r10
+    environment:
+      POSTGRESQL_HOST: db
+      POSTGRESQL_PORT: "5432"
+      POSTGRESQL_DATABASE: ${DB_NAME:-hms}
+      POSTGRESQL_USERNAME: ${DB_USER:-hms}
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}
+      PGBOUNCER_PORT: "6432"
+      PGBOUNCER_DATABASE: ${DB_NAME:-hms}
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-200}
+      PGBOUNCER_DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-15}
+      PGBOUNCER_RESERVE_POOL_SIZE: ${PGBOUNCER_RESERVE_POOL_SIZE:-5}
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    expose:
+      - "6432"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=\"$${POSTGRESQL_PASSWORD}\" /opt/bitnami/postgresql/bin/psql -h 127.0.0.1 -p 6432 -U \"$${POSTGRESQL_USERNAME}\" -d \"$${POSTGRESQL_DATABASE}\" -tAc 'SELECT 1' | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 128m
+    cpus: 0.50
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 192mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - "60"
+      - "1000"
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:

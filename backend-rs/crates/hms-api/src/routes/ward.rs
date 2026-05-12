@@ -1,0 +1,106 @@
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::handlers::ward;
+use crate::state::AppState;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/v2/wards", get(ward::list_wards))
+        .route("/api/v2/wards/:id", get(ward::get_ward))
+        .route(
+            "/api/v2/wards/:id/beds",
+            get(ward::list_ward_beds).post(ward::create_bed),
+        )
+        .route(
+            "/api/v2/wards/:id/sections",
+            get(ward::list_ward_sections).post(ward::create_ward_section),
+        )
+        .route("/api/v2/wards/board", get(ward::ward_board))
+        .route(
+            "/api/v2/admissions/cases",
+            get(ward::list_admission_cases).post(ward::create_admission_case),
+        )
+        .route(
+            "/api/v2/admissions/cases/:id/reserve-bed",
+            post(ward::reserve_admission_bed),
+        )
+        .route(
+            "/api/v2/admissions/cases/:id/activate",
+            post(ward::activate_admission_case),
+        )
+        .route(
+            "/api/v2/admissions/cases/:id/cancel",
+            post(ward::cancel_admission_case),
+        )
+        .route("/api/v2/admissions", post(ward::admit_patient))
+        .route(
+            "/api/v2/discharges",
+            get(ward::list_discharges).post(ward::request_discharge),
+        )
+        .route(
+            "/api/v2/discharges/:id/complete",
+            post(ward::complete_discharge),
+        )
+        .route(
+            "/api/v2/nursing/tasks",
+            get(ward::list_nursing_tasks).post(ward::create_nursing_task),
+        )
+        .route(
+            "/api/v2/nursing/tasks/:id/complete",
+            post(ward::complete_nursing_task),
+        )
+        .route(
+            "/api/v2/nursing/medication-administrations",
+            get(ward::list_medication_administrations)
+                .post(ward::schedule_medication_administration),
+        )
+        .route(
+            "/api/v2/nursing/medication-administrations/:id/administer",
+            post(ward::administer_medication),
+        )
+        .route(
+            "/api/v2/nursing/handoffs",
+            get(ward::list_handoffs).post(ward::create_handoff),
+        )
+        .route(
+            "/api/v2/nursing/handoffs/:id/complete",
+            post(ward::complete_handoff),
+        )
+        .route(
+            "/api/v2/nursing/treatment-sheets",
+            get(ward::list_treatment_sheets).post(ward::create_treatment_sheet),
+        )
+        .route(
+            "/api/v2/nursing/vitals",
+            get(ward::list_patient_vitals).post(ward::create_patient_vitals),
+        )
+        .route(
+            "/api/v2/nursing/alerts",
+            get(ward::list_nursing_alerts).post(ward::create_nursing_alert),
+        )
+        .route(
+            "/api/v2/nursing/alerts/:id/acknowledge",
+            post(ward::acknowledge_nursing_alert),
+        )
+        .route(
+            "/api/v2/nursing/monitoring-events",
+            get(ward::list_monitoring_events).post(ward::create_monitoring_event),
+        )
+        .route(
+            "/api/v2/nursing/fluid-balance",
+            get(ward::list_fluid_balance_entries).post(ward::create_fluid_balance_entry),
+        )
+        .route(
+            "/api/v2/nursing/ward-stock-requests",
+            get(ward::list_ward_stock_requests).post(ward::create_ward_stock_request),
+        )
+        .route(
+            "/api/v2/nursing/ward-stock-requests/:id/approve",
+            post(ward::approve_ward_stock_request),
+        )
+        .route(
+            "/api/v2/nursing/ward-stock-requests/:id/fulfill",
+            post(ward::fulfill_ward_stock_request),
+        )
+}

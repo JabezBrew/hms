@@ -2,6 +2,66 @@
  * Organization API client for managing clinical units and organizational hierarchy.
  */
 import { apiClient } from '../api-client';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
+
+function normalizeV2OrgLimit(params = {}, fallback = 100) {
+  const parsed = Number.parseInt(String(params.limit || params.page_size || fallback), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, 100);
+}
+
+function titleCase(value) {
+  return String(value || '')
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function adaptV2OrgUnit(unit) {
+  const unitType = unit.unit_type || unit.unit_type_code || 'department';
+  return {
+    ...unit,
+    unit_type_code: unitType,
+    unit_type_name: unit.unit_type_name || titleCase(unitType),
+    unit_category: unit.unit_category || (unitType === 'department' ? 'clinical' : 'administrative'),
+    parentId: unit.parentId || unit.parent_unit_id || null,
+  };
+}
+
+function filterV2OrgUnits(units, params = {}) {
+  return units.filter((unit) => {
+    if (params.unit_type_code && unit.unit_type_code !== params.unit_type_code) {
+      return false;
+    }
+    if (params.unit_category && unit.unit_category !== params.unit_category) {
+      return false;
+    }
+    if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
+      const expected = params.is_active === true || params.is_active === 'true';
+      if (Boolean(unit.is_active) !== expected) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+async function listV2OrgUnits(params = {}) {
+  const response = await v2Api.getAdminOrgUnits({
+    query: {
+      cursor: params.cursor,
+      limit: normalizeV2OrgLimit(params),
+    },
+    signal: params.signal,
+  });
+  const units = Array.isArray(response?.data)
+    ? response.data.map(adaptV2OrgUnit)
+    : [];
+  return filterV2OrgUnits(units, params);
+}
 
 // =============================================================================
 // Configuration Endpoints
@@ -50,7 +110,12 @@ export const assignmentTypesApi = {
  * Clinical Units API
  */
 export const clinicalUnitsApi = {
-  list: (params = {}) => apiClient.get('/organization/units/', { params }),
+  list: (params = {}) => {
+    if (isRustV2ApiMode()) {
+      return listV2OrgUnits(params);
+    }
+    return apiClient.get('/organization/units/', { params });
+  },
   get: (id) => apiClient.get(`/organization/units/${id}/`),
   create: (data) => apiClient.post('/organization/units/', data),
   update: (id, data) => apiClient.patch(`/organization/units/${id}/`, data),
@@ -58,7 +123,12 @@ export const clinicalUnitsApi = {
   delete: (id) => apiClient.delete(`/organization/units/${id}/`),
 
   // Tree and hierarchy
-  tree: () => apiClient.get('/organization/units/tree/'),
+  tree: () => {
+    if (isRustV2ApiMode()) {
+      return listV2OrgUnits();
+    }
+    return apiClient.get('/organization/units/tree/');
+  },
   children: (id) => apiClient.get(`/organization/units/${id}/children/`),
   ancestors: (id) => apiClient.get(`/organization/units/${id}/ancestors/`),
   descendants: (id, params = {}) => apiClient.get(`/organization/units/${id}/descendants/`, { params }),

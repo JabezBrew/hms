@@ -1,0 +1,213 @@
+use chrono::{TimeZone, Utc};
+use hms_db::care::{AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter};
+use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_domain::care::{AppointmentStatus, EncounterStatus, EncounterType};
+use hms_domain::deployment::DeploymentProfile;
+
+#[tokio::test]
+async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+
+    let appointment = hms_db::care::create_appointment(
+        &pool,
+        NewAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            starts_at: Utc
+                .with_ymd_and_hms(2026, 5, 11, 9, 0, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            ends_at: Utc
+                .with_ymd_and_hms(2026, 5, 11, 9, 30, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("appointment is created");
+
+    let loaded = hms_db::care::get_appointment(&pool, facility_id, appointment.id)
+        .await
+        .expect("appointment lookup succeeds")
+        .expect("appointment exists");
+    assert_eq!(loaded.patient_id, patient_id);
+    assert_eq!(loaded.status, AppointmentStatus::Scheduled);
+
+    let updated = hms_db::care::update_appointment(
+        &pool,
+        AppointmentUpdate {
+            id: appointment.id,
+            facility_id,
+            starts_at: Some(
+                Utc.with_ymd_and_hms(2026, 5, 11, 10, 0, 0)
+                    .single()
+                    .expect("static timestamp is valid"),
+            ),
+            ends_at: Some(
+                Utc.with_ymd_and_hms(2026, 5, 11, 10, 45, 0)
+                    .single()
+                    .expect("static timestamp is valid"),
+            ),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("appointment update succeeds")
+    .expect("appointment remains in facility");
+    assert_eq!(
+        updated.starts_at,
+        Utc.with_ymd_and_hms(2026, 5, 11, 10, 0, 0)
+            .single()
+            .expect("static timestamp is valid")
+    );
+
+    let cancelled = hms_db::care::cancel_appointment(&pool, facility_id, appointment.id, owner_id)
+        .await
+        .expect("appointment cancel succeeds")
+        .expect("appointment remains in facility");
+    assert_eq!(cancelled.status, AppointmentStatus::Cancelled);
+
+    assert!(
+        hms_db::care::get_appointment(&pool, uuid::Uuid::new_v4(), appointment.id)
+            .await
+            .expect("cross-facility lookup succeeds")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn encounter_detail_update_repository_stays_patient_and_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+
+    let encounter = hms_db::care::create_encounter(
+        &pool,
+        NewEncounter {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            visit_id: None,
+            encounter_type: EncounterType::Outpatient,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("encounter is created");
+
+    let loaded = hms_db::care::get_encounter(&pool, facility_id, encounter.id)
+        .await
+        .expect("encounter lookup succeeds")
+        .expect("encounter exists");
+    assert_eq!(loaded.patient_id, patient_id);
+    assert_eq!(loaded.status, EncounterStatus::InProgress);
+
+    let updated = hms_db::care::update_encounter(
+        &pool,
+        EncounterUpdate {
+            id: encounter.id,
+            facility_id,
+            visit_id: None,
+            encounter_type: Some(EncounterType::Emergency),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("encounter update succeeds")
+    .expect("encounter remains in facility");
+    assert_eq!(updated.encounter_type, EncounterType::Emergency);
+
+    let completed = hms_db::care::update_encounter_status(
+        &pool,
+        facility_id,
+        encounter.id,
+        EncounterStatus::Completed,
+    )
+    .await
+    .expect("encounter completion succeeds")
+    .expect("encounter remains in facility");
+    assert_eq!(completed.status, EncounterStatus::Completed);
+
+    assert!(hms_db::care::update_encounter(
+        &pool,
+        EncounterUpdate {
+            id: encounter.id,
+            facility_id,
+            visit_id: None,
+            encounter_type: Some(EncounterType::Triage),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("completed encounter update query succeeds")
+    .is_none());
+
+    assert!(
+        hms_db::care::get_encounter(&pool, uuid::Uuid::new_v4(), encounter.id)
+            .await
+            .expect("cross-facility lookup succeeds")
+            .is_none()
+    );
+}

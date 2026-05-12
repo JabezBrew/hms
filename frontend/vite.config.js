@@ -88,6 +88,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        "/api/v2": {
+          target: process.env.VITE_V2_API_PROXY_TARGET || "http://localhost:8080",
+          changeOrigin: true,
+        },
         "/api": {
           target: "http://localhost:8000",
           changeOrigin: true,
@@ -96,6 +100,10 @@ export default defineConfig(({ mode }) => {
     },
     preview: {
       proxy: {
+        "/api/v2": {
+          target: process.env.VITE_V2_API_PROXY_TARGET || "http://localhost:8080",
+          changeOrigin: true,
+        },
         "/api": {
           target: "http://localhost:8000",
           changeOrigin: true,
