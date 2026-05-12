@@ -263,6 +263,17 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinics": {
+    "operationId": "getClinics",
+    "method": "GET",
+    "path": "/api/v2/clinics",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
   "getClinicWaitlist": {
     "operationId": "getClinicWaitlist",
     "method": "GET",
@@ -1731,6 +1742,7 @@ export function createGeneratedClient(request) {
     getCashSessions: createOperation(request, operations.getCashSessions),
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
+    getClinics: createOperation(request, operations.getClinics),
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
     getConsents: createOperation(request, operations.getConsents),
     getControlledSubstanceRegister: createOperation(request, operations.getControlledSubstanceRegister),

@@ -72,6 +72,15 @@ pub struct CursorListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ClinicListItem {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AppointmentListItem {
     pub id: Uuid,
     pub patient_id: Uuid,

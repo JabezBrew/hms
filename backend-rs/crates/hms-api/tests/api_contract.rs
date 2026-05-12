@@ -227,6 +227,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/appointments",
         "/api/v2/appointments/{id}",
         "/api/v2/appointments/{id}/cancel",
+        "/api/v2/clinics",
         "/api/v2/visits",
         "/api/v2/visits/check-in",
         "/api/v2/visits/{id}/call",
@@ -3791,6 +3792,25 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
     let owner_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+
+    let clinics = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/clinics?limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinics list succeeds");
+    assert_eq!(clinics.status(), StatusCode::OK);
+    let clinics_body = json_body(clinics).await;
+    assert_eq!(clinics_body["page"]["limit"], 10);
+    assert_eq!(clinics_body["data"][0]["code"], "general");
+    assert_eq!(clinics_body["data"][0]["name"], "General Clinic");
+    assert_eq!(clinics_body["data"][0]["is_active"], true);
 
     let patient_response = app
         .clone()

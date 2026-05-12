@@ -18,6 +18,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/appointments/:id/cancel",
             post(care::cancel_appointment),
         )
+        .route("/api/v2/clinics", get(care::list_clinics))
         .route("/api/v2/visits", get(care::list_visits))
         .route("/api/v2/visits/check-in", post(care::check_in_visit))
         .route("/api/v2/visits/:id/call", post(care::call_visit))

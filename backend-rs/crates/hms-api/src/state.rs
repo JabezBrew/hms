@@ -57,8 +57,8 @@ use hms_domain::billing::{
 };
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::care::{
-    AppointmentListItem, CareTeamAssignment, CareTeamRole, EncounterListItem, EncounterStatus,
-    EncounterType, TriageAcuity, TriageListItem, VisitListItem, VisitStatus,
+    AppointmentListItem, CareTeamAssignment, CareTeamRole, ClinicListItem, EncounterListItem,
+    EncounterStatus, EncounterType, TriageAcuity, TriageListItem, VisitListItem, VisitStatus,
 };
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteListItem,
@@ -1944,6 +1944,14 @@ impl AppState {
         limit: i64,
     ) -> Result<Vec<AppointmentListItem>> {
         hms_db::care::list_appointments(&self.inner.pool, self.facility_id(), cursor, limit).await
+    }
+
+    pub async fn list_clinics(
+        &self,
+        cursor: Option<CareCursor>,
+        limit: i64,
+    ) -> Result<Vec<ClinicListItem>> {
+        hms_db::care::list_clinics(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
     pub async fn create_appointment(

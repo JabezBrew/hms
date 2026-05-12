@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clinicalUnitsApi } from '../organization';
+import { clinicalUnitsApi, clinicsApi } from '../organization';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '../v2/client';
 
 describe('Rust V2 organization bridge', () => {
@@ -86,6 +86,48 @@ describe('Rust V2 organization bridge', () => {
         parent_unit_name: null,
         parentId: null,
         created_at: '2026-05-12T03:26:23Z',
+      },
+    ]);
+  });
+
+  it('lists clinics through Rust /api/v2 clinics and adapts scheduling fields for appointment setup', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'clinic-1',
+              code: 'general',
+              name: 'General Clinic',
+              is_active: true,
+              created_at: '2026-05-12T04:02:42Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await clinicsApi.list({ is_active: true, page_size: 50 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinics?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual([
+      {
+        id: 'clinic-1',
+        code: 'general',
+        name: 'General Clinic',
+        is_active: true,
+        created_at: '2026-05-12T04:02:42Z',
+        booking_mode: 'clinic_pool',
+        waitlist_enabled: false,
       },
     ]);
   });

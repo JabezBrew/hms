@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_domain::care::{
-    AppointmentListItem, AppointmentStatus, CareTeamAssignment, CareTeamRole, EncounterListItem,
-    EncounterStatus, EncounterType, TriageAcuity, TriageListItem, TriageStatus, VisitListItem,
-    VisitStatus,
+    AppointmentListItem, AppointmentStatus, CareTeamAssignment, CareTeamRole, ClinicListItem,
+    EncounterListItem, EncounterStatus, EncounterType, TriageAcuity, TriageListItem, TriageStatus,
+    VisitListItem, VisitStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -95,6 +95,15 @@ struct AppointmentRow {
 }
 
 #[derive(Clone, Debug, FromRow)]
+struct ClinicRow {
+    id: Uuid,
+    code: String,
+    name: String,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
 struct VisitRow {
     id: Uuid,
     patient_id: Uuid,
@@ -181,6 +190,49 @@ pub async fn list_appointments(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(appointment_from_row).collect()
+}
+
+pub async fn list_clinics(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<CareCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<ClinicListItem>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT id,
+               code,
+               name,
+               is_active,
+               created_at
+        FROM clinics
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+
+    if let Some(cursor) = cursor {
+        query.push(" AND (created_at, id) > (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+
+    query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = query.build_query_as::<ClinicRow>().fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| ClinicListItem {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            is_active: row.is_active,
+            created_at: row.created_at,
+        })
+        .collect())
 }
 
 pub async fn create_appointment(

@@ -49,6 +49,26 @@ function filterV2OrgUnits(units, params = {}) {
   });
 }
 
+function adaptV2Clinic(clinic) {
+  return {
+    ...clinic,
+    booking_mode: clinic.booking_mode || 'clinic_pool',
+    waitlist_enabled: Boolean(clinic.waitlist_enabled),
+  };
+}
+
+function filterV2Clinics(clinics, params = {}) {
+  return clinics.filter((clinic) => {
+    if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
+      const expected = params.is_active === true || params.is_active === 'true';
+      if (Boolean(clinic.is_active) !== expected) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
 async function listV2OrgUnits(params = {}) {
   const response = await v2Api.getAdminOrgUnits({
     query: {
@@ -61,6 +81,24 @@ async function listV2OrgUnits(params = {}) {
     ? response.data.map(adaptV2OrgUnit)
     : [];
   return filterV2OrgUnits(units, params);
+}
+
+async function listV2Clinics(params = {}) {
+  const response = await v2Api.getClinics({
+    query: {
+      cursor: params.cursor,
+      limit: normalizeV2OrgLimit(params, 50),
+    },
+    signal: params.signal,
+  });
+  const clinics = Array.isArray(response?.data)
+    ? response.data.map(adaptV2Clinic)
+    : [];
+  return filterV2Clinics(clinics, params);
+}
+
+function unsupportedInRustV2(message) {
+  return Promise.reject(new Error(message));
 }
 
 // =============================================================================
@@ -425,11 +463,37 @@ export const validationRulesApi = {
  * Clinics API
  */
 export const clinicsApi = {
-  list: (params = {}) => apiClient.get('/organization/clinics/', { params }),
-  get: (id) => apiClient.get(`/organization/clinics/${id}/`),
-  create: (data) => apiClient.post('/organization/clinics/', data),
-  update: (id, data) => apiClient.patch(`/organization/clinics/${id}/`, data),
-  delete: (id) => apiClient.delete(`/organization/clinics/${id}/`),
+  list: (params = {}) => {
+    if (isRustV2ApiMode()) {
+      return listV2Clinics(params);
+    }
+    return apiClient.get('/organization/clinics/', { params });
+  },
+  get: async (id) => {
+    if (isRustV2ApiMode()) {
+      const clinics = await listV2Clinics({ limit: 100 });
+      return clinics.find((clinic) => clinic.id === id) || null;
+    }
+    return apiClient.get(`/organization/clinics/${id}/`);
+  },
+  create: (data) => {
+    if (isRustV2ApiMode()) {
+      return unsupportedInRustV2('Rust V2 does not expose clinic management yet.');
+    }
+    return apiClient.post('/organization/clinics/', data);
+  },
+  update: (id, data) => {
+    if (isRustV2ApiMode()) {
+      return unsupportedInRustV2('Rust V2 does not expose clinic management yet.');
+    }
+    return apiClient.patch(`/organization/clinics/${id}/`, data);
+  },
+  delete: (id) => {
+    if (isRustV2ApiMode()) {
+      return unsupportedInRustV2('Rust V2 does not expose clinic management yet.');
+    }
+    return apiClient.delete(`/organization/clinics/${id}/`);
+  },
 };
 
 /**

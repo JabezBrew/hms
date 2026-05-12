@@ -5,10 +5,10 @@ use hms_access::{require_patient_demographics_access, require_permission};
 use hms_db::care::CareCursor;
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::{
-    AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, CreateAppointmentRequest,
-    CreateCareTeamAssignmentRequest, CreateEncounterRequest, CreateTriageRequest, CursorListQuery,
-    EncounterListItem, EncounterStatus, TriageListItem, UpdateAppointmentRequest,
-    UpdateEncounterRequest, VisitListItem, VisitStatus,
+    AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
+    CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateEncounterRequest,
+    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterStatus, TriageListItem,
+    UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -54,6 +54,36 @@ pub async fn list_appointments(
 
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.starts_at, item.id)
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/clinics",
+    operation_id = "getClinics",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(CursorListQuery),
+    responses(
+        (status = 200, description = "Clinics list", body = ListResponse<ClinicListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_clinics(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<CursorListQuery>,
+) -> Result<Json<ListResponse<ClinicListItem>>, ApiError> {
+    require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
+    let (cursor, page_size) = page_request(query)?;
+    let rows = state
+        .list_clinics(cursor, page_size as i64 + 1)
+        .await
+        .map_err(|_| ApiError::conflict("clinic_list_failed", "Clinics could not be loaded."))?;
+
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
     })))
 }
 

@@ -28,7 +28,7 @@ export function useAppointments(filters = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.list(filters),
-    queryFn: () => appointmentsApi.getAppointments(filters),
+    queryFn: ({ signal }) => appointmentsApi.getAppointments({ ...filters, signal }),
     enabled,
   });
 }
@@ -41,7 +41,7 @@ export function useAppointments(filters = {}, options = {}) {
 export function useAppointment(id) {
   return useQuery({
     queryKey: appointmentKeys.detail(id),
-    queryFn: () => appointmentsApi.getAppointment(id),
+    queryFn: ({ signal }) => appointmentsApi.getAppointment(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
   });
 }
@@ -209,7 +209,7 @@ export function useAvailableSlots(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.availableSlots(params),
-    queryFn: () => appointmentsApi.getAvailableSlots(params),
+    queryFn: ({ signal }) => appointmentsApi.getAvailableSlots({ ...params, signal }),
     enabled: enabled && Object.keys(params).length > 0, // Only run if we have parameters
     staleTime: 0, // Always fetch fresh data for just-in-time slots
   });
@@ -224,7 +224,7 @@ export function useBlockedTimes(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: appointmentKeys.blockedTimes(params),
-    queryFn: () => appointmentsApi.getBlockedTimes(params),
+    queryFn: ({ signal }) => appointmentsApi.getBlockedTimes({ ...params, signal }),
     enabled,
   });
 }
@@ -324,7 +324,7 @@ export function useAppointmentType(id) {
 export function useScheduleSlots(scheduleId, params = {}) {
   return useQuery({
     queryKey: appointmentKeys.scheduleSlots(scheduleId, params),
-    queryFn: () => appointmentsApi.getScheduleSlots(scheduleId, params),
+    queryFn: ({ signal }) => appointmentsApi.getScheduleSlots(scheduleId, { ...params, signal }),
     enabled: !!scheduleId,
   });
 }
@@ -338,7 +338,7 @@ export function useAvailabilityRules(params = {}, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: [...appointmentKeys.availabilityRules(), params],
-    queryFn: () => appointmentsApi.getAvailabilityRules(params),
+    queryFn: ({ signal }) => appointmentsApi.getAvailabilityRules({ ...params, signal }),
     enabled,
   });
 }
@@ -364,7 +364,7 @@ export function useAvailabilityRule(id) {
 export function useScheduleMappings(params = {}) {
   return useQuery({
     queryKey: [...appointmentKeys.scheduleMappings(), params],
-    queryFn: () => appointmentsApi.getScheduleMappings(params),
+    queryFn: ({ signal }) => appointmentsApi.getScheduleMappings({ ...params, signal }),
   });
 }
 
