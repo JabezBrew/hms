@@ -7,27 +7,44 @@ import {
   useAcknowledgeAlert,
   useCompleteTask,
   useAdministerMedication,
+  useBulkDispense,
+  useBulkDispenseSupply,
   useCreateAndAdminister,
   useCreateMedicationAdministration,
   useCreateFluidBalance,
   useCreateNursingTask,
   useCreateShiftHandoff,
+  useCreateTreatmentEntry,
   useCreateVitalSigns,
   useDeleteFluidBalance,
+  useDiscontinueTreatmentEntry,
+  useDispenseMedication,
+  useDispenseSupply,
   useFluidBalance,
   useFluidBalanceAlerts,
   useFluidBalanceSettings,
   useFluidBalanceSummary,
   useFluidBalanceTrends,
+  useGenerateMAR,
+  useLowSupplyEntries,
+  useMARGrid,
   useMedicationAdministrationHistory,
   useMedicationAdministrations,
   useMedicationsDueNow,
   useNursingAlerts,
   useNursingTasks,
   useOverdueMedications,
+  usePatientMAR,
   usePatientMonitoring,
   usePendingDispensingGrouped,
+  usePendingSupplyRequests,
+  useRejectSupplyRequest,
+  useRequestSupply,
   useShiftHandoffs,
+  useSupplyRequest,
+  useSupplyStatus,
+  useTreatmentSheetByAdmission,
+  useTreatmentSheetEntry,
   useTodayTasks,
   useTodayFluidBalance,
   useVitalSigns,
@@ -840,6 +857,472 @@ describe('Rust V2 nursing dashboard hooks', () => {
         method: 'POST',
         body: JSON.stringify({ witness_user_id: 'witness-1' }),
       }),
+    );
+  });
+
+  it('loads patient MAR from Rust V2 medication administrations', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'med-admin-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-12T10:00:00Z',
+              administered_at: null,
+              status: 'scheduled',
+            },
+            {
+              id: 'med-admin-2',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Amoxicillin',
+              scheduled_at: '2026-05-12T12:00:00Z',
+              administered_at: '2026-05-12T12:05:00Z',
+              status: 'administered',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => usePatientMAR('patient-1', '2026-05-12'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data?.medications).toHaveLength(2));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data).toEqual(expect.objectContaining({
+      patient_id: 'patient-1',
+      patient_name: 'Ama Mensah',
+      patient_mrn: 'MRN-001',
+      medications: [
+        expect.objectContaining({
+          id: 'med-admin-1',
+          is_dispensed: true,
+          scheduled_time: '2026-05-12T10:00:00Z',
+        }),
+        expect.objectContaining({
+          id: 'med-admin-2',
+          administered_time: '2026-05-12T12:05:00Z',
+          status: 'administered',
+        }),
+      ],
+    }));
+  });
+
+  it('derives the MAR grid from Rust V2 medication administrations without the legacy grid endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'med-admin-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-12T10:00:00Z',
+              administered_at: null,
+              status: 'scheduled',
+            },
+            {
+              id: 'med-admin-2',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              medication_name: 'Paracetamol',
+              scheduled_at: '2026-05-13T10:00:00Z',
+              administered_at: '2026-05-13T10:05:00Z',
+              status: 'administered',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useMARGrid('admission-1', '2026-05-12', 2), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data?.medications).toHaveLength(1));
+
+    expect(result.current.data).toEqual(expect.objectContaining({
+      patient_name: 'Ama Mensah',
+      patient_mrn: 'MRN-001',
+      date_headers: [
+        expect.objectContaining({ date: '2026-05-12' }),
+        expect.objectContaining({ date: '2026-05-13' }),
+      ],
+      medications: [
+        expect.objectContaining({
+          medication_name: 'Paracetamol',
+          total_doses_required: 2,
+          total_doses_administered: 1,
+          days: expect.objectContaining({
+            '2026-05-12': expect.objectContaining({
+              doses: [expect.objectContaining({ id: 'med-admin-1', dose_number: 1 })],
+            }),
+            '2026-05-13': expect.objectContaining({
+              doses_given: 1,
+              doses: [expect.objectContaining({ id: 'med-admin-2', status: 'administered' })],
+            }),
+          }),
+        }),
+      ],
+    }));
+  });
+
+  it('fails closed for MAR generation and pharmacy dispensing mutations that Rust V2 does not expose', async () => {
+    const generate = renderHook(() => useGenerateMAR(), {
+      wrapper: createWrapper(),
+    });
+    const dispense = renderHook(() => useDispenseMedication(), {
+      wrapper: createWrapper(),
+    });
+    const bulkDispense = renderHook(() => useBulkDispense(), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(generate.result.current.mutateAsync({ prescriptionId: 'rx-1' })).rejects.toThrow(
+      'Rust V2 does not expose MAR generation yet.',
+    );
+    await expect(dispense.result.current.mutateAsync('med-admin-1')).rejects.toThrow(
+      'Rust V2 does not expose pharmacy dispense actions from the nursing queue yet.',
+    );
+    await expect(bulkDispense.result.current.mutateAsync(['med-admin-1'])).rejects.toThrow(
+      'Rust V2 does not expose pharmacy bulk dispense actions from the nursing queue yet.',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('loads and creates treatment-sheet shells through the Rust V2 treatment sheet contract', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'sheet-1',
+                admission_case_id: 'admission-1',
+                patient_id: 'patient-1',
+                patient_code: 'MRN-001',
+                patient_display_name: 'Ama Mensah',
+                sheet_date: '2026-05-12',
+                status: 'active',
+                updated_at: '2026-05-12T09:00:00Z',
+              },
+            ],
+            page: { limit: 50, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'sheet-2',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              sheet_date: '2026-05-13',
+              status: 'active',
+              updated_at: '2026-05-13T09:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const list = renderHook(() => useTreatmentSheetByAdmission('admission-1'), {
+      wrapper: createWrapper(),
+    });
+    const create = renderHook(() => useCreateTreatmentEntry(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(list.result.current.data).toHaveLength(1));
+    await act(async () => {
+      await create.result.current.mutateAsync({
+        admission: 'admission-1',
+        date: '2026-05-13',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/nursing/treatment-sheets?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/nursing/treatment-sheets',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          admission_case_id: 'admission-1',
+          sheet_date: '2026-05-13',
+        }),
+      }),
+    );
+    expect(list.result.current.data[0]).toEqual(expect.objectContaining({
+      id: 'sheet-1',
+      admission: 'admission-1',
+      patient: 'patient-1',
+      patient_name: 'Ama Mensah',
+    }));
+  });
+
+  it('uses bounded Rust V2 treatment-sheet lookup and local empty states for unsupported supply status surfaces', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'sheet-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              sheet_date: '2026-05-12',
+              status: 'active',
+              updated_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const entry = renderHook(() => useTreatmentSheetEntry('sheet-1'), {
+      wrapper: createWrapper(),
+    });
+    const lowSupply = renderHook(() => useLowSupplyEntries(), {
+      wrapper: createWrapper(),
+    });
+    const supplyStatus = renderHook(() => useSupplyStatus('sheet-1'), {
+      wrapper: createWrapper(),
+    });
+    const discontinue = renderHook(() => useDiscontinueTreatmentEntry(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(entry.result.current.data?.id).toBe('sheet-1'));
+    await waitFor(() => expect(lowSupply.result.current.data).toEqual([]));
+    await waitFor(() => expect(supplyStatus.result.current.data?.supported).toBe(false));
+    await expect(discontinue.result.current.mutateAsync({ entryId: 'sheet-1', reason: 'done' })).rejects.toThrow(
+      'Rust V2 does not expose treatment-sheet discontinuation yet.',
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads, creates, and fulfills ward stock requests through the Rust V2 ward stock request contract', async () => {
+    const listPayload = {
+      data: [
+        {
+          id: 'stock-1',
+          ward_id: 'ward-1',
+          ward_name: 'General Ward',
+          requested_item: 'Gauze',
+          quantity_requested: 4,
+          status: 'requested',
+          requested_at: '2026-05-12T09:00:00Z',
+          approved_at: null,
+          fulfilled_at: null,
+        },
+      ],
+      page: { limit: 50, has_next: false, next_cursor: null },
+      meta: {},
+    };
+    globalThis.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify(listPayload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          id: 'stock-2',
+          ward_id: 'ward-1',
+          ward_name: 'General Ward',
+          requested_item: 'Syringe',
+          quantity_requested: 10,
+          status: 'requested',
+          requested_at: '2026-05-12T10:00:00Z',
+          approved_at: null,
+          fulfilled_at: null,
+        },
+        meta: {},
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          id: 'stock-1',
+          ward_id: 'ward-1',
+          ward_name: 'General Ward',
+          requested_item: 'Gauze',
+          quantity_requested: 4,
+          status: 'fulfilled',
+          requested_at: '2026-05-12T09:00:00Z',
+          approved_at: null,
+          fulfilled_at: '2026-05-12T11:00:00Z',
+        },
+        meta: {},
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+
+    const pending = renderHook(() => usePendingSupplyRequests(), {
+      wrapper: createWrapper(),
+    });
+    const requestSupply = renderHook(() => useRequestSupply(), {
+      wrapper: createWrapper(),
+    });
+    const dispenseSupply = renderHook(() => useDispenseSupply(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(pending.result.current.data).toHaveLength(1));
+    await act(async () => {
+      await requestSupply.result.current.mutateAsync({
+        ward_id: 'ward-1',
+        requested_item: 'Syringe',
+        quantity: 10,
+      });
+    });
+    await act(async () => {
+      await dispenseSupply.result.current.mutateAsync({ requestId: 'stock-1' });
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/nursing/ward-stock-requests?limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/nursing/ward-stock-requests',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          ward_id: 'ward-1',
+          requested_item: 'Syringe',
+          quantity_requested: 10,
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/nursing/ward-stock-requests/stock-1/fulfill',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(pending.result.current.data[0]).toEqual(expect.objectContaining({
+      id: 'stock-1',
+      status: 'pending',
+      requested_item: 'Gauze',
+      quantity_requested: 4,
+    }));
+  });
+
+  it('uses bounded Rust V2 ward stock lookup and fails closed for unsupported stock rejection', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [
+          {
+            id: 'stock-1',
+            ward_id: 'ward-1',
+            ward_name: 'General Ward',
+            requested_item: 'Gauze',
+            quantity_requested: 4,
+            status: 'requested',
+            requested_at: '2026-05-12T09:00:00Z',
+            approved_at: null,
+            fulfilled_at: null,
+          },
+        ],
+        page: { limit: 50, has_next: false, next_cursor: null },
+        meta: {},
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          id: 'stock-1',
+          ward_id: 'ward-1',
+          ward_name: 'General Ward',
+          requested_item: 'Gauze',
+          quantity_requested: 4,
+          status: 'fulfilled',
+          requested_at: '2026-05-12T09:00:00Z',
+          approved_at: null,
+          fulfilled_at: '2026-05-12T11:00:00Z',
+        },
+        meta: {},
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+
+    const request = renderHook(() => useSupplyRequest('stock-1'), {
+      wrapper: createWrapper(),
+    });
+    const bulkDispense = renderHook(() => useBulkDispenseSupply(), {
+      wrapper: createWrapper(),
+    });
+    const reject = renderHook(() => useRejectSupplyRequest(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(request.result.current.data?.id).toBe('stock-1'));
+    await act(async () => {
+      const result = await bulkDispense.result.current.mutateAsync(['stock-1']);
+      expect(result).toEqual(expect.objectContaining({ dispensed_count: 1 }));
+    });
+    await expect(reject.result.current.mutateAsync({ requestId: 'stock-1', reason: 'no stock' })).rejects.toThrow(
+      'Rust V2 does not expose ward stock request rejection yet.',
     );
   });
 

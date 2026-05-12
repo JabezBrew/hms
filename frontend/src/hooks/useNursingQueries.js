@@ -11,6 +11,8 @@ const MAX_TASK_PAGE_SIZE = 50;
 const MAX_ALERT_PAGE_SIZE = 50;
 const MAX_MEDICATION_ADMIN_PAGE_SIZE = 50;
 const MAX_FLUID_BALANCE_PAGE_SIZE = 50;
+const MAX_TREATMENT_SHEET_PAGE_SIZE = 50;
+const MAX_WARD_STOCK_REQUEST_PAGE_SIZE = 50;
 const MAX_HANDOFF_PAGE_SIZE = 50;
 const DEFAULT_FLUID_BALANCE_SETTINGS = {
   min_daily_intake_target: 1500,
@@ -178,6 +180,7 @@ function adaptV2MedicationAdministration(item = {}) {
   const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
   const scheduledAt = item.scheduled_at || item.scheduled_time || null;
   const medicationName = item.medication_name || item.prescription_name || 'Medication';
+  const administeredAt = item.administered_at || item.administered_time || null;
   return {
     ...item,
     admission: item.admission_case_id,
@@ -192,8 +195,48 @@ function adaptV2MedicationAdministration(item = {}) {
     prescription_name: medicationName,
     scheduled_at: scheduledAt,
     scheduled_time: scheduledAt,
-    administered_at: item.administered_at || null,
+    administered_at: administeredAt,
+    administered_time: administeredAt,
+    dosage: item.dosage || '',
+    route: item.route || '',
+    route_display: item.route_display || item.route || '',
+    frequency_display: item.frequency_display || '',
+    is_dispensed: item.is_dispensed ?? true,
     status: item.status || 'scheduled',
+  };
+}
+
+function adaptV2TreatmentSheet(item = {}) {
+  const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
+  return {
+    ...item,
+    admission: item.admission_case_id,
+    admission_case_id: item.admission_case_id,
+    patient: item.patient_id,
+    patient_id: item.patient_id,
+    patient_mrn: item.patient_code || '',
+    patient_code: item.patient_code || '',
+    patient_name: patientName,
+    patient_display_name: patientName,
+    date: item.sheet_date,
+    sheet_date: item.sheet_date,
+  };
+}
+
+function adaptV2WardStockRequest(item = {}) {
+  const legacyStatus = item.status === 'requested' ? 'pending' : item.status;
+  return {
+    ...item,
+    ward: item.ward_id,
+    ward_id: item.ward_id,
+    ward_name: item.ward_name || '',
+    item_name: item.requested_item,
+    requested_item: item.requested_item,
+    quantity: item.quantity_requested,
+    quantity_requested: item.quantity_requested,
+    quantity_dispensed: item.status === 'fulfilled' ? item.quantity_requested : 0,
+    status: legacyStatus,
+    rust_status: item.status,
   };
 }
 
@@ -264,6 +307,41 @@ function normalizeV2FluidBalancePayload(data = {}) {
     recorded_at: new Date(data.recorded_at || Date.now()).toISOString(),
     intake_ml: Number.parseInt(intake, 10) || 0,
     output_ml: Number.parseInt(output, 10) || 0,
+  };
+}
+
+function normalizeV2TreatmentSheetPayload(data = {}) {
+  const admissionCaseId = data.admission_case_id || data.admission_id || data.admission;
+  const sheetDate = data.sheet_date || data.date;
+  if (!admissionCaseId) {
+    throw new Error('Admission case is required to create a Rust V2 treatment sheet');
+  }
+  if (!sheetDate) {
+    throw new Error('Sheet date is required to create a Rust V2 treatment sheet');
+  }
+  return {
+    admission_case_id: admissionCaseId,
+    sheet_date: sheetDate,
+  };
+}
+
+function normalizeV2WardStockRequestPayload(data = {}) {
+  const wardId = data.ward_id || data.ward;
+  const requestedItem = data.requested_item || data.item_name || data.item || data.medication_name;
+  const quantity = Number.parseInt(data.quantity_requested ?? data.quantity ?? data.quantityDispensed, 10);
+  if (!wardId) {
+    throw new Error('Ward is required to create a Rust V2 ward stock request');
+  }
+  if (!requestedItem) {
+    throw new Error('Requested item is required to create a Rust V2 ward stock request');
+  }
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    throw new Error('Quantity is required to create a Rust V2 ward stock request');
+  }
+  return {
+    ward_id: wardId,
+    requested_item: requestedItem,
+    quantity_requested: quantity,
   };
 }
 
@@ -412,6 +490,153 @@ function medicationAdministrationMatchesFilters(item, filters = {}) {
   return true;
 }
 
+function treatmentSheetMatchesFilters(item, filters = {}) {
+  const id = filters.id || filters.entry_id;
+  if (id && item.id !== id) {
+    return false;
+  }
+  const admission = filters.admission || filters.admission_id || filters.admission_case_id;
+  if (admission && item.admission_case_id !== admission) {
+    return false;
+  }
+  if (filters.date && item.sheet_date !== filters.date) {
+    return false;
+  }
+  return true;
+}
+
+function wardStockRequestMatchesFilters(item, filters = {}) {
+  const id = filters.id || filters.request_id;
+  if (id && item.id !== id) {
+    return false;
+  }
+  const ward = filters.ward || filters.ward_id;
+  if (ward && item.ward_id !== ward) {
+    return false;
+  }
+  const status = filters.status;
+  if (status && status !== 'all') {
+    const rustStatus = status === 'pending' ? 'requested' : status;
+    if (item.rust_status !== rustStatus && item.status !== status) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function dateKey(value) {
+  return value ? String(value).slice(0, 10) : null;
+}
+
+function addDaysToDateKey(dateString, offset) {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + offset)).toISOString().slice(0, 10);
+}
+
+function normalizeDoseStatus(item) {
+  if (item.status === 'scheduled' && item.scheduled_time && Date.parse(item.scheduled_time) <= Date.now()) {
+    return 'due';
+  }
+  return item.status || 'scheduled';
+}
+
+function buildPatientMAR(records = [], patientId, date = null) {
+  const first = records[0] || {};
+  return {
+    patient_id: patientId || first.patient_id || null,
+    patient: patientId || first.patient_id || null,
+    patient_name: first.patient_name || first.patient_display_name || '',
+    patient_mrn: first.patient_mrn || first.patient_code || '',
+    date,
+    medications: records.map((record) => ({
+      ...record,
+      status: record.status || 'scheduled',
+      is_dispensed: record.is_dispensed ?? true,
+      administered_time: record.administered_time || record.administered_at || null,
+    })),
+  };
+}
+
+function buildMARGrid(records = [], admissionId, startDate = null, days = 7) {
+  const safeDays = Math.max(1, Number.parseInt(days, 10) || 7);
+  const firstDate = startDate || new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const dateHeaders = Array.from({ length: safeDays }, (_, index) => {
+    const date = addDaysToDateKey(firstDate, index);
+    return {
+      date,
+      label: date,
+      is_today: date === today,
+    };
+  });
+  const allowedDates = new Set(dateHeaders.map((header) => header.date));
+  const emptyDays = () => Object.fromEntries(dateHeaders.map((header) => [
+    header.date,
+    { doses: [], doses_given: 0, doses_required: 0 },
+  ]));
+  const rows = new Map();
+
+  records.forEach((record) => {
+    const date = dateKey(record.scheduled_time);
+    if (!date || !allowedDates.has(date)) {
+      return;
+    }
+    const key = record.prescription_id || record.medication_name || record.id;
+    if (!rows.has(key)) {
+      rows.set(key, {
+        id: key,
+        medication_name: record.medication_name || 'Medication',
+        dosage: record.dosage || '',
+        route_display: record.route_display || record.route || '',
+        frequency_display: record.frequency_display || '',
+        duration_days: safeDays,
+        total_doses_required: 0,
+        total_doses_administered: 0,
+        course_complete: false,
+        days: emptyDays(),
+      });
+    }
+
+    const row = rows.get(key);
+    const day = row.days[date];
+    const dose = {
+      id: record.id,
+      dose_number: day.doses.length + 1,
+      status: normalizeDoseStatus(record),
+      scheduled_time: record.scheduled_time,
+      administered_time: record.administered_time || record.administered_at || null,
+      administered_by: record.administered_by || '',
+      notes: record.notes || '',
+    };
+    day.doses.push(dose);
+    day.doses_required += 1;
+    if (dose.status === 'administered') {
+      day.doses_given += 1;
+    }
+    row.total_doses_required += 1;
+    if (dose.status === 'administered') {
+      row.total_doses_administered += 1;
+    }
+  });
+
+  const medications = Array.from(rows.values()).map((row) => ({
+    ...row,
+    course_complete: row.total_doses_required > 0 && row.total_doses_administered >= row.total_doses_required,
+  }));
+  const first = records[0] || {};
+
+  return {
+    admission_id: admissionId,
+    admission: admissionId,
+    patient_id: first.patient_id || null,
+    patient_name: first.patient_name || first.patient_display_name || '',
+    patient_mrn: first.patient_mrn || first.patient_code || '',
+    date_headers: dateHeaders,
+    time_slots: [],
+    medications,
+  };
+}
+
 function isDueMedicationAdministration(item) {
   return item.status === 'scheduled' && item.scheduled_time && Date.parse(item.scheduled_time) <= Date.now();
 }
@@ -427,6 +652,34 @@ async function getV2MedicationAdministrations(filters = {}, { signal } = {}) {
       .filter((item) => medicationAdministrationMatchesFilters(item, filters));
   } catch (error) {
     rethrowV2Error(error, 'Failed to load medication administrations');
+  }
+}
+
+async function getV2TreatmentSheets(filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getTreatmentSheets({
+      query: { limit: MAX_TREATMENT_SHEET_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .map(adaptV2TreatmentSheet)
+      .filter((item) => treatmentSheetMatchesFilters(item, filters));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load treatment sheets');
+  }
+}
+
+async function getV2WardStockRequests(filters = {}, { signal } = {}) {
+  try {
+    const response = await v2Api.getWardStockRequests({
+      query: { limit: MAX_WARD_STOCK_REQUEST_PAGE_SIZE },
+      signal,
+    });
+    return (Array.isArray(response?.data) ? response.data : [])
+      .map(adaptV2WardStockRequest)
+      .filter((item) => wardStockRequestMatchesFilters(item, filters));
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load ward stock requests');
   }
 }
 
@@ -1394,7 +1647,12 @@ export const useCreateAndAdminister = () => {
 export const usePatientMAR = (patientId, date = null) => {
   return useQuery({
     queryKey: nursingKeys.patientMar(patientId, date),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const records = await getV2MedicationAdministrations({ patient: patientId, date }, { signal });
+        return buildPatientMAR(records, patientId, date);
+      }
+
       const params = new URLSearchParams();
       params.append('patient', patientId);
       if (date) params.append('date', date);
@@ -1412,6 +1670,10 @@ export const useGenerateMAR = () => {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, days = 7, startDate = null }) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 does not expose MAR generation yet.');
+      }
+
       const data = { days };
       if (startDate) data.start_date = startDate;
       const response = await apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/generate_mar/`, data);
@@ -1482,6 +1744,10 @@ export const useDispenseMedication = () => {
 
   return useMutation({
     mutationFn: async (medicationId) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 does not expose pharmacy dispense actions from the nursing queue yet.');
+      }
+
       const response = await apiClient.post(`/pharmacy/dispensing/${medicationId}/dispense/`, {});
       return response;
     },
@@ -1499,6 +1765,10 @@ export const useBulkDispense = () => {
 
   return useMutation({
     mutationFn: async (medicationIds) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 does not expose pharmacy bulk dispense actions from the nursing queue yet.');
+      }
+
       const response = await apiClient.post('/pharmacy/dispensing/bulk-dispense/', {
         medication_ids: medicationIds,
       });
@@ -1613,7 +1883,18 @@ export const useUpdateShiftHandoff = () => {
 export const useMARGrid = (admissionId, startDate = null, days = 7) => {
   return useQuery({
     queryKey: nursingKeys.marGrid(admissionId, startDate, days),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const firstDate = startDate || new Date().toISOString().slice(0, 10);
+        const lastDate = addDaysToDateKey(firstDate, Math.max(1, Number.parseInt(days, 10) || 7) - 1);
+        const records = await getV2MedicationAdministrations({
+          admission: admissionId,
+          start_date: firstDate,
+          end_date: lastDate,
+        }, { signal });
+        return buildMARGrid(records, admissionId, firstDate, days);
+      }
+
       const params = new URLSearchParams();
       params.append('admission_id', admissionId);
       if (startDate) params.append('start_date', startDate);
@@ -1634,7 +1915,11 @@ export const useMARGrid = (admissionId, startDate = null, days = 7) => {
 export const useTreatmentSheetByAdmission = (admissionId) => {
   return useQuery({
     queryKey: nursingKeys.treatmentSheet(admissionId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2TreatmentSheets({ admission: admissionId }, { signal });
+      }
+
       const response = await apiClient.get(`/nursing/treatment-sheet/by-admission/?admission_id=${admissionId}`);
       // Ensure we always return an array
       return response.data || response || [];
@@ -1649,7 +1934,12 @@ export const useTreatmentSheetByAdmission = (admissionId) => {
 export const useTreatmentSheetEntry = (entryId) => {
   return useQuery({
     queryKey: nursingKeys.treatmentSheetEntry(entryId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const entries = await getV2TreatmentSheets({ id: entryId }, { signal });
+        return entries[0] || {};
+      }
+
       const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/`);
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
@@ -1664,6 +1954,10 @@ export const useLowSupplyEntries = () => {
   return useQuery({
     queryKey: nursingKeys.treatmentSheetLowSupply(),
     queryFn: async () => {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
+
       const response = await apiClient.get('/nursing/treatment-sheet/low-supply/');
       return response.data || response || [];
     },
@@ -1676,6 +1970,14 @@ export const useSupplyStatus = (entryId) => {
   return useQuery({
     queryKey: nursingKeys.supplyStatus(entryId),
     queryFn: async () => {
+      if (isRustV2ApiMode()) {
+        return {
+          supported: false,
+          status: 'unsupported',
+          available: false,
+        };
+      }
+
       const response = await apiClient.get(`/nursing/treatment-sheet/${entryId}/supply-status/`);
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
@@ -1691,6 +1993,15 @@ export const useCreateTreatmentEntry = () => {
 
   return useMutation({
     mutationFn: async (data) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postTreatmentSheets(normalizeV2TreatmentSheetPayload(data));
+          return adaptV2TreatmentSheet(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to create treatment sheet');
+        }
+      }
+
       const response = await apiClient.post('/nursing/treatment-sheet/', data);
       return response.data;
     },
@@ -1706,6 +2017,10 @@ export const useDiscontinueTreatmentEntry = () => {
 
   return useMutation({
     mutationFn: async ({ entryId, reason }) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 does not expose treatment-sheet discontinuation yet.');
+      }
+
       const response = await apiClient.post(`/nursing/treatment-sheet/${entryId}/discontinue/`, { reason });
       return response.data;
     },
@@ -1720,7 +2035,19 @@ export const useRequestSupply = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ entryId, quantity, notes }) => {
+    mutationFn: async (variables) => {
+      const { entryId, quantity, notes } = variables;
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postWardStockRequests(
+            normalizeV2WardStockRequestPayload(variables),
+          );
+          return adaptV2WardStockRequest(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to request ward stock');
+        }
+      }
+
       const response = await apiClient.post(`/nursing/treatment-sheet/${entryId}/request-supply/`, {
         quantity,
         notes
@@ -1741,7 +2068,11 @@ export const useRequestSupply = () => {
 export const usePendingSupplyRequests = () => {
   return useQuery({
     queryKey: nursingKeys.supplyRequests('pending'),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2WardStockRequests({ status: 'pending' }, { signal });
+      }
+
       const response = await apiClient.get('/nursing/supply-requests/pending-queue/');
       return response.data || response || [];
     },
@@ -1753,7 +2084,12 @@ export const usePendingSupplyRequests = () => {
 export const useSupplyRequest = (requestId) => {
   return useQuery({
     queryKey: nursingKeys.supplyRequest(requestId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        const requests = await getV2WardStockRequests({ id: requestId }, { signal });
+        return requests[0] || {};
+      }
+
       const response = await apiClient.get(`/nursing/supply-requests/${requestId}/`);
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
@@ -1769,6 +2105,15 @@ export const useDispenseSupply = () => {
 
   return useMutation({
     mutationFn: async ({ requestId, quantityDispensed }) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const response = await v2Api.postWardStockRequestFulfill({ id: requestId });
+          return adaptV2WardStockRequest(response?.data);
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to fulfill ward stock request');
+        }
+      }
+
       const response = await apiClient.post(`/nursing/supply-requests/${requestId}/dispense/`, {
         quantity_dispensed: quantityDispensed
       });
@@ -1788,6 +2133,10 @@ export const useRejectSupplyRequest = () => {
 
   return useMutation({
     mutationFn: async ({ requestId, reason }) => {
+      if (isRustV2ApiMode()) {
+        throw new Error('Rust V2 does not expose ward stock request rejection yet.');
+      }
+
       const response = await apiClient.post(`/nursing/supply-requests/${requestId}/reject/`, { reason });
       return response.data;
     },
@@ -1803,6 +2152,22 @@ export const useBulkDispenseSupply = () => {
 
   return useMutation({
     mutationFn: async (requestIds) => {
+      if (isRustV2ApiMode()) {
+        try {
+          const results = [];
+          for (const requestId of requestIds) {
+            const response = await v2Api.postWardStockRequestFulfill({ id: requestId });
+            results.push(adaptV2WardStockRequest(response?.data));
+          }
+          return {
+            dispensed_count: results.length,
+            results,
+          };
+        } catch (error) {
+          rethrowV2Error(error, 'Failed to fulfill ward stock requests');
+        }
+      }
+
       const response = await apiClient.post('/nursing/supply-requests/bulk-dispense/', {
         request_ids: requestIds
       });
