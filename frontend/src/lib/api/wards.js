@@ -111,6 +111,44 @@ function rethrowV2Error(error, message) {
   throw new Error(handleV2ApiError(error, message));
 }
 
+function rustV2Unsupported(resourceName) {
+  return Promise.reject(new Error(`Rust V2 does not expose ${resourceName} yet.`));
+}
+
+function adaptV2Section(section) {
+  if (!section) {
+    return section;
+  }
+  return {
+    ...section,
+    ward: section.ward_id,
+    bed_count: section.active_bed_count || 0,
+    available_beds_count: section.active_bed_count || 0,
+    is_active: section.status === 'active',
+    description: section.description || '',
+  };
+}
+
+function wardIdFrom(data = {}) {
+  return data.ward_id || data.ward;
+}
+
+function sectionIdFrom(data = {}) {
+  return data.section_id || data.section || null;
+}
+
+function bedCodeFrom(data = {}) {
+  return data.bed_code || data.bed_number || data.name || '';
+}
+
+function admissionPayloadFrom(data = {}) {
+  return {
+    patient_id: data.patient_id || data.patient,
+    ward_id: data.ward_id || data.ward,
+    bed_id: data.bed_id || data.bed || null,
+  };
+}
+
 /**
  * Wards API service
  */
@@ -121,6 +159,12 @@ export const wardsApi = {
    */
   getWardsRoot: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        return {
+          mode: 'rust-v2',
+          resources: ['wards', 'beds', 'sections', 'admissions'],
+        };
+      }
       return await apiClient.get('/wards/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch wards API information'));
@@ -232,8 +276,14 @@ export const wardsApi = {
    */
   createWard: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('ward mutations');
+      }
       return await apiClient.post('/wards/wards/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create ward');
+      }
       throw new Error(handleApiError(error, 'Failed to create ward'));
     }
   },
@@ -246,8 +296,14 @@ export const wardsApi = {
    */
   updateWard: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('ward mutations');
+      }
       return await apiClient.patch(`/wards/wards/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update ward');
+      }
       throw new Error(handleApiError(error, 'Failed to update ward'));
     }
   },
@@ -259,8 +315,14 @@ export const wardsApi = {
    */
   deleteWard: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('ward mutations');
+      }
       return await apiClient.delete(`/wards/wards/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete ward');
+      }
       throw new Error(handleApiError(error, 'Failed to delete ward'));
     }
   },
@@ -310,6 +372,9 @@ export const wardsApi = {
         return await apiClient.get(endpoint);
       }
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch beds');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch beds'));
     }
   },
@@ -321,8 +386,14 @@ export const wardsApi = {
    */
   getBed: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('bed detail');
+      }
       return await apiClient.get(`/wards/beds/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch bed');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch bed'));
     }
   },
@@ -332,10 +403,29 @@ export const wardsApi = {
    * @param {Object} data - Bed data
    * @returns {Promise<Object>} Created bed data
    */
-  createBed: async (data) => {
+  createBed: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const wardId = wardIdFrom(data);
+        const bedCode = bedCodeFrom(data).trim();
+        if (!wardId || !bedCode) {
+          throw new Error('Rust V2 bed creation requires a ward and bed code.');
+        }
+        const response = await v2Api.postWardBed(
+          { id: wardId },
+          {
+            section_id: sectionIdFrom(data),
+            bed_code: bedCode,
+          },
+          { signal: options.signal },
+        );
+        return adaptV2Bed(response?.data);
+      }
       return await apiClient.post('/wards/beds/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create bed');
+      }
       throw new Error(handleApiError(error, 'Failed to create bed'));
     }
   },
@@ -348,8 +438,14 @@ export const wardsApi = {
    */
   updateBed: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('bed mutations');
+      }
       return await apiClient.patch(`/wards/beds/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update bed');
+      }
       throw new Error(handleApiError(error, 'Failed to update bed'));
     }
   },
@@ -361,8 +457,14 @@ export const wardsApi = {
    */
   deleteBed: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('bed mutations');
+      }
       return await apiClient.delete(`/wards/beds/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete bed');
+      }
       throw new Error(handleApiError(error, 'Failed to delete bed'));
     }
   },
@@ -419,8 +521,14 @@ export const wardsApi = {
    */
   getAdmission: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('admission detail');
+      }
       return await apiClient.get(`/wards/admissions/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch admission');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch admission'));
     }
   },
@@ -430,10 +538,21 @@ export const wardsApi = {
    * @param {Object} data - Admission data
    * @returns {Promise<Object>} Created admission data
    */
-  createAdmission: async (data) => {
+  createAdmission: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const payload = admissionPayloadFrom(data);
+        if (!payload.patient_id || !payload.ward_id) {
+          throw new Error('Rust V2 admission creation requires a patient and ward.');
+        }
+        const response = await v2Api.postAdmissions(payload, { signal: options.signal });
+        return adaptV2WardBoardAdmission(response?.data);
+      }
       return await apiClient.post('/wards/admissions/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create admission');
+      }
       throw new Error(handleApiError(error, 'Failed to create admission'));
     }
   },
@@ -446,8 +565,14 @@ export const wardsApi = {
    */
   updateAdmission: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('admission updates');
+      }
       return await apiClient.patch(`/wards/admissions/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update admission');
+      }
       throw new Error(handleApiError(error, 'Failed to update admission'));
     }
   },
@@ -459,6 +584,9 @@ export const wardsApi = {
    */
   getTransfers: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/transfers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -474,8 +602,14 @@ export const wardsApi = {
    */
   createTransfer: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('ward transfers');
+      }
       return await apiClient.post('/wards/transfers/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create transfer');
+      }
       throw new Error(handleApiError(error, 'Failed to create transfer'));
     }
   },
@@ -487,6 +621,9 @@ export const wardsApi = {
    */
   getAllocationLogs: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/allocation-logs/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -502,6 +639,27 @@ export const wardsApi = {
    */
   getAnalytics: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const wards = await wardsApi.getWards({ limit: normalizeV2Limit(params) });
+        return {
+          occupancy_trends: [],
+          length_of_stay: [],
+          ward_utilization: wards.map((ward) => ({
+            ward: ward.name,
+            occupancy_rate: ward.occupancy_rate || 0,
+            turnover_rate: 0,
+            avg_los: 0,
+            bed_days: 0,
+            revenue: 0,
+          })),
+          admissions_by_ward: wards.map((ward) => ({
+            ward: ward.name,
+            admissions: ward.occupied_beds_count || 0,
+            discharges: 0,
+            transfers: 0,
+          })),
+        };
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/wards/analytics/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -521,10 +679,30 @@ export const wardsApi = {
    */
   getSections: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const wardId = wardIdFrom(params);
+        if (!wardId) {
+          return [];
+        }
+        const response = await v2Api.getWardSections(
+          { id: wardId },
+          {
+            query: {
+              cursor: params.cursor,
+              limit: normalizeV2Limit(params),
+            },
+            signal: params.signal,
+          },
+        );
+        return v2ListData(response).map(adaptV2Section);
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/sections/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch ward sections');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch ward sections'));
     }
   },
@@ -538,13 +716,7 @@ export const wardsApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getWardSections({ id: wardId }, { query: { limit: 100 } });
-        return v2ListData(response).map((section) => ({
-          ...section,
-          bed_count: section.active_bed_count || 0,
-          available_beds_count: section.active_bed_count || 0,
-          is_active: section.status === 'active',
-          description: section.description || '',
-        }));
+        return v2ListData(response).map(adaptV2Section);
       }
       return await apiClient.get(`/wards/sections/?ward=${wardId}`);
     } catch (error) {
@@ -562,8 +734,14 @@ export const wardsApi = {
    */
   getSection: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('section detail');
+      }
       return await apiClient.get(`/wards/sections/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch section');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch section'));
     }
   },
@@ -573,10 +751,27 @@ export const wardsApi = {
    * @param {Object} data - Section data
    * @returns {Promise<Object>} Created section data
    */
-  createSection: async (data) => {
+  createSection: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const wardId = wardIdFrom(data);
+        const code = String(data.code || '').trim();
+        const name = String(data.name || '').trim();
+        if (!wardId || !code || !name) {
+          throw new Error('Rust V2 section creation requires a ward, code, and name.');
+        }
+        const response = await v2Api.postWardSection(
+          { id: wardId },
+          { code, name },
+          { signal: options.signal },
+        );
+        return adaptV2Section(response?.data);
+      }
       return await apiClient.post('/wards/sections/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create section');
+      }
       throw new Error(handleApiError(error, 'Failed to create section'));
     }
   },
@@ -589,8 +784,14 @@ export const wardsApi = {
    */
   updateSection: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('section mutations');
+      }
       return await apiClient.patch(`/wards/sections/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update section');
+      }
       throw new Error(handleApiError(error, 'Failed to update section'));
     }
   },
@@ -602,8 +803,14 @@ export const wardsApi = {
    */
   deleteSection: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('section mutations');
+      }
       return await apiClient.delete(`/wards/sections/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete section');
+      }
       throw new Error(handleApiError(error, 'Failed to delete section'));
     }
   },
@@ -615,8 +822,14 @@ export const wardsApi = {
    */
   getSectionBeds: async (sectionId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('section bed list');
+      }
       return await apiClient.get(`/wards/sections/${sectionId}/beds/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch section beds');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch section beds'));
     }
   },
@@ -632,6 +845,9 @@ export const wardsApi = {
    */
   getAmenities: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/amenities/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -647,8 +863,14 @@ export const wardsApi = {
    */
   getAmenity: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('amenity detail');
+      }
       return await apiClient.get(`/wards/amenities/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch amenity');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch amenity'));
     }
   },
@@ -660,8 +882,14 @@ export const wardsApi = {
    */
   createAmenity: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('amenity mutations');
+      }
       return await apiClient.post('/wards/amenities/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create amenity');
+      }
       throw new Error(handleApiError(error, 'Failed to create amenity'));
     }
   },
@@ -674,8 +902,14 @@ export const wardsApi = {
    */
   updateAmenity: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('amenity mutations');
+      }
       return await apiClient.patch(`/wards/amenities/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update amenity');
+      }
       throw new Error(handleApiError(error, 'Failed to update amenity'));
     }
   },
@@ -687,8 +921,14 @@ export const wardsApi = {
    */
   deleteAmenity: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('amenity mutations');
+      }
       return await apiClient.delete(`/wards/amenities/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete amenity');
+      }
       throw new Error(handleApiError(error, 'Failed to delete amenity'));
     }
   },
@@ -738,6 +978,9 @@ export const wardsApi = {
    */
   getWardStaff: async (wardId, params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/wards/${wardId}/staff/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -757,6 +1000,9 @@ export const wardsApi = {
    */
   getStaffAssignments: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/staff-assignments/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -772,6 +1018,9 @@ export const wardsApi = {
    */
   getStaffAssignmentsByPractitioner: async (practitionerId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       return await apiClient.get(`/wards/staff-assignments/by_practitioner/?practitioner_id=${practitionerId}`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch practitioner assignments'));
@@ -785,8 +1034,14 @@ export const wardsApi = {
    */
   getStaffAssignment: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('staff assignment detail');
+      }
       return await apiClient.get(`/wards/staff-assignments/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch staff assignment');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch staff assignment'));
     }
   },
@@ -798,8 +1053,14 @@ export const wardsApi = {
    */
   createStaffAssignment: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('staff assignment mutations');
+      }
       return await apiClient.post('/wards/staff-assignments/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to create staff assignment');
+      }
       throw new Error(handleApiError(error, 'Failed to create staff assignment'));
     }
   },
@@ -812,8 +1073,14 @@ export const wardsApi = {
    */
   updateStaffAssignment: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('staff assignment mutations');
+      }
       return await apiClient.patch(`/wards/staff-assignments/${id}/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to update staff assignment');
+      }
       throw new Error(handleApiError(error, 'Failed to update staff assignment'));
     }
   },
@@ -825,8 +1092,14 @@ export const wardsApi = {
    */
   deleteStaffAssignment: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('staff assignment mutations');
+      }
       return await apiClient.delete(`/wards/staff-assignments/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to delete staff assignment');
+      }
       throw new Error(handleApiError(error, 'Failed to delete staff assignment'));
     }
   },
@@ -844,6 +1117,9 @@ export const wardsApi = {
    */
   getStaffRoles: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return [];
+      }
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/wards/staff-roles/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
@@ -859,8 +1135,14 @@ export const wardsApi = {
    */
   getStaffRole: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await rustV2Unsupported('staff role detail');
+      }
       return await apiClient.get(`/wards/staff-roles/${id}/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to fetch staff role');
+      }
       throw new Error(handleApiError(error, 'Failed to fetch staff role'));
     }
   },
