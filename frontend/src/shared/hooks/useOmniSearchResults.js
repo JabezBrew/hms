@@ -31,14 +31,14 @@ export function useOmniSearchResults({
       types: effectiveTypes,
       limit,
     }),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       omniSearchApi.search({
         q: query,
         types: effectiveTypes,
         limit,
+        signal,
       }),
     enabled: shouldFetch,
     staleTime: 15 * 1000,
   })
 }
-

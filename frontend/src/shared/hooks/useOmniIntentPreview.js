@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 
 import { aiAssistantApi } from '@/shared/api/aiAssistant'
 import { keyWith } from '@/shared/lib/queryKeys'
+import { hashQueryValue } from '@/shared/lib/privateQueryKey'
 
 function normalizeQuery(query) {
   return String(query || '').trim()
@@ -60,7 +61,7 @@ export function useOmniIntentPreview({
     normalized.length >= 2
 
   return useQuery({
-    queryKey: keyWith('ai', 'omni', 'parse', normalized),
+    queryKey: keyWith('ai', 'omni', 'parse', { q_hash: hashQueryValue(normalized) }),
     queryFn: () => aiAssistantApi.parseOmniIntent({ text: normalized }),
     enabled: shouldFetch,
     staleTime: 15 * 1000,
