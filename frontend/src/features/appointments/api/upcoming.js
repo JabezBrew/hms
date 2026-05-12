@@ -1,7 +1,29 @@
 import { getAuthJSON } from '@/lib/auth-storage'
 import { apiClient, handleApiError } from '@/lib/api-client'
+import { appointmentsApi } from '@/lib/api/appointments'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 
-export const fetchUpcomingAppointments = async () => {
+function mapUpcomingAppointment(appointment) {
+  let startTime = 'Unknown time'
+  const startDateTime = appointment.start || appointment.start_time || appointment.startDateTime || null
+  if (startDateTime) {
+    const parsedDate = new Date(startDateTime)
+    if (!Number.isNaN(parsedDate.getTime())) {
+      startTime = parsedDate.toLocaleString()
+    }
+  }
+
+  return {
+    id: appointment.id,
+    patientName: appointment.patient_name || appointment.patientName || 'Unknown Patient',
+    startTime,
+    startDateTime,
+    status: appointment.status,
+    type: appointment.appointment_type_name || appointment.type || 'General',
+  }
+}
+
+export const fetchUpcomingAppointments = async (options = {}) => {
   const user = getAuthJSON('user')
   if (!user || user.role === 'admin') {
     return []
@@ -16,6 +38,15 @@ export const fetchUpcomingAppointments = async () => {
   }).toString()
 
   try {
+    if (isRustV2ApiMode()) {
+      const response = await appointmentsApi.getAppointments({
+        limit: 5,
+        signal: options.signal,
+      })
+      const appointments = Array.isArray(response?.results) ? response.results : []
+      return appointments.map(mapUpcomingAppointment)
+    }
+
     const response = await apiClient.get(`/appointments/appointments/?${queryString}`)
     if (!response?.entry) {
       return []
