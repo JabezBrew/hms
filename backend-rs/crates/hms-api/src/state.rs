@@ -2710,10 +2710,20 @@ impl AppState {
 
     pub async fn list_patient_vitals(
         &self,
+        patient_id: Option<Uuid>,
+        recorded_since: Option<DateTime<Utc>>,
         cursor: Option<WardCursor>,
         limit: i64,
     ) -> Result<Vec<PatientVitalsListItem>> {
-        hms_db::ward::list_patient_vitals(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::ward::list_patient_vitals(
+            &self.inner.pool,
+            self.facility_id(),
+            patient_id,
+            recorded_since,
+            cursor,
+            limit,
+        )
+        .await
     }
 
     pub async fn create_patient_vitals(

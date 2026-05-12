@@ -1647,12 +1647,22 @@ pub async fn create_treatment_sheet(
 pub async fn list_patient_vitals(
     pool: &PgPool,
     facility_id: Uuid,
+    patient_id: Option<Uuid>,
+    recorded_since: Option<chrono::DateTime<chrono::Utc>>,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<PatientVitalsListItem>> {
     let mut query = patient_vitals_query();
     query.push(" WHERE patient_vitals.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(patient_id) = patient_id {
+        query.push(" AND patient_vitals.patient_id = ");
+        query.push_bind(patient_id);
+    }
+    if let Some(recorded_since) = recorded_since {
+        query.push(" AND patient_vitals.recorded_at >= ");
+        query.push_bind(recorded_since);
+    }
     append_forward_cursor(
         &mut query,
         "patient_vitals.recorded_at",

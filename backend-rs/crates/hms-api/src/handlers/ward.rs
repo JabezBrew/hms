@@ -15,8 +15,9 @@ use hms_domain::ward::{
     CreateTreatmentSheetRequest, CreateWardSectionRequest, CreateWardStockRequestRequest,
     DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
     MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, PatientVitalsListItem,
-    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
-    WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem, WardStockRequestListItem,
+    PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
+    TreatmentSheetListItem, WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem,
+    WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -1074,7 +1075,7 @@ pub async fn create_treatment_sheet(
     operation_id = "getPatientVitals",
     tag = "nursing",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(PatientVitalsListQuery),
     responses(
         (status = 200, description = "Patient vitals", body = ListResponse<PatientVitalsListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1084,16 +1085,32 @@ pub async fn create_treatment_sheet(
 pub async fn list_patient_vitals(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<PatientVitalsListQuery>,
 ) -> Result<Json<ListResponse<PatientVitalsListItem>>, ApiError> {
     require_patient_workflow_access(
         &user,
         state.facility_id(),
         PermissionCode::NursingTaskManage,
     )?;
-    let (cursor, page_size) = page_request(query)?;
+    if let Some(patient_id) = query.patient_id {
+        let _patient = load_patient_for_access(&state, &user, patient_id).await?;
+    }
+    let recorded_since = match query.hours {
+        Some(0) => Some(Utc::now()),
+        Some(hours) => Some(Utc::now() - chrono::Duration::hours(i64::from(hours))),
+        None => None,
+    };
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_patient_vitals(cursor, page_size as i64 + 1)
+        .list_patient_vitals(
+            query.patient_id,
+            recorded_since,
+            cursor,
+            page_size as i64 + 1,
+        )
         .await
         .map_err(|_| ApiError::conflict("vitals_list_failed", "Vitals could not be loaded."))?;
 

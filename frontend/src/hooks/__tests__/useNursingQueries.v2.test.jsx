@@ -2,7 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useActiveAlerts, usePatientMonitoring, usePendingDispensingGrouped } from '../useNursingQueries';
+import {
+  useActiveAlerts,
+  usePatientMonitoring,
+  usePendingDispensingGrouped,
+  useVitalSigns,
+} from '../useNursingQueries';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 
 function createWrapper() {
@@ -211,5 +216,64 @@ describe('Rust V2 nursing dashboard hooks', () => {
         credentials: 'include',
       }),
     );
+  });
+
+  it('loads patient vital signs from the Rust patient-filtered vitals endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'vitals-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              recorded_at: '2026-05-12T09:00:00Z',
+              temperature_c: 37.5,
+              systolic_bp: 120,
+              diastolic_bp: 80,
+              pulse: 88,
+              respiratory_rate: 18,
+              oxygen_saturation: 98,
+            },
+          ],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(
+      () => useVitalSigns({ patient: 'patient-1', hours: 48, ordering: '-recorded_at', limit: 25 }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/vitals?limit=25&patient_id=patient-1&hours=48',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(result.current.data).toEqual([
+      expect.objectContaining({
+        id: 'vitals-1',
+        patient: 'patient-1',
+        temperature: 37.5,
+        heart_rate: 88,
+        spo2: 98,
+        systolic_bp: 120,
+        diastolic_bp: 80,
+      }),
+    ]);
   });
 });

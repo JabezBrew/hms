@@ -710,7 +710,9 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "patient_id",
+      "hours"
     ],
     "hasBody": false
   },

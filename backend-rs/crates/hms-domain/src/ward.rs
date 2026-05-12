@@ -328,6 +328,15 @@ pub struct PatientVitalsListItem {
     pub oxygen_saturation: Option<i32>,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct PatientVitalsListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub patient_id: Option<Uuid>,
+    pub hours: Option<u16>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreatePatientVitalsRequest {
     pub admission_case_id: Uuid,

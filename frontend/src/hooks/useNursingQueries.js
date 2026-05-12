@@ -6,6 +6,7 @@ import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { keyWith } from '@/shared/lib/queryKeys';
 
 const MAX_MONITORING_PAGE_SIZE = 50;
+const MAX_VITALS_PAGE_SIZE = 50;
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -79,6 +80,54 @@ function adaptV2NursingAlert(item = {}) {
       },
     },
   };
+}
+
+function adaptV2PatientVitals(item = {}) {
+  return {
+    ...item,
+    patient: item.patient_id,
+    admission: item.admission_case_id,
+    temperature: item.temperature_c,
+    heart_rate: item.pulse,
+    spo2: item.oxygen_saturation,
+    oxygen_saturation: item.oxygen_saturation,
+    blood_pressure_systolic: item.systolic_bp,
+    blood_pressure_diastolic: item.diastolic_bp,
+  };
+}
+
+function normalizeVitalSignsLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 25;
+  }
+  return Math.min(parsed, MAX_VITALS_PAGE_SIZE);
+}
+
+async function getV2PatientVitals(filters = {}, { signal } = {}) {
+  const patientId = filters.patient_id || filters.patient;
+  const query = {
+    limit: normalizeVitalSignsLimit(filters.limit),
+  };
+  if (patientId) {
+    query.patient_id = patientId;
+  }
+  if (filters.hours !== undefined && filters.hours !== null && filters.hours !== '') {
+    query.hours = filters.hours;
+  }
+  try {
+    const response = await v2Api.getPatientVitals({
+      query,
+      signal,
+    });
+    const rows = (response?.data ?? []).map(adaptV2PatientVitals);
+    if (filters.ordering === '-recorded_at') {
+      return rows.sort((left, right) => new Date(right.recorded_at) - new Date(left.recorded_at));
+    }
+    return rows;
+  } catch (error) {
+    rethrowV2Error(error, 'Failed to load patient vital signs');
+  }
 }
 
 async function getV2PendingPharmacyQueue({ signal } = {}) {
@@ -260,7 +309,8 @@ export const usePatientDetail = (patientId) => {
 
 // ========== Vital Signs ==========
 
-export const useVitalSigns = (filters = {}) => {
+export const useVitalSigns = (filters = {}, options = {}) => {
+  const { enabled = true } = options;
   // Extract filter values to use as stable primitives in query key
   const {
     patient,
@@ -270,6 +320,9 @@ export const useVitalSigns = (filters = {}) => {
     date,
     start_date,
     end_date,
+    hours,
+    ordering,
+    limit,
   } = filters;
 
   return useQuery({
@@ -281,14 +334,21 @@ export const useVitalSigns = (filters = {}) => {
       date,
       start_date,
       end_date,
+      hours,
+      ordering,
+      limit,
     ),
     queryFn: async ({ signal }) => {
+      if (isRustV2ApiMode()) {
+        return getV2PatientVitals(filters, { signal });
+      }
       const params = new URLSearchParams(filters);
       const response = await apiClient.get(`/nursing/vital-signs/?${params.toString()}`, { signal });
       // apiClient.get returns data directly, not response.data
       const data = response?.data ?? response;
       return data ?? [];
     },
+    enabled,
     placeholderData: [],
     staleTime: 30000,
     refetchOnWindowFocus: false,

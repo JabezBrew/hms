@@ -3463,7 +3463,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
                 .body(Body::from(
                     json!({
                         "admission_case_id": admission_case_id,
-                        "recorded_at": "2026-05-10T09:00:00Z",
+                        "recorded_at": "2026-05-12T09:00:00Z",
                         "temperature_c": 37.5,
                         "systolic_bp": 120,
                         "diastolic_bp": 80,
@@ -3481,12 +3481,41 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
     let vitals_body = json_body(vitals_response).await;
     assert_eq!(vitals_body["data"]["temperature_c"], 37.5);
 
+    let stale_vitals_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/nursing/vitals")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_case_id,
+                        "recorded_at": "2026-05-07T10:00:00Z",
+                        "temperature_c": 36.8,
+                        "systolic_bp": 118,
+                        "diastolic_bp": 76,
+                        "pulse": 72,
+                        "respiratory_rate": 16,
+                        "oxygen_saturation": 99
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale vitals create succeeds");
+    assert_eq!(stale_vitals_response.status(), StatusCode::OK);
+
     let vitals_list = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/nursing/vitals?limit=1")
+                .uri(format!(
+                    "/api/v2/nursing/vitals?limit=10&patient_id={patient_id}&hours=48"
+                ))
                 .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())
                 .expect("request builds"),
@@ -3495,7 +3524,12 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
         .expect("vitals list succeeds");
     assert_eq!(vitals_list.status(), StatusCode::OK);
     let vitals_list_body = json_body(vitals_list).await;
-    assert_eq!(vitals_list_body["page"]["limit"], 1);
+    assert_eq!(vitals_list_body["page"]["limit"], 10);
+    assert_eq!(vitals_list_body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        vitals_list_body["data"][0]["patient_id"].as_str().unwrap(),
+        patient_id
+    );
 
     let alert_response = app
         .clone()

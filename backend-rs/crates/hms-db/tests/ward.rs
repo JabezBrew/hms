@@ -377,6 +377,12 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
             .expect("activation query succeeds")
             .expect("admission is active");
 
+    let recent_recorded_at = chrono::DateTime::parse_from_rfc3339("2026-05-10T09:00:00Z")
+        .expect("recent timestamp parses")
+        .with_timezone(&chrono::Utc);
+    let stale_recorded_at = chrono::DateTime::parse_from_rfc3339("2026-05-07T09:00:00Z")
+        .expect("stale timestamp parses")
+        .with_timezone(&chrono::Utc);
     let vitals = hms_db::ward::create_patient_vitals(
         &pool,
         NewPatientVitals {
@@ -384,7 +390,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
             facility_id,
             admission_case_id: admission.id,
             patient_id,
-            recorded_at: chrono::Utc::now(),
+            recorded_at: recent_recorded_at,
             temperature_c: Some(37.5),
             systolic_bp: Some(120),
             diastolic_bp: Some(80),
@@ -397,6 +403,40 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
     .await
     .expect("vitals create succeeds");
     assert_eq!(vitals.patient_id, patient_id);
+
+    hms_db::ward::create_patient_vitals(
+        &pool,
+        NewPatientVitals {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            admission_case_id: admission.id,
+            patient_id,
+            recorded_at: stale_recorded_at,
+            temperature_c: Some(36.8),
+            systolic_bp: Some(118),
+            diastolic_bp: Some(76),
+            pulse: Some(72),
+            respiratory_rate: Some(16),
+            oxygen_saturation: Some(99),
+            recorded_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("stale vitals create succeeds");
+
+    let recent_patient_vitals = hms_db::ward::list_patient_vitals(
+        &pool,
+        facility_id,
+        Some(patient_id),
+        Some(recent_recorded_at - chrono::Duration::hours(48)),
+        None,
+        25,
+    )
+    .await
+    .expect("patient-filtered vitals list succeeds");
+    assert_eq!(recent_patient_vitals.len(), 1);
+    assert_eq!(recent_patient_vitals[0].id, vitals.id);
+    assert_eq!(recent_patient_vitals[0].patient_id, patient_id);
 
     let alert = hms_db::ward::create_nursing_alert(
         &pool,
@@ -482,7 +522,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
 
     let other_facility = uuid::Uuid::new_v4();
     assert!(
-        hms_db::ward::list_patient_vitals(&pool, other_facility, None, 25)
+        hms_db::ward::list_patient_vitals(&pool, other_facility, None, None, None, 25)
             .await
             .expect("cross-facility vitals list succeeds")
             .is_empty()

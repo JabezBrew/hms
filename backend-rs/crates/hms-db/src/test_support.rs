@@ -165,7 +165,18 @@ impl TestCluster {
 
 impl Drop for TestCluster {
     fn drop(&mut self) {
-        let _ = self.process.kill();
+        let pg_data_dir = self.data_dir.join("data");
+        let _ = command("pg_ctl")
+            .arg("-D")
+            .arg(&pg_data_dir)
+            .args(["-m", "fast", "stop"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if matches!(self.process.try_wait(), Ok(None)) {
+            let _ = self.process.kill();
+        }
         let _ = self.process.wait();
         let _ = std::fs::remove_dir_all(&self.data_dir);
     }

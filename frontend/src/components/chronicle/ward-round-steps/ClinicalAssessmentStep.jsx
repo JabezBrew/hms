@@ -15,25 +15,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import DeferredMount from '@/components/ui/DeferredMount';
 
 import format from 'date-fns/format';
-import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
-import { nursingKeys } from '@/hooks/useNursingQueries';
+import { useVitalSigns } from '@/hooks/useNursingQueries';
 
 const VitalsChart = lazy(() => import('./ClinicalAssessmentVitalsChart'));
-
-/**
- * Fetch vital signs for a patient (last 48 hours)
- */
-async function fetchVitalSigns(patientId) {
-  const response = await apiClient.get(`/nursing/vital-signs/`, {
-    params: {
-      patient: patientId,
-      hours: 48,
-      ordering: '-recorded_at',
-    },
-  });
-  return response.results || response || [];
-}
 
 /**
  * Prepare chart data from vitals array
@@ -154,11 +138,13 @@ export function ClinicalAssessmentStep({ formData, onChange, contextData, valida
   });
 
   // Fetch vital signs
-  const { data: vitals, isLoading: vitalsLoading } = useQuery({
-    queryKey: nursingKeys.vitalSignsWindow(patientId, '48h'),
-    queryFn: () => fetchVitalSigns(patientId),
+  const { data: vitals, isLoading: vitalsLoading } = useVitalSigns({
+    patient: patientId,
+    hours: 48,
+    ordering: '-recorded_at',
+    limit: 25,
+  }, {
     enabled: !!patientId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Sync with parent when local data changes
