@@ -307,6 +307,30 @@ pub async fn list_admission_cases(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/admissions/cases/{id}",
+    operation_id = "getAdmissionCaseById",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Admission case id")),
+    responses(
+        (status = 200, description = "Admission case", body = ObjectResponse<AdmissionCaseListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Admission case not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_admission_case(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
+    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
+    let admission_case = load_admission_case_for_access(&state, &user, id).await?;
+    Ok(Json(object(admission_case)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/admissions/cases",
     operation_id = "postAdmissionCase",

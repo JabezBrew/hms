@@ -129,6 +129,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getAdmissionCaseById": {
+    "operationId": "getAdmissionCaseById",
+    "method": "GET",
+    "path": "/api/v2/admissions/cases/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdmissionCases": {
     "operationId": "getAdmissionCases",
     "method": "GET",
@@ -2168,6 +2178,7 @@ export function createGeneratedClient(request) {
     getAdminPractitioners: createOperation(request, operations.getAdminPractitioners),
     getAdminStaff: createOperation(request, operations.getAdminStaff),
     getAdminStaffById: createOperation(request, operations.getAdminStaffById),
+    getAdmissionCaseById: createOperation(request, operations.getAdmissionCaseById),
     getAdmissionCases: createOperation(request, operations.getAdmissionCases),
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),

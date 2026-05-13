@@ -386,11 +386,10 @@ export const admissionsApi = {
   },
   getCase: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      const response = await v2Api.getAdmissionCases({
-        query: { limit: 100 },
+      const response = await v2Api.getAdmissionCaseById({ id }, {
         signal: options.signal,
       })
-      return adaptV2AdmissionCaseList(response).find((item) => item.id === id) || null
+      return adaptV2AdmissionCase(response?.data)
     }
     return apiClient.get(`/admissions/cases/${id}/`, options)
   },

@@ -17748,6 +17748,73 @@
         ]
       }
     },
+    "/api/v2/admissions/cases/{id}": {
+      "get": {
+        "operationId": "getAdmissionCaseById",
+        "parameters": [
+          {
+            "description": "Admission case id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AdmissionCaseListItem"
+                }
+              }
+            },
+            "description": "Admission case"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission case not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
     "/api/v2/admissions/cases/{id}/activate": {
       "post": {
         "operationId": "postAdmissionCaseActivate",

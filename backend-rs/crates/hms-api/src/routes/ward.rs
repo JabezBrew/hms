@@ -22,6 +22,10 @@ pub fn routes() -> Router<AppState> {
             get(ward::list_admission_cases).post(ward::create_admission_case),
         )
         .route(
+            "/api/v2/admissions/cases/:id",
+            get(ward::get_admission_case),
+        )
+        .route(
             "/api/v2/admissions/cases/:id/reserve-bed",
             post(ward::reserve_admission_bed),
         )

@@ -302,6 +302,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/wards/board",
         "/api/v2/admissions",
         "/api/v2/admissions/cases",
+        "/api/v2/admissions/cases/{id}",
         "/api/v2/admissions/cases/{id}/reserve-bed",
         "/api/v2/admissions/cases/{id}/activate",
         "/api/v2/admissions/cases/{id}/cancel",
@@ -4157,6 +4158,26 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         "ready_for_activation"
     );
 
+    let admission_case_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admissions/cases/{admission_case_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("admission case detail succeeds");
+    assert_eq!(admission_case_detail.status(), StatusCode::OK);
+    let admission_case_detail_body = json_body(admission_case_detail).await;
+    assert_eq!(admission_case_detail_body["data"]["id"], admission_case_id);
+    assert_eq!(
+        admission_case_detail_body["data"]["patient_id"],
+        case_patient_id
+    );
+
     let reserve_response = app
         .clone()
         .oneshot(
@@ -4488,6 +4509,20 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .await
         .expect("ward detail denial succeeds");
     assert_eq!(denied_detail.status(), StatusCode::FORBIDDEN);
+
+    let admission_case_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admissions/cases/{admission_case_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("admission case detail denial succeeds");
+    assert_eq!(admission_case_denied.status(), StatusCode::FORBIDDEN);
 
     let denied = app
         .clone()

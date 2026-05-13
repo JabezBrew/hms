@@ -94,6 +94,49 @@ describe('Rust V2 admission cases bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('loads admission case detail through the Rust /api/v2 detail endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'case-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            ward_id: 'ward-1',
+            ward_name: 'Medical Ward',
+            bed_id: 'bed-1',
+            bed_code: 'A1',
+            status: 'ready_for_activation',
+            created_at: '2026-05-12T05:00:00Z',
+            admitted_at: null,
+            discharged_at: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const admissionCase = await admissionsApi.getCase('case-1', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admissions/cases/case-1',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(admissionCase).toEqual(expect.objectContaining({
+      id: 'case-1',
+      patient_name: 'Ama Mensah',
+      requested_ward_name: 'Medical Ward',
+      requested_bed_label: 'Medical Ward · Bed A1',
+    }));
+  });
+
   it('loads active admissions from the bounded Rust V2 ward board', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
