@@ -628,10 +628,13 @@ export const laboratoryApi = {
     }
   },
 
-  createLabOrder: async (data) => {
+  createLabOrder: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratoryOrders(buildV2LabOrderPayload(data));
+        const response = await v2Api.postLaboratoryOrders(
+          buildV2LabOrderPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return v2Object(response, adaptV2LabOrder);
       }
 
@@ -656,10 +659,12 @@ export const laboratoryApi = {
     }
   },
 
-  submitLabOrder: async (id) => {
+  submitLabOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratoryOrderSubmit({ id });
+        const response = await v2Api.postLaboratoryOrderSubmit({ id }, {
+          signal: options.signal,
+        });
         return v2Object(response, adaptV2LabOrder);
       }
 
@@ -672,10 +677,12 @@ export const laboratoryApi = {
     }
   },
 
-  collectLabOrder: async (id) => {
+  collectLabOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratoryOrderCollect({ id });
+        const response = await v2Api.postLaboratoryOrderCollect({ id }, {
+          signal: options.signal,
+        });
         return v2Object(response, adaptV2LabOrder);
       }
 
@@ -700,10 +707,12 @@ export const laboratoryApi = {
     }
   },
 
-  startProcessingLabOrder: async (id) => {
+  startProcessingLabOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratoryOrderStartProcessing({ id });
+        const response = await v2Api.postLaboratoryOrderStartProcessing({ id }, {
+          signal: options.signal,
+        });
         return v2Object(response, adaptV2LabOrder);
       }
 
@@ -728,12 +737,13 @@ export const laboratoryApi = {
     }
   },
 
-  cancelLabOrder: async (id, cancellationReason) => {
+  cancelLabOrder: async (id, cancellationReason, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postLaboratoryOrderCancel(
           { id },
           { cancellation_reason: cancellationReason || null },
+          { signal: options.signal },
         );
         return v2Object(response, adaptV2LabOrder);
       }
@@ -792,10 +802,13 @@ export const laboratoryApi = {
     }
   },
 
-  createLabSpecimen: async (data) => {
+  createLabSpecimen: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratorySpecimens(buildV2SpecimenPayload(data));
+        const response = await v2Api.postLaboratorySpecimens(
+          buildV2SpecimenPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return v2Object(response, adaptV2LabSpecimen);
       }
 
@@ -808,10 +821,12 @@ export const laboratoryApi = {
     }
   },
 
-  receiveLabSpecimen: async (id, data) => {
+  receiveLabSpecimen: async (id, data = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratorySpecimenReceive({ id });
+        const response = await v2Api.postLaboratorySpecimenReceive({ id }, {
+          signal: options.signal || data?.signal,
+        });
         return v2Object(response, adaptV2LabSpecimen);
       }
 
@@ -889,10 +904,13 @@ export const laboratoryApi = {
     }
   },
 
-  createLabResult: async (data) => {
+  createLabResult: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratoryResults(buildV2LabResultPayload(data));
+        const response = await v2Api.postLaboratoryResults(
+          buildV2LabResultPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return v2Object(response, adaptV2LabResult);
       }
 
@@ -905,10 +923,12 @@ export const laboratoryApi = {
     }
   },
 
-  verifyLabResult: async (id, verificationNotes = '') => {
+  verifyLabResult: async (id, verificationNotes = '', options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postLaboratoryResultVerify({ id });
+        const response = await v2Api.postLaboratoryResultVerify({ id }, {
+          signal: options.signal,
+        });
         return v2Object(response, adaptV2LabResult);
       }
 
@@ -931,17 +951,21 @@ export const laboratoryApi = {
    * @param {Array} data.results - Array of result items
    * @returns {Promise<Object>} Created results response
    */
-  bulkCreateResults: async (data) => {
+  bulkCreateResults: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postLaboratoryResultBulkCreate(
           buildV2BulkLabResultsPayload(data),
+          { signal: options.signal || data?.signal },
         );
         return response?.data || {};
       }
 
       return await apiClient.post('/laboratory/results/bulk/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to save lab results');
+      }
       throw new Error(handleApiError(error, 'Failed to save lab results'));
     }
   },
@@ -954,19 +978,24 @@ export const laboratoryApi = {
    * @param {string} data.verification_notes - Optional notes
    * @returns {Promise<Object>} Verification response
    */
-  bulkVerifyResults: async (data) => {
+  bulkVerifyResults: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postLaboratoryResultBulkVerify({
           order_id: pickEntityId(data?.order_id ?? data?.order) || null,
           result_ids: pickEntityIds(data?.result_ids ?? data?.results),
           verification_notes: data?.verification_notes || null,
+        }, {
+          signal: options.signal || data?.signal,
         });
         return response?.data || {};
       }
 
       return await apiClient.post('/laboratory/results/bulk-verify/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to verify lab results');
+      }
       throw new Error(handleApiError(error, 'Failed to verify lab results'));
     }
   },

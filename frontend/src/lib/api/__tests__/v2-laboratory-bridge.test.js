@@ -320,6 +320,8 @@ describe('Rust V2 laboratory bridge', () => {
   });
 
   it('routes laboratory write workflows through generated Rust V2 endpoints', async () => {
+    const signal = new AbortController().signal;
+
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({
         data: {
@@ -485,40 +487,40 @@ describe('Rust V2 laboratory bridge', () => {
       patient: 'patient-1',
       tests: ['test-1'],
       priority: 'urgent',
-    })).resolves.toMatchObject({ id: 'order-1', patient: 'patient-1' });
-    await expect(laboratoryApi.getLabSpecimens({ page_size: 25 })).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({ id: 'order-1', patient: 'patient-1' });
+    await expect(laboratoryApi.getLabSpecimens({ page_size: 25 }, { signal })).resolves.toMatchObject({
       results: [expect.objectContaining({ id: 'specimen-1', order: 'order-1' })],
     });
     await expect(laboratoryApi.createLabSpecimen({
       order: 'order-1',
       specimen_type: 'urine',
-    })).resolves.toMatchObject({ id: 'specimen-2', order: 'order-1' });
+    }, { signal })).resolves.toMatchObject({ id: 'specimen-2', order: 'order-1' });
     await expect(laboratoryApi.createLabResult({
       specimen: 'specimen-2',
       test: 'test-1',
       value: 'negative',
-    })).resolves.toMatchObject({ id: 'result-1', specimen: 'specimen-2' });
-    await expect(laboratoryApi.verifyLabResult('result-1')).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({ id: 'result-1', specimen: 'specimen-2' });
+    await expect(laboratoryApi.verifyLabResult('result-1', '', { signal })).resolves.toMatchObject({
       id: 'result-1',
       is_verified: true,
     });
-    await expect(laboratoryApi.submitLabOrder('order-1')).resolves.toMatchObject({
+    await expect(laboratoryApi.submitLabOrder('order-1', { signal })).resolves.toMatchObject({
       id: 'order-1',
       status: 'ordered',
     });
-    await expect(laboratoryApi.collectLabOrder('order-1')).resolves.toMatchObject({
+    await expect(laboratoryApi.collectLabOrder('order-1', { signal })).resolves.toMatchObject({
       id: 'order-1',
       status: 'collected',
     });
-    await expect(laboratoryApi.startProcessingLabOrder('order-1')).resolves.toMatchObject({
+    await expect(laboratoryApi.startProcessingLabOrder('order-1', { signal })).resolves.toMatchObject({
       id: 'order-1',
       status: 'processing',
     });
-    await expect(laboratoryApi.cancelLabOrder('order-1', 'Duplicate order')).resolves.toMatchObject({
+    await expect(laboratoryApi.cancelLabOrder('order-1', 'Duplicate order', { signal })).resolves.toMatchObject({
       id: 'order-1',
       status: 'cancelled',
     });
-    await expect(laboratoryApi.receiveLabSpecimen('specimen-2')).resolves.toMatchObject({
+    await expect(laboratoryApi.receiveLabSpecimen('specimen-2', {}, { signal })).resolves.toMatchObject({
       id: 'specimen-2',
       status: 'received',
     });
@@ -530,16 +532,16 @@ describe('Rust V2 laboratory bridge', () => {
         value: 'positive',
         unit: null,
       }],
-    })).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({
       created_count: 1,
       results: [expect.objectContaining({ id: 'result-2', test_id: 'test-1' })],
     });
-    await expect(laboratoryApi.bulkVerifyResults({ order_id: 'order-1' })).resolves.toMatchObject({
+    await expect(laboratoryApi.bulkVerifyResults({ order_id: 'order-1' }, { signal })).resolves.toMatchObject({
       verified_count: 2,
       message: '2 lab results verified',
     });
 
-    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
       [
         'http://localhost:8080/api/v2/laboratory/orders',
         'POST',
@@ -549,11 +551,13 @@ describe('Rust V2 laboratory bridge', () => {
           panel_ids: [],
           priority: 'urgent',
         }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/specimens?limit=25',
         'GET',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/specimens',
@@ -562,6 +566,7 @@ describe('Rust V2 laboratory bridge', () => {
           order_id: 'order-1',
           specimen_type: 'urine',
         }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/results',
@@ -572,26 +577,31 @@ describe('Rust V2 laboratory bridge', () => {
           value: 'negative',
           unit: null,
         }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/results/result-1/verify',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/orders/order-1/submit',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/orders/order-1/collect',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/orders/order-1/start-processing',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/orders/order-1/cancel',
@@ -599,11 +609,13 @@ describe('Rust V2 laboratory bridge', () => {
         JSON.stringify({
           cancellation_reason: 'Duplicate order',
         }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/specimens/specimen-2/receive',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/results/bulk',
@@ -618,6 +630,7 @@ describe('Rust V2 laboratory bridge', () => {
             unit: null,
           }],
         }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/laboratory/results/bulk-verify',
@@ -627,6 +640,7 @@ describe('Rust V2 laboratory bridge', () => {
           result_ids: [],
           verification_notes: null,
         }),
+        signal,
       ],
     ]);
   });
