@@ -419,26 +419,23 @@ describe('Rust V2 billing bridge', () => {
     ]);
   });
 
-  it('loads billing detail-style reads from bounded Rust V2 lists instead of Django detail endpoints', async () => {
+  it('loads billing invoice detail through Rust detail contract without list-and-find fetching', async () => {
     const issuedAt = '2026-05-12T08:00:00Z';
     globalThis.fetch
       .mockResolvedValueOnce(
         jsonResponse({
-          data: [
-            {
-              id: 'invoice-1',
-              patient_id: 'patient-1',
-              patient_code: 'P-0001',
-              invoice_number: 'INV-1',
-              status: 'issued',
-              gross_amount_minor: 10000,
-              paid_amount_minor: 4000,
-              balance_minor: 6000,
-              currency: 'GHS',
-              issued_at: issuedAt,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          data: {
+            id: 'invoice-1',
+            patient_id: 'patient-1',
+            patient_code: 'P-0001',
+            invoice_number: 'INV-1',
+            status: 'issued',
+            gross_amount_minor: 10000,
+            paid_amount_minor: 4000,
+            balance_minor: 6000,
+            currency: 'GHS',
+            issued_at: issuedAt,
+          },
           meta: {},
         }),
       )
@@ -500,7 +497,7 @@ describe('Rust V2 billing bridge', () => {
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
-      'http://localhost:8080/api/v2/billing/invoices?limit=100',
+      'http://localhost:8080/api/v2/billing/invoices/invoice-1',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(

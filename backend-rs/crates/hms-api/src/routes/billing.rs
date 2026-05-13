@@ -19,6 +19,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/billing/invoices",
             get(billing::list_invoices).post(billing::create_invoice),
         )
+        .route("/api/v2/billing/invoices/:id", get(billing::get_invoice))
         .route(
             "/api/v2/billing/payments",
             get(billing::list_payments).post(billing::create_payment),

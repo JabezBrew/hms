@@ -1925,6 +1925,10 @@ impl AppState {
         .await
     }
 
+    pub async fn get_billing_invoice(&self, invoice_id: Uuid) -> Result<Option<InvoiceListItem>> {
+        hms_db::billing::get_invoice(&self.inner.pool, self.facility_id(), invoice_id).await
+    }
+
     pub async fn billing_invoice_context(
         &self,
         invoice_id: Uuid,

@@ -1164,6 +1164,14 @@ async fn fetch_invoice_by_id(
         .transpose()
 }
 
+pub async fn get_invoice(
+    pool: &PgPool,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+) -> anyhow::Result<Option<InvoiceListItem>> {
+    fetch_invoice_by_id(pool, facility_id, invoice_id).await
+}
+
 async fn fetch_payment_by_id(
     pool: &PgPool,
     facility_id: Uuid,

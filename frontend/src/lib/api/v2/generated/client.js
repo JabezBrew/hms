@@ -257,6 +257,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getBillingInvoiceById": {
+    "operationId": "getBillingInvoiceById",
+    "method": "GET",
+    "path": "/api/v2/billing/invoices/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getBillingInvoices": {
     "operationId": "getBillingInvoices",
     "method": "GET",
@@ -2565,6 +2575,7 @@ export function createGeneratedClient(request) {
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),
     getAuthMe: createOperation(request, operations.getAuthMe),
+    getBillingInvoiceById: createOperation(request, operations.getBillingInvoiceById),
     getBillingInvoices: createOperation(request, operations.getBillingInvoices),
     getBillingPayments: createOperation(request, operations.getBillingPayments),
     getBillingReceipts: createOperation(request, operations.getBillingReceipts),

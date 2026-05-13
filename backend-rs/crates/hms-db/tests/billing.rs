@@ -81,6 +81,19 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
     .await
     .expect("other invoice is created");
 
+    let invoice_detail = hms_db::billing::get_invoice(&pool, facility_id, invoice.id)
+        .await
+        .expect("invoice detail lookup succeeds")
+        .expect("invoice exists");
+    assert_eq!(invoice_detail.id, invoice.id);
+    assert_eq!(invoice_detail.patient_id, patient_id);
+    assert!(
+        hms_db::billing::get_invoice(&pool, uuid::Uuid::new_v4(), invoice.id)
+            .await
+            .expect("cross-facility invoice detail lookup succeeds")
+            .is_none()
+    );
+
     let patient_invoices =
         hms_db::billing::list_invoices(&pool, facility_id, Some(patient_id), None, 25)
             .await

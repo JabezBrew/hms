@@ -51,6 +51,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::billing::create_payment,
         crate::handlers::billing::create_remittance_import,
         crate::handlers::billing::export_batch,
+        crate::handlers::billing::get_invoice,
         crate::handlers::billing::list_batches,
         crate::handlers::billing::list_billing_rules,
         crate::handlers::billing::list_cash_drawers,

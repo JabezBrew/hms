@@ -331,15 +331,11 @@ function normalizeLimit(params = {}, fallback = DEFAULT_BILLING_PAGE_SIZE) {
 }
 
 async function findV2Invoice(id, options = {}) {
-  const response = await v2Api.getBillingInvoices({
-    query: { limit: 100 },
-    signal: options.signal,
-  });
-  const invoice = v2List(response).find((candidate) => candidate.id === id || candidate.invoice_number === id);
-  if (!invoice) {
-    throw new Error('Rust V2 invoice was not found in the bounded invoice list.');
-  }
-  return adaptV2Invoice(invoice);
+  const response = await v2Api.getBillingInvoiceById(
+    { id },
+    { signal: options.signal },
+  );
+  return adaptV2Invoice(response?.data || response || {});
 }
 
 async function findV2Receipt(predicate, options = {}) {

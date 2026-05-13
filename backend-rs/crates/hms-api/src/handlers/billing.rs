@@ -93,6 +93,23 @@ pub async fn list_invoices(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v2/billing/invoices/{id}", operation_id = "getBillingInvoiceById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Invoice id")), responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_invoice(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<InvoiceListItem>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let invoice = state
+        .get_billing_invoice(id)
+        .await
+        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, invoice.patient_id).await?;
+
+    Ok(Json(object(invoice)))
+}
+
 #[utoipa::path(post, path = "/api/v2/billing/invoices", operation_id = "postBillingInvoices", tag = "billing", security(("bearerAuth" = [])), request_body = CreateInvoiceRequest, responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_invoice(
     State(state): State<AppState>,

@@ -3849,6 +3849,24 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .expect("invoice amount exists");
     assert!(gross_amount > 0);
 
+    let invoice_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/billing/invoices/{invoice_id}"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("invoice detail succeeds");
+    assert_eq!(invoice_detail_response.status(), StatusCode::OK);
+    let invoice_detail = json_body(invoice_detail_response).await;
+    assert_eq!(invoice_detail["data"]["id"], invoice_id);
+    assert_eq!(invoice_detail["data"]["patient_id"], patient_id);
+    assert_eq!(invoice_detail["data"]["gross_amount_minor"], gross_amount);
+
     let payment_response = app
         .clone()
         .oneshot(
