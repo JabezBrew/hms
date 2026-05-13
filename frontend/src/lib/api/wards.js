@@ -357,10 +357,13 @@ export const wardsApi = {
    * @param {string} id - Ward ID
    * @returns {Promise<void>}
    */
-  deleteWard: async (id) => {
+  deleteWard: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('ward mutations');
+        const response = await v2Api.patchWard({ id }, { status: 'inactive' }, {
+          signal: options.signal,
+        });
+        return adaptV2Ward(response?.data || {});
       }
       return await apiClient.delete(`/wards/wards/${id}/`);
     } catch (error) {
@@ -503,10 +506,13 @@ export const wardsApi = {
    * @param {string} id - Bed ID
    * @returns {Promise<void>}
    */
-  deleteBed: async (id) => {
+  deleteBed: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('bed mutations');
+        const response = await v2Api.patchWardBed({ id }, { status: 'closed' }, {
+          signal: options.signal,
+        });
+        return adaptV2Bed(response?.data);
       }
       return await apiClient.delete(`/wards/beds/${id}/`);
     } catch (error) {
@@ -863,10 +869,13 @@ export const wardsApi = {
    * @param {string} id - Section ID
    * @returns {Promise<void>}
    */
-  deleteSection: async (id) => {
+  deleteSection: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('section mutations');
+        const response = await v2Api.patchWardSection({ id }, { status: 'inactive' }, {
+          signal: options.signal,
+        });
+        return adaptV2Section(response?.data);
       }
       return await apiClient.delete(`/wards/sections/${id}/`);
     } catch (error) {

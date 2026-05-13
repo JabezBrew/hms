@@ -382,6 +382,82 @@ describe('Rust V2 wards bridge', () => {
     }));
   });
 
+  it('soft-deletes ward setup resources through Rust V2 status updates', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'ward-2',
+              code: 'RENAMED',
+              name: 'Renamed Ward',
+              status: 'inactive',
+              active_bed_count: 0,
+              occupied_bed_count: 0,
+              created_at: '2026-05-12T10:00:00Z',
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'bed-1',
+              ward_id: 'ward-2',
+              section_id: 'section-2',
+              bed_code: 'W-02',
+              status: 'closed',
+              created_at: '2026-05-12T09:06:00Z',
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'section-2',
+              ward_id: 'ward-2',
+              code: 'WEST',
+              name: 'West Section',
+              status: 'inactive',
+              active_bed_count: 0,
+              created_at: '2026-05-12T09:05:00Z',
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    await expect(wardsApi.deleteWard('ward-2', { signal: controller.signal })).resolves.toEqual(
+      expect.objectContaining({ id: 'ward-2', is_active: false }),
+    );
+    await expect(wardsApi.deleteBed('bed-1', { signal: controller.signal })).resolves.toEqual(
+      expect.objectContaining({ id: 'bed-1', status: 'closed', is_active: false }),
+    );
+    await expect(wardsApi.deleteSection('section-2', { signal: controller.signal })).resolves.toEqual(
+      expect.objectContaining({ id: 'section-2', is_active: false }),
+    );
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/wards/ward-2', 'PATCH', JSON.stringify({ status: 'inactive' }), controller.signal],
+      ['http://localhost:8080/api/v2/wards/beds/bed-1', 'PATCH', JSON.stringify({ status: 'closed' }), controller.signal],
+      [
+        'http://localhost:8080/api/v2/wards/sections/section-2',
+        'PATCH',
+        JSON.stringify({ status: 'inactive' }),
+        controller.signal,
+      ],
+    ]);
+  });
+
   it('uses Rust V2 for root metadata, scoped sections, and supported ward setup mutations', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -675,7 +751,6 @@ describe('Rust V2 wards bridge', () => {
   });
 
   it('fails closed or returns safe empty lists for unsupported Rust V2 ward calls', async () => {
-    await expect(wardsApi.deleteWard('ward-1')).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.updateAdmission('admission-1', { status: 'closed' })).rejects.toThrow(
       /Rust V2 .* admission updates/i,
     );
