@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -72,6 +72,13 @@ pub enum CareTeamRole {
 pub struct CursorListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct AppointmentListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub date: Option<NaiveDate>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]

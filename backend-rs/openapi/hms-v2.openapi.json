@@ -384,6 +384,32 @@
         ],
         "type": "object"
       },
+      "AppointmentListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "AppointmentStatus": {
         "enum": [
           "scheduled",
@@ -19711,6 +19737,18 @@
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
                 "null"
               ]
             }

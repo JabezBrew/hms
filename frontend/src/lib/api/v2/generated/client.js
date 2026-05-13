@@ -272,7 +272,8 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "date"
     ],
     "hasBody": false
   },

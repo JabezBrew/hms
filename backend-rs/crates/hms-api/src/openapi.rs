@@ -362,6 +362,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::billing::ServiceKind,
         hms_domain::billing::ServicePriceListItem,
         hms_domain::care::AppointmentListItem,
+        hms_domain::care::AppointmentListQuery,
         hms_domain::care::AppointmentStatus,
         hms_domain::care::AssignTriageRequest,
         hms_domain::care::CareTeamAssignment,

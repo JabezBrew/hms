@@ -1,4 +1,4 @@
-use chrono::{TimeZone, Utc};
+use chrono::{NaiveDate, TimeZone, Utc};
 use hms_db::care::{
     AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter, NewTriage, NewVisit,
 };
@@ -110,6 +110,102 @@ async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped()
             .expect("cross-facility lookup succeeds")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn appointment_list_can_filter_by_schedule_date() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+
+    let target = hms_db::care::create_appointment(
+        &pool,
+        NewAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            starts_at: Utc
+                .with_ymd_and_hms(2030, 5, 12, 9, 0, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            ends_at: Utc
+                .with_ymd_and_hms(2030, 5, 12, 9, 30, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("target appointment is created");
+    let other_day = hms_db::care::create_appointment(
+        &pool,
+        NewAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            starts_at: Utc
+                .with_ymd_and_hms(2030, 5, 13, 9, 0, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            ends_at: Utc
+                .with_ymd_and_hms(2030, 5, 13, 9, 30, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("other appointment is created");
+
+    let filtered = hms_db::care::list_appointments(
+        &pool,
+        facility_id,
+        None,
+        Some(NaiveDate::from_ymd_opt(2030, 5, 12).expect("static date is valid")),
+        25,
+    )
+    .await
+    .expect("appointment list filters by date");
+
+    assert!(filtered
+        .iter()
+        .any(|appointment| appointment.id == target.id));
+    assert!(!filtered
+        .iter()
+        .any(|appointment| appointment.id == other_day.id));
+    assert!(filtered
+        .iter()
+        .all(|appointment| appointment.starts_at.date_naive()
+            == NaiveDate::from_ymd_opt(2030, 5, 12).expect("static date is valid")));
 }
 
 #[tokio::test]

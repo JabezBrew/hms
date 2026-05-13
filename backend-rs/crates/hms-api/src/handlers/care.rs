@@ -5,11 +5,11 @@ use hms_access::{require_patient_demographics_access, require_permission};
 use hms_db::care::CareCursor;
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::{
-    AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
-    CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateEncounterRequest,
-    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery, EncounterStatus,
-    TriageAssessmentRequest, TriageListItem, TriageStatus, UpdateAppointmentRequest,
-    UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
+    AppointmentListItem, AppointmentListQuery, CareTeamAssignment, CheckInVisitRequest,
+    ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest,
+    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
+    EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageStatus,
+    UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -30,7 +30,7 @@ const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
     operation_id = "getAppointments",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(AppointmentListQuery),
     responses(
         (status = 200, description = "Appointments list", body = ListResponse<AppointmentListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -40,12 +40,16 @@ const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
 pub async fn list_appointments(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<AppointmentListQuery>,
 ) -> Result<Json<ListResponse<AppointmentListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let (cursor, page_size) = page_request(query)?;
+    let date = query.date;
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_appointments(cursor, page_size as i64 + 1)
+        .list_appointments(cursor, date, page_size as i64 + 1)
         .await
         .map_err(|_| {
             ApiError::conflict(

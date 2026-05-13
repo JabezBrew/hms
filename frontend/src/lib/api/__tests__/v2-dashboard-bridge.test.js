@@ -139,7 +139,7 @@ describe('Rust V2 dashboard bridge', () => {
     }));
   });
 
-  it('loads clinic schedule data from the bounded Rust appointment list', async () => {
+  it('loads clinic schedule data from a date-filtered Rust appointment list', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -178,7 +178,7 @@ describe('Rust V2 dashboard bridge', () => {
     const response = await dashboardsApi.getClinicSchedule({ date: '2026-05-12' });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/appointments?limit=50',
+      'http://localhost:8080/api/v2/appointments?date=2026-05-12&limit=50',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(response).toEqual(expect.objectContaining({

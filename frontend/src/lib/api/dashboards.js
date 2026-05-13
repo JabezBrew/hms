@@ -257,9 +257,10 @@ export const dashboardsApi = {
   getClinicSchedule: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
+        const scheduleDate = params.date || new Date().toISOString().slice(0, 10);
         return adaptV2AppointmentsToClinicSchedule(
-          await v2Api.getAppointments({ query: { limit: 50 } }),
-          params,
+          await v2Api.getAppointments({ query: { date: scheduleDate, limit: 50 } }),
+          { ...params, date: scheduleDate },
         );
       }
       const endpoint = `/dashboards/clinic/${buildQueryString(params)}`;

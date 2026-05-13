@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::care::{
     AppointmentListItem, AppointmentStatus, CareTeamAssignment, CareTeamRole, ClinicListItem,
     EncounterListItem, EncounterStatus, EncounterType, TriageAcuity, TriageAssessmentRequest,
@@ -156,6 +156,7 @@ pub async fn list_appointments(
     pool: &PgPool,
     facility_id: Uuid,
     cursor: Option<CareCursor>,
+    date: Option<NaiveDate>,
     limit: i64,
 ) -> anyhow::Result<Vec<AppointmentListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
@@ -176,6 +177,22 @@ pub async fn list_appointments(
     query.push_bind(facility_id);
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
+
+    if let Some(date) = date {
+        let starts_at = date
+            .and_hms_opt(0, 0, 0)
+            .expect("valid midnight for schedule date")
+            .and_utc();
+        let ends_before = date
+            .succ_opt()
+            .and_then(|next_date| next_date.and_hms_opt(0, 0, 0))
+            .expect("valid next-day midnight for schedule date")
+            .and_utc();
+        query.push(" AND appointments.starts_at >= ");
+        query.push_bind(starts_at);
+        query.push(" AND appointments.starts_at < ");
+        query.push_bind(ends_before);
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (appointments.starts_at, appointments.id) > (");

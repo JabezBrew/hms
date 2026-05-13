@@ -6816,6 +6816,60 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     assert_eq!(appointments_body["data"].as_array().unwrap().len(), 1);
     assert_eq!(appointments_body["page"]["limit"], 1);
 
+    let off_date_appointment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/appointments")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "starts_at": "2026-05-09T09:00:00Z",
+                        "ends_at": "2026-05-09T09:30:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("off-date appointment create succeeds");
+    assert_eq!(off_date_appointment.status(), StatusCode::OK);
+    let off_date_appointment_body = json_body(off_date_appointment).await;
+    let off_date_appointment_id = off_date_appointment_body["data"]["id"]
+        .as_str()
+        .expect("off-date appointment id exists");
+
+    let date_filtered_appointments = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/appointments?date=2026-05-10&limit=20")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("date-filtered appointments list succeeds");
+    assert_eq!(date_filtered_appointments.status(), StatusCode::OK);
+    let date_filtered_body = json_body(date_filtered_appointments).await;
+    let date_filtered_items = date_filtered_body["data"]
+        .as_array()
+        .expect("date-filtered appointments are listed");
+    assert!(date_filtered_items
+        .iter()
+        .any(|item| item["id"] == appointment_id));
+    assert!(!date_filtered_items
+        .iter()
+        .any(|item| item["id"] == off_date_appointment_id));
+    assert!(date_filtered_items.iter().all(|item| item["starts_at"]
+        .as_str()
+        .expect("starts_at is a string")
+        .starts_with("2026-05-10")));
+
     let appointment_to_cancel = app
         .clone()
         .oneshot(
