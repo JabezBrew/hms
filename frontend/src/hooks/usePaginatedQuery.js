@@ -10,7 +10,10 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 export function usePaginatedQuery(queryKey, queryFn, options = {}) {
   return useInfiniteQuery({
     queryKey,
-    queryFn: ({ pageParam = 1 }) => queryFn({ page: pageParam, ...options.params }),
+    queryFn: ({ pageParam = 1, signal }) => queryFn(
+      { page: pageParam, ...options.params },
+      { signal },
+    ),
     getNextPageParam: (lastPage) => {
       // If there's a next page URL, extract the page number
       if (lastPage.next) {

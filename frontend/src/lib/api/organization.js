@@ -359,17 +359,18 @@ function unsupportedRustV2Resource(resourceName) {
 
 function legacyCrudApi(resourceName, basePath, { rustList = emptyRustV2List } = {}) {
   return {
-    list: (params = {}) => {
+    list: (params = {}, options = {}) => {
       if (isRustV2ApiMode()) {
-        return rustList(params);
+        return rustList(params, options);
       }
-      return apiClient.get(basePath, { params });
+      const { queryParams, requestOptions } = splitRequestParams(params, options);
+      return apiClient.get(basePath, { params: queryParams, ...requestOptions });
     },
-    get: (id) => {
+    get: (id, options = {}) => {
       if (isRustV2ApiMode()) {
         return unsupportedRustV2Resource(`${resourceName} detail`);
       }
-      return apiClient.get(`${basePath}${id}/`);
+      return apiClient.get(`${basePath}${id}/`, options);
     },
     create: (data) => {
       if (isRustV2ApiMode()) {
@@ -532,53 +533,53 @@ export const clinicalUnitsApi = {
   },
 
   // Related data
-  leaders: (id) => {
+  leaders: (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/units/${id}/leaders/`);
+    return apiClient.get(`/organization/units/${id}/leaders/`, options);
   },
-  staff: (id, params = {}) => {
+  staff: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    const queryString = new URLSearchParams(params).toString();
-    return apiClient.get(`/organization/units/${id}/staff/${queryString ? `?${queryString}` : ''}`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/staff/`, { params: queryParams, ...requestOptions });
   },
-  staffCounts: (id, params = {}) => {
+  staffCounts: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2Object();
     }
-    const queryString = new URLSearchParams(params).toString();
-    return apiClient.get(`/organization/units/${id}/staff/counts/${queryString ? `?${queryString}` : ''}`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/staff/counts/`, { params: queryParams, ...requestOptions });
   },
-  staffPaginated: (id, params = {}) => {
+  staffPaginated: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2Paginated();
     }
-    const queryString = new URLSearchParams(params).toString();
-    return apiClient.getWithPagination(`/organization/units/${id}/staff/${queryString ? `?${queryString}` : ''}`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.getWithPagination(`/organization/units/${id}/staff/`, { params: queryParams, ...requestOptions });
   },
-  members: (id, params = {}) => {
+  members: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    const queryString = new URLSearchParams(params).toString();
-    return apiClient.get(`/organization/units/${id}/members/${queryString ? `?${queryString}` : ''}`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/members/`, { params: queryParams, ...requestOptions });
   },
-  membersCounts: (id, params = {}) => {
+  membersCounts: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2Object();
     }
-    const queryString = new URLSearchParams(params).toString();
-    return apiClient.get(`/organization/units/${id}/members/counts/${queryString ? `?${queryString}` : ''}`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/members/counts/`, { params: queryParams, ...requestOptions });
   },
-  membersPaginated: (id, params = {}) => {
+  membersPaginated: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2Paginated();
     }
-    const queryString = new URLSearchParams(params).toString();
-    return apiClient.getWithPagination(`/organization/units/${id}/members/${queryString ? `?${queryString}` : ''}`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.getWithPagination(`/organization/units/${id}/members/`, { params: queryParams, ...requestOptions });
   },
   wards: (id, options = {}) => {
     if (isRustV2ApiMode()) {
@@ -586,11 +587,11 @@ export const clinicalUnitsApi = {
     }
     return apiClient.get(`/organization/units/${id}/wards/`, options);
   },
-  coverage: (id) => {
+  coverage: (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2Object();
     }
-    return apiClient.get(`/organization/units/${id}/coverage/`);
+    return apiClient.get(`/organization/units/${id}/coverage/`, options);
   },
 };
 
@@ -714,11 +715,12 @@ export const dutyRosterApi = {
     }
     return apiClient.post(`/organization/duty-roster/${id}/swap/`, data);
   },
-  onDuty: (params = {}) => {
+  onDuty: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get('/organization/duty-roster/on-duty/', { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get('/organization/duty-roster/on-duty/', { params: queryParams, ...requestOptions });
   },
 };
 
@@ -730,17 +732,18 @@ export const dutyRosterApi = {
  * Rotation Rules API - Department-scoped
  */
 export const rotationRulesApi = {
-  list: (departmentId, params = {}) => {
+  list: (departmentId, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/departments/${departmentId}/rotation-rules/`, { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/departments/${departmentId}/rotation-rules/`, { params: queryParams, ...requestOptions });
   },
-  get: (id) => {
+  get: (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return unsupportedRustV2Resource('rotation rules detail');
     }
-    return apiClient.get(`/organization/rotation-rules/${id}/`);
+    return apiClient.get(`/organization/rotation-rules/${id}/`, options);
   },
   create: (departmentId, data) => {
     if (isRustV2ApiMode()) {
@@ -766,17 +769,18 @@ export const rotationRulesApi = {
  * Roster Entries API - Department-scoped simplified roster
  */
 export const rosterEntriesApi = {
-  list: (departmentId, params = {}) => {
+  list: (departmentId, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/departments/${departmentId}/roster/`, { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/departments/${departmentId}/roster/`, { params: queryParams, ...requestOptions });
   },
-  get: (id) => {
+  get: (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return unsupportedRustV2Resource('roster entries detail');
     }
-    return apiClient.get(`/organization/roster/${id}/`);
+    return apiClient.get(`/organization/roster/${id}/`, options);
   },
   create: (departmentId, data) => {
     if (isRustV2ApiMode()) {
@@ -841,17 +845,19 @@ export const rosterEntriesApi = {
       responseType: 'blob',
     });
   },
-  onDutyDepartment: (departmentId, params = {}) => {
+  onDutyDepartment: (departmentId, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/departments/${departmentId}/on-duty/`, { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/departments/${departmentId}/on-duty/`, { params: queryParams, ...requestOptions });
   },
-  onDutyAll: (params = {}) => {
+  onDutyAll: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/on-duty/`, { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/on-duty/`, { params: queryParams, ...requestOptions });
   },
 };
 
@@ -859,17 +865,18 @@ export const rosterEntriesApi = {
  * Roster Validation Rules API
  */
 export const validationRulesApi = {
-  list: (departmentId, params = {}) => {
+  list: (departmentId, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/departments/${departmentId}/validation-rules/`, { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/departments/${departmentId}/validation-rules/`, { params: queryParams, ...requestOptions });
   },
-  get: (id) => {
+  get: (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return unsupportedRustV2Resource('validation rules detail');
     }
-    return apiClient.get(`/organization/validation-rules/${id}/`);
+    return apiClient.get(`/organization/validation-rules/${id}/`, options);
   },
   create: (departmentId, data) => {
     if (isRustV2ApiMode()) {
@@ -889,11 +896,11 @@ export const validationRulesApi = {
     }
     return apiClient.delete(`/organization/validation-rules/${id}/`);
   },
-  templates: () => {
+  templates: (options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get(`/organization/validation-rules/templates/`);
+    return apiClient.get(`/organization/validation-rules/templates/`, options);
   },
   validate: (data) => {
     if (isRustV2ApiMode()) {
@@ -948,17 +955,18 @@ export const clinicsApi = {
  * Clinic Schedules API
  */
 export const clinicSchedulesApi = {
-  list: (params = {}) => {
+  list: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
       return emptyRustV2List();
     }
-    return apiClient.get('/organization/clinic-schedules/', { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get('/organization/clinic-schedules/', { params: queryParams, ...requestOptions });
   },
-  get: (id) => {
+  get: (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return unsupportedRustV2Resource('clinic schedules detail');
     }
-    return apiClient.get(`/organization/clinic-schedules/${id}/`);
+    return apiClient.get(`/organization/clinic-schedules/${id}/`, options);
   },
 };
 
