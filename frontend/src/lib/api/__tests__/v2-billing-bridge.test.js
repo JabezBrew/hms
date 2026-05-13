@@ -441,18 +441,15 @@ describe('Rust V2 billing bridge', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          data: [
-            {
-              id: 'receipt-1',
-              payment_id: 'payment-1',
-              invoice_id: 'invoice-1',
-              receipt_number: 'RCT-1',
-              amount_minor: 4000,
-              currency: 'GHS',
-              issued_at: issuedAt,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          data: {
+            id: 'receipt-1',
+            payment_id: 'payment-1',
+            invoice_id: 'invoice-1',
+            receipt_number: 'RCT-1',
+            amount_minor: 4000,
+            currency: 'GHS',
+            issued_at: issuedAt,
+          },
           meta: {},
         }),
       )
@@ -499,7 +496,7 @@ describe('Rust V2 billing bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:8080/api/v2/billing/receipts?limit=100',
+      'http://localhost:8080/api/v2/billing/receipts/by-number/RCT-1',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
@@ -516,6 +513,60 @@ describe('Rust V2 billing bridge', () => {
     expect(receipt).toEqual(expect.objectContaining({ id: 'receipt-1', receipt_number: 'RCT-1', amount: 40 }));
     expect(claim).toEqual(expect.objectContaining({ id: 'claim-1', claimed_amount: 30 }));
     expect(rule).toEqual(expect.objectContaining({ id: 'rule-1', is_active: true }));
+  });
+
+  it('loads receipt detail through Rust V2 receipt contracts without list-and-find fetching', async () => {
+    const issuedAt = '2026-05-12T08:00:00Z';
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            id: 'receipt-1',
+            payment_id: 'payment-1',
+            invoice_id: 'invoice-1',
+            receipt_number: 'RCT-1',
+            amount_minor: 4000,
+            currency: 'GHS',
+            issued_at: issuedAt,
+          },
+          meta: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            id: 'receipt-1',
+            payment_id: 'payment-1',
+            invoice_id: 'invoice-1',
+            receipt_number: 'RCT-1',
+            amount_minor: 4000,
+            currency: 'GHS',
+            issued_at: issuedAt,
+          },
+          meta: {},
+        }),
+      );
+
+    const generated = await billingApi.generateReceipt('payment-1');
+    const printDetail = await billingApi.getReceiptPrintDetail('receipt-1');
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/billing/payments/payment-1/receipt',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/billing/receipts/receipt-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(generated).toEqual(expect.objectContaining({ id: 'receipt-1', receipt_number: 'RCT-1', amount: 40 }));
+    expect(printDetail).toEqual(expect.objectContaining({
+      id: 'receipt-1',
+      receipt_number: 'RCT-1',
+      amount: 40,
+      items: [],
+    }));
   });
 
   it('fails closed for unsupported Rust V2 billing mutations and downloads instead of calling Django', async () => {

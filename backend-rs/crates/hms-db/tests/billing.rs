@@ -1,5 +1,6 @@
-use hms_db::billing::{NewClaim, NewInvoice};
+use hms_db::billing::{NewClaim, NewInvoice, NewPayment};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_domain::billing::PaymentMethod;
 use hms_domain::deployment::DeploymentProfile;
 
 #[tokio::test]
@@ -117,6 +118,48 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
         hms_db::billing::get_claim(&pool, uuid::Uuid::new_v4(), claim.id)
             .await
             .expect("cross-facility claim detail lookup succeeds")
+            .is_none()
+    );
+
+    let payment = hms_db::billing::create_payment(
+        &pool,
+        NewPayment {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            invoice_id: invoice.id,
+            receipt_id: uuid::Uuid::new_v4(),
+            receipt_number: "RCT-TEST-1".to_owned(),
+            amount_minor: invoice.gross_amount_minor,
+            method: PaymentMethod::MobileMoney,
+            cash_session_id: None,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("payment is created");
+    let receipt = hms_db::billing::get_receipt_by_payment(&pool, facility_id, payment.id)
+        .await
+        .expect("receipt by payment lookup succeeds")
+        .expect("receipt exists for payment");
+    assert_eq!(receipt.payment_id, payment.id);
+    assert_eq!(receipt.invoice_id, invoice.id);
+    assert_eq!(receipt.receipt_number, payment.receipt_number);
+    assert_eq!(receipt.amount_minor, invoice.gross_amount_minor);
+    let receipt_by_id = hms_db::billing::get_receipt(&pool, facility_id, receipt.id)
+        .await
+        .expect("receipt detail lookup succeeds")
+        .expect("receipt exists");
+    assert_eq!(receipt_by_id.id, receipt.id);
+    let receipt_by_number =
+        hms_db::billing::get_receipt_by_number(&pool, facility_id, &payment.receipt_number)
+            .await
+            .expect("receipt by number lookup succeeds")
+            .expect("receipt exists by number");
+    assert_eq!(receipt_by_number.id, receipt.id);
+    assert!(
+        hms_db::billing::get_receipt(&pool, uuid::Uuid::new_v4(), receipt.id)
+            .await
+            .expect("cross-facility receipt lookup succeeds")
             .is_none()
     );
 

@@ -192,6 +192,57 @@ pub async fn list_receipts(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v2/billing/receipts/{id}", operation_id = "getBillingReceiptById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Receipt id")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_receipt(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let receipt = state
+        .get_billing_receipt(id)
+        .await
+        .map_err(|_| ApiError::conflict("receipt_load_failed", "Receipt could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("receipt_not_found", "Receipt was not found."))?;
+    require_receipt_patient_access(&state, &user, receipt.invoice_id).await?;
+
+    Ok(Json(object(receipt)))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/receipts/by-number/{receipt_number}", operation_id = "getBillingReceiptByNumber", tag = "billing", security(("bearerAuth" = [])), params(("receipt_number" = String, Path, description = "Receipt number")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_receipt_by_number(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(receipt_number): Path<String>,
+) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let receipt = state
+        .get_billing_receipt_by_number(&receipt_number)
+        .await
+        .map_err(|_| ApiError::conflict("receipt_load_failed", "Receipt could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("receipt_not_found", "Receipt was not found."))?;
+    require_receipt_patient_access(&state, &user, receipt.invoice_id).await?;
+
+    Ok(Json(object(receipt)))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/payments/{id}/receipt", operation_id = "getBillingReceiptByPaymentId", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Payment id")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_receipt_by_payment(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let receipt = state
+        .get_billing_receipt_by_payment(id)
+        .await
+        .map_err(|_| ApiError::conflict("receipt_load_failed", "Receipt could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("receipt_not_found", "Receipt was not found."))?;
+    require_receipt_patient_access(&state, &user, receipt.invoice_id).await?;
+
+    Ok(Json(object(receipt)))
+}
+
 #[utoipa::path(get, path = "/api/v2/billing/cash-drawers", operation_id = "getCashDrawers", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<CashDrawerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_cash_drawers(
     State(state): State<AppState>,
@@ -492,6 +543,20 @@ fn require_billing_access(
 
 fn require_nhis_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
     require_billing_access(user, facility_id, PermissionCode::NhisClaimManage)
+}
+
+async fn require_receipt_patient_access(
+    state: &AppState,
+    user: &AuthUser,
+    invoice_id: Uuid,
+) -> Result<(), ApiError> {
+    let invoice = state
+        .billing_invoice_context(invoice_id)
+        .await
+        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
+    let _patient = load_patient_for_access(state, user, invoice.patient_id).await?;
+    Ok(())
 }
 
 fn page_request(query: BillingListQuery) -> Result<(Option<BillingCursor>, u8), ApiError> {

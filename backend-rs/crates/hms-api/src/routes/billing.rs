@@ -24,7 +24,16 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/billing/payments",
             get(billing::list_payments).post(billing::create_payment),
         )
+        .route(
+            "/api/v2/billing/payments/:id/receipt",
+            get(billing::get_receipt_by_payment),
+        )
         .route("/api/v2/billing/receipts", get(billing::list_receipts))
+        .route("/api/v2/billing/receipts/:id", get(billing::get_receipt))
+        .route(
+            "/api/v2/billing/receipts/by-number/:receipt_number",
+            get(billing::get_receipt_by_number),
+        )
         .route(
             "/api/v2/billing/cash-drawers",
             get(billing::list_cash_drawers),

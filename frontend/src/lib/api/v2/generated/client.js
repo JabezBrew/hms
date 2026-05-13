@@ -291,6 +291,36 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getBillingReceiptById": {
+    "operationId": "getBillingReceiptById",
+    "method": "GET",
+    "path": "/api/v2/billing/receipts/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getBillingReceiptByNumber": {
+    "operationId": "getBillingReceiptByNumber",
+    "method": "GET",
+    "path": "/api/v2/billing/receipts/by-number/{receipt_number}",
+    "pathParamNames": [
+      "receipt_number"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getBillingReceiptByPaymentId": {
+    "operationId": "getBillingReceiptByPaymentId",
+    "method": "GET",
+    "path": "/api/v2/billing/payments/{id}/receipt",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getBillingReceipts": {
     "operationId": "getBillingReceipts",
     "method": "GET",
@@ -2588,6 +2618,9 @@ export function createGeneratedClient(request) {
     getBillingInvoiceById: createOperation(request, operations.getBillingInvoiceById),
     getBillingInvoices: createOperation(request, operations.getBillingInvoices),
     getBillingPayments: createOperation(request, operations.getBillingPayments),
+    getBillingReceiptById: createOperation(request, operations.getBillingReceiptById),
+    getBillingReceiptByNumber: createOperation(request, operations.getBillingReceiptByNumber),
+    getBillingReceiptByPaymentId: createOperation(request, operations.getBillingReceiptByPaymentId),
     getBillingReceipts: createOperation(request, operations.getBillingReceipts),
     getBillingRules: createOperation(request, operations.getBillingRules),
     getBillingServiceCatalog: createOperation(request, operations.getBillingServiceCatalog),

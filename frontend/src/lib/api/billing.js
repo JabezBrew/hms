@@ -338,16 +338,28 @@ async function findV2Invoice(id, options = {}) {
   return adaptV2Invoice(response?.data || response || {});
 }
 
-async function findV2Receipt(predicate, options = {}) {
-  const response = await v2Api.getBillingReceipts({
-    query: { limit: 100 },
-    signal: options.signal,
-  });
-  const receipt = v2List(response).find(predicate);
-  if (!receipt) {
-    throw new Error('Rust V2 receipt was not found in the bounded receipt list.');
-  }
-  return adaptV2Receipt(receipt);
+async function getV2Receipt(id, options = {}) {
+  const response = await v2Api.getBillingReceiptById(
+    { id },
+    { signal: options.signal },
+  );
+  return adaptV2Receipt(response?.data || response || {});
+}
+
+async function getV2ReceiptByNumber(receiptNumber, options = {}) {
+  const response = await v2Api.getBillingReceiptByNumber(
+    { receipt_number: receiptNumber },
+    { signal: options.signal },
+  );
+  return adaptV2Receipt(response?.data || response || {});
+}
+
+async function getV2ReceiptByPayment(paymentId, options = {}) {
+  const response = await v2Api.getBillingReceiptByPaymentId(
+    { id: paymentId },
+    { signal: options.signal },
+  );
+  return adaptV2Receipt(response?.data || response || {});
 }
 
 async function findV2Claim(id, options = {}) {
@@ -1300,10 +1312,10 @@ export const billingApi = {
    * @param {string} paymentId - Payment ID
    * @returns {Promise<Object>} Receipt data
    */
-  generateReceipt: async (paymentId) => {
+  generateReceipt: async (paymentId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await findV2Receipt((receipt) => receipt.payment_id === paymentId);
+        return await getV2ReceiptByPayment(paymentId, options);
       }
 
       return await apiClient.post(`/billing/payments/${paymentId}/generate_receipt/`);
@@ -1323,10 +1335,7 @@ export const billingApi = {
   getReceiptPrintDetail: async (receiptId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const receipt = await findV2Receipt(
-          (candidate) => candidate.id === receiptId || candidate.receipt_number === receiptId,
-          options,
-        );
+        const receipt = await getV2Receipt(receiptId, options);
         return { ...receipt, items: [] };
       }
 
@@ -1347,7 +1356,7 @@ export const billingApi = {
   getReceiptByNumber: async (receiptNumber, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await findV2Receipt((receipt) => receipt.receipt_number === receiptNumber, options);
+        return await getV2ReceiptByNumber(receiptNumber, options);
       }
 
       return await apiClient.get(`/billing/receipts/by_receipt_number/?receipt_number=${encodeURIComponent(receiptNumber)}`);

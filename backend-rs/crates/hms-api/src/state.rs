@@ -1978,6 +1978,26 @@ impl AppState {
         hms_db::billing::list_receipts(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
+    pub async fn get_billing_receipt(&self, receipt_id: Uuid) -> Result<Option<ReceiptListItem>> {
+        hms_db::billing::get_receipt(&self.inner.pool, self.facility_id(), receipt_id).await
+    }
+
+    pub async fn get_billing_receipt_by_number(
+        &self,
+        receipt_number: &str,
+    ) -> Result<Option<ReceiptListItem>> {
+        hms_db::billing::get_receipt_by_number(&self.inner.pool, self.facility_id(), receipt_number)
+            .await
+    }
+
+    pub async fn get_billing_receipt_by_payment(
+        &self,
+        payment_id: Uuid,
+    ) -> Result<Option<ReceiptListItem>> {
+        hms_db::billing::get_receipt_by_payment(&self.inner.pool, self.facility_id(), payment_id)
+            .await
+    }
+
     pub async fn list_cash_drawers(&self) -> Result<Vec<CashDrawerListItem>> {
         hms_db::billing::list_cash_drawers(&self.inner.pool, self.facility_id()).await
     }

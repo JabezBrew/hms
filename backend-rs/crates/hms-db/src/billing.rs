@@ -559,6 +559,30 @@ pub async fn list_receipts(
     Ok(rows.into_iter().map(receipt_from_row).collect())
 }
 
+pub async fn get_receipt(
+    pool: &PgPool,
+    facility_id: Uuid,
+    receipt_id: Uuid,
+) -> anyhow::Result<Option<ReceiptListItem>> {
+    fetch_receipt_by_id(pool, facility_id, receipt_id).await
+}
+
+pub async fn get_receipt_by_number(
+    pool: &PgPool,
+    facility_id: Uuid,
+    receipt_number: &str,
+) -> anyhow::Result<Option<ReceiptListItem>> {
+    fetch_receipt_by_number(pool, facility_id, receipt_number).await
+}
+
+pub async fn get_receipt_by_payment(
+    pool: &PgPool,
+    facility_id: Uuid,
+    payment_id: Uuid,
+) -> anyhow::Result<Option<ReceiptListItem>> {
+    fetch_receipt_by_payment(pool, facility_id, payment_id).await
+}
+
 pub async fn list_claims(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1196,6 +1220,57 @@ async fn fetch_payment_by_id(
         .await?
         .map(payment_from_row)
         .transpose()
+}
+
+async fn fetch_receipt_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<ReceiptListItem>> {
+    let mut query = receipt_query();
+    query.push(" WHERE receipts.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND receipts.id = ");
+    query.push_bind(id);
+    Ok(query
+        .build_query_as::<ReceiptRow>()
+        .fetch_optional(pool)
+        .await?
+        .map(receipt_from_row))
+}
+
+async fn fetch_receipt_by_number(
+    pool: &PgPool,
+    facility_id: Uuid,
+    receipt_number: &str,
+) -> anyhow::Result<Option<ReceiptListItem>> {
+    let mut query = receipt_query();
+    query.push(" WHERE receipts.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND receipts.receipt_number = ");
+    query.push_bind(receipt_number.to_owned());
+    Ok(query
+        .build_query_as::<ReceiptRow>()
+        .fetch_optional(pool)
+        .await?
+        .map(receipt_from_row))
+}
+
+async fn fetch_receipt_by_payment(
+    pool: &PgPool,
+    facility_id: Uuid,
+    payment_id: Uuid,
+) -> anyhow::Result<Option<ReceiptListItem>> {
+    let mut query = receipt_query();
+    query.push(" WHERE receipts.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND receipts.payment_id = ");
+    query.push_bind(payment_id);
+    Ok(query
+        .build_query_as::<ReceiptRow>()
+        .fetch_optional(pool)
+        .await?
+        .map(receipt_from_row))
 }
 
 async fn fetch_claim_by_id(

@@ -3891,7 +3891,14 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     assert_eq!(payment_response.status(), StatusCode::OK);
     let payment = json_body(payment_response).await;
     assert_eq!(payment["data"]["method"], "cash");
-    assert!(payment["data"]["receipt_number"].as_str().is_some());
+    let payment_id = payment["data"]["id"]
+        .as_str()
+        .expect("payment id exists")
+        .to_owned();
+    let receipt_number = payment["data"]["receipt_number"]
+        .as_str()
+        .expect("receipt number exists")
+        .to_owned();
 
     let receipts_response = app
         .clone()
@@ -3908,6 +3915,66 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     assert_eq!(receipts_response.status(), StatusCode::OK);
     let receipts = json_body(receipts_response).await;
     assert_eq!(receipts["data"][0]["amount_minor"], gross_amount);
+    let receipt_id = receipts["data"][0]["id"]
+        .as_str()
+        .expect("receipt id exists")
+        .to_owned();
+    assert_eq!(receipts["data"][0]["payment_id"], payment_id);
+    assert_eq!(receipts["data"][0]["receipt_number"], receipt_number);
+
+    let receipt_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/billing/receipts/{receipt_id}"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("receipt detail succeeds");
+    assert_eq!(receipt_detail_response.status(), StatusCode::OK);
+    let receipt_detail = json_body(receipt_detail_response).await;
+    assert_eq!(receipt_detail["data"]["id"], receipt_id);
+    assert_eq!(receipt_detail["data"]["payment_id"], payment_id);
+    assert_eq!(receipt_detail["data"]["invoice_id"], invoice_id);
+
+    let receipt_by_number_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/billing/receipts/by-number/{receipt_number}"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("receipt by number succeeds");
+    assert_eq!(receipt_by_number_response.status(), StatusCode::OK);
+    let receipt_by_number = json_body(receipt_by_number_response).await;
+    assert_eq!(receipt_by_number["data"]["id"], receipt_id);
+    assert_eq!(receipt_by_number["data"]["receipt_number"], receipt_number);
+
+    let receipt_by_payment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/billing/payments/{payment_id}/receipt"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("receipt by payment succeeds");
+    assert_eq!(receipt_by_payment_response.status(), StatusCode::OK);
+    let receipt_by_payment = json_body(receipt_by_payment_response).await;
+    assert_eq!(receipt_by_payment["data"]["id"], receipt_id);
+    assert_eq!(receipt_by_payment["data"]["payment_id"], payment_id);
 
     let patient_invoices_response = app
         .clone()
