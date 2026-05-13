@@ -46,7 +46,7 @@ export const wardKeys = {
 export function useWardsRoot() {
   return useQuery({
     queryKey: wardKeys.all,
-    queryFn: () => wardsApi.getWardsRoot(),
+    queryFn: ({ signal }) => wardsApi.getWardsRoot({ signal }),
   });
 }
 

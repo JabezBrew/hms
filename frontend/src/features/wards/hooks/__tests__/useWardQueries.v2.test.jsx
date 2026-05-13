@@ -21,6 +21,7 @@ import {
   useWardSections,
   useWardStaff,
   useWards,
+  useWardsRoot,
 } from '../useWardQueries';
 import { wardsApi } from '@/features/wards/api';
 
@@ -43,6 +44,7 @@ vi.mock('@/features/wards/api', () => ({
     getWardStaff: vi.fn(),
     getWardSections: vi.fn(),
     getWards: vi.fn(),
+    getWardsRoot: vi.fn(),
   },
 }));
 
@@ -81,6 +83,19 @@ describe('useWardQueries Rust V2 behavior', () => {
     wardsApi.getWardStaff.mockResolvedValue([]);
     wardsApi.getWardSections.mockResolvedValue([]);
     wardsApi.getWards.mockResolvedValue([]);
+    wardsApi.getWardsRoot.mockResolvedValue({});
+  });
+
+  it('threads React Query AbortSignal into ward root reads', async () => {
+    const wrapper = createWrapper();
+
+    renderHook(() => useWardsRoot(), { wrapper });
+
+    await waitFor(() => {
+      expect(wardsApi.getWardsRoot).toHaveBeenCalledWith({
+        signal: expect.any(AbortSignal),
+      });
+    });
   });
 
   it('threads React Query AbortSignal into ward and bed reads', async () => {

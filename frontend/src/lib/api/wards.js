@@ -201,7 +201,7 @@ export const wardsApi = {
    * Get wards API root information
    * @returns {Promise<Object>} API root information with links to resources
    */
-  getWardsRoot: async () => {
+  getWardsRoot: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return {
@@ -209,8 +209,9 @@ export const wardsApi = {
           resources: ['wards', 'beds', 'sections', 'admissions'],
         };
       }
-      return await apiClient.get('/wards/');
+      return await apiClient.get('/wards/', options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch wards API information'));
     }
   },
