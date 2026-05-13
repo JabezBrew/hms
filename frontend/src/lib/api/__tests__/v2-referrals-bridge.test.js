@@ -412,6 +412,20 @@ describe('Rust V2 referrals bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('preserves AbortError from Rust referral detail and waitlist reads', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError);
+
+    await expect(
+      referralsApi.getReferral('referral-1', { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+    await expect(
+      referralsApi.getClinicWaitlist({}, { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+  });
+
   it('routes referral notification reads and mark-read through bounded Rust notifications', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(

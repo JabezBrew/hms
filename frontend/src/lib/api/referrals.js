@@ -218,6 +218,10 @@ export const referralsApi = {
       }
       return await apiClient.get(`/referrals/${id}/`, options);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch referral'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch referral'));
     }
   },
@@ -484,6 +488,10 @@ export const referralsApi = {
       }
       return await apiClient.get('/referrals/clinic-waitlist/', { ...options, params });
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch clinic waitlist'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch clinic waitlist'));
     }
   },
