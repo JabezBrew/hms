@@ -78,10 +78,11 @@ function assertGlobalFeatureOverride(data = {}) {
   }
 }
 
-async function patchV2FeatureEntitlement(featureKey, data = {}) {
+async function patchV2FeatureEntitlement(featureKey, data = {}, options = {}) {
   const response = await v2Api.patchAdminFeature(
     { key: featureKey },
     { enabled: normalizeFeatureEnabled(data) },
+    { signal: options.signal },
   )
   return adaptV2FeatureEntitlement(response?.data)
 }
@@ -115,11 +116,11 @@ export const systemApi = {
       throw error
     }
   },
-  createFeatureEntitlement: async (data) => {
+  createFeatureEntitlement: async (data, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
         assertGlobalFeatureOverride(data)
-        return await patchV2FeatureEntitlement(data.feature_key || data.feature, data)
+        return await patchV2FeatureEntitlement(data.feature_key || data.feature, data, options)
       } catch (error) {
         if (/facility feature overrides/i.test(error?.message || '')) {
           throw error
@@ -129,11 +130,11 @@ export const systemApi = {
     }
     return apiClient.post('/settings/feature-entitlements/', data)
   },
-  updateFeatureEntitlement: async (id, data) => {
+  updateFeatureEntitlement: async (id, data, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
         assertGlobalFeatureOverride(data)
-        return await patchV2FeatureEntitlement(data.feature_key || data.feature || id, data)
+        return await patchV2FeatureEntitlement(data.feature_key || data.feature || id, data, options)
       } catch (error) {
         if (/facility feature overrides/i.test(error?.message || '')) {
           throw error

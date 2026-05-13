@@ -167,17 +167,19 @@ describe('Rust V2 system bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await systemApi.createFeatureEntitlement({
       scope: 'global',
       feature_key: 'patients',
       is_enabled: true,
       reason: 'Enable patient module',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/features/patients',
       expect.objectContaining({
         method: 'PATCH',
+        signal,
         body: JSON.stringify({ enabled: true }),
       }),
     );
@@ -207,15 +209,17 @@ describe('Rust V2 system bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await systemApi.updateFeatureEntitlement('patients', {
       is_enabled: false,
       reason: 'Temporarily disable',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/features/patients',
       expect.objectContaining({
         method: 'PATCH',
+        signal,
         body: JSON.stringify({ enabled: false }),
       }),
     );
@@ -260,11 +264,12 @@ describe('Rust V2 system bridge', () => {
       ),
     );
 
-    const response = await systemApi.deleteFeatureEntitlement('patients');
+    const signal = new AbortController().signal;
+    const response = await systemApi.deleteFeatureEntitlement('patients', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/features/patients',
-      expect.objectContaining({ method: 'DELETE' }),
+      expect.objectContaining({ method: 'DELETE', signal }),
     );
     expect(response).toMatchObject({
       id: 'patients',
