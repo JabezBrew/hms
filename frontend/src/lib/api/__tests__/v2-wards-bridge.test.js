@@ -196,6 +196,53 @@ describe('Rust V2 wards bridge', () => {
     }));
   });
 
+  it('updates wards through the Rust V2 ward setup contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'ward-2',
+            code: 'RENAMED',
+            name: 'Renamed Ward',
+            status: 'inactive',
+            active_bed_count: 0,
+            occupied_bed_count: 0,
+            created_at: '2026-05-12T10:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const ward = await wardsApi.updateWard('ward-2', {
+      ward_type: 'RENAMED',
+      name: 'Renamed Ward',
+      is_active: false,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/ward-2',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          code: 'RENAMED',
+          name: 'Renamed Ward',
+          status: 'inactive',
+        }),
+      }),
+    );
+    expect(ward).toEqual(expect.objectContaining({
+      id: 'ward-2',
+      code: 'RENAMED',
+      name: 'Renamed Ward',
+      is_active: false,
+    }));
+  });
+
   it('uses Rust V2 for root metadata, scoped sections, and supported ward setup mutations', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -442,7 +489,6 @@ describe('Rust V2 wards bridge', () => {
   });
 
   it('fails closed or returns safe empty lists for unsupported Rust V2 ward calls', async () => {
-    await expect(wardsApi.updateWard('ward-1', { name: 'Renamed' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.deleteWard('ward-1')).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.updateBed('bed-1', { status: 'closed' })).rejects.toThrow(/Rust V2 .* bed mutations/i);
     await expect(wardsApi.updateSection('section-1', { name: 'East' })).rejects.toThrow(

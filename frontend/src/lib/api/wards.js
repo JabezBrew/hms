@@ -147,6 +147,28 @@ function wardPayloadFrom(data = {}) {
   return { code, name };
 }
 
+function hasOwn(data, key) {
+  return Object.prototype.hasOwnProperty.call(data, key);
+}
+
+function wardUpdatePayloadFrom(data = {}) {
+  const payload = {};
+  const code = data.code ?? data.ward_code ?? data.ward_type;
+  if (code !== undefined && code !== null) {
+    payload.code = String(code).trim();
+  }
+  const name = data.name ?? data.label;
+  if (name !== undefined && name !== null) {
+    payload.name = String(name).trim();
+  }
+  if (data.status) {
+    payload.status = data.status;
+  } else if (hasOwn(data, 'is_active')) {
+    payload.status = data.is_active ? 'active' : 'inactive';
+  }
+  return payload;
+}
+
 function admissionPayloadFrom(data = {}) {
   return {
     patient_id: data.patient_id || data.patient,
@@ -306,7 +328,10 @@ export const wardsApi = {
   updateWard: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('ward mutations');
+        const response = await v2Api.patchWard({ id }, wardUpdatePayloadFrom(data), {
+          signal: data?.signal,
+        });
+        return adaptV2Ward(response?.data || {});
       }
       return await apiClient.patch(`/wards/wards/${id}/`, data);
     } catch (error) {

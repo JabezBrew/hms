@@ -39,6 +39,7 @@ use hms_db::ward::{
     AdmissionContext, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewHandoff,
     NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
     NewPatientVitals, NewTreatmentSheet, NewWard, NewWardSection, NewWardStockRequest, WardCursor,
+    WardUpdate,
 };
 use hms_domain::admin::{
     AuditEventListItem, AuthorityAppointmentListItem, CommitteeListItem,
@@ -2811,6 +2812,14 @@ impl AppState {
             },
         )
         .await
+    }
+
+    pub async fn update_ward(
+        &self,
+        ward_id: Uuid,
+        update: WardUpdate,
+    ) -> Result<Option<WardListItem>> {
+        hms_db::ward::update_ward(&self.inner.pool, self.facility_id(), ward_id, update).await
     }
 
     pub async fn list_ward_sections(

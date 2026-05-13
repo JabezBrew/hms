@@ -4330,6 +4330,35 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(created_ward_body["data"]["name"], "Test Ward");
     assert_eq!(created_ward_body["data"]["status"], "active");
     assert_eq!(created_ward_body["data"]["active_bed_count"], 0);
+    let created_ward_id = created_ward_body["data"]["id"]
+        .as_str()
+        .expect("created ward id exists");
+    let updated_ward_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/wards/{created_ward_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "TEST-WARD-RENAMED",
+                        "name": "Renamed Test Ward",
+                        "status": "inactive"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward update succeeds");
+    assert_eq!(updated_ward_response.status(), StatusCode::OK);
+    let updated_ward_body = json_body(updated_ward_response).await;
+    assert_eq!(updated_ward_body["data"]["id"], created_ward_id);
+    assert_eq!(updated_ward_body["data"]["code"], "TEST-WARD-RENAMED");
+    assert_eq!(updated_ward_body["data"]["name"], "Renamed Test Ward");
+    assert_eq!(updated_ward_body["data"]["status"], "inactive");
 
     let ward_response = app
         .clone()

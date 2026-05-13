@@ -2,7 +2,7 @@ use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
     AdmissionContext, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewMonitoringEvent,
     NewNursingAlert, NewNursingTask, NewPatientVitals, NewWard, NewWardSection,
-    NewWardStockRequest,
+    NewWardStockRequest, WardUpdate,
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
@@ -59,6 +59,35 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
             .expect("cross-facility created ward lookup succeeds")
             .is_none()
     );
+    let updated_ward = hms_db::ward::update_ward(
+        &pool,
+        facility_id,
+        created_ward.id,
+        WardUpdate {
+            code: Some("TEST-WARD-RENAMED".to_owned()),
+            name: Some("Renamed Test Ward".to_owned()),
+            status: Some(WardStatus::Inactive),
+        },
+    )
+    .await
+    .expect("ward update succeeds")
+    .expect("ward update returns row");
+    assert_eq!(updated_ward.code, "TEST-WARD-RENAMED");
+    assert_eq!(updated_ward.name, "Renamed Test Ward");
+    assert_eq!(updated_ward.status, WardStatus::Inactive);
+    assert!(hms_db::ward::update_ward(
+        &pool,
+        uuid::Uuid::new_v4(),
+        created_ward.id,
+        WardUpdate {
+            code: Some("CROSS-FACILITY".to_owned()),
+            name: Some("Cross Facility".to_owned()),
+            status: Some(WardStatus::Active),
+        },
+    )
+    .await
+    .expect("cross-facility ward update succeeds")
+    .is_none());
 
     let ward_id = sqlx::query_scalar::<_, uuid::Uuid>(
         "SELECT id FROM wards WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",

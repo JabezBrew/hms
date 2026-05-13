@@ -2,7 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::ward::{AdmissionContext, WardCursor};
+use hms_db::ward::{AdmissionContext, WardCursor, WardUpdate};
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
@@ -17,8 +17,8 @@ use hms_domain::ward::{
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventListItem,
     NursingAlertListItem, NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem,
     PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
-    TreatmentSheetListItem, WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem,
-    WardStockRequestListItem,
+    TreatmentSheetListItem, UpdateWardRequest, WardBoardItem, WardBoardQuery, WardListItem,
+    WardSectionListItem, WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -130,6 +130,56 @@ pub async fn get_ward(
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
     let ward = load_ward(&state, id).await?;
+    Ok(Json(object(ward)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/wards/{id}",
+    operation_id = "patchWard",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward id")),
+    request_body = UpdateWardRequest,
+    responses(
+        (status = 200, description = "Ward updated", body = ObjectResponse<WardListItem>),
+        (status = 400, description = "Invalid ward update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward not found", body = ApiErrorResponse),
+        (status = 409, description = "Ward could not be updated", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_ward(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateWardRequest>,
+) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
+
+    let code = normalize_ward_text(payload.code, MAX_WARD_CODE_LEN)?;
+    let name = normalize_ward_text(payload.name, MAX_WARD_NAME_LEN)?;
+    if code.is_none() && name.is_none() && payload.status.is_none() {
+        return Err(ApiError::bad_request(
+            "invalid_ward",
+            "At least one ward field is required.",
+        ));
+    }
+
+    let ward = state
+        .update_ward(
+            id,
+            WardUpdate {
+                code,
+                name,
+                status: payload.status,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("ward_update_failed", "Ward could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))?;
+
     Ok(Json(object(ward)))
 }
 
@@ -2087,6 +2137,27 @@ fn require_facility_permission(
             "You do not have permission to perform this action.",
         ))
     }
+}
+
+fn normalize_ward_text(value: Option<String>, max_len: usize) -> Result<Option<String>, ApiError> {
+    value
+        .map(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Err(ApiError::bad_request(
+                    "invalid_ward",
+                    "Ward code and name cannot be empty.",
+                ));
+            }
+            if trimmed.len() > max_len {
+                return Err(ApiError::bad_request(
+                    "invalid_ward",
+                    "Ward code or name is too long.",
+                ));
+            }
+            Ok(trimmed.to_owned())
+        })
+        .transpose()
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<WardCursor>, u8), ApiError> {
