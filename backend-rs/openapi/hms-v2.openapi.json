@@ -616,6 +616,84 @@
         ],
         "type": "string"
       },
+      "BulkCreateLabResultItem": {
+        "properties": {
+          "order_test_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "test_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "BulkCreateLabResultsRequest": {
+        "properties": {
+          "order_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BulkCreateLabResultItem"
+            },
+            "type": "array"
+          },
+          "specimen_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "specimen_id",
+          "results"
+        ],
+        "type": "object"
+      },
+      "BulkCreateLabResultsResponse": {
+        "properties": {
+          "created_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LabResultListItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "created_count",
+          "message",
+          "results"
+        ],
+        "type": "object"
+      },
       "BulkVerifyLabResultsRequest": {
         "properties": {
           "order_id": {
@@ -3493,6 +3571,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "order_tests": {
+            "items": {
+              "$ref": "#/components/schemas/LabOrderTestItem"
+            },
+            "type": "array"
+          },
           "ordered_at": {
             "format": "date-time",
             "type": "string"
@@ -3522,7 +3606,8 @@
           "priority",
           "status",
           "ordered_at",
-          "test_count"
+          "test_count",
+          "order_tests"
         ],
         "type": "object"
       },
@@ -3535,6 +3620,110 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "LabOrderTestItem": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabOrderTestResultSummary"
+              }
+            ]
+          },
+          "test": {
+            "$ref": "#/components/schemas/LabOrderTestSummary"
+          },
+          "test_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "test_id",
+          "test"
+        ],
+        "type": "object"
+      },
+      "LabOrderTestResultSummary": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LabResultStatus"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "verified_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "value",
+          "status"
+        ],
+        "type": "object"
+      },
+      "LabOrderTestSummary": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "result_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "short_name": {
+            "type": "string"
+          },
+          "specimen_type": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "short_name",
+          "specimen_type"
+        ],
+        "type": "object"
       },
       "LabPanelListItem": {
         "properties": {
@@ -5681,6 +5870,12 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "order_tests": {
+                  "items": {
+                    "$ref": "#/components/schemas/LabOrderTestItem"
+                  },
+                  "type": "array"
+                },
                 "ordered_at": {
                   "format": "date-time",
                   "type": "string"
@@ -5710,7 +5905,8 @@
                 "priority",
                 "status",
                 "ordered_at",
-                "test_count"
+                "test_count",
+                "order_tests"
               ],
               "type": "object"
             },
@@ -9448,6 +9644,39 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_BulkCreateLabResultsResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "results": {
+                "items": {
+                  "$ref": "#/components/schemas/LabResultListItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "created_count",
+              "message",
+              "results"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_BulkVerifyLabResultsResponse": {
         "properties": {
           "data": {
@@ -10811,6 +11040,12 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "order_tests": {
+                "items": {
+                  "$ref": "#/components/schemas/LabOrderTestItem"
+                },
+                "type": "array"
+              },
               "ordered_at": {
                 "format": "date-time",
                 "type": "string"
@@ -10840,7 +11075,8 @@
               "priority",
               "status",
               "ordered_at",
-              "test_count"
+              "test_count",
+              "order_tests"
             ],
             "type": "object"
           },
@@ -23599,6 +23835,91 @@
               }
             },
             "description": "Specimen not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/results/bulk": {
+      "post": {
+        "operationId": "postLaboratoryResultBulkCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCreateLabResultsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BulkCreateLabResultsResponse"
+                }
+              }
+            },
+            "description": "Laboratory results entered"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid laboratory results"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Specimen not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Laboratory results could not be saved"
           }
         },
         "security": [

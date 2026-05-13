@@ -283,6 +283,22 @@ function buildV2LabResultPayload(data = {}) {
   };
 }
 
+function buildV2BulkLabResultsPayload(data = {}) {
+  return {
+    order_id: pickEntityId(data.order_id ?? data.order),
+    specimen_id: pickEntityId(data.specimen_id ?? data.specimen),
+    results: (data.results || []).map((item = {}) => {
+      const orderTestId = pickEntityId(item.order_test_id ?? item.order_test ?? item.test);
+      return {
+        order_test_id: orderTestId,
+        test_id: pickEntityId(item.test_id ?? item.test) || orderTestId,
+        value: String(item.value ?? item.result_value ?? ''),
+        unit: item.unit ?? null,
+      };
+    }),
+  };
+}
+
 export const laboratoryApi = {
   // ========== Lab Tests ==========
 
@@ -918,7 +934,10 @@ export const laboratoryApi = {
   bulkCreateResults: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory bulk result contract');
+        const response = await v2Api.postLaboratoryResultBulkCreate(
+          buildV2BulkLabResultsPayload(data),
+        );
+        return response?.data || {};
       }
 
       return await apiClient.post('/laboratory/results/bulk/', data);

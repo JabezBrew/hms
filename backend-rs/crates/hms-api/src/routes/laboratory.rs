@@ -54,6 +54,10 @@ pub fn routes() -> Router<AppState> {
             get(laboratory::list_results).post(laboratory::create_result),
         )
         .route(
+            "/api/v2/laboratory/results/bulk",
+            post(laboratory::bulk_create_results),
+        )
+        .route(
             "/api/v2/laboratory/results/bulk-verify",
             post(laboratory::bulk_verify_results),
         )

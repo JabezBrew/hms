@@ -62,6 +62,35 @@ pub struct LabOrderListItem {
     pub status: LabOrderStatus,
     pub ordered_at: DateTime<Utc>,
     pub test_count: i64,
+    pub order_tests: Vec<LabOrderTestItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct LabOrderTestItem {
+    pub id: Uuid,
+    pub test_id: Uuid,
+    pub test: LabOrderTestSummary,
+    pub result: Option<LabOrderTestResultSummary>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct LabOrderTestSummary {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub short_name: String,
+    pub specimen_type: String,
+    pub unit: Option<String>,
+    pub result_unit: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct LabOrderTestResultSummary {
+    pub id: Uuid,
+    pub value: String,
+    pub unit: Option<String>,
+    pub status: LabResultStatus,
+    pub verified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -118,6 +147,28 @@ pub struct CreateLabResultRequest {
     pub test_id: Uuid,
     pub value: String,
     pub unit: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BulkCreateLabResultsRequest {
+    pub order_id: Uuid,
+    pub specimen_id: Uuid,
+    pub results: Vec<BulkCreateLabResultItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BulkCreateLabResultItem {
+    pub order_test_id: Option<Uuid>,
+    pub test_id: Option<Uuid>,
+    pub value: String,
+    pub unit: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BulkCreateLabResultsResponse {
+    pub created_count: i64,
+    pub message: String,
+    pub results: Vec<LabResultListItem>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

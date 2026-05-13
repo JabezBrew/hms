@@ -1589,6 +1589,35 @@ impl AppState {
         .await
     }
 
+    pub async fn create_lab_results(
+        &self,
+        specimen: &SpecimenContext,
+        results: Vec<(Uuid, String, Option<String>)>,
+        actor_user_id: Uuid,
+    ) -> Result<Vec<LabResultListItem>> {
+        let records = results
+            .into_iter()
+            .map(|(test_id, value, unit)| NewLabResult {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                specimen_id: specimen.id,
+                order_id: specimen.order_id,
+                patient_id: specimen.patient_id,
+                test_id,
+                value,
+                unit,
+                actor_user_id,
+            })
+            .collect();
+        hms_db::laboratory::create_results(
+            &self.inner.pool,
+            self.facility_id(),
+            specimen.order_id,
+            records,
+        )
+        .await
+    }
+
     pub async fn get_lab_result_context(&self, result_id: Uuid) -> Result<Option<ResultContext>> {
         hms_db::laboratory::get_result_context(&self.inner.pool, self.facility_id(), result_id)
             .await

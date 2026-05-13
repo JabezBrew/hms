@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use hms_domain::laboratory::{
-    LabOrderListItem, LabOrderStatus, LabPanelListItem, LabPriority, LabResultListItem,
-    LabResultStatus, LabTestCatalogItem, SpecimenListItem, SpecimenStatus,
+    LabOrderListItem, LabOrderStatus, LabOrderTestItem, LabPanelListItem, LabPriority,
+    LabResultListItem, LabResultStatus, LabTestCatalogItem, SpecimenListItem, SpecimenStatus,
 };
+use sqlx::types::Json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -106,6 +107,7 @@ struct OrderRow {
     status: String,
     ordered_at: DateTime<Utc>,
     test_count: i64,
+    order_tests: Json<Vec<LabOrderTestItem>>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -673,6 +675,88 @@ pub async fn create_result(
         .ok_or_else(|| anyhow::anyhow!("created lab result was not found"))
 }
 
+pub async fn create_results(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+    results: Vec<NewLabResult>,
+) -> anyhow::Result<Vec<LabResultListItem>> {
+    if results.is_empty() {
+        anyhow::bail!("bulk lab result creation requires at least one result");
+    }
+
+    let mut transaction = pool.begin().await?;
+    let mut inserted_ids = Vec::with_capacity(results.len());
+    for result in results {
+        let inserted_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            INSERT INTO lab_results (
+                id,
+                facility_id,
+                order_id,
+                specimen_id,
+                patient_id,
+                test_id,
+                value,
+                unit,
+                status,
+                entered_by_user_id
+            )
+            SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+            WHERE EXISTS (
+                SELECT 1
+                FROM lab_order_tests
+                WHERE lab_order_tests.order_id = $3
+                  AND lab_order_tests.test_id = $6
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(result.id)
+        .bind(result.facility_id)
+        .bind(result.order_id)
+        .bind(result.specimen_id)
+        .bind(result.patient_id)
+        .bind(result.test_id)
+        .bind(&result.value)
+        .bind(&result.unit)
+        .bind(codec::encode(LabResultStatus::Entered)?)
+        .bind(result.actor_user_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        let Some(inserted_id) = inserted_id else {
+            anyhow::bail!("lab result test is not part of the order");
+        };
+        inserted_ids.push(inserted_id);
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE lab_orders
+        SET status = $1,
+            updated_at = now()
+        WHERE facility_id = $2 AND id = $3
+        "#,
+    )
+    .bind(codec::encode(LabOrderStatus::ResultEntered)?)
+    .bind(facility_id)
+    .bind(order_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+
+    let mut created = Vec::with_capacity(inserted_ids.len());
+    for result_id in inserted_ids {
+        let Some(result) = fetch_result_by_id(pool, facility_id, result_id).await? else {
+            anyhow::bail!("created lab result was not found");
+        };
+        created.push(result);
+    }
+    Ok(created)
+}
+
 pub async fn get_result_by_id(
     pool: &PgPool,
     facility_id: Uuid,
@@ -985,10 +1069,31 @@ fn order_query() -> QueryBuilder<'static, Postgres> {
                lab_orders.priority,
                lab_orders.status,
                lab_orders.ordered_at,
-               COUNT(lab_order_tests.test_id)::bigint AS test_count
+               COUNT(lab_order_tests.test_id)::bigint AS test_count,
+               COALESCE(
+                   jsonb_agg(
+                       jsonb_build_object(
+                           'id', lab_tests.id,
+                           'test_id', lab_tests.id,
+                           'test', jsonb_build_object(
+                               'id', lab_tests.id,
+                               'code', lab_tests.code,
+                               'name', lab_tests.name,
+                               'short_name', lab_tests.name,
+                               'specimen_type', lab_tests.specimen_type,
+                               'unit', lab_tests.result_unit,
+                               'result_unit', lab_tests.result_unit
+                           ),
+                           'result', NULL
+                       )
+                       ORDER BY lab_tests.code ASC, lab_tests.id ASC
+                   ) FILTER (WHERE lab_tests.id IS NOT NULL),
+                   '[]'::jsonb
+               ) AS order_tests
         FROM lab_orders
         INNER JOIN patients ON patients.id = lab_orders.patient_id
         LEFT JOIN lab_order_tests ON lab_order_tests.order_id = lab_orders.id
+        LEFT JOIN lab_tests ON lab_tests.id = lab_order_tests.test_id
         "#,
     )
 }
@@ -1078,6 +1183,7 @@ fn order_from_row(row: OrderRow) -> anyhow::Result<LabOrderListItem> {
         status: codec::decode(&row.status)?,
         ordered_at: row.ordered_at,
         test_count: row.test_count,
+        order_tests: row.order_tests.0,
     })
 }
 

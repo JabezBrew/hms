@@ -454,6 +454,27 @@ describe('Rust V2 laboratory bridge', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         data: {
+          created_count: 1,
+          message: '1 lab result saved',
+          results: [{
+            id: 'result-2',
+            order_id: 'order-1',
+            specimen_id: 'specimen-2',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            test_id: 'test-1',
+            test_name: 'Malaria RDT',
+            value: 'positive',
+            unit: null,
+            status: 'entered',
+            entered_at: '2026-05-12T08:45:00Z',
+            verified_at: null,
+          }],
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
           verified_count: 2,
           message: '2 lab results verified',
         },
@@ -500,6 +521,18 @@ describe('Rust V2 laboratory bridge', () => {
     await expect(laboratoryApi.receiveLabSpecimen('specimen-2')).resolves.toMatchObject({
       id: 'specimen-2',
       status: 'received',
+    });
+    await expect(laboratoryApi.bulkCreateResults({
+      order_id: 'order-1',
+      specimen_id: 'specimen-2',
+      results: [{
+        order_test_id: 'test-1',
+        value: 'positive',
+        unit: null,
+      }],
+    })).resolves.toMatchObject({
+      created_count: 1,
+      results: [expect.objectContaining({ id: 'result-2', test_id: 'test-1' })],
     });
     await expect(laboratoryApi.bulkVerifyResults({ order_id: 'order-1' })).resolves.toMatchObject({
       verified_count: 2,
@@ -573,6 +606,20 @@ describe('Rust V2 laboratory bridge', () => {
         undefined,
       ],
       [
+        'http://localhost:8080/api/v2/laboratory/results/bulk',
+        'POST',
+        JSON.stringify({
+          order_id: 'order-1',
+          specimen_id: 'specimen-2',
+          results: [{
+            order_test_id: 'test-1',
+            test_id: 'test-1',
+            value: 'positive',
+            unit: null,
+          }],
+        }),
+      ],
+      [
         'http://localhost:8080/api/v2/laboratory/results/bulk-verify',
         'POST',
         JSON.stringify({
@@ -585,7 +632,6 @@ describe('Rust V2 laboratory bridge', () => {
   });
 
   it('fails closed for laboratory actions without generated Rust V2 contracts', async () => {
-    await expect(laboratoryApi.bulkCreateResults({ results: [] })).rejects.toThrow('/api/v2 laboratory bulk result contract');
     await expect(laboratoryApi.createLabTest({ name: 'Custom test' })).rejects.toThrow('/api/v2 laboratory catalog mutation contract');
     await expect(laboratoryApi.updateLabPanel('panel-1', { name: 'Panel' })).rejects.toThrow('/api/v2 laboratory panel mutation contract');
 

@@ -1725,6 +1725,11 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     let order_detail_body = json_body(order_detail).await;
     assert_eq!(order_detail_body["data"]["id"], order_id);
     assert_eq!(order_detail_body["data"]["patient_id"], patient_id);
+    let order_tests = order_detail_body["data"]["order_tests"]
+        .as_array()
+        .expect("order tests are included for result entry");
+    assert!(!order_tests.is_empty());
+    assert!(order_tests[0]["test"]["name"].is_string());
 
     let orders = app
         .clone()
@@ -1996,6 +2001,90 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     assert_eq!(verify_body["data"]["status"], "verified");
     assert!(verify_body["data"]["verified_at"].is_string());
 
+    let bulk_order_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/orders")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "test_ids": [test_id],
+                        "panel_ids": [],
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("bulk result lab order create succeeds");
+    assert_eq!(bulk_order_response.status(), StatusCode::OK);
+    let bulk_order_body = json_body(bulk_order_response).await;
+    let bulk_order_id = bulk_order_body["data"]["id"]
+        .as_str()
+        .expect("bulk order id exists");
+
+    let bulk_specimen_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/specimens")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "order_id": bulk_order_id,
+                        "specimen_type": "blood"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("bulk result specimen create succeeds");
+    assert_eq!(bulk_specimen_response.status(), StatusCode::OK);
+    let bulk_specimen_body = json_body(bulk_specimen_response).await;
+    let bulk_specimen_id = bulk_specimen_body["data"]["id"]
+        .as_str()
+        .expect("bulk specimen id exists");
+
+    let bulk_result_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/results/bulk")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "order_id": bulk_order_id,
+                        "specimen_id": bulk_specimen_id,
+                        "results": [{
+                            "order_test_id": test_id,
+                            "value": "positive",
+                            "unit": null
+                        }]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("bulk result create succeeds");
+    assert_eq!(bulk_result_create.status(), StatusCode::OK);
+    let bulk_result_create_body = json_body(bulk_result_create).await;
+    assert_eq!(bulk_result_create_body["data"]["created_count"], 1);
+    assert_eq!(
+        bulk_result_create_body["data"]["results"][0]["status"],
+        "entered"
+    );
+
     let cancel_order_response = app
         .clone()
         .oneshot(
@@ -2128,6 +2217,31 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .await
         .expect("laboratory bulk verification denial succeeds");
     assert_eq!(denied_bulk_verify.status(), StatusCode::FORBIDDEN);
+
+    let denied_bulk_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/results/bulk")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "order_id": bulk_order_id,
+                        "specimen_id": bulk_specimen_id,
+                        "results": [{
+                            "order_test_id": test_id,
+                            "value": "positive"
+                        }]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("laboratory bulk result create denial succeeds");
+    assert_eq!(denied_bulk_create.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

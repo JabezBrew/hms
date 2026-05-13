@@ -9,10 +9,11 @@ use hms_db::laboratory::{
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
-    BulkVerifyLabResultsRequest, BulkVerifyLabResultsResponse, CancelLabOrderRequest,
-    CreateLabOrderRequest, CreateLabResultRequest, CreateSpecimenRequest, LabOrderListItem,
-    LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery,
-    LaboratoryOrderListQuery, LaboratoryResultListQuery, SpecimenListItem,
+    BulkCreateLabResultsRequest, BulkCreateLabResultsResponse, BulkVerifyLabResultsRequest,
+    BulkVerifyLabResultsResponse, CancelLabOrderRequest, CreateLabOrderRequest,
+    CreateLabResultRequest, CreateSpecimenRequest, LabOrderListItem, LabPanelListItem,
+    LabResultListItem, LabTestCatalogItem, LaboratoryListQuery, LaboratoryOrderListQuery,
+    LaboratoryResultListQuery, SpecimenListItem,
 };
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -26,6 +27,7 @@ use crate::state::AppState;
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_SHORT_TEXT_LEN: usize = 120;
+const MAX_BULK_CREATE_RESULTS: usize = 50;
 const MAX_BULK_VERIFY_RESULTS: usize = 50;
 
 #[utoipa::path(
@@ -707,6 +709,79 @@ pub async fn create_result(
 
 #[utoipa::path(
     post,
+    path = "/api/v2/laboratory/results/bulk",
+    operation_id = "postLaboratoryResultBulkCreate",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    request_body = BulkCreateLabResultsRequest,
+    responses(
+        (status = 200, description = "Laboratory results entered", body = ObjectResponse<BulkCreateLabResultsResponse>),
+        (status = 400, description = "Invalid laboratory results", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Specimen not found", body = ApiErrorResponse),
+        (status = 409, description = "Laboratory results could not be saved", body = ApiErrorResponse)
+    )
+)]
+pub async fn bulk_create_results(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<BulkCreateLabResultsRequest>,
+) -> Result<Json<ObjectResponse<BulkCreateLabResultsResponse>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    if payload.results.is_empty() {
+        return Err(validation_error(
+            "results",
+            "At least one result is required.",
+        ));
+    }
+    if payload.results.len() > MAX_BULK_CREATE_RESULTS {
+        return Err(validation_error(
+            "results",
+            "Too many results were provided.",
+        ));
+    }
+
+    let specimen = load_specimen_for_access(&state, &user, payload.specimen_id).await?;
+    if specimen.order_id != payload.order_id {
+        return Err(validation_error(
+            "specimen_id",
+            "Specimen does not belong to the selected order.",
+        ));
+    }
+
+    let mut results = Vec::with_capacity(payload.results.len());
+    for item in payload.results {
+        let test_id = result_item_test_id(item.order_test_id, item.test_id)?;
+        let value = normalize_text(item.value, "value")?;
+        let unit = normalize_optional_text(item.unit, "unit")?;
+        results.push((test_id, value, unit));
+    }
+
+    let created = state
+        .create_lab_results(&specimen, results, user.id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_results_bulk_create_failed",
+                "Lab results could not be saved.",
+            )
+        })?;
+    let created_count = created.len() as i64;
+
+    Ok(Json(object(BulkCreateLabResultsResponse {
+        created_count,
+        message: format!("{created_count} lab results saved"),
+        results: created,
+    })))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/v2/laboratory/results/{id}/verify",
     operation_id = "postLaboratoryResultVerify",
     tag = "laboratory",
@@ -1036,6 +1111,21 @@ fn unique_result_ids(mut result_ids: Vec<Uuid>) -> Result<Vec<Uuid>, ApiError> {
         ));
     }
     Ok(result_ids)
+}
+
+fn result_item_test_id(
+    order_test_id: Option<Uuid>,
+    test_id: Option<Uuid>,
+) -> Result<Uuid, ApiError> {
+    match (order_test_id, test_id) {
+        (Some(order_test_id), Some(test_id)) if order_test_id != test_id => Err(validation_error(
+            "results",
+            "Order test id and test id do not match.",
+        )),
+        (Some(order_test_id), _) => Ok(order_test_id),
+        (_, Some(test_id)) => Ok(test_id),
+        (None, None) => Err(validation_error("results", "A test id is required.")),
+    }
 }
 
 fn validation_error(field: &'static str, message: &'static str) -> ApiError {
