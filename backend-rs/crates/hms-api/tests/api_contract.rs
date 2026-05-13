@@ -90,6 +90,14 @@ async fn json_body(response: axum::response::Response) -> Value {
 }
 
 async fn login(app: TestApp, email: &str) -> (String, String, String) {
+    login_with_password(app, email, "ChangeMe123!").await
+}
+
+async fn login_with_password(
+    app: TestApp,
+    email: &str,
+    password: &str,
+) -> (String, String, String) {
     let response = app
         .oneshot(
             Request::builder()
@@ -99,7 +107,7 @@ async fn login(app: TestApp, email: &str) -> (String, String, String) {
                 .body(Body::from(
                     json!({
                         "email": email,
-                        "password": "ChangeMe123!",
+                        "password": password,
                         "facility_code": "HMS"
                     })
                     .to_string(),
@@ -196,6 +204,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/auth/refresh",
         "/api/v2/auth/logout",
         "/api/v2/auth/me",
+        "/api/v2/auth/password",
         "/api/v2/auth/password-reset/request",
         "/api/v2/auth/password-reset/complete",
         "/api/v2/system/deployment-capabilities",
@@ -536,6 +545,132 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
         .await
         .expect("csrf rejection succeeds");
     assert_eq!(rejected_refresh.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn signed_in_password_change_rotates_sessions_and_enforces_policy() {
+    let app = app().await;
+    let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let weak_password = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/password")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "current_password": "ChangeMe123!",
+                        "new_password": "short"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("weak password request succeeds");
+    assert_eq!(weak_password.status(), StatusCode::BAD_REQUEST);
+
+    let wrong_current_password = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/password")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "current_password": "WrongPassword123!",
+                        "new_password": "Replacement123!"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("wrong password request succeeds");
+    assert_eq!(wrong_current_password.status(), StatusCode::BAD_REQUEST);
+
+    let changed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/password")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "current_password": "ChangeMe123!",
+                        "new_password": "Replacement123!"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("password change request succeeds");
+    assert_eq!(changed.status(), StatusCode::OK);
+    let changed_body = json_body(changed).await;
+    assert_eq!(changed_body["data"]["changed"], true);
+
+    let stale_access = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale access request succeeds");
+    assert_eq!(stale_access.status(), StatusCode::UNAUTHORIZED);
+
+    let stale_refresh = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, cookie)
+                .header("x-hms-csrf", csrf_token)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale refresh request succeeds");
+    assert_eq!(stale_refresh.status(), StatusCode::UNAUTHORIZED);
+
+    let old_password_login = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "email": "owner@hms.local",
+                        "password": "ChangeMe123!",
+                        "facility_code": "HMS"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("old password login request succeeds");
+    assert_eq!(old_password_login.status(), StatusCode::UNAUTHORIZED);
+
+    let (new_access_token, _, _) =
+        login_with_password(app.clone(), "owner@hms.local", "Replacement123!").await;
+    assert!(!new_access_token.is_empty());
 }
 
 #[tokio::test]

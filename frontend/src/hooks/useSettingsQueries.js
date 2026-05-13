@@ -40,7 +40,7 @@ const settingsApi = {
   changePassword: async ({ oldPassword, newPassword }) => {
     try {
       if (isRustV2ApiMode()) {
-        return Promise.reject(new Error('Rust V2 does not expose signed-in password changes yet'));
+        return await authApi.changePassword({ oldPassword, newPassword });
       }
       return await apiClient.post('/users/users/change_password/', {
         old_password: oldPassword,

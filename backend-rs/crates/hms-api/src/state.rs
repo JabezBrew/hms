@@ -137,6 +137,15 @@ pub struct PasswordResetRequestOutcome {
     pub debug_token: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChangePasswordOutcome {
+    Changed,
+    UserNotFound,
+    InvalidCurrentPassword,
+    WeakPassword,
+    PasswordReused,
+}
+
 impl AppState {
     pub async fn new(config: Config) -> Result<Self> {
         let started_at = Utc::now();
@@ -446,6 +455,55 @@ impl AppState {
         }
 
         Ok(completed)
+    }
+
+    pub async fn change_password(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<ChangePasswordOutcome> {
+        if facility_id != self.facility_id() {
+            return Ok(ChangePasswordOutcome::UserNotFound);
+        }
+        if !password_meets_policy(new_password) {
+            return Ok(ChangePasswordOutcome::WeakPassword);
+        }
+
+        let Some(user) = hms_db::auth::user_by_id(&self.inner.pool, user_id).await? else {
+            return Ok(ChangePasswordOutcome::UserNotFound);
+        };
+        if user.facility_id != facility_id {
+            return Ok(ChangePasswordOutcome::UserNotFound);
+        }
+        if !verify_password(&user.password_hash, current_password) {
+            return Ok(ChangePasswordOutcome::InvalidCurrentPassword);
+        }
+
+        let previous_hashes =
+            hms_db::auth::password_hashes_for_user(&self.inner.pool, user_id, 5).await?;
+        if previous_hashes
+            .iter()
+            .any(|hash| verify_password(hash, new_password))
+        {
+            return Ok(ChangePasswordOutcome::PasswordReused);
+        }
+
+        let new_password_hash = hash_password(new_password)?;
+        let changed = hms_db::auth::change_user_password(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            &new_password_hash,
+        )
+        .await?;
+
+        Ok(if changed.is_some() {
+            ChangePasswordOutcome::Changed
+        } else {
+            ChangePasswordOutcome::UserNotFound
+        })
     }
 
     pub async fn deployment_capabilities(&self) -> Result<DeploymentCapabilities> {

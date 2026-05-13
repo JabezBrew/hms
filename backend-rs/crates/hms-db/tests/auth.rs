@@ -56,3 +56,66 @@ async fn auth_profile_updates_are_user_and_facility_scoped() {
     .expect("cross-facility profile update succeeds")
     .is_none());
 }
+
+#[tokio::test]
+async fn auth_password_changes_are_user_and_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let old_hash = sqlx::query_scalar::<_, String>("SELECT password_hash FROM users WHERE id = $1")
+        .bind(owner_id)
+        .fetch_one(&pool)
+        .await
+        .expect("old hash exists");
+
+    let changed =
+        hms_db::auth::change_user_password(&pool, facility_id, owner_id, "new-password-hash")
+            .await
+            .expect("password change succeeds")
+            .expect("user exists");
+
+    assert_eq!(changed.id, owner_id);
+    assert_eq!(changed.password_hash, "new-password-hash");
+    assert!(!changed.password_change_required);
+    assert_eq!(changed.session_version, 2);
+    let history_hashes = sqlx::query_scalar::<_, String>(
+        "SELECT password_hash FROM password_history WHERE user_id = $1",
+    )
+    .bind(owner_id)
+    .fetch_all(&pool)
+    .await
+    .expect("history hashes load");
+    assert!(history_hashes.contains(&old_hash));
+
+    assert!(hms_db::auth::change_user_password(
+        &pool,
+        Uuid::new_v4(),
+        owner_id,
+        "cross-facility-hash",
+    )
+    .await
+    .expect("cross-facility password change succeeds")
+    .is_none());
+}

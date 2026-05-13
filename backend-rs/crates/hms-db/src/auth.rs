@@ -368,6 +368,78 @@ pub async fn password_hashes_for_user(
     Ok(hashes)
 }
 
+pub async fn change_user_password(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    new_password_hash: &str,
+) -> anyhow::Result<Option<UserAccount>> {
+    let mut transaction = pool.begin().await?;
+    let current_hash = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT password_hash
+        FROM users
+        WHERE id = $1
+          AND facility_id = $2
+          AND is_active = TRUE
+        FOR UPDATE
+        "#,
+    )
+    .bind(user_id)
+    .bind(facility_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    let Some(current_hash) = current_hash else {
+        return Ok(None);
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO password_history (id, user_id, password_hash)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .bind(current_hash)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE users
+        SET password_hash = $3,
+            password_change_required = FALSE,
+            session_version = session_version + 1,
+            updated_at = now()
+        WHERE id = $1
+          AND facility_id = $2
+          AND is_active = TRUE
+        "#,
+    )
+    .bind(user_id)
+    .bind(facility_id)
+    .bind(new_password_hash)
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET revoked_at = COALESCE(revoked_at, now()),
+            revoked_reason = COALESCE(revoked_reason, 'password_changed')
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+    user_by_id(pool, user_id).await
+}
+
 pub async fn complete_password_reset(
     pool: &PgPool,
     token_hash: &str,

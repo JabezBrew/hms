@@ -10,6 +10,7 @@ pub fn routes() -> Router<AppState> {
         .route("/refresh", post(auth::refresh))
         .route("/logout", post(auth::logout))
         .route("/me", get(auth::me).patch(auth::update_me))
+        .route("/password", post(auth::change_password))
         .route(
             "/password-reset/request",
             post(auth::request_password_reset),

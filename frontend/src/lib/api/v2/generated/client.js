@@ -1841,6 +1841,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postAuthPassword": {
+    "operationId": "postAuthPassword",
+    "method": "POST",
+    "path": "/api/v2/auth/password",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAuthPasswordResetComplete": {
     "operationId": "postAuthPasswordResetComplete",
     "method": "POST",
@@ -2888,6 +2896,7 @@ export function createGeneratedClient(request) {
     postAppointments: createOperation(request, operations.postAppointments),
     postAuthLogin: createOperation(request, operations.postAuthLogin),
     postAuthLogout: createOperation(request, operations.postAuthLogout),
+    postAuthPassword: createOperation(request, operations.postAuthPassword),
     postAuthPasswordResetComplete: createOperation(request, operations.postAuthPasswordResetComplete),
     postAuthPasswordResetRequest: createOperation(request, operations.postAuthPasswordResetRequest),
     postAuthRefresh: createOperation(request, operations.postAuthRefresh),

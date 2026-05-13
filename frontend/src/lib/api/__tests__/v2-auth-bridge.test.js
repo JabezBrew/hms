@@ -270,6 +270,34 @@ describe('Rust V2 auth bridge', () => {
     );
   });
 
+  it('changes the signed-in password through /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: { changed: true }, meta: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      authApi.changePassword({
+        oldPassword: 'ChangeMe123!',
+        newPassword: 'Replacement123!',
+      }),
+    ).resolves.toEqual({ changed: true });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/auth/password',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          current_password: 'ChangeMe123!',
+          new_password: 'Replacement123!',
+        }),
+      }),
+    );
+  });
+
   it('allows reset-token submission when Rust V2 has no token pre-validation endpoint', async () => {
     await expect(authApi.validateResetToken('reset-token')).resolves.toEqual({
       valid: true,

@@ -274,6 +274,27 @@ export const authApi = {
     }
   },
 
+  changePassword: async ({ oldPassword, newPassword }) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postAuthPassword({
+          current_password: oldPassword,
+          new_password: newPassword,
+        });
+        return response?.data || response;
+      }
+      return await apiClient.post('/users/users/change_password/', {
+        old_password: oldPassword,
+        new_password: newPassword,
+      });
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to change password'));
+      }
+      throw new Error(handleApiError(error, 'Failed to change password'));
+    }
+  },
+
   /**
    * Logout user
    * @returns {Promise<Object>} Success message

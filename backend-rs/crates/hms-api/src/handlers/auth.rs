@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::AuthenticatedUser;
 use crate::response::{object, ObjectResponse};
-use crate::state::{AppState, LoginOutcome};
+use crate::state::{AppState, ChangePasswordOutcome, LoginOutcome};
 
 const REFRESH_COOKIE_NAME: &str = "hms_refresh";
 const CSRF_COOKIE_NAME: &str = "hms_v2_csrf";
@@ -58,6 +58,17 @@ pub struct PasswordResetCompleteRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PasswordResetCompleteResponse {
     pub completed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ChangePasswordResponse {
+    pub changed: bool,
 }
 
 #[utoipa::path(
@@ -235,6 +246,57 @@ pub async fn complete_password_reset(
     }
 
     Ok(Json(object(PasswordResetCompleteResponse { completed })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/password",
+    operation_id = "postAuthPassword",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed", body = ObjectResponse<ChangePasswordResponse>),
+        (status = 400, description = "Password change failed", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 404, description = "User not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn change_password(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Result<Json<ObjectResponse<ChangePasswordResponse>>, ApiError> {
+    let outcome = state
+        .change_password(
+            user.id,
+            user.facility_id,
+            &payload.current_password,
+            &payload.new_password,
+        )
+        .await
+        .map_err(|_| ApiError::bad_request("password_change_failed", "Password change failed."))?;
+
+    match outcome {
+        ChangePasswordOutcome::Changed => {
+            Ok(Json(object(ChangePasswordResponse { changed: true })))
+        }
+        ChangePasswordOutcome::UserNotFound => {
+            Err(ApiError::not_found("user_not_found", "User was not found."))
+        }
+        ChangePasswordOutcome::InvalidCurrentPassword => Err(ApiError::bad_request(
+            "current_password_invalid",
+            "Current password is invalid.",
+        )),
+        ChangePasswordOutcome::WeakPassword => Err(ApiError::bad_request(
+            "password_policy_failed",
+            "New password does not meet the password policy.",
+        )),
+        ChangePasswordOutcome::PasswordReused => Err(ApiError::bad_request(
+            "password_reused",
+            "New password must not match a recent password.",
+        )),
+    }
 }
 
 fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), ApiError> {

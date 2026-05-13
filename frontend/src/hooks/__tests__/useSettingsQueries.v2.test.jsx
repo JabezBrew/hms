@@ -1,8 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useMfaStatus, useProfile, useUserSessions } from '../useSettingsQueries';
+import {
+  useChangePassword,
+  useMfaStatus,
+  useProfile,
+  useUserSessions,
+} from '../useSettingsQueries';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 
 describe('Rust V2 settings queries', () => {
@@ -99,6 +104,43 @@ describe('Rust V2 settings queries', () => {
       rust_v2_unsupported: true,
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('changes the signed-in password through the Rust V2 auth contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: { changed: true },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useChangePassword(), { wrapper });
+
+    let response;
+    await act(async () => {
+      response = await result.current.mutateAsync({
+        oldPassword: 'ChangeMe123!',
+        newPassword: 'Replacement123!',
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/auth/password',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: 'ChangeMe123!',
+          new_password: 'Replacement123!',
+        }),
+      }),
+    );
+    expect(response).toEqual({ changed: true });
   });
 
   it('does not call legacy MFA endpoints when Rust V2 has no MFA management contract', async () => {
