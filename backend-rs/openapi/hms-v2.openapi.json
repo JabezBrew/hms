@@ -10101,6 +10101,44 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_BillingRuleListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "active": {
+                "type": "boolean"
+              },
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "rule_type": {
+                "$ref": "#/components/schemas/BillingRuleType"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "rule_type",
+              "active"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_BulkCreateLabResultsResponse": {
         "properties": {
           "data": {
@@ -21453,6 +21491,73 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/rules/{id}": {
+      "get": {
+        "operationId": "getBillingRuleById",
+        "parameters": [
+          {
+            "description": "Billing rule ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BillingRuleListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

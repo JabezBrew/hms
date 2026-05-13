@@ -15,6 +15,7 @@ pub fn routes() -> Router<AppState> {
             get(billing::list_service_prices),
         )
         .route("/api/v2/billing/rules", get(billing::list_billing_rules))
+        .route("/api/v2/billing/rules/:id", get(billing::get_billing_rule))
         .route(
             "/api/v2/billing/dashboard-summary",
             get(billing::dashboard_summary),

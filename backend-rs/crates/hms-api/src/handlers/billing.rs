@@ -73,6 +73,28 @@ pub async fn list_billing_rules(
     )))
 }
 
+#[utoipa::path(get, path = "/api/v2/billing/rules/{id}", operation_id = "getBillingRuleById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Billing rule ID")), responses((status = 200, body = ObjectResponse<BillingRuleListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_billing_rule(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<BillingRuleListItem>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let rule = state
+        .get_billing_rule(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "billing_rule_load_failed",
+                "Billing rule could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("billing_rule_not_found", "Billing rule was not found.")
+        })?;
+    Ok(Json(object(rule)))
+}
+
 #[utoipa::path(get, path = "/api/v2/billing/dashboard-summary", operation_id = "getBillingDashboardSummary", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<BillingDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_summary(
     State(state): State<AppState>,

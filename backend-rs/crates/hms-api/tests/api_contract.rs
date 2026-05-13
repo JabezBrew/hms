@@ -3917,6 +3917,42 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
 
+    let rules_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/billing/rules")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("billing rules request succeeds");
+    assert_eq!(rules_response.status(), StatusCode::OK);
+    let rules = json_body(rules_response).await;
+    let billing_rule_id = rules["data"][0]["id"]
+        .as_str()
+        .expect("seed billing rule exists")
+        .to_owned();
+
+    let rule_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/billing/rules/{billing_rule_id}"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("billing rule detail request succeeds");
+    let rule_detail_status = rule_detail_response.status();
+    let rule_detail_body = json_body(rule_detail_response).await;
+    assert_eq!(rule_detail_status, StatusCode::OK, "{rule_detail_body}");
+    assert_eq!(rule_detail_body["data"]["id"], billing_rule_id);
+
     let prices_response = app
         .clone()
         .oneshot(

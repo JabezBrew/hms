@@ -369,6 +369,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getBillingRuleById": {
+    "operationId": "getBillingRuleById",
+    "method": "GET",
+    "path": "/api/v2/billing/rules/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getBillingRules": {
     "operationId": "getBillingRules",
     "method": "GET",
@@ -2686,6 +2696,7 @@ export function createGeneratedClient(request) {
     getBillingReceiptByNumber: createOperation(request, operations.getBillingReceiptByNumber),
     getBillingReceiptByPaymentId: createOperation(request, operations.getBillingReceiptByPaymentId),
     getBillingReceipts: createOperation(request, operations.getBillingReceipts),
+    getBillingRuleById: createOperation(request, operations.getBillingRuleById),
     getBillingRules: createOperation(request, operations.getBillingRules),
     getBillingServiceCatalog: createOperation(request, operations.getBillingServiceCatalog),
     getBillingServicePrices: createOperation(request, operations.getBillingServicePrices),

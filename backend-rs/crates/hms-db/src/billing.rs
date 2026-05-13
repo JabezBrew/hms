@@ -329,6 +329,26 @@ pub async fn list_billing_rules(
     rows.into_iter().map(rule_from_row).collect()
 }
 
+pub async fn get_billing_rule(
+    pool: &PgPool,
+    facility_id: Uuid,
+    rule_id: Uuid,
+) -> anyhow::Result<Option<BillingRuleListItem>> {
+    let row = sqlx::query_as::<_, BillingRuleRow>(
+        r#"
+        SELECT id, code, name, rule_type, active
+        FROM billing_rules
+        WHERE facility_id = $1 AND id = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(rule_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(rule_from_row).transpose()
+}
+
 pub async fn billing_dashboard_summary(
     pool: &PgPool,
     facility_id: Uuid,

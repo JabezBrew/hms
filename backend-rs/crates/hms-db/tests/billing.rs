@@ -4,6 +4,49 @@ use hms_domain::billing::{CashSessionStatus, PaymentMethod};
 use hms_domain::deployment::DeploymentProfile;
 
 #[tokio::test]
+async fn billing_rule_detail_is_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let rule_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM billing_rules WHERE facility_id = $1 ORDER BY code LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("billing rule exists");
+
+    let rule = hms_db::billing::get_billing_rule(&pool, facility_id, rule_id)
+        .await
+        .expect("billing rule detail lookup succeeds")
+        .expect("billing rule exists");
+    assert_eq!(rule.id, rule_id);
+
+    assert!(
+        hms_db::billing::get_billing_rule(&pool, uuid::Uuid::new_v4(), rule_id)
+            .await
+            .expect("cross-facility billing rule lookup succeeds")
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn invoice_repository_filters_patient_invoices_inside_facility() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

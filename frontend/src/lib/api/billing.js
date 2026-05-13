@@ -343,11 +343,8 @@ async function findV2Claim(id, options = {}) {
 }
 
 async function findV2BillingRule(id, options = {}) {
-  const response = await v2Api.getBillingRules({ signal: options.signal });
-  const rule = v2List(response).find((candidate) => candidate.id === id || candidate.code === id);
-  if (!rule) {
-    throw new Error('Rust V2 billing rule was not found.');
-  }
+  const response = await v2Api.getBillingRuleById({ id }, { signal: options.signal });
+  const rule = response?.data || response || {};
   return {
     ...rule,
     rule_type: rule.rule_type,

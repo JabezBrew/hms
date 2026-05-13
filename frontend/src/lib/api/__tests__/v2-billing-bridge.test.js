@@ -424,15 +424,13 @@ describe('Rust V2 billing bridge', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          data: [
-            {
-              id: 'rule-1',
-              code: 'cash-required',
-              name: 'Cash required',
-              rule_type: 'cash_required',
-              active: true,
-            },
-          ],
+          data: {
+            id: 'rule-1',
+            code: 'cash-required',
+            name: 'Cash required',
+            rule_type: 'cash_required',
+            active: true,
+          },
           meta: {},
         }),
       );
@@ -459,7 +457,7 @@ describe('Rust V2 billing bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       4,
-      'http://localhost:8080/api/v2/billing/rules',
+      'http://localhost:8080/api/v2/billing/rules/rule-1',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(invoice).toEqual(expect.objectContaining({ id: 'invoice-1', total_amount: 100 }));
