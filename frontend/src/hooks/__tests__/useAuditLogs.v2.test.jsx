@@ -167,7 +167,7 @@ describe('Rust V2 audit log bridge', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/audit-events?limit=100',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }),
     );
     expect(stats.result.current.data).toEqual({
       total_logs: 2,

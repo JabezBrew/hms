@@ -230,12 +230,13 @@ const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 35, options = {
 /**
  * Fetch audit log statistics
  */
-const fetchAuditStats = async () => {
+const fetchAuditStats = async (options = {}) => {
   if (isRustV2ApiMode()) {
     const response = await v2Api.getAdminAuditEvents({
       query: {
         limit: AUDIT_EXPORT_LIMIT,
       },
+      signal: options.signal,
     });
     return deriveV2AuditStats(response);
   }
@@ -272,7 +273,7 @@ export function useAuditLogs(filters = {}, page = 1, pageSize = 35) {
 export function useAuditStats() {
   return useQuery({
     queryKey: auditKeys.stats(),
-    queryFn: fetchAuditStats,
+    queryFn: ({ signal }) => fetchAuditStats({ signal }),
     staleTime: 60000, // 1 minute
   });
 }
