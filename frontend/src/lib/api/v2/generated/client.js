@@ -53,6 +53,29 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getAdminOrgUnitById": {
+    "operationId": "getAdminOrgUnitById",
+    "method": "GET",
+    "path": "/api/v2/admin/org-units/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAdminOrgUnitChildren": {
+    "operationId": "getAdminOrgUnitChildren",
+    "method": "GET",
+    "path": "/api/v2/admin/org-units/{id}/children",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
   "getAdminOrgUnits": {
     "operationId": "getAdminOrgUnits",
     "method": "GET",
@@ -2224,6 +2247,8 @@ export function createGeneratedClient(request) {
     getAdminCommittees: createOperation(request, operations.getAdminCommittees),
     getAdminDelegations: createOperation(request, operations.getAdminDelegations),
     getAdminFeatures: createOperation(request, operations.getAdminFeatures),
+    getAdminOrgUnitById: createOperation(request, operations.getAdminOrgUnitById),
+    getAdminOrgUnitChildren: createOperation(request, operations.getAdminOrgUnitChildren),
     getAdminOrgUnits: createOperation(request, operations.getAdminOrgUnits),
     getAdminPermissionAssignments: createOperation(request, operations.getAdminPermissionAssignments),
     getAdminPositions: createOperation(request, operations.getAdminPositions),

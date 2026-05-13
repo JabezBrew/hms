@@ -199,13 +199,23 @@ function buildV2OrgTree(units) {
 }
 
 async function getV2OrgUnit(id) {
-  const units = await listV2OrgUnits({ limit: 100 });
-  return units.find((unit) => unit.id === id || unit.code === id) || null;
+  const response = await v2Api.getAdminOrgUnitById({ id });
+  return adaptV2OrgUnit(response?.data || response || {});
 }
 
-async function getV2OrgUnitChildren(id) {
-  const units = await listV2OrgUnits({ limit: 100 });
-  return units.filter((unit) => unit.parentId === id || unit.parent_unit_id === id);
+async function getV2OrgUnitChildren(id, params = {}) {
+  const response = await v2Api.getAdminOrgUnitChildren({
+    id,
+  }, {
+    query: {
+      cursor: params.cursor,
+      limit: normalizeV2OrgLimit(params),
+    },
+    signal: params.signal,
+  });
+  return Array.isArray(response?.data)
+    ? response.data.map(adaptV2OrgUnit)
+    : [];
 }
 
 async function getV2OrgUnitAncestors(id) {
@@ -428,9 +438,9 @@ export const clinicalUnitsApi = {
     }
     return apiClient.get('/organization/units/tree/');
   },
-  children: (id) => {
+  children: (id, params = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnitChildren(id);
+      return getV2OrgUnitChildren(id, params);
     }
     return apiClient.get(`/organization/units/${id}/children/`);
   },

@@ -321,6 +321,52 @@ pub async fn create_organization_unit(
         .ok_or_else(|| anyhow::anyhow!("organization unit was not found after write"))
 }
 
+pub async fn get_organization_unit_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<OrganizationUnitListItem>> {
+    get_organization_unit(pool, facility_id, id).await
+}
+
+pub async fn list_organization_unit_children(
+    pool: &PgPool,
+    facility_id: Uuid,
+    parent_unit_id: Uuid,
+    cursor: Option<AdminCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<OrganizationUnitListItem>> {
+    let mut query = QueryBuilder::new(
+        "SELECT organization_units.id,
+                organization_units.code,
+                organization_units.name,
+                organization_units.unit_type,
+                organization_units.parent_unit_id,
+                parent.name AS parent_unit_name,
+                organization_units.is_active,
+                organization_units.created_at
+         FROM organization_units
+         LEFT JOIN organization_units parent ON parent.id = organization_units.parent_unit_id
+         WHERE organization_units.facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(" AND organization_units.parent_unit_id = ");
+    query.push_bind(parent_unit_id);
+    append_cursor(
+        &mut query,
+        "organization_units.created_at",
+        "organization_units.id",
+        cursor,
+    );
+    query.push(" ORDER BY organization_units.created_at ASC, organization_units.id ASC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<OrganizationUnitRow>()
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(organization_unit_from_row).collect()
+}
+
 pub async fn list_position_templates(
     pool: &PgPool,
     facility_id: Uuid,

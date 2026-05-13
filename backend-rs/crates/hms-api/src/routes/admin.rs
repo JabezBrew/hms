@@ -11,6 +11,11 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/admin/org-units",
             get(admin::list_org_units).post(admin::create_org_unit),
         )
+        .route("/api/v2/admin/org-units/:id", get(admin::get_org_unit))
+        .route(
+            "/api/v2/admin/org-units/:id/children",
+            get(admin::list_org_unit_children),
+        )
         .route(
             "/api/v2/admin/position-templates",
             get(admin::list_position_templates).post(admin::create_position_template),

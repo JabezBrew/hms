@@ -69,6 +69,63 @@ pub async fn create_org_unit(
     Ok(Json(object(unit)))
 }
 
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}", operation_id = "getAdminOrgUnitById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ObjectResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_org_unit(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<OrganizationUnitListItem>>, ApiError> {
+    require_admin_access(&user, state.facility_id())?;
+    let unit = state
+        .get_organization_unit(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_load_failed",
+                "Organization unit could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("org_unit_not_found", "Organization unit was not found.")
+        })?;
+    Ok(Json(object(unit)))
+}
+
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/children", operation_id = "getAdminOrgUnitChildren", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn list_org_unit_children(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<AdminListQuery>,
+) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    require_admin_access(&user, state.facility_id())?;
+    let _parent = state
+        .get_organization_unit(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_load_failed",
+                "Organization unit could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("org_unit_not_found", "Organization unit was not found.")
+        })?;
+    let (cursor, page_size) = page_request(query)?;
+    let rows = state
+        .list_organization_unit_children(id, cursor, page_size as i64 + 1)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_children_failed",
+                "Organization unit children could not be loaded.",
+            )
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
+    })))
+}
+
 #[utoipa::path(get, path = "/api/v2/admin/position-templates", operation_id = "getAdminPositionTemplates", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<PositionTemplateListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_position_templates(
     State(state): State<AppState>,

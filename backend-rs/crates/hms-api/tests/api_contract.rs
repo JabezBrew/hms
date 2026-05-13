@@ -199,6 +199,8 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/auth/password-reset/complete",
         "/api/v2/system/deployment-capabilities",
         "/api/v2/admin/org-units",
+        "/api/v2/admin/org-units/{id}",
+        "/api/v2/admin/org-units/{id}/children",
         "/api/v2/admin/position-templates",
         "/api/v2/admin/positions",
         "/api/v2/admin/authority-appointments",
@@ -3704,6 +3706,85 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
     assert_eq!(org_unit.status(), StatusCode::OK);
     let org_unit_body = json_body(org_unit).await;
     let org_unit_id = org_unit_body["data"]["id"].as_str().expect("org unit id");
+
+    let org_unit_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admin/org-units/{org_unit_id}"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("org unit detail succeeds");
+    assert_eq!(org_unit_detail.status(), StatusCode::OK);
+    let org_unit_detail_body = json_body(org_unit_detail).await;
+    assert_eq!(org_unit_detail_body["data"]["id"], org_unit_id);
+
+    let child_org_unit = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/org-units")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "LAB_ADMIN_CHILD",
+                        "name": "Laboratory Administration Child",
+                        "unit_type": "service",
+                        "parent_unit_id": org_unit_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("child org unit create succeeds");
+    assert_eq!(child_org_unit.status(), StatusCode::OK);
+    let child_org_unit_body = json_body(child_org_unit).await;
+    let child_org_unit_id = child_org_unit_body["data"]["id"]
+        .as_str()
+        .expect("child org unit id");
+
+    let org_unit_children = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/admin/org-units/{org_unit_id}/children?limit=5"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("org unit children succeeds");
+    assert_eq!(org_unit_children.status(), StatusCode::OK);
+    let org_unit_children_body = json_body(org_unit_children).await;
+    assert!(org_unit_children_body["data"]
+        .as_array()
+        .expect("org unit children are an array")
+        .iter()
+        .any(|child| child["id"] == child_org_unit_id));
+
+    let org_unit_detail_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admin/org-units/{org_unit_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("org unit detail denial succeeds");
+    assert_eq!(org_unit_detail_denied.status(), StatusCode::FORBIDDEN);
 
     let template = app
         .clone()

@@ -288,12 +288,12 @@ describe('Rust V2 organization bridge', () => {
     });
   });
 
-  it('derives org-unit hierarchy helpers from the Rust flat org-unit list', async () => {
-    globalThis.fetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          data: [
-            {
+  it('loads org-unit detail and direct children through dedicated Rust endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
               id: 'root',
               code: 'CLINICAL',
               name: 'Clinical Services',
@@ -302,33 +302,57 @@ describe('Rust V2 organization bridge', () => {
               parent_unit_id: null,
               parent_unit_name: null,
             },
-            {
-              id: 'ward-1',
-              code: 'MWA',
-              name: 'Medical Ward A',
-              unit_type: 'ward',
-              is_active: true,
-              parent_unit_id: 'root',
-              parent_unit_name: 'Clinical Services',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        },
-      ),
-    );
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'ward-1',
+                code: 'MWA',
+                name: 'Medical Ward A',
+                unit_type: 'ward',
+                is_active: true,
+                parent_unit_id: 'root',
+                parent_unit_name: 'Clinical Services',
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
 
-    const response = await clinicalUnitsApi.children('root');
+    const detail = await clinicalUnitsApi.get('root');
+    const children = await clinicalUnitsApi.children('root');
 
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/org-units?limit=100',
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/admin/org-units/root',
       expect.objectContaining({ method: 'GET' }),
     );
-    expect(response).toEqual([
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/admin/org-units/root/children?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(detail).toEqual(expect.objectContaining({
+      id: 'root',
+      unit_type_code: 'department',
+      parentId: null,
+    }));
+    expect(children).toEqual([
       expect.objectContaining({
         id: 'ward-1',
         parentId: 'root',

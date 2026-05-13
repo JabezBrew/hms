@@ -738,6 +738,29 @@ impl AppState {
         .await
     }
 
+    pub async fn get_organization_unit(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<OrganizationUnitListItem>> {
+        hms_db::admin::get_organization_unit_by_id(&self.inner.pool, self.facility_id(), id).await
+    }
+
+    pub async fn list_organization_unit_children(
+        &self,
+        parent_unit_id: Uuid,
+        cursor: Option<AdminCursor>,
+        limit: i64,
+    ) -> Result<Vec<OrganizationUnitListItem>> {
+        hms_db::admin::list_organization_unit_children(
+            &self.inner.pool,
+            self.facility_id(),
+            parent_unit_id,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
     pub async fn list_position_templates(
         &self,
         cursor: Option<AdminCursor>,
