@@ -535,6 +535,17 @@ describe('Rust V2 inventory bridge', () => {
           },
         ],
         meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            item_id: 'item-1',
+            location_id: 'location-1',
+            location_name: 'Main Pharmacy',
+            quantity_on_hand: 100,
+          },
+        ],
+        meta: {},
       }));
 
     await expect(inventoryApi.getItemMovements('item-1', {
@@ -562,10 +573,20 @@ describe('Rust V2 inventory bridge', () => {
         quantity_on_hand: 100,
       }),
     ]);
+    await expect(inventoryApi.getStockByItemLocation('item-1', {
+      signal: controller.signal,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        item_id: 'item-1',
+        location_id: 'location-1',
+        quantity_on_hand: 100,
+      }),
+    ]);
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
       ['http://localhost:8080/api/v2/inventory/items/item-1/stock-movements?limit=50', 'GET', controller.signal],
       ['http://localhost:8080/api/v2/inventory/items/item-1/stock-batches?limit=25', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/items/item-1/stock-by-location', 'GET', controller.signal],
       ['http://localhost:8080/api/v2/inventory/items/item-1/stock-by-location', 'GET', controller.signal],
     ]);
   });

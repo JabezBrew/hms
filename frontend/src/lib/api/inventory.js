@@ -2738,14 +2738,20 @@ export const inventoryApi = {
    * @param {string} itemId - Item ID
    * @returns {Promise<Array>} Stock by location
    */
-  getStockByItemLocation: async (itemId) => {
+  getStockByItemLocation: async (itemId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 inventory item stock-by-location contract');
+        return await inventoryApi.getItemStockByLocation(itemId, options);
       }
 
       return await apiClient.get(`/inventory/location-stock/item/${itemId}/by-location/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch stock by location'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch stock by location'));
     }
   },
