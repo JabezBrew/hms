@@ -430,13 +430,13 @@ export const dashboardsApi = {
    * Get admin dashboard data
    * @returns {Promise<Object>} Admin dashboard data
    */
-  getAdminDashboard: async () => {
+  getAdminDashboard: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        await v2Api.getDashboardSnapshot();
+        await v2Api.getDashboardSnapshot({ signal: options.signal });
         return adaptV2SnapshotToLegacyAdminMonitor();
       }
-      return await apiClient.get('/dashboards/admin/');
+      return await apiClient.get('/dashboards/admin/', options);
     } catch (error) {
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin dashboard'));
@@ -453,7 +453,10 @@ export const dashboardsApi = {
   getMyWorkDashboard: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return adaptV2SnapshotToMyWork(await v2Api.getDashboardSnapshot(), params);
+        return adaptV2SnapshotToMyWork(
+          await v2Api.getDashboardSnapshot({ signal: params.signal }),
+          params,
+        );
       }
       const endpoint = `/dashboards/my-work/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
@@ -475,7 +478,10 @@ export const dashboardsApi = {
       if (isRustV2ApiMode()) {
         const scheduleDate = params.date || new Date().toISOString().slice(0, 10);
         return adaptV2AppointmentsToClinicSchedule(
-          await v2Api.getAppointments({ query: { date: scheduleDate, limit: 50 } }),
+          await v2Api.getAppointments({
+            query: { date: scheduleDate, limit: 50 },
+            signal: params.signal,
+          }),
           { ...params, date: scheduleDate },
         );
       }
@@ -494,13 +500,15 @@ export const dashboardsApi = {
    * @param {Object} params - Query parameters (window, expand)
    * @returns {Promise<Object>} Admin dashboard v2 summary data
    */
-  getAdminDashboardV2: async (params = {}) => {
+  getAdminDashboardV2: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return adaptV2SnapshotToAdminSummary(await v2Api.getDashboardSnapshot());
+        return adaptV2SnapshotToAdminSummary(
+          await v2Api.getDashboardSnapshot({ signal: options.signal }),
+        );
       }
       const endpoint = `/dashboards/admin-v2/${buildQueryString(params)}`;
-      return await apiClient.get(endpoint);
+      return await apiClient.get(endpoint, options);
     } catch (error) {
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin dashboard summary'));
@@ -548,13 +556,13 @@ export const dashboardsApi = {
    * @param {Object} params - Query parameters (window)
    * @returns {Promise<Object>} Admin dashboard v2 workforce detail
    */
-  getAdminDashboardV2Workforce: async (params = {}) => {
+  getAdminDashboardV2Workforce: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return emptyV2WorkforceDetails();
       }
       const endpoint = `/dashboards/admin-v2/workforce/${buildQueryString(params)}`;
-      return await apiClient.get(endpoint);
+      return await apiClient.get(endpoint, options);
     } catch (error) {
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin workforce details'));
@@ -568,13 +576,13 @@ export const dashboardsApi = {
    * @param {Object} params - Query parameters (window)
    * @returns {Promise<Object>} Admin dashboard v2 compliance detail
    */
-  getAdminDashboardV2Compliance: async (params = {}) => {
+  getAdminDashboardV2Compliance: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return emptyV2ComplianceDetails();
       }
       const endpoint = `/dashboards/admin-v2/compliance/${buildQueryString(params)}`;
-      return await apiClient.get(endpoint);
+      return await apiClient.get(endpoint, options);
     } catch (error) {
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin compliance details'));

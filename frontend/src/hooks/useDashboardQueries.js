@@ -56,7 +56,7 @@ export function useNurseDashboard(filters = {}, options = {}) {
   const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.nurse(filters),
-    queryFn: () => dashboardsApi.getNurseDashboard(filters),
+    queryFn: ({ signal }) => dashboardsApi.getNurseDashboard({ ...filters, signal }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false, // Only poll when tab is active
     staleTime: 10000, // Consider data stale after 10 seconds
@@ -74,7 +74,7 @@ export function useInpatientDashboard(options = {}) {
   const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.inpatient(),
-    queryFn: () => dashboardsApi.getInpatientDashboard(),
+    queryFn: ({ signal }) => dashboardsApi.getInpatientDashboard({ signal }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -92,7 +92,7 @@ export function useReceptionistDashboard(options = {}) {
   const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.receptionist(),
-    queryFn: () => dashboardsApi.getReceptionistDashboard(),
+    queryFn: ({ signal }) => dashboardsApi.getReceptionistDashboard({ signal }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -110,7 +110,7 @@ export function useAdminDashboard(options = {}) {
   const { facilityCode } = useAuth();
   return useQuery({
     queryKey: dashboardKeys.admin(),
-    queryFn: () => dashboardsApi.getAdminDashboard(),
+    queryFn: ({ signal }) => dashboardsApi.getAdminDashboard({ signal }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -128,7 +128,7 @@ export function useAdminDashboardV2Summary(filters = {}, options = {}) {
   const normalizedFilters = normalizeAdminV2Filters(filters);
   return useQuery({
     queryKey: dashboardKeys.adminV2Root(normalizedFilters),
-    queryFn: () => dashboardsApi.getAdminDashboardV2(normalizedFilters),
+    queryFn: ({ signal }) => dashboardsApi.getAdminDashboardV2(normalizedFilters, { signal }),
     refetchInterval: DEFAULT_REFETCH_INTERVAL,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -145,7 +145,7 @@ export function useAdminDashboardV2Capacity(filters = {}, options = {}) {
   const normalizedFilters = normalizeAdminV2Filters(filters);
   return useQuery({
     queryKey: dashboardKeys.adminV2Capacity(normalizedFilters),
-    queryFn: () => dashboardsApi.getAdminDashboardV2Capacity(normalizedFilters),
+    queryFn: ({ signal }) => dashboardsApi.getAdminDashboardV2Capacity(normalizedFilters, { signal }),
     refetchInterval: false,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -162,7 +162,7 @@ export function useAdminDashboardV2Workforce(filters = {}, options = {}) {
   const normalizedFilters = normalizeAdminV2Filters(filters);
   return useQuery({
     queryKey: dashboardKeys.adminV2Workforce(normalizedFilters),
-    queryFn: () => dashboardsApi.getAdminDashboardV2Workforce(normalizedFilters),
+    queryFn: ({ signal }) => dashboardsApi.getAdminDashboardV2Workforce(normalizedFilters, { signal }),
     refetchInterval: false,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -179,7 +179,7 @@ export function useAdminDashboardV2Compliance(filters = {}, options = {}) {
   const normalizedFilters = normalizeAdminV2Filters(filters);
   return useQuery({
     queryKey: dashboardKeys.adminV2Compliance(normalizedFilters),
-    queryFn: () => dashboardsApi.getAdminDashboardV2Compliance(normalizedFilters),
+    queryFn: ({ signal }) => dashboardsApi.getAdminDashboardV2Compliance(normalizedFilters, { signal }),
     refetchInterval: false,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -206,7 +206,7 @@ export function useMyWorkDashboard(filters = {}, options = {}) {
   const fallbackRefetchInterval = isLiveConnected ? false : DEFAULT_REFETCH_INTERVAL;
   return useQuery({
     queryKey: dashboardKeys.myWork(filters),
-    queryFn: () => dashboardsApi.getMyWorkDashboard(filters),
+    queryFn: ({ signal }) => dashboardsApi.getMyWorkDashboard({ ...filters, signal }),
     refetchInterval: hasCustomRefetchInterval ? options.refetchInterval : fallbackRefetchInterval,
     refetchIntervalInBackground: false,
     staleTime: 10000,
@@ -233,7 +233,7 @@ export function useClinicSchedule(filters = {}, options = {}) {
   const fallbackRefetchInterval = isLiveConnected ? false : DEFAULT_REFETCH_INTERVAL;
   return useQuery({
     queryKey: dashboardKeys.clinic(filters),
-    queryFn: () => dashboardsApi.getClinicSchedule(filters),
+    queryFn: ({ signal }) => dashboardsApi.getClinicSchedule({ ...filters, signal }),
     refetchInterval: hasCustomRefetchInterval ? options.refetchInterval : fallbackRefetchInterval,
     refetchIntervalInBackground: false,
     staleTime: 10000,
