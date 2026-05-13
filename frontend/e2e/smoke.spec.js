@@ -3,12 +3,13 @@ import { expect, test } from '@playwright/test';
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'admin@hms.com';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
 const smokePatientName = process.env.E2E_SMOKE_PATIENT_NAME || 'Smoke Patient';
+const expectRustV2RouteGuard = process.env.E2E_EXPECT_RUST_V2_ROUTE_GUARD === 'true';
 
 if (!adminPassword) {
   throw new Error('E2E_ADMIN_PASSWORD is required; no default admin password is provided.');
 }
 
-test('admin can sign in, open the patient registry, and load a patient chronicle', async ({ page }) => {
+async function signInAsAdmin(page) {
   await page.goto('/login');
 
   await expect(page.getByRole('heading', { name: 'Welcome Back' })).toBeVisible();
@@ -18,6 +19,10 @@ test('admin can sign in, open the patient registry, and load a patient chronicle
   await page.getByRole('button', { name: 'Sign In' }).click();
 
   await page.waitForURL((url) => !url.pathname.endsWith('/login'));
+}
+
+test('admin can sign in, open the patient registry, and load a patient chronicle', async ({ page }) => {
+  await signInAsAdmin(page);
 
   await page.goto('/patients');
   await expect(page.getByRole('heading', { name: 'Patient Registry' })).toBeVisible();
@@ -31,4 +36,16 @@ test('admin can sign in, open the patient registry, and load a patient chronicle
   await page.waitForURL(/\/patients\/.+/);
   await expect(page.getByRole('heading', { name: smokePatientName })).toBeVisible();
   await expect(page.getByPlaceholder('Search notes, prescriptions...')).toBeVisible();
+});
+
+test('Rust V2 mode redirects unsupported standalone workflow routes', async ({ page }) => {
+  test.skip(!expectRustV2RouteGuard, 'Rust V2 route guard smoke is opt-in.');
+
+  await signInAsAdmin(page);
+
+  await page.goto('/workflows/ward-round');
+
+  await page.waitForURL(/\/feature-unavailable$/);
+  await expect(page.getByRole('heading', { name: 'Feature Unavailable' })).toBeVisible();
+  await expect(page.getByText('This module is not enabled for the current deployment.')).toBeVisible();
 });

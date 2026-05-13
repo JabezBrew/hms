@@ -65,6 +65,7 @@ import { emitOnboardingEvent } from "@/features/onboarding";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 import { useDebounce } from "@/hooks/use-debounce";
 const DISCHARGE_CASE_ROLES = new Set([
@@ -175,6 +176,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const [editNoteData, setEditNoteData] = useState(null);
   const [requestedDischargeAdmissionId, setRequestedDischargeAdmissionId] = useState(null);
   const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
+  const rustV2Mode = isRustV2ApiMode();
+  const canUseStandaloneClinicalWorkflows = !rustV2Mode;
 
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
@@ -231,6 +234,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
       // Clear the query params after opening
       if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
+      if (!canUseStandaloneClinicalWorkflows) {
+        toast.error('Ward-round workflow is not available in Rust V2 mode yet.');
+        if (actionParam || wardRoundParam) clearQueryParams();
+        return;
+      }
       openChronicleWorkspace('wardRound');
       // Clear the query params after opening
       if (actionParam || wardRoundParam) clearQueryParams();
@@ -253,6 +261,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
       }
 
       setRequestedDischargeAdmissionId(String(admissionId));
+      if (!canUseStandaloneClinicalWorkflows) {
+        if (actionParam || admissionParam) clearQueryParams();
+        return;
+      }
       openChronicleWorkspace('discharge');
       if (actionParam || admissionParam) clearQueryParams();
     } else if (action === 'add_prescription') {
@@ -283,6 +295,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     consultationParam,
     admissionParam,
     patient,
+    canUseStandaloneClinicalWorkflows,
     openChronicleWorkspace,
     clearQueryParams,
   ]);
@@ -931,8 +944,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('fluids');
   }, [openChronicleWorkspace]);
   const handleStartWardRound = useCallback(() => {
+    if (!canUseStandaloneClinicalWorkflows) {
+      toast.error('Ward-round workflow is not available in Rust V2 mode yet.');
+      return;
+    }
     openChronicleWorkspace('wardRound');
-  }, [openChronicleWorkspace]);
+  }, [canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
   const handleStartDischarge = useCallback(() => {
     const admissionId = patient?.local_data?.current_admission_id
       || patient?.current_admission_id
@@ -944,8 +961,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
 
     setRequestedDischargeAdmissionId(String(admissionId));
+    if (!canUseStandaloneClinicalWorkflows) {
+      return;
+    }
     openChronicleWorkspace('discharge');
-  }, [patient, activeEncounter, openChronicleWorkspace]);
+  }, [patient, activeEncounter, canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -1385,8 +1405,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
           onViewTreatmentSheet={handleViewTreatmentSheet}
           onViewMedicationHistory={handleViewMedicationHistory}
           onRecordFluids={handleRecordFluids}
-          onStartWardRound={handleStartWardRound}
-          onStartDischarge={handleStartDischarge}
+          onStartWardRound={canUseStandaloneClinicalWorkflows ? handleStartWardRound : undefined}
+          onStartDischarge={canUseStandaloneClinicalWorkflows ? handleStartDischarge : undefined}
           onManageInsurance={handleManageInsurance}
           onPrintSummary={handlePrintSummary}
           insurance={patientInsurance}

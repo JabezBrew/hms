@@ -1,7 +1,8 @@
-import { Route } from 'react-router-dom'
+import { Navigate, Route } from 'react-router-dom'
 import { FeatureBasedRoute } from '@/components/auth/FeatureBasedRoute'
 import { RoleBasedRoute } from '@/components/auth/RoleBasedRoute'
 import { Layout } from '@/components/layout/layout'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import { PageMeta } from '@/shared/hooks/usePageMeta'
 import { ROUTE_LAYOUTS } from './routeTypes'
 
@@ -26,7 +27,10 @@ export function renderRoutes(routes) {
       </>
     )
 
-    const withLayout = wrapWithLayout(route, withMeta)
+    const routeContent = route.rustV2Supported === false && isRustV2ApiMode()
+      ? <Navigate to="/feature-unavailable" replace />
+      : withMeta
+    const withLayout = wrapWithLayout(route, routeContent)
 
     return (
       <Route
