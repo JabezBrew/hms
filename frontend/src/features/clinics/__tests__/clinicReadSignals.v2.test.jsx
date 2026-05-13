@@ -1,19 +1,39 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { WalkInCheckInDialog } from '../components/WalkInCheckInDialog';
 import ClinicWaitingRoomPage from '../pages/ClinicWaitingRoomPage';
 import { TriageAssignDialog } from '@/components/visits/TriageAssignDialog';
 import { appointmentsApi } from '@/features/appointments/api';
 import { clinicsApi } from '@/features/clinics/api';
+
+const adminHookState = vi.hoisted(() => ({
+  departments: { data: [], isLoading: false },
+  onDuty: { data: [], isLoading: false },
+}));
 
 vi.mock('@/components/layout/layout', () => ({
   Layout: ({ children }) => <div>{children}</div>,
 }));
 
 vi.mock('@/components/ui/select', () => ({
-  Select: ({ children }) => <div>{children}</div>,
+  Select: ({ children, onValueChange }) => (
+    <div
+      data-testid="select-control"
+      onClick={() => onValueChange?.('dept-1')}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          onValueChange?.('dept-1');
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      {children}
+    </div>
+  ),
   SelectContent: ({ children }) => <div>{children}</div>,
   SelectItem: ({ children, value }) => <div data-value={value}>{children}</div>,
   SelectTrigger: ({ children }) => <button type="button">{children}</button>,
@@ -48,8 +68,8 @@ vi.mock('@/hooks/useVisitQueries', () => ({
 }));
 
 vi.mock('@/features/admin/hooks', () => ({
-  useDepartments: () => ({ data: [], isLoading: false }),
-  useRosterOnDutyDepartment: () => ({ data: [], isLoading: false }),
+  useDepartments: () => adminHookState.departments,
+  useRosterOnDutyDepartment: () => adminHookState.onDuty,
 }));
 
 vi.mock('@/features/clinics/api', () => ({
@@ -101,6 +121,8 @@ describe('clinic Rust V2 read callers', () => {
     });
     clinicsApi.list.mockResolvedValue([]);
     appointmentsApi.getAppointmentTypes.mockResolvedValue([]);
+    adminHookState.departments = { data: [], isLoading: false };
+    adminHookState.onDuty = { data: [], isLoading: false };
   });
 
   it('threads React Query AbortSignal into clinic waiting room detail reads', async () => {
@@ -141,6 +163,56 @@ describe('clinic Rust V2 read callers', () => {
       expect(appointmentsApi.getAppointmentTypes).toHaveBeenCalledWith({
         signal: expect.any(AbortSignal),
       });
+    });
+  });
+
+  it('threads React Query AbortSignal into walk-in clinic lookup reads', async () => {
+    adminHookState.departments = {
+      data: [
+        {
+          id: 'dept-1',
+          name: 'Outpatient Department',
+          unit_type_code: 'department',
+          unit_category: 'clinical',
+        },
+      ],
+      isLoading: false,
+    };
+    adminHookState.onDuty = {
+      data: [
+        {
+          duty_type_category: 'clinic',
+          clinic_id: 'clinic-1',
+          clinic_name: 'General Clinic',
+        },
+      ],
+      isLoading: false,
+    };
+    clinicsApi.list.mockResolvedValue([
+      {
+        id: 'clinic-1',
+        name: 'General Clinic',
+        booking_mode: 'clinic_pool',
+        accepts_walk_ins: true,
+      },
+    ]);
+
+    renderWithQuery(
+      <WalkInCheckInDialog
+        open
+        onOpenChange={vi.fn()}
+        patientId="patient-1"
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('select-control'));
+
+    await waitFor(() => {
+      expect(clinicsApi.list).toHaveBeenCalledWith(
+        { is_active: true, department: 'dept-1' },
+        { signal: expect.any(AbortSignal) },
+      );
     });
   });
 });
