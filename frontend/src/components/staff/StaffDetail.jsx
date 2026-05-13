@@ -57,7 +57,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { DatePicker } from '@/components/ui/date-picker';
 import { staffApi } from '@/features/staff/api';
-import { authApi } from '@/shared/api/auth';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 
@@ -267,13 +266,13 @@ const StaffDetail = ({ staff, practitioner, onBack, onDeleted }) => {
   };
 
   const handleResetPassword = async () => {
-    if (!staff.user_details?.id) {
-      toast.error('Cannot reset password: User information not available');
+    if (!staff.id) {
+      toast.error('Cannot reset password: Staff information not available');
       return;
     }
     try {
       setIsResettingPassword(true);
-      await authApi.adminForceResetPassword(staff.user_details.id);
+      await resendSetupLinkMutation.mutateAsync(staff.id);
       toast.success('Password reset email sent successfully');
     } catch (error) {
       toast.error(error.message || 'Failed to reset password');
