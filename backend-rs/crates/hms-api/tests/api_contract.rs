@@ -6199,6 +6199,34 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     assert_eq!(triage_detail_body["data"]["id"], triage_id);
     assert_eq!(triage_detail_body["data"]["patient_id"], patient_id);
 
+    let triage_assessment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/triage/{triage_id}/assessment"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "acuity": "emergency",
+                        "notes": "Chest pain and diaphoresis."
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("triage assessment succeeds");
+    assert_eq!(triage_assessment.status(), StatusCode::OK);
+    let triage_assessment_body = json_body(triage_assessment).await;
+    assert_eq!(triage_assessment_body["data"]["status"], "completed");
+    assert_eq!(triage_assessment_body["data"]["acuity"], "emergency");
+    assert_eq!(
+        triage_assessment_body["data"]["triage_notes"],
+        "Chest pain and diaphoresis."
+    );
+
     let triage_assign = app
         .clone()
         .oneshot(

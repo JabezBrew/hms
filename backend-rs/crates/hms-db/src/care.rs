@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_domain::care::{
     AppointmentListItem, AppointmentStatus, CareTeamAssignment, CareTeamRole, ClinicListItem,
-    EncounterListItem, EncounterStatus, EncounterType, TriageAcuity, TriageListItem, TriageStatus,
-    VisitListItem, VisitStatus,
+    EncounterListItem, EncounterStatus, EncounterType, TriageAcuity, TriageAssessmentRequest,
+    TriageListItem, TriageStatus, VisitListItem, VisitStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -125,6 +125,7 @@ struct TriageRow {
     patient_display_name: String,
     acuity: String,
     status: String,
+    triage_notes: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -630,6 +631,7 @@ pub async fn list_triage(
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                triage_queue.acuity,
                triage_queue.status,
+               triage_queue.triage_notes,
                triage_queue.created_at
         FROM triage_queue
         JOIN patients ON patients.id = triage_queue.patient_id
@@ -675,6 +677,7 @@ pub async fn create_triage(pool: &PgPool, triage: NewTriage) -> anyhow::Result<T
                       patient_id,
                       acuity,
                       status,
+                      triage_notes,
                       created_at
         )
         SELECT inserted.id,
@@ -684,6 +687,7 @@ pub async fn create_triage(pool: &PgPool, triage: NewTriage) -> anyhow::Result<T
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                inserted.acuity,
                inserted.status,
+               inserted.triage_notes,
                inserted.created_at
         FROM inserted
         JOIN patients ON patients.id = inserted.patient_id
@@ -720,6 +724,59 @@ pub async fn create_triage(pool: &PgPool, triage: NewTriage) -> anyhow::Result<T
     triage_from_row(row)
 }
 
+pub async fn assess_triage(
+    pool: &PgPool,
+    facility_id: Uuid,
+    triage_id: Uuid,
+    assessment: TriageAssessmentRequest,
+) -> anyhow::Result<Option<TriageListItem>> {
+    let acuity = assessment.acuity.map(codec::encode).transpose()?;
+    let row = sqlx::query_as::<_, TriageRow>(
+        r#"
+        WITH updated AS (
+            UPDATE triage_queue
+            SET acuity = COALESCE($1, acuity),
+                triage_notes = COALESCE($2, triage_notes),
+                status = $3,
+                updated_at = now()
+            WHERE facility_id = $4
+              AND id = $5
+              AND status IN ($6, $7)
+            RETURNING id,
+                      visit_id,
+                      patient_id,
+                      acuity,
+                      status,
+                      triage_notes,
+                      created_at
+        )
+        SELECT updated.id,
+               updated.visit_id,
+               updated.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               updated.acuity,
+               updated.status,
+               updated.triage_notes,
+               updated.created_at
+        FROM updated
+        JOIN patients ON patients.id = updated.patient_id
+        WHERE patients.facility_id = $4
+        "#,
+    )
+    .bind(acuity)
+    .bind(assessment.notes)
+    .bind(codec::encode(TriageStatus::Completed)?)
+    .bind(facility_id)
+    .bind(triage_id)
+    .bind(codec::encode(TriageStatus::Waiting)?)
+    .bind(codec::encode(TriageStatus::Completed)?)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(triage_from_row).transpose()
+}
+
 pub async fn assign_triage(
     pool: &PgPool,
     facility_id: Uuid,
@@ -741,6 +798,7 @@ pub async fn assign_triage(
                       patient_id,
                       acuity,
                       status,
+                      triage_notes,
                       created_at
         )
         SELECT updated.id,
@@ -750,6 +808,7 @@ pub async fn assign_triage(
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.acuity,
                updated.status,
+               updated.triage_notes,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
@@ -786,6 +845,7 @@ pub async fn cancel_triage(
                       patient_id,
                       acuity,
                       status,
+                      triage_notes,
                       created_at
         )
         SELECT updated.id,
@@ -795,6 +855,7 @@ pub async fn cancel_triage(
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                updated.acuity,
                updated.status,
+               updated.triage_notes,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
@@ -845,6 +906,7 @@ pub async fn get_triage(
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                triage_queue.acuity,
                triage_queue.status,
+               triage_queue.triage_notes,
                triage_queue.created_at
         FROM triage_queue
         JOIN patients ON patients.id = triage_queue.patient_id
@@ -1259,6 +1321,7 @@ fn triage_from_row(row: TriageRow) -> anyhow::Result<TriageListItem> {
         patient_display_name: row.patient_display_name,
         acuity: codec::decode(&row.acuity)?,
         status: codec::decode(&row.status)?,
+        triage_notes: row.triage_notes,
         created_at: row.created_at,
     })
 }

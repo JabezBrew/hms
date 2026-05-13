@@ -112,7 +112,7 @@ function adaptV2TriageEntry(entry) {
     status: adaptV2TriageStatus(entry.status),
     v2_status: entry.status,
     chief_complaint: '',
-    triage_notes: '',
+    triage_notes: entry.triage_notes || '',
     created_at: entry.created_at,
   };
 }
@@ -407,10 +407,24 @@ export const triageApi = {
    * @param {Object} data - { priority: string, notes: string }
    */
   triage: async (id, data) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose triage assessment updates yet.');
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postTriageAssessment(
+          { id },
+          {
+            acuity: data?.acuity || data?.priority || null,
+            notes: data?.notes || data?.triage_notes || null,
+          },
+        );
+        return adaptV2TriageEntry(response?.data);
+      }
+      return apiClient.post(`/encounters/triage/${id}/triage/`, data);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to save triage assessment'));
+      }
+      throw error;
     }
-    return apiClient.post(`/encounters/triage/${id}/triage/`, data);
   },
 
   /**

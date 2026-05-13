@@ -59,7 +59,8 @@ use hms_domain::billing::{
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::care::{
     AppointmentListItem, CareTeamAssignment, CareTeamRole, ClinicListItem, EncounterListItem,
-    EncounterStatus, EncounterType, TriageAcuity, TriageListItem, VisitListItem, VisitStatus,
+    EncounterStatus, EncounterType, TriageAcuity, TriageAssessmentRequest, TriageListItem,
+    VisitListItem, VisitStatus,
 };
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteListItem,
@@ -2656,6 +2657,15 @@ impl AppState {
             },
         )
         .await
+    }
+
+    pub async fn assess_triage(
+        &self,
+        triage_id: Uuid,
+        assessment: TriageAssessmentRequest,
+    ) -> Result<Option<TriageListItem>> {
+        hms_db::care::assess_triage(&self.inner.pool, self.facility_id(), triage_id, assessment)
+            .await
     }
 
     pub async fn assign_triage(

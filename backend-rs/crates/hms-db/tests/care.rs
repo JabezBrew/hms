@@ -4,7 +4,8 @@ use hms_db::care::{
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{
-    AppointmentStatus, EncounterStatus, EncounterType, TriageAcuity, TriageStatus, VisitStatus,
+    AppointmentStatus, EncounterStatus, EncounterType, TriageAcuity, TriageAssessmentRequest,
+    TriageStatus, VisitStatus,
 };
 use hms_domain::deployment::DeploymentProfile;
 
@@ -297,6 +298,15 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
     .execute(&pool)
     .await
     .expect("overflow clinic is created");
+    let assessment_clinic_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO clinics (id, facility_id, code, name) VALUES ($1, $2, 'assessment', 'Assessment Clinic')",
+    )
+    .bind(assessment_clinic_id)
+    .bind(facility_id)
+    .execute(&pool)
+    .await
+    .expect("assessment clinic is created");
 
     let general_visit = hms_db::care::check_in_visit(
         &pool,
@@ -341,6 +351,63 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
             .expect("cross-facility triage cancel query succeeds")
             .is_none()
     );
+
+    let assessed_visit = hms_db::care::check_in_visit(
+        &pool,
+        NewVisit {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id: patient_ids[1],
+            appointment_id: None,
+            clinic_id: Some(assessment_clinic_id),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("assessed visit is checked in");
+    let assessed_triage = hms_db::care::create_triage(
+        &pool,
+        NewTriage {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            visit_id: assessed_visit.id,
+            patient_id: assessed_visit.patient_id,
+            acuity: TriageAcuity::Routine,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("assessed triage item is created");
+    let assessed = hms_db::care::assess_triage(
+        &pool,
+        facility_id,
+        assessed_triage.id,
+        TriageAssessmentRequest {
+            acuity: Some(TriageAcuity::Emergency),
+            notes: Some("Chest pain and diaphoresis.".to_owned()),
+        },
+    )
+    .await
+    .expect("triage assessment query succeeds")
+    .expect("triage item exists");
+    assert_eq!(assessed.status, TriageStatus::Completed);
+    assert_eq!(assessed.acuity, TriageAcuity::Emergency);
+    assert_eq!(
+        assessed.triage_notes.as_deref(),
+        Some("Chest pain and diaphoresis.")
+    );
+    assert!(hms_db::care::assess_triage(
+        &pool,
+        uuid::Uuid::new_v4(),
+        assessed_triage.id,
+        TriageAssessmentRequest {
+            acuity: Some(TriageAcuity::Urgent),
+            notes: Some("Cross facility".to_owned()),
+        },
+    )
+    .await
+    .expect("cross-facility triage assessment query succeeds")
+    .is_none());
 
     let overflow_visit = hms_db::care::check_in_visit(
         &pool,

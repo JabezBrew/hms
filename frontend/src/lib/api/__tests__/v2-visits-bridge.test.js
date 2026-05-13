@@ -362,6 +362,53 @@ describe('Rust V2 visits and triage bridge', () => {
     });
   });
 
+  it('saves triage assessment through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'triage-1',
+            visit_id: 'visit-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            patient_display_name: 'Ama Mensah',
+            acuity: 'emergency',
+            status: 'completed',
+            triage_notes: 'Chest pain and diaphoresis.',
+            created_at: '2026-05-12T08:30:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const assessed = await triageApi.triage('triage-1', {
+      priority: 'emergency',
+      notes: 'Chest pain and diaphoresis.',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/triage/triage-1/assessment',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          acuity: 'emergency',
+          notes: 'Chest pain and diaphoresis.',
+        }),
+      }),
+    );
+    expect(assessed).toMatchObject({
+      id: 'triage-1',
+      priority: 'emergency',
+      status: 'triaged',
+      triage_notes: 'Chest pain and diaphoresis.',
+    });
+  });
+
   it('cancels triage entries through Rust /api/v2 instead of the legacy endpoint', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

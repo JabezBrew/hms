@@ -27,7 +27,7 @@ pub enum VisitStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TriageAcuity {
     Routine,
@@ -150,6 +150,7 @@ pub struct TriageListItem {
     pub patient_display_name: String,
     pub acuity: TriageAcuity,
     pub status: TriageStatus,
+    pub triage_notes: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -162,6 +163,12 @@ pub struct CreateTriageRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AssignTriageRequest {
     pub assigned_to_user_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct TriageAssessmentRequest {
+    pub acuity: Option<TriageAcuity>,
+    pub notes: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

@@ -8390,6 +8390,12 @@
                 "status": {
                   "$ref": "#/components/schemas/TriageStatus"
                 },
+                "triage_notes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "visit_id": {
                   "format": "uuid",
                   "type": "string"
@@ -13027,6 +13033,12 @@
               "status": {
                 "$ref": "#/components/schemas/TriageStatus"
               },
+              "triage_notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "visit_id": {
                 "format": "uuid",
                 "type": "string"
@@ -15356,6 +15368,27 @@
         ],
         "type": "string"
       },
+      "TriageAssessmentRequest": {
+        "properties": {
+          "acuity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TriageAcuity"
+              }
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "TriageListItem": {
         "properties": {
           "acuity": {
@@ -15381,6 +15414,12 @@
           },
           "status": {
             "$ref": "#/components/schemas/TriageStatus"
+          },
+          "triage_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "visit_id": {
             "format": "uuid",
@@ -31270,6 +31309,93 @@
               }
             },
             "description": "Triage item detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Triage item not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
+    "/api/v2/triage/{id}/assessment": {
+      "post": {
+        "operationId": "postTriageAssessment",
+        "parameters": [
+          {
+            "description": "Triage id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageAssessmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_TriageListItem"
+                }
+              }
+            },
+            "description": "Triage assessment saved"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid triage assessment"
           },
           "401": {
             "content": {

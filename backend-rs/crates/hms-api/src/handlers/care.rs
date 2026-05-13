@@ -8,8 +8,8 @@ use hms_domain::care::{
     AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
     CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateEncounterRequest,
     CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery, EncounterStatus,
-    TriageListItem, TriageStatus, UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem,
-    VisitListQuery, VisitStatus,
+    TriageAssessmentRequest, TriageListItem, TriageStatus, UpdateAppointmentRequest,
+    UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -22,6 +22,7 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
+const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
 
 #[utoipa::path(
     get,
@@ -634,6 +635,63 @@ pub async fn get_triage(
         .map_err(|_| ApiError::conflict("triage_load_failed", "Triage item could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
     let _patient = load_patient_for_access(&state, &user, triage.patient_id).await?;
+
+    Ok(Json(object(triage)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/triage/{id}/assessment",
+    operation_id = "postTriageAssessment",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Triage id")),
+    request_body = TriageAssessmentRequest,
+    responses(
+        (status = 200, description = "Triage assessment saved", body = ObjectResponse<TriageListItem>),
+        (status = 400, description = "Invalid triage assessment", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Triage item not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn assess_triage(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<TriageAssessmentRequest>,
+) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::NursingTaskManage,
+    )?;
+    let existing = state
+        .get_triage(id)
+        .await
+        .map_err(|_| ApiError::conflict("triage_load_failed", "Triage item could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
+    if let Some(notes) = payload.notes.take() {
+        let notes = notes.trim().to_owned();
+        if notes.len() > MAX_TRIAGE_NOTES_LEN {
+            return Err(ApiError::bad_request(
+                "invalid_triage_notes",
+                "Triage notes are too long.",
+            ));
+        }
+        payload.notes = if notes.is_empty() { None } else { Some(notes) };
+    }
+    let triage = state
+        .assess_triage(id, payload)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "triage_assessment_failed",
+                "Triage assessment could not be saved.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
 
     Ok(Json(object(triage)))
 }
