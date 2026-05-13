@@ -52,10 +52,14 @@ describe('Rust V2 appointments bridge', () => {
       ),
     );
 
-    const response = await appointmentsApi.getAppointments({ page: 1, limit: 10 });
+    const response = await appointmentsApi.getAppointments({
+      page: 1,
+      limit: 10,
+      date: '2026-05-12',
+    });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/appointments?limit=10',
+      'http://localhost:8080/api/v2/appointments?limit=10&date=2026-05-12',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

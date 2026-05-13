@@ -207,6 +207,10 @@ function getV2AppointmentListQuery(params = {}) {
   const query = {
     limit: normalizeV2Limit(params),
   };
+  const date = params.date || params.start_date;
+  if (date) {
+    query.date = String(date).slice(0, 10);
+  }
   const cursor = getCursorForParams(params);
   if (cursor) {
     query.cursor = cursor;
