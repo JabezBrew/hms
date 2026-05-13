@@ -11,6 +11,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Alert, AlertDescription } from '../ui/alert'
 import { notifications } from '../../lib/notifications'
+import { passwordMeetsPolicy, passwordPolicyErrorMessage } from '../../lib/password-policy'
 
 export function ResetPasswordConfirmForm() {
   const [searchParams] = useSearchParams()
@@ -62,8 +63,8 @@ export function ResetPasswordConfirmForm() {
       return
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    if (!passwordMeetsPolicy(password)) {
+      setError(passwordPolicyErrorMessage())
       return
     }
 
