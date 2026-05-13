@@ -9,8 +9,9 @@ use hms_db::laboratory::{
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
-    CancelLabOrderRequest, CreateLabOrderRequest, CreateLabResultRequest, CreateSpecimenRequest,
-    LabOrderListItem, LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery,
+    BulkVerifyLabResultsRequest, BulkVerifyLabResultsResponse, CancelLabOrderRequest,
+    CreateLabOrderRequest, CreateLabResultRequest, CreateSpecimenRequest, LabOrderListItem,
+    LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery,
     LaboratoryOrderListQuery, LaboratoryResultListQuery, SpecimenListItem,
 };
 use hms_domain::patients::PatientRecord;
@@ -25,6 +26,7 @@ use crate::state::AppState;
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_SHORT_TEXT_LEN: usize = 120;
+const MAX_BULK_VERIFY_RESULTS: usize = 50;
 
 #[utoipa::path(
     get,
@@ -742,6 +744,71 @@ pub async fn verify_result(
     Ok(Json(object(result)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/results/bulk-verify",
+    operation_id = "postLaboratoryResultBulkVerify",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    request_body = BulkVerifyLabResultsRequest,
+    responses(
+        (status = 200, description = "Laboratory results verified", body = ObjectResponse<BulkVerifyLabResultsResponse>),
+        (status = 400, description = "Invalid verification request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Order or result not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn bulk_verify_results(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<BulkVerifyLabResultsRequest>,
+) -> Result<Json<ObjectResponse<BulkVerifyLabResultsResponse>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryResultVerify,
+    )?;
+    let result_ids = unique_result_ids(payload.result_ids)?;
+    if payload.order_id.is_none() && result_ids.is_empty() {
+        return Err(validation_error(
+            "results",
+            "Provide an order id or at least one result id.",
+        ));
+    }
+    if payload.order_id.is_some() && !result_ids.is_empty() {
+        return Err(validation_error(
+            "results",
+            "Provide either an order id or result ids, not both.",
+        ));
+    }
+    let _verification_notes =
+        normalize_optional_text(payload.verification_notes, "verification_notes")?;
+
+    if let Some(order_id) = payload.order_id {
+        let _order = load_order_for_access(&state, &user, order_id).await?;
+    } else {
+        for result_id in &result_ids {
+            let _result = load_result_for_access(&state, &user, *result_id).await?;
+        }
+    }
+
+    let verified_count = state
+        .bulk_verify_lab_results(payload.order_id, result_ids, user.id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_results_bulk_verify_failed",
+                "Lab results could not be verified.",
+            )
+        })?;
+
+    Ok(Json(object(BulkVerifyLabResultsResponse {
+        verified_count,
+        message: format!("{verified_count} lab results verified"),
+    })))
+}
+
 async fn load_order_for_access(
     state: &AppState,
     user: &AuthUser,
@@ -957,6 +1024,18 @@ fn normalize_optional_text(
         return Err(validation_error(field, "This field is too long."));
     }
     Ok(Some(value.to_owned()))
+}
+
+fn unique_result_ids(mut result_ids: Vec<Uuid>) -> Result<Vec<Uuid>, ApiError> {
+    result_ids.sort_unstable();
+    result_ids.dedup();
+    if result_ids.len() > MAX_BULK_VERIFY_RESULTS {
+        return Err(validation_error(
+            "result_ids",
+            "Too many result ids were provided.",
+        ));
+    }
+    Ok(result_ids)
 }
 
 fn validation_error(field: &'static str, message: &'static str) -> ApiError {

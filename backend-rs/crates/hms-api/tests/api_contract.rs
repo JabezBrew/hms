@@ -1957,6 +1957,28 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .iter()
         .all(|result| result["verified_at"].is_null()));
 
+    let bulk_verify = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/results/bulk-verify")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "order_id": order_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("bulk result verification succeeds");
+    assert_eq!(bulk_verify.status(), StatusCode::OK);
+    let bulk_verify_body = json_body(bulk_verify).await;
+    assert_eq!(bulk_verify_body["data"]["verified_count"], 1);
+
     let verify = app
         .clone()
         .oneshot(
@@ -2086,6 +2108,26 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .await
         .expect("laboratory specimen action denial succeeds");
     assert_eq!(denied_specimen_action.status(), StatusCode::FORBIDDEN);
+
+    let denied_bulk_verify = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/results/bulk-verify")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "order_id": order_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("laboratory bulk verification denial succeeds");
+    assert_eq!(denied_bulk_verify.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

@@ -451,6 +451,13 @@ describe('Rust V2 laboratory bridge', () => {
           collected_at: '2026-05-12T08:20:00Z',
         },
         meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          verified_count: 2,
+          message: '2 lab results verified',
+        },
+        meta: {},
       }));
 
     await expect(laboratoryApi.createLabOrder({
@@ -493,6 +500,10 @@ describe('Rust V2 laboratory bridge', () => {
     await expect(laboratoryApi.receiveLabSpecimen('specimen-2')).resolves.toMatchObject({
       id: 'specimen-2',
       status: 'received',
+    });
+    await expect(laboratoryApi.bulkVerifyResults({ order_id: 'order-1' })).resolves.toMatchObject({
+      verified_count: 2,
+      message: '2 lab results verified',
     });
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
@@ -560,6 +571,15 @@ describe('Rust V2 laboratory bridge', () => {
         'http://localhost:8080/api/v2/laboratory/specimens/specimen-2/receive',
         'POST',
         undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/laboratory/results/bulk-verify',
+        'POST',
+        JSON.stringify({
+          order_id: 'order-1',
+          result_ids: [],
+          verification_notes: null,
+        }),
       ],
     ]);
   });

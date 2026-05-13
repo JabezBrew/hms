@@ -120,6 +120,20 @@ pub struct CreateLabResultRequest {
     pub unit: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BulkVerifyLabResultsRequest {
+    pub order_id: Option<Uuid>,
+    #[serde(default)]
+    pub result_ids: Vec<Uuid>,
+    pub verification_notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BulkVerifyLabResultsResponse {
+    pub verified_count: i64,
+    pub message: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
 pub struct LaboratoryListQuery {
     pub cursor: Option<String>,

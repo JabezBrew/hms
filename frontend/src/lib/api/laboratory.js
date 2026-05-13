@@ -938,7 +938,12 @@ export const laboratoryApi = {
   bulkVerifyResults: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory bulk result contract');
+        const response = await v2Api.postLaboratoryResultBulkVerify({
+          order_id: pickEntityId(data?.order_id ?? data?.order) || null,
+          result_ids: pickEntityIds(data?.result_ids ?? data?.results),
+          verification_notes: data?.verification_notes || null,
+        });
+        return response?.data || {};
       }
 
       return await apiClient.post('/laboratory/results/bulk-verify/', data);

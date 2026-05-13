@@ -1608,6 +1608,22 @@ impl AppState {
         .await
     }
 
+    pub async fn bulk_verify_lab_results(
+        &self,
+        order_id: Option<Uuid>,
+        result_ids: Vec<Uuid>,
+        actor_user_id: Uuid,
+    ) -> Result<i64> {
+        hms_db::laboratory::verify_results(
+            &self.inner.pool,
+            self.facility_id(),
+            order_id,
+            &result_ids,
+            actor_user_id,
+        )
+        .await
+    }
+
     pub async fn list_inventory_categories(&self) -> Result<Vec<InventoryCategoryListItem>> {
         hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
     }

@@ -749,6 +749,83 @@ pub async fn verify_result(
     fetch_result_by_id(pool, facility_id, result_id).await
 }
 
+pub async fn verify_results(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Option<Uuid>,
+    result_ids: &[Uuid],
+    actor_user_id: Uuid,
+) -> anyhow::Result<i64> {
+    if order_id.is_none() && result_ids.is_empty() {
+        anyhow::bail!("bulk verification requires an order id or result ids");
+    }
+
+    let mut transaction = pool.begin().await?;
+    let order_ids = if let Some(order_id) = order_id {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            UPDATE lab_results
+            SET status = $1,
+                verified_by_user_id = $2,
+                verified_at = COALESCE(verified_at, now()),
+                updated_at = now()
+            WHERE facility_id = $3
+              AND order_id = $4
+              AND verified_at IS NULL
+            RETURNING order_id
+            "#,
+        )
+        .bind(codec::encode(LabResultStatus::Verified)?)
+        .bind(actor_user_id)
+        .bind(facility_id)
+        .bind(order_id)
+        .fetch_all(&mut *transaction)
+        .await?
+    } else {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            UPDATE lab_results
+            SET status = $1,
+                verified_by_user_id = $2,
+                verified_at = COALESCE(verified_at, now()),
+                updated_at = now()
+            WHERE facility_id = $3
+              AND id = ANY($4)
+              AND verified_at IS NULL
+            RETURNING order_id
+            "#,
+        )
+        .bind(codec::encode(LabResultStatus::Verified)?)
+        .bind(actor_user_id)
+        .bind(facility_id)
+        .bind(result_ids)
+        .fetch_all(&mut *transaction)
+        .await?
+    };
+
+    let mut distinct_order_ids = order_ids.clone();
+    distinct_order_ids.sort_unstable();
+    distinct_order_ids.dedup();
+    if !distinct_order_ids.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE lab_orders
+            SET status = $1,
+                updated_at = now()
+            WHERE facility_id = $2 AND id = ANY($3)
+            "#,
+        )
+        .bind(codec::encode(LabOrderStatus::Verified)?)
+        .bind(facility_id)
+        .bind(&distinct_order_ids)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    transaction.commit().await?;
+    Ok(order_ids.len() as i64)
+}
+
 async fn resolve_order_test_ids(pool: &PgPool, order: &NewLabOrder) -> anyhow::Result<Vec<Uuid>> {
     let mut ids = Vec::new();
     if !order.test_ids.is_empty() {

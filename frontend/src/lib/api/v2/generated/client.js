@@ -1658,6 +1658,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postLaboratoryResultBulkVerify": {
+    "operationId": "postLaboratoryResultBulkVerify",
+    "method": "POST",
+    "path": "/api/v2/laboratory/results/bulk-verify",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postLaboratoryResults": {
     "operationId": "postLaboratoryResults",
     "method": "POST",
@@ -2305,6 +2313,7 @@ export function createGeneratedClient(request) {
     postLaboratoryOrders: createOperation(request, operations.postLaboratoryOrders),
     postLaboratoryOrderStartProcessing: createOperation(request, operations.postLaboratoryOrderStartProcessing),
     postLaboratoryOrderSubmit: createOperation(request, operations.postLaboratoryOrderSubmit),
+    postLaboratoryResultBulkVerify: createOperation(request, operations.postLaboratoryResultBulkVerify),
     postLaboratoryResults: createOperation(request, operations.postLaboratoryResults),
     postLaboratoryResultVerify: createOperation(request, operations.postLaboratoryResultVerify),
     postLaboratorySpecimenReceive: createOperation(request, operations.postLaboratorySpecimenReceive),
