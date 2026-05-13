@@ -1470,6 +1470,26 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(problem.status(), StatusCode::OK);
     let problem_body = json_body(problem).await;
     assert_eq!(problem_body["data"]["status"], "active");
+    let problem_id = problem_body["data"]["id"]
+        .as_str()
+        .expect("problem id exists");
+
+    let problem_status = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/clinical/problems/{problem_id}/status"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "status": "resolved" }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("problem status update succeeds");
+    assert_eq!(problem_status.status(), StatusCode::OK);
+    let problem_status_body = json_body(problem_status).await;
+    assert_eq!(problem_status_body["data"]["status"], "resolved");
 
     let allergy = app
         .clone()
@@ -1631,6 +1651,21 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .await
         .expect("chronicle summary denial succeeds");
     assert_eq!(denied_summary.status(), StatusCode::FORBIDDEN);
+
+    let denied_problem_status = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/clinical/problems/{problem_id}/status"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "status": "active" }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinical problem status denial succeeds");
+    assert_eq!(denied_problem_status.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

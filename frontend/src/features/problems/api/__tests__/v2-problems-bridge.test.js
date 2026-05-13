@@ -116,6 +116,51 @@ describe('Rust V2 problems bridge', () => {
     );
   });
 
+  it('changes patient problem status through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'problem-1',
+            patient_id: 'patient-1',
+            label: 'Hypertension',
+            status: 'resolved',
+            onset_date: '2026-05-01',
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await problemsApi.changeStatus('problem-1', {
+      status: 'resolved',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/problems/problem-1/status',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          status: 'resolved',
+        }),
+      }),
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: 'problem-1',
+        patient: 'patient-1',
+        clinical_status: 'resolved',
+        status: 'resolved',
+      }),
+    );
+  });
+
   it('does not call legacy problem catalog or link endpoints in Rust mode', async () => {
     await expect(problemsApi.searchCodes('hyp')).resolves.toEqual([]);
     await expect(problemsApi.listLinks({ patient: 'patient-1' })).resolves.toEqual([]);

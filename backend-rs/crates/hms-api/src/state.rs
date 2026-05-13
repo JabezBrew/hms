@@ -64,7 +64,7 @@ use hms_domain::care::{
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteListItem,
     ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem,
-    ProblemListItem,
+    ProblemListItem, ProblemStatus,
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
@@ -1342,6 +1342,24 @@ impl AppState {
                 onset_date,
                 actor_user_id,
             },
+        )
+        .await
+    }
+
+    pub async fn get_problem(&self, problem_id: Uuid) -> Result<Option<ProblemListItem>> {
+        hms_db::clinical::get_problem(&self.inner.pool, self.facility_id(), problem_id).await
+    }
+
+    pub async fn update_problem_status(
+        &self,
+        problem_id: Uuid,
+        status: ProblemStatus,
+    ) -> Result<Option<ProblemListItem>> {
+        hms_db::clinical::update_problem_status(
+            &self.inner.pool,
+            self.facility_id(),
+            problem_id,
+            status,
         )
         .await
     }

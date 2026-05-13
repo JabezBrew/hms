@@ -376,6 +376,51 @@ pub async fn create_problem(pool: &PgPool, problem: NewProblem) -> anyhow::Resul
     problem_from_row(row)
 }
 
+pub async fn get_problem(
+    pool: &PgPool,
+    facility_id: Uuid,
+    problem_id: Uuid,
+) -> anyhow::Result<Option<ProblemListItem>> {
+    let row = sqlx::query_as::<_, ProblemRow>(
+        r#"
+        SELECT id, patient_id, label, status, onset_date, created_at
+        FROM patient_problems
+        WHERE facility_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(problem_id)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(problem_from_row).transpose()
+}
+
+pub async fn update_problem_status(
+    pool: &PgPool,
+    facility_id: Uuid,
+    problem_id: Uuid,
+    status: ProblemStatus,
+) -> anyhow::Result<Option<ProblemListItem>> {
+    let row = sqlx::query_as::<_, ProblemRow>(
+        r#"
+        UPDATE patient_problems
+        SET status = $1
+        WHERE facility_id = $2
+          AND id = $3
+        RETURNING id, patient_id, label, status, onset_date, created_at
+        "#,
+    )
+    .bind(codec::encode(status)?)
+    .bind(facility_id)
+    .bind(problem_id)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(problem_from_row).transpose()
+}
+
 pub async fn list_allergies(
     pool: &PgPool,
     facility_id: Uuid,

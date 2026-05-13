@@ -1,4 +1,4 @@
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 use crate::handlers::clinical;
@@ -21,6 +21,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/patients/:patient_id/clinical/problems",
             get(clinical::list_problems).post(clinical::create_problem),
+        )
+        .route(
+            "/api/v2/clinical/problems/:id/status",
+            post(clinical::change_problem_status),
         )
         .route(
             "/api/v2/patients/:patient_id/clinical/allergies",

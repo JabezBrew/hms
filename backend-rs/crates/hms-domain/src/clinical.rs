@@ -13,7 +13,7 @@ pub enum ClinicalNoteStatus {
     Amended,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemStatus {
     Active,
@@ -109,6 +109,11 @@ pub struct ProblemListItem {
 pub struct CreateProblemRequest {
     pub label: String,
     pub onset_date: Option<NaiveDate>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ChangeProblemStatusRequest {
+    pub status: ProblemStatus,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

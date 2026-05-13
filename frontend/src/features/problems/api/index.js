@@ -135,12 +135,20 @@ export const problemsApi = {
   },
 
   changeStatus: async (id, payload) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose problem status changes yet.');
-    }
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postClinicalProblemStatus(
+          { id },
+          { status: payload?.status || payload?.clinical_status },
+        );
+        return adaptV2Problem(response?.data);
+      }
       return await apiClient.post(`/problems/${id}/change-status/`, payload);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to change status'));
+      }
       throw new Error(handleApiError(error, 'Failed to change status'));
     }
   },

@@ -6,10 +6,10 @@ use hms_db::clinical::ClinicalCursor;
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
-    AllergyListItem, ChartEntryListItem, ClinicalNoteListItem, ClinicalNoteTemplate,
-    ClinicalNoteVersion, CreateAllergyRequest, CreateChartEntryRequest, CreateClinicalNoteRequest,
-    CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
-    PrescriptionListItem, ProblemListItem,
+    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteListItem,
+    ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest, CreateChartEntryRequest,
+    CreateClinicalNoteRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
+    CreateProblemRequest, PrescriptionListItem, ProblemListItem,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -296,6 +296,49 @@ pub async fn create_problem(
         .create_problem(patient_id, label, payload.onset_date, user.id)
         .await
         .map_err(|_| ApiError::conflict("problem_create_failed", "Problem could not be saved."))?;
+
+    Ok(Json(object(problem)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/clinical/problems/{id}/status",
+    operation_id = "postClinicalProblemStatus",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Problem id")),
+    request_body = ChangeProblemStatusRequest,
+    responses(
+        (status = 200, description = "Problem status updated", body = ObjectResponse<ProblemListItem>),
+        (status = 400, description = "Invalid problem status", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Problem not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn change_problem_status(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ChangeProblemStatusRequest>,
+) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    let existing = state
+        .get_problem(id)
+        .await
+        .map_err(|_| ApiError::conflict("problem_load_failed", "Problem could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
+    let problem = state
+        .update_problem_status(id, payload.status)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "problem_status_update_failed",
+                "Problem status could not be updated.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
 
     Ok(Json(object(problem)))
 }

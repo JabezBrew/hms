@@ -1587,6 +1587,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postClinicalProblemStatus": {
+    "operationId": "postClinicalProblemStatus",
+    "method": "POST",
+    "path": "/api/v2/clinical/problems/{id}/status",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postClinicWaitlist": {
     "operationId": "postClinicWaitlist",
     "method": "POST",
@@ -2510,6 +2520,7 @@ export function createGeneratedClient(request) {
     postCashSessionClose: createOperation(request, operations.postCashSessionClose),
     postCashSessions: createOperation(request, operations.postCashSessions),
     postClinicalNoteVersions: createOperation(request, operations.postClinicalNoteVersions),
+    postClinicalProblemStatus: createOperation(request, operations.postClinicalProblemStatus),
     postClinicWaitlist: createOperation(request, operations.postClinicWaitlist),
     postClinicWaitlistOfferNext: createOperation(request, operations.postClinicWaitlistOfferNext),
     postConsentRevoke: createOperation(request, operations.postConsentRevoke),
