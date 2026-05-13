@@ -55,7 +55,8 @@ describe('Rust V2 auth bridge', () => {
       ),
     );
 
-    const response = await authApi.login('owner@hms.local', 'secret-password', 'HMS');
+    const signal = new AbortController().signal;
+    const response = await authApi.login('owner@hms.local', 'secret-password', 'HMS', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/auth/login',
@@ -67,6 +68,7 @@ describe('Rust V2 auth bridge', () => {
           password: 'secret-password',
           facility_code: 'HMS',
         }),
+        signal,
       }),
     );
     expect(response).toMatchObject({
@@ -159,11 +161,12 @@ describe('Rust V2 auth bridge', () => {
       ),
     );
 
-    const profile = await authApi.getProfile();
+    const signal = new AbortController().signal;
+    const profile = await authApi.getProfile({ signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/auth/me',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+      expect.objectContaining({ method: 'GET', credentials: 'include', signal }),
     );
     expect(profile).toMatchObject({
       id: 'user-1',
@@ -201,10 +204,11 @@ describe('Rust V2 auth bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const profile = await authApi.updateProfile({
       first_name: 'Updated',
       last_name: 'Owner',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/auth/me',
@@ -214,6 +218,7 @@ describe('Rust V2 auth bridge', () => {
         body: JSON.stringify({
           display_name: 'Updated Owner',
         }),
+        signal,
       }),
     );
     expect(profile).toMatchObject({
@@ -239,12 +244,13 @@ describe('Rust V2 auth bridge', () => {
         }),
       );
 
-    await expect(authApi.requestPasswordReset('owner@hms.local')).resolves.toMatchObject({
+    const signal = new AbortController().signal;
+    await expect(authApi.requestPasswordReset('owner@hms.local', { signal })).resolves.toMatchObject({
       accepted: true,
     });
-    await expect(authApi.resetPassword('reset-token', 'NewPassword123!', 'NewPassword123!')).resolves.toMatchObject({
-      completed: true,
-    });
+    await expect(
+      authApi.resetPassword('reset-token', 'NewPassword123!', 'NewPassword123!', { signal }),
+    ).resolves.toMatchObject({ completed: true });
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
@@ -255,6 +261,7 @@ describe('Rust V2 auth bridge', () => {
           email: 'owner@hms.local',
           facility_code: 'HMS',
         }),
+        signal,
       }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
@@ -266,6 +273,7 @@ describe('Rust V2 auth bridge', () => {
           token: 'reset-token',
           new_password: 'NewPassword123!',
         }),
+        signal,
       }),
     );
   });
@@ -278,11 +286,12 @@ describe('Rust V2 auth bridge', () => {
       }),
     );
 
+    const signal = new AbortController().signal;
     await expect(
       authApi.changePassword({
         oldPassword: 'ChangeMe123!',
         newPassword: 'Replacement123!',
-      }),
+      }, { signal }),
     ).resolves.toEqual({ changed: true });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -294,6 +303,7 @@ describe('Rust V2 auth bridge', () => {
           current_password: 'ChangeMe123!',
           new_password: 'Replacement123!',
         }),
+        signal,
       }),
     );
   });
@@ -336,7 +346,8 @@ describe('Rust V2 auth bridge', () => {
         }),
       );
 
-    await expect(authApi.listSessions()).resolves.toEqual({
+    const signal = new AbortController().signal;
+    await expect(authApi.listSessions({ signal })).resolves.toEqual({
       results: [
         expect.objectContaining({
           id: 'session-current',
@@ -344,18 +355,18 @@ describe('Rust V2 auth bridge', () => {
         }),
       ],
     });
-    await expect(authApi.revokeSession('session-other')).resolves.toEqual({ revoked: true });
-    await expect(authApi.revokeAllSessions(true)).resolves.toEqual({ revoked_count: 2 });
+    await expect(authApi.revokeSession('session-other', { signal })).resolves.toEqual({ revoked: true });
+    await expect(authApi.revokeAllSessions(true, { signal })).resolves.toEqual({ revoked_count: 2 });
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
       'http://localhost:8080/api/v2/auth/sessions',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
       'http://localhost:8080/api/v2/auth/sessions/session-other/revoke',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
@@ -363,8 +374,20 @@ describe('Rust V2 auth bridge', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ exclude_current: true }),
+        signal,
       }),
     );
+  });
+
+  it('preserves AbortError from Rust V2 auth calls', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError);
+
+    await expect(
+      authApi.login('owner@hms.local', 'secret-password', 'HMS', {
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(abortError);
   });
 
   it('allows reset-token submission when Rust V2 has no token pre-validation endpoint', async () => {

@@ -115,6 +115,12 @@ function unsupportedInRustV2(message) {
   return Promise.reject(new Error(message));
 }
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
 /**
  * Authentication API service
  */
@@ -125,25 +131,33 @@ export const authApi = {
    * @param {string} password - User password
    * @returns {Promise<Object>} User data with token
    */
-  login: async (email, password, facilityCode) => {
+  login: async (email, password, facilityCode, options = {}) => {
+    const loginOptions = typeof facilityCode === 'object' && facilityCode !== null
+      ? facilityCode
+      : options;
+    const requestedFacilityCode = typeof facilityCode === 'string' ? facilityCode : undefined;
+
     try {
       if (isRustV2ApiMode()) {
-        const v2FacilityCode = facilityCode || getDefaultFacilityCode();
-        const response = await v2Api.postAuthLogin({
-          email,
-          password,
-          facility_code: v2FacilityCode,
-        });
+        const v2FacilityCode = requestedFacilityCode || getDefaultFacilityCode();
+        const response = await v2Api.postAuthLogin(
+          {
+            email,
+            password,
+            facility_code: v2FacilityCode,
+          },
+          { signal: loginOptions.signal },
+        );
         return adaptV2AuthTokenResponse(response);
       }
 
       const payload = { email, password };
-      if (facilityCode) {
-        payload.facility_code = facilityCode;
+      if (requestedFacilityCode) {
+        payload.facility_code = requestedFacilityCode;
       }
       const headers = {};
-      if (facilityCode) {
-        headers['X-Facility-Code'] = facilityCode;
+      if (requestedFacilityCode) {
+        headers['X-Facility-Code'] = requestedFacilityCode;
       }
       const deviceLabel = getClientDeviceLabel();
       if (deviceLabel) {
@@ -151,6 +165,7 @@ export const authApi = {
       }
       return await apiClient.post('/auth/login/', payload, { headers });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Login failed'));
       }
@@ -163,17 +178,21 @@ export const authApi = {
    * @param {string} email - User email
    * @returns {Promise<Object>} Success message
    */
-  requestPasswordReset: async (email) => {
+  requestPasswordReset: async (email, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthPasswordResetRequest({
-          email,
-          facility_code: getDefaultFacilityCode(),
-        });
+        const response = await v2Api.postAuthPasswordResetRequest(
+          {
+            email,
+            facility_code: getDefaultFacilityCode(),
+          },
+          { signal: options.signal },
+        );
         return response?.data || response;
       }
       return await apiClient.post('/auth/password-reset/', { email });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Password reset request failed'));
       }
@@ -210,16 +229,19 @@ export const authApi = {
    * @param {string} passwordConfirm - Password confirmation
    * @returns {Promise<Object>} Success message
    */
-  resetPassword: async (token, password, passwordConfirm) => {
+  resetPassword: async (token, password, passwordConfirm, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         if (password !== passwordConfirm) {
           throw new Error('Passwords do not match');
         }
-        const response = await v2Api.postAuthPasswordResetComplete({
-          token,
-          new_password: password,
-        });
+        const response = await v2Api.postAuthPasswordResetComplete(
+          {
+            token,
+            new_password: password,
+          },
+          { signal: options.signal },
+        );
         return response?.data || response;
       }
       return await apiClient.post('/auth/password-reset/confirm/', {
@@ -228,6 +250,7 @@ export const authApi = {
         password_confirm: passwordConfirm
       });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Password reset failed'));
       }
@@ -239,14 +262,15 @@ export const authApi = {
    * Get current user profile
    * @returns {Promise<Object>} User profile data
    */
-  getProfile: async () => {
+  getProfile: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAuthMe();
+        const response = await v2Api.getAuthMe({ signal: options.signal });
         return adaptV2AuthUser(response?.data);
       }
       return await apiClient.get('/auth/profile/');
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to get user profile'));
       }
@@ -259,14 +283,18 @@ export const authApi = {
    * @param {Object} data - Profile data to update
    * @returns {Promise<Object>} Updated user profile
    */
-  updateProfile: async (data) => {
+  updateProfile: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.patchAuthMe(normalizeV2ProfileUpdate(data));
+        const response = await v2Api.patchAuthMe(
+          normalizeV2ProfileUpdate(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2AuthUser(response?.data);
       }
       return await apiClient.patch('/auth/profile/', data);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to update profile'));
       }
@@ -274,13 +302,16 @@ export const authApi = {
     }
   },
 
-  changePassword: async ({ oldPassword, newPassword }) => {
+  changePassword: async ({ oldPassword, newPassword, signal } = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthPassword({
-          current_password: oldPassword,
-          new_password: newPassword,
-        });
+        const response = await v2Api.postAuthPassword(
+          {
+            current_password: oldPassword,
+            new_password: newPassword,
+          },
+          { signal: options.signal || signal },
+        );
         return response?.data || response;
       }
       return await apiClient.post('/users/users/change_password/', {
@@ -288,6 +319,7 @@ export const authApi = {
         new_password: newPassword,
       });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to change password'));
       }
@@ -295,14 +327,15 @@ export const authApi = {
     }
   },
 
-  listSessions: async () => {
+  listSessions: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getAuthSessions();
+        const response = await v2Api.getAuthSessions({ signal: options.signal });
         return response?.data || response;
       }
       return await apiClient.get('/users/sessions/');
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch sessions'));
       }
@@ -310,14 +343,18 @@ export const authApi = {
     }
   },
 
-  revokeSession: async (sessionId) => {
+  revokeSession: async (sessionId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthSessionRevoke({ session_id: sessionId });
+        const response = await v2Api.postAuthSessionRevoke(
+          { session_id: sessionId },
+          { signal: options.signal },
+        );
         return response?.data || response;
       }
       return await apiClient.post(`/users/sessions/${sessionId}/revoke/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to revoke session'));
       }
@@ -325,18 +362,29 @@ export const authApi = {
     }
   },
 
-  revokeAllSessions: async (excludeCurrent = true) => {
+  revokeAllSessions: async (excludeCurrent = true, options = {}) => {
+    const normalizedOptions = typeof excludeCurrent === 'object' && excludeCurrent !== null
+      ? excludeCurrent
+      : options;
+    const shouldExcludeCurrent = typeof excludeCurrent === 'object' && excludeCurrent !== null
+      ? excludeCurrent.excludeCurrent ?? true
+      : excludeCurrent;
+
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAuthSessionsRevokeAll({
-          exclude_current: excludeCurrent,
-        });
+        const response = await v2Api.postAuthSessionsRevokeAll(
+          {
+            exclude_current: shouldExcludeCurrent,
+          },
+          { signal: normalizedOptions.signal },
+        );
         return response?.data || response;
       }
       return await apiClient.post('/users/sessions/revoke_all/', {
-        exclude_current: excludeCurrent,
+        exclude_current: shouldExcludeCurrent,
       });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to revoke sessions'));
       }
@@ -348,13 +396,14 @@ export const authApi = {
    * Logout user
    * @returns {Promise<Object>} Success message
    */
-  logout: async () => {
+  logout: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await v2Api.postAuthLogout();
+        return await v2Api.postAuthLogout({ signal: options.signal });
       }
       return await apiClient.post('/auth/logout/');
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Logout failed'));
       }
