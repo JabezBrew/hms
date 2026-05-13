@@ -72,6 +72,18 @@ function normalizeNotePayload(data = {}) {
   };
 }
 
+function selectNoteSections(body = {}, sections = []) {
+  if (!Array.isArray(sections) || sections.length === 0 || typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return body;
+  }
+  return sections.reduce((selected, section) => {
+    if (Object.prototype.hasOwnProperty.call(body, section)) {
+      selected[section] = body[section];
+    }
+    return selected;
+  }, {});
+}
+
 function adaptV2Template(template) {
   return {
     ...template,
@@ -308,7 +320,7 @@ export const clinicalNotesApi = {
    * @param {Object} data - Note entry data
    * @returns {Promise<Object>} Created note entry data
    */
-  createNoteEntry: async (data) => {
+  createNoteEntry: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const patientId = patientIdFrom(data);
@@ -318,6 +330,7 @@ export const clinicalNotesApi = {
         const response = await v2Api.postPatientClinicalNotes(
           { patient_id: patientId },
           normalizeNotePayload(data),
+          { signal: options.signal },
         );
         return adaptV2Note(response?.data, serializeNoteBody(data));
       }
@@ -522,13 +535,30 @@ export const clinicalNotesApi = {
    * @param {Object} data - Clone options (sections, encounter, patient)
    * @returns {Promise<Object>} The newly created note entry
    */
-  cloneNoteEntry: async (id, data = {}) => {
-    if (isRustV2ApiMode()) {
-      throw new Error('Clinical note cloning is not supported by Rust V2');
-    }
+  cloneNoteEntry: async (id, data = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const source = await clinicalNotesApi.getNoteEntry(id, { signal: options.signal });
+        const patientId = patientIdFrom(data) || source.patient_id;
+        if (!patientId) {
+          throw new Error('Patient id is required to copy a clinical note in Rust V2');
+        }
+        return await clinicalNotesApi.createNoteEntry(
+          {
+            patient_id: patientId,
+            note_type: data.note_type || source.note_type,
+            title: data.title || source.title || 'Clinical note',
+            data: selectNoteSections(source.data || {}, data.sections),
+          },
+          { signal: options.signal },
+        );
+      }
       return await apiClient.post(`/clinical-notes/entries/${id}/clone/`, data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to copy note'));
+      }
       throw new Error(handleApiError(error, 'Failed to copy note'));
     }
   },

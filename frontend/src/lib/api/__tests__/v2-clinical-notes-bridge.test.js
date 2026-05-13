@@ -428,6 +428,98 @@ describe('Rust V2 clinical notes bridge', () => {
     );
   });
 
+  it('clones note entries through Rust detail and patient-scoped create contracts', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'note-1',
+              patient_id: 'patient-1',
+              note_type: 'consultation',
+              title: 'Initial consult',
+              body: JSON.stringify({
+                subjective: 'Cough for two days',
+                assessment: 'Upper respiratory infection',
+              }),
+              status: 'signed',
+              version: 2,
+              updated_at: '2026-05-12T09:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'note-copy',
+              patient_id: 'patient-2',
+              note_type: 'consultation',
+              title: 'Copied assessment',
+              status: 'draft',
+              version: 1,
+              updated_at: '2026-05-12T10:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const note = await clinicalNotesApi.cloneNoteEntry(
+      'note-1',
+      {
+        patient_id: 'patient-2',
+        title: 'Copied assessment',
+        sections: ['assessment'],
+      },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinical/notes/note-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/patients/patient-2/clinical/notes',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          note_type: 'consultation',
+          title: 'Copied assessment',
+          body: JSON.stringify({
+            assessment: 'Upper respiratory infection',
+          }),
+        }),
+      }),
+    );
+    expect(note).toEqual(
+      expect.objectContaining({
+        id: 'note-copy',
+        patient: 'patient-2',
+        patient_id: 'patient-2',
+        data: {
+          assessment: 'Upper respiratory infection',
+        },
+      }),
+    );
+  });
+
   it('does not fall back to legacy-only template actions without a Rust V2 contract', async () => {
     await expect(clinicalNotesApi.duplicateTemplate('template-1')).rejects.toThrow(
       'Clinical note template duplication is not supported by Rust V2',
