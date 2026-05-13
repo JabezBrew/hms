@@ -1671,7 +1671,24 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("allergy create succeeds");
     assert_eq!(allergy.status(), StatusCode::OK);
     let allergy_body = json_body(allergy).await;
+    let allergy_id = allergy_body["data"]["id"].as_str().expect("allergy id");
     assert_eq!(allergy_body["data"]["status"], "active");
+
+    let allergy_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/clinical/allergies/{allergy_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("allergy detail succeeds");
+    assert_eq!(allergy_detail.status(), StatusCode::OK);
+    let allergy_detail_body = json_body(allergy_detail).await;
+    assert_eq!(allergy_detail_body["data"]["substance"], "Penicillin");
 
     let prescription = app
         .clone()
@@ -1781,6 +1798,47 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         );
         assert_eq!(body["data"]["chart_entries"][0]["value"], "130/82");
     }
+
+    let allergy_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/allergies/{allergy_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "substance": "Latex",
+                        "reaction": "Wheezing",
+                        "severity": "severe"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("allergy update succeeds");
+    assert_eq!(allergy_update.status(), StatusCode::OK);
+    let allergy_update_body = json_body(allergy_update).await;
+    assert_eq!(allergy_update_body["data"]["substance"], "Latex");
+    assert_eq!(allergy_update_body["data"]["severity"], "severe");
+
+    let allergy_deactivate = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/v2/clinical/allergies/{allergy_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("allergy deactivate succeeds");
+    assert_eq!(allergy_deactivate.status(), StatusCode::OK);
+    let allergy_deactivate_body = json_body(allergy_deactivate).await;
+    assert_eq!(allergy_deactivate_body["data"]["status"], "inactive");
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app

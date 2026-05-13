@@ -40,6 +40,12 @@ pub fn routes() -> Router<AppState> {
             get(clinical::list_allergies).post(clinical::create_allergy),
         )
         .route(
+            "/api/v2/clinical/allergies/:id",
+            get(clinical::get_allergy)
+                .patch(clinical::update_allergy)
+                .delete(clinical::delete_allergy),
+        )
+        .route(
             "/api/v2/patients/:patient_id/clinical/prescriptions",
             get(clinical::list_prescriptions).post(clinical::create_prescription),
         )

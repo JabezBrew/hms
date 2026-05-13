@@ -66,8 +66,8 @@ use hms_domain::care::{
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
     ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary,
-    PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateClinicalNoteTemplateRequest,
-    UpdateProblemRequest,
+    PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
+    UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
@@ -1470,6 +1470,23 @@ impl AppState {
             },
         )
         .await
+    }
+
+    pub async fn get_allergy(&self, allergy_id: Uuid) -> Result<Option<AllergyListItem>> {
+        hms_db::clinical::get_allergy(&self.inner.pool, self.facility_id(), allergy_id).await
+    }
+
+    pub async fn update_allergy(
+        &self,
+        allergy_id: Uuid,
+        update: UpdateAllergyRequest,
+    ) -> Result<Option<AllergyListItem>> {
+        hms_db::clinical::update_allergy(&self.inner.pool, self.facility_id(), allergy_id, update)
+            .await
+    }
+
+    pub async fn deactivate_allergy(&self, allergy_id: Uuid) -> Result<Option<AllergyListItem>> {
+        hms_db::clinical::deactivate_allergy(&self.inner.pool, self.facility_id(), allergy_id).await
     }
 
     pub async fn list_prescriptions(

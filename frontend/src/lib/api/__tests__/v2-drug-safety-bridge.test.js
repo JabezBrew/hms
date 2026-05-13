@@ -188,20 +188,121 @@ describe('Rust V2 drug safety allergy bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('routes allergy detail, update, and soft-deactivation through Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'allergy-1',
+              patient_id: 'patient-1',
+              substance: 'Penicillin',
+              reaction: 'Rash',
+              severity: 'moderate',
+              status: 'active',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'allergy-1',
+              patient_id: 'patient-1',
+              substance: 'Latex',
+              reaction: 'Wheezing',
+              severity: 'severe',
+              status: 'active',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'allergy-1',
+              patient_id: 'patient-1',
+              substance: 'Latex',
+              reaction: 'Wheezing',
+              severity: 'severe',
+              status: 'inactive',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const detail = await drugSafetyApi.getAllergy('allergy-1', {
+      signal: new AbortController().signal,
+    });
+    const updated = await drugSafetyApi.updateAllergy(
+      'allergy-1',
+      {
+        allergen_name: 'Latex',
+        reaction_description: 'Wheezing',
+        severity: 'life_threatening',
+      },
+      { signal: new AbortController().signal },
+    );
+    const deactivated = await drugSafetyApi.deactivateAllergy('allergy-1', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinical/allergies/allergy-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/clinical/allergies/allergy-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({
+          substance: 'Latex',
+          reaction: 'Wheezing',
+          severity: 'severe',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/clinical/allergies/allergy-1',
+      expect.objectContaining({
+        method: 'DELETE',
+        credentials: 'include',
+      }),
+    );
+    expect(detail).toEqual(expect.objectContaining({ allergen_name: 'Penicillin' }));
+    expect(updated).toEqual(expect.objectContaining({ allergen_name: 'Latex', severity: 'severe' }));
+    expect(deactivated).toEqual(expect.objectContaining({ status: 'inactive', is_active: false }));
+  });
+
   it('fails closed for allergy operations without Rust V2 contracts', async () => {
-    await expect(drugSafetyApi.getAllergy('allergy-1')).rejects.toThrow(
-      'Drug safety allergy operation is not supported by Rust V2',
-    );
-    await expect(drugSafetyApi.updateAllergy('allergy-1', { severity: 'mild' })).rejects.toThrow(
-      'Drug safety allergy operation is not supported by Rust V2',
-    );
-    await expect(drugSafetyApi.deleteAllergy('allergy-1')).rejects.toThrow(
-      'Drug safety allergy operation is not supported by Rust V2',
-    );
     await expect(drugSafetyApi.verifyAllergy('allergy-1')).rejects.toThrow(
-      'Drug safety allergy operation is not supported by Rust V2',
-    );
-    await expect(drugSafetyApi.deactivateAllergy('allergy-1')).rejects.toThrow(
       'Drug safety allergy operation is not supported by Rust V2',
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();

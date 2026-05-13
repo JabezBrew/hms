@@ -10,7 +10,8 @@ use hms_domain::clinical::{
     ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest,
     CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
     CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
-    PrescriptionListItem, ProblemListItem, UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
+    PrescriptionListItem, ProblemListItem, UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest,
+    UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -656,6 +657,132 @@ pub async fn create_allergy(
         .create_allergy(patient_id, substance, reaction, payload.severity, user.id)
         .await
         .map_err(|_| ApiError::conflict("allergy_create_failed", "Allergy could not be saved."))?;
+
+    Ok(Json(object(allergy)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/clinical/allergies/{id}",
+    operation_id = "getClinicalAllergyById",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Allergy id")),
+    responses(
+        (status = 200, description = "Allergy detail", body = ObjectResponse<AllergyListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Allergy not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_allergy(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::ClinicalDocumentationView,
+    )?;
+    let allergy = state
+        .get_allergy(id)
+        .await
+        .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, allergy.patient_id).await?;
+
+    Ok(Json(object(allergy)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/clinical/allergies/{id}",
+    operation_id = "patchClinicalAllergy",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Allergy id")),
+    request_body = UpdateAllergyRequest,
+    responses(
+        (status = 200, description = "Allergy updated", body = ObjectResponse<AllergyListItem>),
+        (status = 400, description = "Invalid allergy update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Allergy not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_allergy(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<UpdateAllergyRequest>,
+) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    let current = state
+        .get_allergy(id)
+        .await
+        .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, current.patient_id).await?;
+
+    payload.substance = normalize_optional_text(payload.substance, "substance", MAX_TITLE_LEN)?;
+    payload.reaction = normalize_optional_text(payload.reaction, "reaction", MAX_TITLE_LEN)?;
+    if payload.substance.is_none()
+        && payload.reaction.is_none()
+        && payload.severity.is_none()
+        && payload.status.is_none()
+    {
+        return Err(validation_error(
+            "allergy",
+            "At least one field is required.",
+        ));
+    }
+
+    let allergy = state
+        .update_allergy(id, payload)
+        .await
+        .map_err(|_| ApiError::conflict("allergy_update_failed", "Allergy could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
+
+    Ok(Json(object(allergy)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v2/clinical/allergies/{id}",
+    operation_id = "deleteClinicalAllergy",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Allergy id")),
+    responses(
+        (status = 200, description = "Allergy deactivated", body = ObjectResponse<AllergyListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Allergy not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_allergy(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    let current = state
+        .get_allergy(id)
+        .await
+        .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, current.patient_id).await?;
+    let allergy = state
+        .deactivate_allergy(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "allergy_deactivate_failed",
+                "Allergy could not be deactivated.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
 
     Ok(Json(object(allergy)))
 }

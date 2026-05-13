@@ -5,7 +5,10 @@ use hms_db::clinical::{
 };
 use hms_db::patients::{PatientContextCursor, PatientUpdate};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::clinical::{AllergySeverity, ChartEntryType, ProblemStatus, UpdateProblemRequest};
+use hms_domain::clinical::{
+    AllergySeverity, AllergyStatus, ChartEntryType, ProblemStatus, UpdateAllergyRequest,
+    UpdateProblemRequest,
+};
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::patients::{PatientAdministrativeStatus, Sex};
 
@@ -447,6 +450,109 @@ async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted()
     assert!(!active_templates
         .iter()
         .any(|active_template| active_template.id == template.id));
+}
+
+#[tokio::test]
+async fn allergy_detail_updates_are_facility_scoped_and_soft_deleted() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+
+    let allergy = hms_db::clinical::create_allergy(
+        &pool,
+        NewAllergy {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            substance: "Penicillin".to_owned(),
+            reaction: Some("Rash".to_owned()),
+            severity: AllergySeverity::Moderate,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("allergy is created");
+
+    let detail = hms_db::clinical::get_allergy(&pool, facility_id, allergy.id)
+        .await
+        .expect("allergy detail query succeeds")
+        .expect("allergy exists");
+    assert_eq!(detail.substance, "Penicillin");
+
+    let updated = hms_db::clinical::update_allergy(
+        &pool,
+        facility_id,
+        allergy.id,
+        UpdateAllergyRequest {
+            substance: Some("Latex".to_owned()),
+            reaction: Some("Wheezing".to_owned()),
+            severity: Some(AllergySeverity::Severe),
+            status: None,
+        },
+    )
+    .await
+    .expect("allergy update succeeds")
+    .expect("allergy exists");
+    assert_eq!(updated.substance, "Latex");
+    assert_eq!(updated.reaction, Some("Wheezing".to_owned()));
+    assert!(matches!(updated.severity, AllergySeverity::Severe));
+
+    assert!(hms_db::clinical::update_allergy(
+        &pool,
+        uuid::Uuid::new_v4(),
+        allergy.id,
+        UpdateAllergyRequest {
+            substance: Some("Cross facility".to_owned()),
+            reaction: None,
+            severity: None,
+            status: None,
+        },
+    )
+    .await
+    .expect("cross-facility allergy update succeeds")
+    .is_none());
+
+    let deactivated = hms_db::clinical::deactivate_allergy(&pool, facility_id, allergy.id)
+        .await
+        .expect("allergy deactivation succeeds")
+        .expect("allergy exists");
+    assert!(matches!(deactivated.status, AllergyStatus::Inactive));
+
+    assert!(
+        hms_db::clinical::get_allergy(&pool, uuid::Uuid::new_v4(), allergy.id)
+            .await
+            .expect("cross-facility allergy detail query succeeds")
+            .is_none()
+    );
 }
 
 #[tokio::test]

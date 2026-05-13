@@ -3,7 +3,7 @@ use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
     ClinicalNoteDetail, ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate,
     ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem, PrescriptionStatus,
-    ProblemListItem, ProblemStatus, UpdateProblemRequest,
+    ProblemListItem, ProblemStatus, UpdateAllergyRequest, UpdateProblemRequest,
 };
 use hms_domain::patients::PatientDetail;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -618,6 +618,75 @@ pub async fn create_allergy(pool: &PgPool, allergy: NewAllergy) -> anyhow::Resul
     .fetch_one(pool)
     .await?;
     allergy_from_row(row)
+}
+
+pub async fn get_allergy(
+    pool: &PgPool,
+    facility_id: Uuid,
+    allergy_id: Uuid,
+) -> anyhow::Result<Option<AllergyListItem>> {
+    let row = sqlx::query_as::<_, AllergyRow>(
+        r#"
+        SELECT id, patient_id, substance, reaction, severity, status, created_at
+        FROM patient_allergies
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(allergy_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(allergy_from_row).transpose()
+}
+
+pub async fn update_allergy(
+    pool: &PgPool,
+    facility_id: Uuid,
+    allergy_id: Uuid,
+    update: UpdateAllergyRequest,
+) -> anyhow::Result<Option<AllergyListItem>> {
+    let severity = update.severity.map(codec::encode).transpose()?;
+    let status = update.status.map(codec::encode).transpose()?;
+    let row = sqlx::query_as::<_, AllergyRow>(
+        r#"
+        UPDATE patient_allergies
+        SET substance = COALESCE($3, substance),
+            reaction = COALESCE($4, reaction),
+            severity = COALESCE($5, severity),
+            status = COALESCE($6, status),
+            updated_at = now()
+        WHERE facility_id = $1 AND id = $2
+        RETURNING id, patient_id, substance, reaction, severity, status, created_at
+        "#,
+    )
+    .bind(facility_id)
+    .bind(allergy_id)
+    .bind(update.substance)
+    .bind(update.reaction)
+    .bind(severity)
+    .bind(status)
+    .fetch_optional(pool)
+    .await?;
+    row.map(allergy_from_row).transpose()
+}
+
+pub async fn deactivate_allergy(
+    pool: &PgPool,
+    facility_id: Uuid,
+    allergy_id: Uuid,
+) -> anyhow::Result<Option<AllergyListItem>> {
+    update_allergy(
+        pool,
+        facility_id,
+        allergy_id,
+        UpdateAllergyRequest {
+            substance: None,
+            reaction: None,
+            severity: None,
+            status: Some(AllergyStatus::Inactive),
+        },
+    )
+    .await
 }
 
 pub async fn list_prescriptions(

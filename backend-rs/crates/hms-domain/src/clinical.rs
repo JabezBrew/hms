@@ -170,6 +170,14 @@ pub struct CreateAllergyRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateAllergyRequest {
+    pub substance: Option<String>,
+    pub reaction: Option<String>,
+    pub severity: Option<AllergySeverity>,
+    pub status: Option<AllergyStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PrescriptionListItem {
     pub id: Uuid,
     pub patient_id: Uuid,

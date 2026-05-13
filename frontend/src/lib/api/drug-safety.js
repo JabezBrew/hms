@@ -90,6 +90,25 @@ function normalizeCreateAllergyPayload(data = {}) {
   };
 }
 
+function normalizeUpdateAllergyPayload(data = {}) {
+  const payload = {};
+  if (data.substance !== undefined || data.allergen_name !== undefined) {
+    payload.substance = data.substance ?? data.allergen_name;
+  }
+  if (data.reaction !== undefined || data.reaction_description !== undefined) {
+    payload.reaction = data.reaction ?? data.reaction_description;
+  }
+  if (data.severity !== undefined) {
+    payload.severity = normalizeAllergySeverity(data.severity);
+  }
+  if (data.status !== undefined) {
+    payload.status = data.status === 'inactive' || data.is_active === false ? 'inactive' : 'active';
+  } else if (data.is_active === false) {
+    payload.status = 'inactive';
+  }
+  return payload;
+}
+
 function getPatientIdFromAllergyParams(params = {}) {
   return params.patient_id || params.patient || params.patientId;
 }
@@ -225,13 +244,21 @@ export const drugSafetyApi = {
    * @param {string} id - Allergy ID
    * @returns {Promise<Object>} Allergy data
    */
-  getAllergy: async (id) => {
-    if (isRustV2ApiMode()) {
-      throwRustV2AllergyUnsupported();
-    }
+  getAllergy: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getClinicalAllergyById(
+          { id },
+          { signal: options.signal },
+        );
+        return adaptV2Allergy(response?.data);
+      }
       return await apiClient.get(`/drug-safety/allergies/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch allergy'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch allergy'));
     }
   },
@@ -268,13 +295,22 @@ export const drugSafetyApi = {
    * @param {Object} data - Allergy data to update
    * @returns {Promise<Object>} Updated allergy data
    */
-  updateAllergy: async (id, data) => {
-    if (isRustV2ApiMode()) {
-      throwRustV2AllergyUnsupported();
-    }
+  updateAllergy: async (id, data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.patchClinicalAllergy(
+          { id },
+          normalizeUpdateAllergyPayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2Allergy(response?.data);
+      }
       return await apiClient.patch(`/drug-safety/allergies/${id}/`, data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to update allergy'));
+      }
       throw new Error(handleApiError(error, 'Failed to update allergy'));
     }
   },
@@ -284,13 +320,21 @@ export const drugSafetyApi = {
    * @param {string} id - Allergy ID
    * @returns {Promise<Object>} Empty object or operation outcome
    */
-  deleteAllergy: async (id) => {
-    if (isRustV2ApiMode()) {
-      throwRustV2AllergyUnsupported();
-    }
+  deleteAllergy: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.deleteClinicalAllergy(
+          { id },
+          { signal: options.signal },
+        );
+        return adaptV2Allergy(response?.data);
+      }
       return await apiClient.delete(`/drug-safety/allergies/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to delete allergy'));
+      }
       throw new Error(handleApiError(error, 'Failed to delete allergy'));
     }
   },
@@ -316,13 +360,21 @@ export const drugSafetyApi = {
    * @param {string} id - Allergy ID
    * @returns {Promise<Object>} Deactivated allergy data
    */
-  deactivateAllergy: async (id) => {
-    if (isRustV2ApiMode()) {
-      throwRustV2AllergyUnsupported();
-    }
+  deactivateAllergy: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.deleteClinicalAllergy(
+          { id },
+          { signal: options.signal },
+        );
+        return adaptV2Allergy(response?.data);
+      }
       return await apiClient.post(`/drug-safety/allergies/${id}/deactivate/`, {});
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to deactivate allergy'));
+      }
       throw new Error(handleApiError(error, 'Failed to deactivate allergy'));
     }
   },
