@@ -65,6 +65,28 @@ async fn feature_entitlements_are_facility_scoped_and_override_profile_defaults(
             .expect("effective flags load");
     assert_eq!(effective.get(&FeatureKey::Nursing), Some(&false));
 
+    let restored = hms_db::admin::delete_feature_entitlement(
+        &pool,
+        facility_id,
+        FeatureKey::Nursing,
+        owner_id,
+        Some("feature-delete-test".to_owned()),
+    )
+    .await
+    .expect("feature entitlement deletes")
+    .expect("feature entitlement exists");
+    assert!(restored.enabled);
+    assert_eq!(restored.override_enabled, None);
+
+    let effective_after_delete =
+        hms_db::admin::effective_feature_flags(&pool, facility_id, DeploymentProfile::Hospital)
+            .await
+            .expect("effective flags load after delete");
+    assert_eq!(
+        effective_after_delete.get(&FeatureKey::Nursing),
+        Some(&true)
+    );
+
     assert!(
         hms_db::admin::list_feature_entitlements(&pool, uuid::Uuid::new_v4())
             .await

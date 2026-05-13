@@ -239,11 +239,38 @@ describe('Rust V2 system bridge', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('fails closed for deleting feature overrides because Rust V2 has no unset contract yet', async () => {
-    await expect(
-      systemApi.deleteFeatureEntitlement('patients'),
-    ).rejects.toThrow(/does not expose feature override deletion/i);
+  it('deletes a global feature override through the Rust V2 feature delete endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            feature: 'patients',
+            enabled: true,
+            profile_default: true,
+            override_enabled: null,
+            updated_at: null,
+            updated_by_user_id: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
 
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    const response = await systemApi.deleteFeatureEntitlement('patients');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/features/patients',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(response).toMatchObject({
+      id: 'patients',
+      feature_key: 'patients',
+      is_enabled: true,
+      source: 'deployment_profile',
+    });
   });
 });

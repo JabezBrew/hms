@@ -46,7 +46,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v2/admin/features/:key",
-            patch(admin::update_feature_entitlement),
+            patch(admin::update_feature_entitlement).delete(admin::delete_feature_entitlement),
         )
         .route(
             "/api/v2/admin/staff",

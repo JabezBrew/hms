@@ -415,6 +415,26 @@ pub async fn update_feature_entitlement(
     Ok(Json(object(entitlement)))
 }
 
+#[utoipa::path(delete, path = "/api/v2/admin/features/{key}", operation_id = "deleteAdminFeature", tag = "admin", security(("bearerAuth" = [])), params(("key" = FeatureKey, Path, description = "Feature key")), responses((status = 200, body = ObjectResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn delete_feature_entitlement(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(key): Path<FeatureKey>,
+) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
+    require_feature_entitlement_access(&user, state.facility_id())?;
+    let entitlement = state
+        .delete_feature_entitlement(key, user.id, Some(current_request_id()))
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "feature_entitlement_delete_failed",
+                "Feature entitlement override could not be removed.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
+    Ok(Json(object(entitlement)))
+}
+
 #[utoipa::path(get, path = "/api/v2/admin/staff", operation_id = "getAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(StaffListQuery), responses((status = 200, body = ListResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_staff(
     State(state): State<AppState>,

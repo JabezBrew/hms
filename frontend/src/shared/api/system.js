@@ -143,9 +143,17 @@ export const systemApi = {
     }
     return apiClient.patch(`/settings/feature-entitlements/${id}/`, data)
   },
-  deleteFeatureEntitlement: async (id) => {
+  deleteFeatureEntitlement: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      throw new Error('Rust V2 does not expose feature override deletion yet.')
+      try {
+        const response = await v2Api.deleteAdminFeature(
+          { key: id },
+          { signal: options.signal },
+        )
+        return adaptV2FeatureEntitlement(response?.data)
+      } catch (error) {
+        throw new Error(handleV2ApiError(error, 'Failed to remove feature entitlement'))
+      }
     }
     return apiClient.delete(`/settings/feature-entitlements/${id}/`)
   },

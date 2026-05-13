@@ -372,6 +372,10 @@ async fn openapi_contains_foundation_paths() {
     ] {
         assert!(paths.contains_key(path), "missing OpenAPI path {path}");
     }
+    assert!(
+        paths["/api/v2/admin/features/{key}"]["delete"].is_object(),
+        "feature override removal must be exposed as a DELETE operation"
+    );
     let ward_board_parameters = paths["/api/v2/wards/board"]["get"]["parameters"]
         .as_array()
         .expect("ward board parameters exist");
@@ -1143,7 +1147,7 @@ async fn feature_entitlements_are_admin_scoped_and_reflected_in_capabilities() {
             Request::builder()
                 .method(Method::GET)
                 .uri("/api/v2/system/deployment-capabilities")
-                .header(AUTHORIZATION, auth_header)
+                .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())
                 .expect("request builds"),
         )
@@ -1152,6 +1156,44 @@ async fn feature_entitlements_are_admin_scoped_and_reflected_in_capabilities() {
     assert_eq!(capabilities_response.status(), StatusCode::OK);
     let capabilities_body = json_body(capabilities_response).await;
     assert_eq!(capabilities_body["data"]["features"]["nursing"], false);
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("/api/v2/admin/features/nursing")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("x-request-id", "feature-entitlement-delete-test")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("feature delete succeeds");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+    let delete_body = json_body(delete_response).await;
+    assert_eq!(delete_body["data"]["feature"], "nursing");
+    assert_eq!(delete_body["data"]["enabled"], true);
+    assert!(delete_body["data"]["override_enabled"].is_null());
+
+    let restored_capabilities_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/system/deployment-capabilities")
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("restored capabilities request succeeds");
+    assert_eq!(restored_capabilities_response.status(), StatusCode::OK);
+    let restored_capabilities_body = json_body(restored_capabilities_response).await;
+    assert_eq!(
+        restored_capabilities_body["data"]["features"]["nursing"],
+        true
+    );
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app

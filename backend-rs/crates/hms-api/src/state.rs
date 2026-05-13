@@ -1101,6 +1101,22 @@ impl AppState {
         .await
     }
 
+    pub async fn delete_feature_entitlement(
+        &self,
+        feature: FeatureKey,
+        actor_user_id: Uuid,
+        request_id: Option<String>,
+    ) -> Result<Option<FeatureEntitlementListItem>> {
+        hms_db::admin::delete_feature_entitlement(
+            &self.inner.pool,
+            self.facility_id(),
+            feature,
+            actor_user_id,
+            request_id,
+        )
+        .await
+    }
+
     pub async fn list_staff_accounts(
         &self,
         cursor: Option<AdminCursor>,

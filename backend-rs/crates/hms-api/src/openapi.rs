@@ -26,6 +26,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::admin::create_position_template,
         crate::handlers::admin::create_staff,
         crate::handlers::admin::deactivate_staff,
+        crate::handlers::admin::delete_feature_entitlement,
         crate::handlers::admin::force_staff_password_reset,
         crate::handlers::admin::get_org_unit,
         crate::handlers::admin::get_practitioner,

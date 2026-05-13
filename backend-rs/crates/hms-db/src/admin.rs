@@ -850,6 +850,54 @@ pub async fn update_feature_entitlement(
     )))
 }
 
+pub async fn delete_feature_entitlement(
+    pool: &PgPool,
+    facility_id: Uuid,
+    feature: FeatureKey,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<FeatureEntitlementListItem>> {
+    let Some(profile) = facility_profile(pool, facility_id).await? else {
+        return Ok(None);
+    };
+    let feature_key = codec::encode(feature)?;
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        DELETE FROM facility_feature_entitlements
+        WHERE facility_id = $1
+          AND feature_key = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(&feature_key)
+    .execute(&mut *tx)
+    .await?;
+
+    insert_audit_event_tx(
+        &mut tx,
+        NewAuditEvent {
+            facility_id,
+            actor_user_id: Some(actor_user_id),
+            request_id,
+            event_type: "admin.feature_entitlement.deleted".to_owned(),
+            resource_type: "feature_entitlement".to_owned(),
+            resource_id: None,
+            metadata: json!({
+                "feature": feature_key,
+            }),
+        },
+    )
+    .await?;
+
+    tx.commit().await?;
+    let defaults = feature_flags_for_profile(profile);
+    let overrides = feature_entitlement_overrides(pool, facility_id).await?;
+    Ok(Some(feature_entitlement_item(
+        feature, &defaults, &overrides,
+    )))
+}
+
 pub async fn list_staff_accounts(
     pool: &PgPool,
     facility_id: Uuid,
