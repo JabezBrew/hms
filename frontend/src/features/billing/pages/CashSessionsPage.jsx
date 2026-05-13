@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useDebounce } from '@/hooks/use-debounce';
 import { VirtualizedTable } from '@/components/ui/VirtualizedTable';
 import { Button } from '@/components/ui/button';
@@ -95,6 +96,7 @@ export default function CashSessionsPage() {
   const hasPrev = !!sessionsData?.previous;
 
   const isAdmin = user?.role === 'admin';
+  const cashSessionReviewAvailable = !isRustV2ApiMode();
 
   const handleFilterChange = useCallback((key, value) => {
     setSearchParams((prev) => {
@@ -202,7 +204,7 @@ export default function CashSessionsPage() {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (row) => (
-        isAdmin && row.status === 'closed' ? (
+        isAdmin && cashSessionReviewAvailable && row.status === 'closed' ? (
           <Button
             variant="ghost"
             size="sm"
@@ -217,7 +219,7 @@ export default function CashSessionsPage() {
         ) : null
       ),
     },
-  ]), [isAdmin]);
+  ]), [cashSessionReviewAvailable, isAdmin]);
 
   if (isLoading && !sessionsData) {
     return (
@@ -278,6 +280,18 @@ export default function CashSessionsPage() {
       />
 
       <main className="p-4 sm:p-6 space-y-6">
+        {isAdmin && !cashSessionReviewAvailable && (
+          <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+              Rust V2 read-only review
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Cash session review notes are not available in Rust V2 mode yet. Cashiers can still
+              open and close sessions through the Rust backend.
+            </p>
+          </div>
+        )}
+
         {/* Current session card */}
         <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
@@ -531,66 +545,68 @@ export default function CashSessionsPage() {
       </Dialog>
 
       {/* Review dialog */}
-      <Dialog
-        open={reviewDialog.open}
-        onOpenChange={(next) => setReviewDialog((prev) => ({ ...prev, open: next }))}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Review Session</DialogTitle>
-            <DialogDescription>
-              Add an internal review note (admin only).
-            </DialogDescription>
-          </DialogHeader>
+      {cashSessionReviewAvailable && (
+        <Dialog
+          open={reviewDialog.open}
+          onOpenChange={(next) => setReviewDialog((prev) => ({ ...prev, open: next }))}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Review Session</DialogTitle>
+              <DialogDescription>
+                Add an internal review note (admin only).
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-2">
-            <Label className="font-mono text-xs uppercase tracking-wider">Review Notes</Label>
-            <Textarea
-              rows={4}
-              value={reviewNotes}
-              onChange={(e) => setReviewNotes(e.target.value)}
-              placeholder="Add notes about variance, investigation steps, approvals..."
-            />
-          </div>
+            <div className="space-y-2">
+              <Label className="font-mono text-xs uppercase tracking-wider">Review Notes</Label>
+              <Textarea
+                rows={4}
+                value={reviewNotes}
+                onChange={(e) => setReviewNotes(e.target.value)}
+                placeholder="Add notes about variance, investigation steps, approvals..."
+              />
+            </div>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="font-mono text-xs"
-              onClick={() => setReviewDialog({ open: false, session: null })}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="font-mono text-xs"
-              disabled={reviewCashSessionMutation.isPending}
-              onClick={async () => {
-                const session = reviewDialog.session;
-                if (!session) return;
-                try {
-                  await reviewCashSessionMutation.mutateAsync({
-                    sessionId: session.id,
-                    data: { review_notes: reviewNotes || null },
-                  });
-                  toast.success('Review saved');
-                  setReviewDialog({ open: false, session: null });
-                } catch (err) {
-                  toast.error(err.message || 'Failed to save review');
-                }
-              }}
-            >
-              {reviewCashSessionMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                className="font-mono text-xs"
+                onClick={() => setReviewDialog({ open: false, session: null })}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="font-mono text-xs"
+                disabled={reviewCashSessionMutation.isPending}
+                onClick={async () => {
+                  const session = reviewDialog.session;
+                  if (!session) return;
+                  try {
+                    await reviewCashSessionMutation.mutateAsync({
+                      sessionId: session.id,
+                      data: { review_notes: reviewNotes || null },
+                    });
+                    toast.success('Review saved');
+                    setReviewDialog({ open: false, session: null });
+                  } catch (err) {
+                    toast.error(err.message || 'Failed to save review');
+                  }
+                }}
+              >
+                {reviewCashSessionMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </PageShell>
   );
 }
@@ -614,4 +630,3 @@ function formatDateTime(value) {
     minute: '2-digit',
   });
 }
-
