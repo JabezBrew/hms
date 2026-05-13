@@ -846,10 +846,33 @@ pub async fn list_staff_accounts(
     facility_id: Uuid,
     cursor: Option<AdminCursor>,
     limit: i64,
+    search: Option<String>,
+    is_active: Option<bool>,
+    practitioners_only: Option<bool>,
 ) -> anyhow::Result<Vec<StaffListItem>> {
     let mut query = QueryBuilder::new(staff_query());
     query.push(" WHERE staff_profiles.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(pattern) = like_contains_pattern(search.as_deref()) {
+        query.push(" AND (users.display_name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR users.email ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR staff_profiles.employee_id ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR staff_profiles.department ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR staff_profiles.position ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(is_active) = is_active {
+        query.push(" AND users.is_active = ");
+        query.push_bind(is_active);
+    }
+    if practitioners_only == Some(true) {
+        query.push(" AND practitioner_profiles.id IS NOT NULL");
+    }
     append_cursor(
         &mut query,
         "staff_profiles.created_at",
@@ -1183,10 +1206,29 @@ pub async fn list_practitioners(
     facility_id: Uuid,
     cursor: Option<AdminCursor>,
     limit: i64,
+    search: Option<String>,
+    is_active: Option<bool>,
 ) -> anyhow::Result<Vec<PractitionerListItem>> {
     let mut query = QueryBuilder::new(practitioner_query());
     query.push(" WHERE practitioner_profiles.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(pattern) = like_contains_pattern(search.as_deref()) {
+        query.push(" AND (users.display_name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR staff_profiles.employee_id ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR practitioner_profiles.license_number ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR practitioner_profiles.specialization ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR practitioner_profiles.qualification ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(is_active) = is_active {
+        query.push(" AND users.is_active = ");
+        query.push_bind(is_active);
+    }
     append_cursor(
         &mut query,
         "practitioner_profiles.created_at",
@@ -1736,6 +1778,23 @@ fn append_cursor(
         query.push_bind(cursor.id);
         query.push(")");
     }
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let search = search?.trim();
+    if search.is_empty() {
+        return None;
+    }
+    let mut escaped = String::with_capacity(search.len());
+    for ch in search.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '%' => escaped.push_str("\\%"),
+            '_' => escaped.push_str("\\_"),
+            _ => escaped.push(ch),
+        }
+    }
+    Some(format!("%{escaped}%"))
 }
 
 fn staff_query() -> &'static str {

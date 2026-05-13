@@ -143,7 +143,8 @@ describe('Rust V2 staff bridge', () => {
     ]);
   });
 
-  it('searches practitioners in Rust mode without calling the legacy practitioner search endpoint', async () => {
+  it('searches practitioners in Rust mode through server-side V2 filters instead of a broad list', async () => {
+    const controller = new AbortController();
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -160,20 +161,8 @@ describe('Rust V2 staff bridge', () => {
               is_active: true,
               created_at: '2026-05-12T08:00:00Z',
             },
-            {
-              id: 'practitioner-2',
-              staff_id: 'staff-2',
-              user_id: 'user-2',
-              display_name: 'Kojo Boateng',
-              employee_id: 'EMP-002',
-              license_number: 'MDC-002',
-              specialization: 'Surgery',
-              qualification: 'MBChB',
-              is_active: true,
-              created_at: '2026-05-12T08:00:00Z',
-            },
           ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          page: { limit: 25, has_next: false, next_cursor: null },
           meta: {},
         }),
         {
@@ -183,11 +172,16 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.searchPractitioners('ama');
+    const response = await staffApi.searchPractitioners('ama', false, {
+      signal: controller.signal,
+    });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/practitioners?limit=100',
-      expect.objectContaining({ method: 'GET' }),
+      'http://localhost:8080/api/v2/admin/practitioners?limit=25&search=ama&is_active=true',
+      expect.objectContaining({
+        method: 'GET',
+        signal: controller.signal,
+      }),
     );
     expect(response).toEqual([
       expect.objectContaining({
@@ -197,7 +191,8 @@ describe('Rust V2 staff bridge', () => {
     ]);
   });
 
-  it('searches staff in Rust mode through the bounded V2 staff directory instead of the legacy staff search endpoint', async () => {
+  it('searches staff in Rust mode through server-side V2 filters instead of a broad list', async () => {
+    const controller = new AbortController();
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -211,19 +206,16 @@ describe('Rust V2 staff bridge', () => {
               department: 'Nursing',
               position: 'Ward Nurse',
               is_active: true,
-            },
-            {
-              id: 'staff-2',
-              user_id: 'user-2',
-              display_name: 'Kojo Boateng',
-              email: 'kojo@example.test',
-              employee_id: 'EMP-002',
-              department: 'Pharmacy',
-              position: 'Pharmacist',
-              is_active: true,
+              practitioner_profile: {
+                id: 'practitioner-1',
+                license_number: 'MDC-001',
+                specialization: 'General Medicine',
+                qualification: 'MBChB',
+                fhir_practitioner_id: null,
+              },
             },
           ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          page: { limit: 25, has_next: false, next_cursor: null },
           meta: {},
         }),
         {
@@ -233,11 +225,17 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.searchStaff('ama');
+    const response = await staffApi.searchStaff('ama', {
+      practitionersOnly: true,
+      signal: controller.signal,
+    });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/staff?limit=100',
-      expect.objectContaining({ method: 'GET' }),
+      'http://localhost:8080/api/v2/admin/staff?limit=25&search=ama&is_active=true&practitioners_only=true',
+      expect.objectContaining({
+        method: 'GET',
+        signal: controller.signal,
+      }),
     );
     expect(response).toEqual([
       expect.objectContaining({

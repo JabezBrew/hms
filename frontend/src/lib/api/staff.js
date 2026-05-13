@@ -20,10 +20,13 @@ function getStaffListQuery(params = {}) {
     DEFAULT_STAFF_LIST_LIMIT,
   );
   const cursor = params.cursor ?? params.next_cursor;
-  return {
+  return compactObject({
     limit,
     ...(cursor ? { cursor } : {}),
-  };
+    search: params.search ? String(params.search).trim() : undefined,
+    is_active: params.is_active,
+    practitioners_only: params.practitioners_only,
+  });
 }
 
 function splitDisplayName(displayName) {
@@ -146,31 +149,6 @@ function adaptV2PractitionerListItem(item = {}) {
       is_active: item.is_active ?? true,
     },
   };
-}
-
-function practitionerMatchesQuery(practitioner, query) {
-  const normalizedQuery = String(query || '').trim().toLowerCase();
-  if (!normalizedQuery) return true;
-  return [
-    practitioner.name,
-    practitioner.employee_id,
-    practitioner.license_number,
-    practitioner.specialization,
-    practitioner.qualification,
-  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
-}
-
-function staffMatchesQuery(staff, query) {
-  const normalizedQuery = String(query || '').trim().toLowerCase();
-  if (!normalizedQuery) return true;
-  return [
-    staff.name,
-    staff.email,
-    staff.employee_id,
-    staff.department,
-    staff.position,
-    staff.user_type,
-  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
 }
 
 function staffMatchesFilters(staff, filters = {}) {
@@ -455,15 +433,24 @@ export const staffApi = {
    * @param {boolean} doctorsOnly - Whether to filter for doctors only
    * @returns {Promise<Array>} List of matching practitioners
    */
-  searchPractitioners: async (query, doctorsOnly = false) => {
+  searchPractitioners: async (query, doctorsOnly = false, options = {}) => {
     try {
       if (!query || query.length < 2) {
         return [];
       }
 
       if (isRustV2ApiMode()) {
-        const practitioners = await staffApi.getPractitioners({ limit: 100 });
-        return practitioners.filter((practitioner) => practitionerMatchesQuery(practitioner, query));
+        const response = await v2Api.getAdminPractitioners({
+          query: {
+            limit: DEFAULT_STAFF_LIST_LIMIT,
+            search: query.trim(),
+            is_active: true,
+          },
+          signal: options.signal,
+        });
+        return Array.isArray(response?.data)
+          ? response.data.map(adaptV2PractitionerListItem)
+          : [];
       }
 
       const params = new URLSearchParams({
@@ -499,6 +486,12 @@ export const staffApi = {
       // Fallback to the old response structure for backward compatibility
       return Array.isArray(response) ? response : [];
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to search practitioners'));
+      }
       throw new Error(handleApiError(error, 'Failed to search practitioners'));
     }
   },
@@ -517,12 +510,15 @@ export const staffApi = {
 
       if (isRustV2ApiMode()) {
         const staff = await staffApi.getStaff(
-          { limit: 100 },
+          {
+            limit: DEFAULT_STAFF_LIST_LIMIT,
+            search: query.trim(),
+            is_active: filters.includeInactive ? undefined : true,
+            practitioners_only: filters.practitionersOnly ? true : undefined,
+          },
           { signal: filters.signal },
         );
-        return staff.filter((member) => (
-          staffMatchesQuery(member, query) && staffMatchesFilters(member, filters)
-        ));
+        return staff.filter((member) => staffMatchesFilters(member, filters));
       }
 
       const params = new URLSearchParams({ q: query });

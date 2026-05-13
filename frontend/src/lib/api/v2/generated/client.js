@@ -184,7 +184,9 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "is_active"
     ],
     "hasBody": false
   },
@@ -195,7 +197,10 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "search",
+      "is_active",
+      "practitioners_only"
     ],
     "hasBody": false
   },

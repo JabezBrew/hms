@@ -967,9 +967,20 @@ impl AppState {
         &self,
         cursor: Option<AdminCursor>,
         limit: i64,
+        search: Option<String>,
+        is_active: Option<bool>,
+        practitioners_only: Option<bool>,
     ) -> Result<Vec<StaffListItem>> {
-        hms_db::admin::list_staff_accounts(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
+        hms_db::admin::list_staff_accounts(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            search,
+            is_active,
+            practitioners_only,
+        )
+        .await
     }
 
     pub async fn list_staff_directory(
@@ -1099,8 +1110,18 @@ impl AppState {
         &self,
         cursor: Option<AdminCursor>,
         limit: i64,
+        search: Option<String>,
+        is_active: Option<bool>,
     ) -> Result<Vec<PractitionerListItem>> {
-        hms_db::admin::list_practitioners(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::admin::list_practitioners(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            search,
+            is_active,
+        )
+        .await
     }
 
     pub async fn get_practitioner(&self, id: Uuid) -> Result<Option<PractitionerListItem>> {

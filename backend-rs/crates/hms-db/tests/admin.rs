@@ -241,7 +241,7 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .expect("cross-facility update succeeds")
     .is_none());
 
-    let listed = hms_db::admin::list_staff_accounts(&pool, facility_id, None, 10)
+    let listed = hms_db::admin::list_staff_accounts(&pool, facility_id, None, 10, None, None, None)
         .await
         .expect("staff list succeeds");
     assert!(listed
@@ -255,7 +255,7 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
         .iter()
         .any(|item| item.user_id == staff.user_id && item.display_name == "Akosua Updated"));
     assert!(
-        hms_db::admin::list_staff_accounts(&pool, Uuid::new_v4(), None, 10)
+        hms_db::admin::list_staff_accounts(&pool, Uuid::new_v4(), None, 10, None, None, None)
             .await
             .expect("cross-facility list succeeds")
             .is_empty()
@@ -314,6 +314,33 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
             .expect("cross-facility practitioner lookup succeeds")
             .is_none()
     );
+
+    let matching_staff = hms_db::admin::list_staff_accounts(
+        &pool,
+        facility_id,
+        None,
+        25,
+        Some("akosua".to_owned()),
+        Some(true),
+        Some(true),
+    )
+    .await
+    .expect("staff search succeeds");
+    assert_eq!(matching_staff.len(), 1);
+    assert_eq!(matching_staff[0].id, staff.id);
+
+    let matching_practitioners = hms_db::admin::list_practitioners(
+        &pool,
+        facility_id,
+        None,
+        25,
+        Some("mdc/rn/0002".to_owned()),
+        Some(true),
+    )
+    .await
+    .expect("practitioner search succeeds");
+    assert_eq!(matching_practitioners.len(), 1);
+    assert_eq!(matching_practitioners[0].staff_id, staff.id);
 
     let deactivated = hms_db::admin::deactivate_staff_account(
         &pool,

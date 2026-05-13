@@ -20,6 +20,23 @@ pub struct OrganizationUnitListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct StaffListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+    pub practitioners_only: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct PractitionerListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 pub struct AdminLimitQuery {
     pub limit: Option<u8>,
 }

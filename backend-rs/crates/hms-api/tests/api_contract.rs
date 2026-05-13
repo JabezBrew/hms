@@ -1076,6 +1076,47 @@ async fn staff_management_is_admin_scoped_and_practitioner_ready() {
     assert_eq!(practitioner_detail["data"]["staff_id"], staff_id);
     assert_eq!(practitioner_detail["data"]["license_number"], "MDC/RN/0002");
 
+    let searched_staff_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/staff?search=akosua&is_active=true&practitioners_only=true&limit=5")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("staff search succeeds");
+    assert_eq!(searched_staff_response.status(), StatusCode::OK);
+    let searched_staff = json_body(searched_staff_response).await;
+    let searched_staff_data = searched_staff["data"]
+        .as_array()
+        .expect("searched staff data is array");
+    assert_eq!(searched_staff_data.len(), 1);
+    assert_eq!(searched_staff_data[0]["id"], staff_id);
+    assert!(searched_staff_data[0]["practitioner_profile"].is_object());
+
+    let searched_practitioners_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/practitioners?search=MDC%2FRN%2F0002&is_active=true&limit=5")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner search succeeds");
+    assert_eq!(searched_practitioners_response.status(), StatusCode::OK);
+    let searched_practitioners = json_body(searched_practitioners_response).await;
+    let searched_practitioners_data = searched_practitioners["data"]
+        .as_array()
+        .expect("searched practitioners data is array");
+    assert_eq!(searched_practitioners_data.len(), 1);
+    assert_eq!(searched_practitioners_data[0]["id"], practitioner_id);
+
     let practitioner_by_staff_response = app
         .clone()
         .oneshot(

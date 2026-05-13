@@ -10,8 +10,8 @@ use hms_domain::admin::{
     CreatePositionRequest, CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
     FeatureEntitlementListItem, OrganizationUnitListItem, OrganizationUnitListQuery,
     PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
-    StaffDirectoryItem, StaffListItem, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
-    UpsertPractitionerProfileRequest,
+    PractitionerListQuery, StaffDirectoryItem, StaffListItem, StaffListQuery,
+    UpdateFeatureEntitlementRequest, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::AuthUser;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
@@ -414,16 +414,28 @@ pub async fn update_feature_entitlement(
     Ok(Json(object(entitlement)))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/staff", operation_id = "getAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/staff", operation_id = "getAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(StaffListQuery), responses((status = 200, body = ListResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_staff(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<AdminListQuery>,
+    Query(query): Query<StaffListQuery>,
 ) -> Result<Json<ListResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let search = query.search;
+    let is_active = query.is_active;
+    let practitioners_only = query.practitioners_only;
+    let (cursor, page_size) = page_request(AdminListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_staff_accounts(cursor, page_size as i64 + 1)
+        .list_staff_accounts(
+            cursor,
+            page_size as i64 + 1,
+            search,
+            is_active,
+            practitioners_only,
+        )
         .await
         .map_err(|_| ApiError::conflict("staff_list_failed", "Staff could not be loaded."))?;
     Ok(Json(page_response(rows, page_size, |item| {
@@ -586,16 +598,21 @@ pub async fn upsert_staff_practitioner_profile(
     Ok(Json(object(staff)))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/practitioners", operation_id = "getAdminPractitioners", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/practitioners", operation_id = "getAdminPractitioners", tag = "admin", security(("bearerAuth" = [])), params(PractitionerListQuery), responses((status = 200, body = ListResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_practitioners(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<AdminListQuery>,
+    Query(query): Query<PractitionerListQuery>,
 ) -> Result<Json<ListResponse<PractitionerListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let search = query.search;
+    let is_active = query.is_active;
+    let (cursor, page_size) = page_request(AdminListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_practitioners(cursor, page_size as i64 + 1)
+        .list_practitioners(cursor, page_size as i64 + 1, search, is_active)
         .await
         .map_err(|_| {
             ApiError::conflict(
