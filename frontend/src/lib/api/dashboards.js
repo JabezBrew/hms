@@ -15,6 +15,12 @@ function buildQueryString(params = {}) {
   return queryString ? `?${queryString}` : '';
 }
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
 function extractV2Snapshot(response) {
   return response?.data || {};
 }
@@ -345,6 +351,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/nurse/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch nurse dashboard'));
       }
@@ -381,6 +388,7 @@ export const dashboardsApi = {
       }
       return await apiClient.get('/dashboards/inpatient/');
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch inpatient dashboard'));
       }
@@ -419,6 +427,7 @@ export const dashboardsApi = {
       }
       return await apiClient.get('/dashboards/reception/');
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch receptionist dashboard'));
       }
@@ -438,6 +447,7 @@ export const dashboardsApi = {
       }
       return await apiClient.get('/dashboards/admin/', options);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin dashboard'));
       }
@@ -461,6 +471,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/my-work/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch my work dashboard'));
       }
@@ -488,6 +499,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/clinic/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch clinic schedule'));
       }
@@ -510,6 +522,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/admin-v2/${buildQueryString(params)}`;
       return await apiClient.get(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin dashboard summary'));
       }
@@ -544,6 +557,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/admin-v2/capacity/${buildQueryString(params)}`;
       return await apiClient.get(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin capacity details'));
       }
@@ -564,6 +578,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/admin-v2/workforce/${buildQueryString(params)}`;
       return await apiClient.get(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin workforce details'));
       }
@@ -584,6 +599,7 @@ export const dashboardsApi = {
       const endpoint = `/dashboards/admin-v2/compliance/${buildQueryString(params)}`;
       return await apiClient.get(endpoint, options);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin compliance details'));
       }

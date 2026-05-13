@@ -581,4 +581,22 @@ describe('Rust V2 dashboard bridge', () => {
       },
     }));
   });
+
+  it('preserves AbortError from Rust V2 dashboard reads', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValue(abortError);
+
+    await expect(dashboardsApi.getNurseDashboard({ signal: new AbortController().signal })).rejects.toBe(abortError);
+    await expect(dashboardsApi.getInpatientDashboard({ signal: new AbortController().signal })).rejects.toBe(abortError);
+    await expect(dashboardsApi.getReceptionistDashboard({ signal: new AbortController().signal })).rejects.toBe(abortError);
+    await expect(dashboardsApi.getAdminDashboard({ signal: new AbortController().signal })).rejects.toBe(abortError);
+    await expect(dashboardsApi.getMyWorkDashboard({ signal: new AbortController().signal })).rejects.toBe(abortError);
+    await expect(dashboardsApi.getClinicSchedule({ signal: new AbortController().signal })).rejects.toBe(abortError);
+    await expect(
+      dashboardsApi.getAdminDashboardV2({}, { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+    await expect(
+      dashboardsApi.getAdminDashboardV2Capacity({}, { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+  });
 });
