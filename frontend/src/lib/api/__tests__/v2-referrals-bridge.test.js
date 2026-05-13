@@ -270,6 +270,55 @@ describe('Rust V2 referrals bridge', () => {
     );
   });
 
+  it('threads AbortSignal through Rust referral and waitlist mutation calls', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'referral-1',
+          patient_id: 'patient-1',
+          patient_code: 'MRN-1',
+          patient_display_name: 'Ama Mensah',
+          to_service: 'Medicine',
+          priority: 'urgent',
+          status: 'sent',
+          reason: 'Review',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'referral-1', status: 'accepted' }, meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'referral-2', status: 'declined' }, meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'referral-1', status: 'completed' }, meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'wait-1', status: 'waiting' }, meta: {} }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'wait-1', status: 'offered' }, meta: {} }));
+
+    await referralsApi.createReferral({
+      patient: 'patient-1',
+      referred_to_department: 'Medicine',
+      urgency: 'urgent',
+      reason: 'Review',
+    }, { signal });
+    await referralsApi.acceptReferral('referral-1', 'Accepted', { signal });
+    await referralsApi.declineReferral('referral-2', 'Wrong service', { signal });
+    await referralsApi.completeReferral('referral-1', 'Reviewed', 'Follow up', { signal });
+    await referralsApi.createClinicWaitlistEntry({
+      patient: 'patient-1',
+      service: 'Medicine',
+      priority: 'routine',
+    }, { signal });
+    await referralsApi.offerNextClinicWaitlistEntry({ service: 'Medicine' }, { signal });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/referrals', 'POST', signal],
+      ['http://localhost:8080/api/v2/referrals/referral-1/accept', 'POST', signal],
+      ['http://localhost:8080/api/v2/referrals/referral-2/decline', 'POST', signal],
+      ['http://localhost:8080/api/v2/referrals/referral-1/complete', 'POST', signal],
+      ['http://localhost:8080/api/v2/referrals/clinic-waitlist', 'POST', signal],
+      ['http://localhost:8080/api/v2/referrals/clinic-waitlist/offer-next', 'POST', signal],
+    ]);
+  });
+
   it('loads and mutates clinic waitlist entries through Rust /api/v2', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -516,3 +565,10 @@ describe('Rust V2 referrals bridge', () => {
     }
   });
 });
+
+function jsonResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}

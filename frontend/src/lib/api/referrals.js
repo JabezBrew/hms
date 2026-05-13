@@ -222,14 +222,18 @@ export const referralsApi = {
     }
   },
 
-  createReferral: async (data) => {
+  createReferral: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postReferrals(v2ReferralPayload(data));
+        const response = await v2Api.postReferrals(v2ReferralPayload(data), options);
         return adaptV2Referral(response?.data);
       }
       return await apiClient.post('/referrals/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create referral'));
+      }
       throw new Error(handleApiError(error, 'Failed to create referral'));
     }
   },
@@ -256,12 +260,13 @@ export const referralsApi = {
     }
   },
 
-  acceptReferral: async (id, acceptanceNotes = '') => {
+  acceptReferral: async (id, acceptanceNotes = '', options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postReferralAccept(
           { id },
           { acceptance_notes: acceptanceNotes || null },
+          options,
         );
         return adaptV2Referral(response?.data);
       }
@@ -269,16 +274,21 @@ export const referralsApi = {
         acceptance_notes: acceptanceNotes,
       });
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to accept referral'));
+      }
       throw new Error(handleApiError(error, 'Failed to accept referral'));
     }
   },
 
-  declineReferral: async (id, declineReason) => {
+  declineReferral: async (id, declineReason, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postReferralDecline(
           { id },
           { decline_reason: declineReason },
+          options,
         );
         return adaptV2Referral(response?.data);
       }
@@ -286,6 +296,10 @@ export const referralsApi = {
         decline_reason: declineReason,
       });
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to decline referral'));
+      }
       throw new Error(handleApiError(error, 'Failed to decline referral'));
     }
   },
@@ -303,7 +317,7 @@ export const referralsApi = {
     }
   },
 
-  completeReferral: async (id, specialistNotes, recommendations = '') => {
+  completeReferral: async (id, specialistNotes, recommendations = '', options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postReferralComplete(
@@ -312,6 +326,7 @@ export const referralsApi = {
             specialist_notes: specialistNotes,
             recommendations: recommendations || null,
           },
+          options,
         );
         return adaptV2Referral(response?.data);
       }
@@ -320,6 +335,10 @@ export const referralsApi = {
         recommendations: recommendations,
       });
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to complete referral'));
+      }
       throw new Error(handleApiError(error, 'Failed to complete referral'));
     }
   },
@@ -335,10 +354,10 @@ export const referralsApi = {
     }
   },
 
-  updateReferralResponse: async (id, specialistNotes, recommendations = '') => {
+  updateReferralResponse: async (id, specialistNotes, recommendations = '', options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return referralsApi.completeReferral(id, specialistNotes, recommendations);
+        return referralsApi.completeReferral(id, specialistNotes, recommendations, options);
       }
       return await apiClient.patch(`/referrals/${id}/update_response/`, {
         specialist_notes: specialistNotes,
@@ -469,28 +488,37 @@ export const referralsApi = {
     }
   },
 
-  createClinicWaitlistEntry: async (data) => {
+  createClinicWaitlistEntry: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postClinicWaitlist(v2WaitlistPayload(data));
+        const response = await v2Api.postClinicWaitlist(v2WaitlistPayload(data), options);
         return adaptV2WaitlistEntry(response?.data);
       }
       return await apiClient.post('/referrals/clinic-waitlist/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create waitlist entry'));
+      }
       throw new Error(handleApiError(error, 'Failed to create waitlist entry'));
     }
   },
 
-  offerNextClinicWaitlistEntry: async (data) => {
+  offerNextClinicWaitlistEntry: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postClinicWaitlistOfferNext({
-          service: data?.service || data?.department || data?.referred_to_department,
-        });
+        const response = await v2Api.postClinicWaitlistOfferNext(
+          { service: data?.service || data?.department || data?.referred_to_department },
+          options,
+        );
         return adaptV2WaitlistEntry(response?.data);
       }
       return await apiClient.post('/referrals/clinic-waitlist/offer-next/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to offer next waitlist entry'));
+      }
       throw new Error(handleApiError(error, 'Failed to offer next waitlist entry'));
     }
   },
