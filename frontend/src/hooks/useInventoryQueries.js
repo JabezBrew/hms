@@ -405,7 +405,7 @@ export function useInventoryItems(filters = {}) {
 export function useInventoryItem(id) {
   return useQuery({
     queryKey: inventoryKeys.itemDetail(id),
-    queryFn: () => inventoryApi.getInventoryItem(id),
+    queryFn: ({ signal }) => inventoryApi.getInventoryItem(id, { signal }),
     enabled: !!id,
     staleTime: 5 * 60 * 1000,
   });
@@ -420,7 +420,7 @@ export function useInventoryItem(id) {
 export function useItemMovements(id, params = {}) {
   return useQuery({
     queryKey: inventoryKeys.itemMovements(id, params),
-    queryFn: () => inventoryApi.getItemMovements(id, params),
+    queryFn: ({ signal }) => inventoryApi.getItemMovements(id, { ...params, signal }),
     enabled: !!id,
     staleTime: 30 * 1000,
   });
@@ -434,7 +434,7 @@ export function useItemMovements(id, params = {}) {
 export function useItemExpiryTrackers(id) {
   return useQuery({
     queryKey: inventoryKeys.itemExpiryTrackers(id),
-    queryFn: () => inventoryApi.getItemExpiryTrackers(id),
+    queryFn: ({ signal }) => inventoryApi.getItemExpiryTrackers(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });
@@ -448,7 +448,7 @@ export function useItemExpiryTrackers(id) {
 export function useItemStockByLocation(id) {
   return useQuery({
     queryKey: inventoryKeys.itemStockByLocation(id),
-    queryFn: () => inventoryApi.getItemStockByLocation(id),
+    queryFn: ({ signal }) => inventoryApi.getItemStockByLocation(id, { signal }),
     enabled: !!id,
     staleTime: 30 * 1000,
   });
@@ -531,7 +531,7 @@ export function useDeleteInventoryItem() {
 export function useStockMovements(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.movementList(filters),
-    queryFn: () => inventoryApi.getStockMovements(filters),
+    queryFn: ({ signal }) => inventoryApi.getStockMovements({ ...filters, signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -615,7 +615,7 @@ export function useExpiryTrackers(filters = {}) {
 export function useExpiredBatches() {
   return useQuery({
     queryKey: inventoryKeys.expiredBatches(),
-    queryFn: () => inventoryApi.getExpiredBatches(),
+    queryFn: ({ signal }) => inventoryApi.getExpiredBatches({ signal }),
     staleTime: 60 * 1000,
   });
 }
@@ -628,7 +628,7 @@ export function useExpiredBatches() {
 export function useExpiringSoonBatches(days = 30) {
   return useQuery({
     queryKey: inventoryKeys.expiringSoonBatches(days),
-    queryFn: () => inventoryApi.getExpiringSoonBatches(days),
+    queryFn: ({ signal }) => inventoryApi.getExpiringSoonBatches(days, { signal }),
     staleTime: 60 * 1000,
   });
 }

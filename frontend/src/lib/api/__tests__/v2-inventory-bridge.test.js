@@ -265,6 +265,46 @@ describe('Rust V2 inventory bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('threads AbortSignal into Rust V2 stock movement reads', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({
+      data: [
+        {
+          id: 'movement-1',
+          item_id: 'item-1',
+          movement_type: 'receipt',
+          quantity: 10,
+        },
+      ],
+      page: { limit: 20, has_next: false, next_cursor: null },
+      meta: {},
+    }));
+
+    await expect(inventoryApi.getStockMovements({
+      movement_type: 'receipt',
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'movement-1' })],
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/inventory/stock-movements?limit=20',
+      expect.objectContaining({
+        method: 'GET',
+        signal: controller.signal,
+      }),
+    );
+  });
+
+  it('preserves AbortError from Rust V2 stock movement reads', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError);
+
+    await expect(
+      inventoryApi.getStockMovements({ signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+  });
+
   it('routes inventory list pages through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'cat-1', name: 'Medication' }], meta: {} }))
