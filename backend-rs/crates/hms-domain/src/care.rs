@@ -20,7 +20,10 @@ pub enum VisitStatus {
     InTriage,
     Triaged,
     InConsultation,
+    OnHold,
+    ReadyCheckout,
     CheckedOut,
+    NoShow,
     Cancelled,
 }
 

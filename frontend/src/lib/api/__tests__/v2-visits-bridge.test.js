@@ -161,7 +161,28 @@ describe('Rust V2 visits and triage bridge', () => {
         ),
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: 'visit-1', status: 'on_hold' }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: { id: 'visit-1', status: 'ready_checkout' }, meta: {} }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
         new Response(JSON.stringify({ data: { id: 'visit-1', status: 'checked_out' }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: 'visit-2', status: 'no_show' }, meta: {} }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -169,7 +190,10 @@ describe('Rust V2 visits and triage bridge', () => {
 
     await visitsApi.call('visit-1');
     await visitsApi.startConsultation('visit-1');
+    await visitsApi.hold('visit-1');
+    await visitsApi.endConsultation('visit-1');
     await visitsApi.checkout('visit-1');
+    await visitsApi.noShow('visit-2');
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
@@ -183,7 +207,22 @@ describe('Rust V2 visits and triage bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
+      'http://localhost:8080/api/v2/visits/visit-1/hold',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/visits/visit-1/ready-checkout',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      5,
       'http://localhost:8080/api/v2/visits/visit-1/checkout',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      6,
+      'http://localhost:8080/api/v2/visits/visit-2/no-show',
       expect.objectContaining({ method: 'POST' }),
     );
   });

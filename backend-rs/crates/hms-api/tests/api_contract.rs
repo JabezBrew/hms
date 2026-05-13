@@ -5887,6 +5887,11 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
             format!("/api/v2/visits/{visit_id}/start-consultation"),
             "in_consultation",
         ),
+        (format!("/api/v2/visits/{visit_id}/hold"), "on_hold"),
+        (
+            format!("/api/v2/visits/{visit_id}/ready-checkout"),
+            "ready_checkout",
+        ),
         (format!("/api/v2/visits/{visit_id}/checkout"), "checked_out"),
     ] {
         let response = app
@@ -5961,6 +5966,46 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         other_clinic_visits_body["data"].as_array().unwrap().len(),
         0
     );
+
+    let no_show_visit = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/visits/check-in")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "clinic_id": clinic_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("no-show visit check-in succeeds");
+    assert_eq!(no_show_visit.status(), StatusCode::OK);
+    let no_show_visit_body = json_body(no_show_visit).await;
+    let no_show_visit_id = no_show_visit_body["data"]["id"]
+        .as_str()
+        .expect("no-show visit id exists");
+    let no_show_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/visits/{no_show_visit_id}/no-show"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("visit no-show succeeds");
+    assert_eq!(no_show_response.status(), StatusCode::OK);
+    let no_show_body = json_body(no_show_response).await;
+    assert_eq!(no_show_body["data"]["status"], "no_show");
 
     let triage_response = app
         .clone()

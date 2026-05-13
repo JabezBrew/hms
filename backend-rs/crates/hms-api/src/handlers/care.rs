@@ -419,6 +419,64 @@ pub async fn start_visit_consultation(
 
 #[utoipa::path(
     post,
+    path = "/api/v2/visits/{id}/hold",
+    operation_id = "postVisitHold",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Visit id")),
+    responses(
+        (status = 200, description = "Visit put on hold", body = ObjectResponse<VisitListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Visit not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn hold_visit(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
+    update_visit_with_access(
+        &state,
+        &user,
+        id,
+        VisitStatus::OnHold,
+        PermissionCode::EncounterManage,
+    )
+    .await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/visits/{id}/ready-checkout",
+    operation_id = "postVisitReadyCheckout",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Visit id")),
+    responses(
+        (status = 200, description = "Visit ready for checkout", body = ObjectResponse<VisitListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Visit not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn ready_checkout_visit(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
+    update_visit_with_access(
+        &state,
+        &user,
+        id,
+        VisitStatus::ReadyCheckout,
+        PermissionCode::EncounterManage,
+    )
+    .await
+}
+
+#[utoipa::path(
+    post,
     path = "/api/v2/visits/{id}/checkout",
     operation_id = "postVisitCheckout",
     tag = "care",
@@ -441,6 +499,35 @@ pub async fn checkout_visit(
         &user,
         id,
         VisitStatus::CheckedOut,
+        PermissionCode::AppointmentManage,
+    )
+    .await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/visits/{id}/no-show",
+    operation_id = "postVisitNoShow",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Visit id")),
+    responses(
+        (status = 200, description = "Visit marked no-show", body = ObjectResponse<VisitListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Visit not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn no_show_visit(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
+    update_visit_with_access(
+        &state,
+        &user,
+        id,
+        VisitStatus::NoShow,
         PermissionCode::AppointmentManage,
     )
     .await

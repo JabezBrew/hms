@@ -27,7 +27,13 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/visits/:id/start-consultation",
             post(care::start_visit_consultation),
         )
+        .route("/api/v2/visits/:id/hold", post(care::hold_visit))
+        .route(
+            "/api/v2/visits/:id/ready-checkout",
+            post(care::ready_checkout_visit),
+        )
         .route("/api/v2/visits/:id/checkout", post(care::checkout_visit))
+        .route("/api/v2/visits/:id/no-show", post(care::no_show_visit))
         .route(
             "/api/v2/triage",
             get(care::list_triage).post(care::create_triage),

@@ -229,20 +229,36 @@ export const visitsApi = {
    * Put consultation on hold (in_progress -> on_hold)
    */
   hold: async (encounterId) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose visit hold yet.');
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postVisitHold({ id: encounterId });
+        return adaptV2Visit(response?.data);
+      }
+      return apiClient.post(`/encounters/visits/${encounterId}/hold/`);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to put visit on hold'));
+      }
+      throw error;
     }
-    return apiClient.post(`/encounters/visits/${encounterId}/hold/`);
   },
 
   /**
    * End consultation (in_progress -> ready_checkout)
    */
   endConsultation: async (encounterId) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose ready-checkout transition yet.');
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postVisitReadyCheckout({ id: encounterId });
+        return adaptV2Visit(response?.data);
+      }
+      return apiClient.post(`/encounters/visits/${encounterId}/end_consultation/`);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to mark visit ready for checkout'));
+      }
+      throw error;
     }
-    return apiClient.post(`/encounters/visits/${encounterId}/end_consultation/`);
   },
 
   /**
@@ -269,10 +285,18 @@ export const visitsApi = {
    * Mark patient as no-show (waiting/checked_in -> no_show)
    */
   noShow: async (encounterId) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose no-show transition yet.');
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postVisitNoShow({ id: encounterId });
+        return adaptV2Visit(response?.data);
+      }
+      return apiClient.post(`/encounters/visits/${encounterId}/no_show/`);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to mark patient as no-show'));
+      }
+      throw error;
     }
-    return apiClient.post(`/encounters/visits/${encounterId}/no_show/`);
   },
 
   /**

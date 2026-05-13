@@ -2235,6 +2235,36 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postVisitHold": {
+    "operationId": "postVisitHold",
+    "method": "POST",
+    "path": "/api/v2/visits/{id}/hold",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postVisitNoShow": {
+    "operationId": "postVisitNoShow",
+    "method": "POST",
+    "path": "/api/v2/visits/{id}/no-show",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postVisitReadyCheckout": {
+    "operationId": "postVisitReadyCheckout",
+    "method": "POST",
+    "path": "/api/v2/visits/{id}/ready-checkout",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postVisitStartConsultation": {
     "operationId": "postVisitStartConsultation",
     "method": "POST",
@@ -2533,6 +2563,9 @@ export function createGeneratedClient(request) {
     postVisitCall: createOperation(request, operations.postVisitCall),
     postVisitCheckIn: createOperation(request, operations.postVisitCheckIn),
     postVisitCheckout: createOperation(request, operations.postVisitCheckout),
+    postVisitHold: createOperation(request, operations.postVisitHold),
+    postVisitNoShow: createOperation(request, operations.postVisitNoShow),
+    postVisitReadyCheckout: createOperation(request, operations.postVisitReadyCheckout),
     postVisitStartConsultation: createOperation(request, operations.postVisitStartConsultation),
     postWardBed: createOperation(request, operations.postWardBed),
     postWardSection: createOperation(request, operations.postWardSection),
