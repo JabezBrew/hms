@@ -83,6 +83,7 @@ describe('Rust V2 settings queries', () => {
       'http://localhost:8080/api/v2/auth/me',
       expect.objectContaining({
         method: 'GET',
+        signal: expect.any(AbortSignal),
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
           'X-Facility-Code': 'HMS',
@@ -128,6 +129,7 @@ describe('Rust V2 settings queries', () => {
       'http://localhost:8080/api/v2/auth/sessions',
       expect.objectContaining({
         method: 'GET',
+        signal: expect.any(AbortSignal),
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
         }),

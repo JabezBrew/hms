@@ -12,10 +12,10 @@ import { authApi } from '@/shared/api/auth';
  * - Sessions: /api/users/sessions/ with revoke and revoke_all actions
  */
 const settingsApi = {
-  getProfile: async () => {
+  getProfile: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await authApi.getProfile();
+        return await authApi.getProfile(options);
       }
       return await apiClient.get('/users/users/me/');
     } catch (error) {
@@ -51,10 +51,10 @@ const settingsApi = {
     }
   },
 
-  getSessions: async () => {
+  getSessions: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await authApi.listSessions();
+        return await authApi.listSessions(options);
       }
       return await apiClient.get('/users/sessions/');
     } catch (error) {
@@ -145,7 +145,7 @@ export const settingsKeys = {
 export function useProfile() {
   return useQuery({
     queryKey: settingsKeys.profile(),
-    queryFn: settingsApi.getProfile,
+    queryFn: ({ signal }) => settingsApi.getProfile({ signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -179,7 +179,7 @@ export function useChangePassword() {
 export function useUserSessions() {
   return useQuery({
     queryKey: settingsKeys.sessions(),
-    queryFn: settingsApi.getSessions,
+    queryFn: ({ signal }) => settingsApi.getSessions({ signal }),
     staleTime: 30 * 1000, // 30 seconds
   });
 }
