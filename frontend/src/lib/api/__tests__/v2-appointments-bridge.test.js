@@ -205,6 +205,107 @@ describe('Rust V2 appointments bridge', () => {
     });
   });
 
+  it('threads AbortSignal through Rust appointment mutation calls', async () => {
+    const signal = new AbortController().signal;
+    const scheduledAppointment = {
+      id: 'appointment-1',
+      patient_id: 'patient-1',
+      patient_code: 'MRN-MAIN-2026-000001',
+      patient_display_name: 'Ama Mensah',
+      starts_at: '2026-05-12T09:00:00Z',
+      ends_at: '2026-05-12T09:30:00Z',
+      status: 'scheduled',
+      created_at: '2026-05-11T08:00:00Z',
+    };
+
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: scheduledAppointment, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: scheduledAppointment, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          data: { ...scheduledAppointment, status: 'cancelled' },
+          meta: {},
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: scheduledAppointment, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          data: {
+            id: 'visit-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            patient_display_name: 'Ama Mensah',
+            appointment_id: 'appointment-1',
+            clinic_id: null,
+            status: 'waiting',
+            checked_in_at: '2026-05-12T08:55:00Z',
+          },
+          meta: {},
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    await appointmentsApi.createAppointment({
+      patient: 'patient-1',
+      start_time: '2026-05-12T09:00:00Z',
+      end_time: '2026-05-12T09:30:00Z',
+      signal,
+    });
+    await appointmentsApi.updateAppointment('appointment-1', {
+      start_time: '2026-05-12T09:30:00Z',
+      end_time: '2026-05-12T10:00:00Z',
+      signal,
+    });
+    await appointmentsApi.cancelAppointment('appointment-1', 'Patient unavailable', { signal });
+    await appointmentsApi.checkInAppointment('appointment-1', { signal });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/appointments',
+      expect.objectContaining({ method: 'POST', signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/appointments/appointment-1',
+      expect.objectContaining({ method: 'PATCH', signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/appointments/appointment-1/cancel',
+      expect.objectContaining({ method: 'POST', signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/appointments/appointment-1',
+      expect.objectContaining({ method: 'GET', signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      5,
+      'http://localhost:8080/api/v2/visits/check-in',
+      expect.objectContaining({ method: 'POST', signal }),
+    );
+  });
+
   it('cancels appointments through the Rust cancel action instead of the old Django action', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

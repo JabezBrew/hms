@@ -346,10 +346,13 @@ export const appointmentsApi = {
    * @param {Object} data - Appointment data
    * @returns {Promise<Object>} Created appointment data
    */
-  createAppointment: async (data) => {
+  createAppointment: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAppointments(normalizeV2AppointmentPayload(data));
+        const response = await v2Api.postAppointments(
+          normalizeV2AppointmentPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2Appointment(response?.data);
       }
 
@@ -391,12 +394,13 @@ export const appointmentsApi = {
    * @param {Object} data - Appointment data to update
    * @returns {Promise<Object>} Updated appointment data
    */
-  updateAppointment: async (id, data) => {
+  updateAppointment: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.patchAppointmentById(
           { id },
           normalizeV2AppointmentPayload(data),
+          { signal: options.signal || data?.signal },
         );
         return adaptV2Appointment(response?.data);
       }
@@ -559,16 +563,22 @@ export const appointmentsApi = {
    * @param {string} id - Appointment ID
    * @returns {Promise<Object>} Updated appointment data
    */
-  checkInAppointment: async (id) => {
+  checkInAppointment: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const appointmentResponse = await v2Api.getAppointmentById({ id });
+        const appointmentResponse = await v2Api.getAppointmentById(
+          { id },
+          { signal: options.signal },
+        );
         const appointment = appointmentResponse?.data;
-        const response = await v2Api.postVisitCheckIn({
-          patient_id: appointment?.patient_id,
-          appointment_id: id,
-          clinic_id: null,
-        });
+        const response = await v2Api.postVisitCheckIn(
+          {
+            patient_id: appointment?.patient_id,
+            appointment_id: id,
+            clinic_id: null,
+          },
+          { signal: options.signal },
+        );
         return adaptV2VisitCheckIn(response?.data);
       }
 
@@ -588,10 +598,13 @@ export const appointmentsApi = {
    * @param {string} reason - Cancellation reason
    * @returns {Promise<Object>} Updated appointment data
    */
-  cancelAppointment: async (id, reason) => {
+  cancelAppointment: async (id, reason, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAppointmentCancel({ id });
+        const response = await v2Api.postAppointmentCancel(
+          { id },
+          { signal: options.signal },
+        );
         return adaptV2Appointment(response?.data);
       }
 
@@ -611,14 +624,14 @@ export const appointmentsApi = {
    * @param {string} status - New status (proposed, pending, booked, arrived, fulfilled, cancelled, noshow)
    * @returns {Promise<Object>} Updated appointment data
    */
-  updateAppointmentStatus: async (id, status) => {
+  updateAppointmentStatus: async (id, status, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         if (status === 'cancelled') {
-          return appointmentsApi.cancelAppointment(id);
+          return appointmentsApi.cancelAppointment(id, undefined, options);
         }
         if (status === 'arrived' || status === 'checked_in') {
-          return appointmentsApi.checkInAppointment(id);
+          return appointmentsApi.checkInAppointment(id, options);
         }
         throw unsupportedInRustV2('Rust V2 only supports appointment cancellation as a direct status transition.');
       }
