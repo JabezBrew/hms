@@ -54,6 +54,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAdminDashboardV2Capacity": {
+    "operationId": "getAdminDashboardV2Capacity",
+    "method": "GET",
+    "path": "/api/v2/dashboards/admin-v2/capacity",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "limit"
+    ],
+    "hasBody": false
+  },
   "getAdminDelegations": {
     "operationId": "getAdminDelegations",
     "method": "GET",
@@ -2643,6 +2653,7 @@ export function createGeneratedClient(request) {
     getAdminAuditEvents: createOperation(request, operations.getAdminAuditEvents),
     getAdminAuthorityAppointments: createOperation(request, operations.getAdminAuthorityAppointments),
     getAdminCommittees: createOperation(request, operations.getAdminCommittees),
+    getAdminDashboardV2Capacity: createOperation(request, operations.getAdminDashboardV2Capacity),
     getAdminDelegations: createOperation(request, operations.getAdminDelegations),
     getAdminFeatures: createOperation(request, operations.getAdminFeatures),
     getAdminOrgUnitAncestors: createOperation(request, operations.getAdminOrgUnitAncestors),

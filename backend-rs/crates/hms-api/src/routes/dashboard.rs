@@ -7,6 +7,10 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/api/v2/dashboards/admin-v2/capacity",
+            get(dashboard::admin_capacity_summary),
+        )
+        .route(
             "/api/v2/dashboards/snapshot",
             get(dashboard::dashboard_snapshot),
         )

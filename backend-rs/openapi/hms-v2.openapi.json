@@ -12,6 +12,111 @@
         },
         "type": "object"
       },
+      "AdminCapacityCounts": {
+        "properties": {
+          "high_occupancy_wards": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ward_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ward_count",
+          "high_occupancy_wards"
+        ],
+        "type": "object"
+      },
+      "AdminCapacityQuery": {
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AdminCapacitySummary": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/AdminCapacityCounts"
+          },
+          "wait_time": {
+            "$ref": "#/components/schemas/AdminCapacityWaitTime"
+          },
+          "wards": {
+            "items": {
+              "$ref": "#/components/schemas/AdminCapacityWard"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "summary",
+          "wait_time",
+          "wards"
+        ],
+        "type": "object"
+      },
+      "AdminCapacityWaitTime": {
+        "properties": {
+          "median_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "p95_minutes": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "median_minutes",
+          "p95_minutes"
+        ],
+        "type": "object"
+      },
+      "AdminCapacityWard": {
+        "properties": {
+          "available_beds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "occupancy_pct": {
+            "format": "double",
+            "type": "number"
+          },
+          "occupied_beds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_beds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ward_id",
+          "ward_name",
+          "total_beds",
+          "occupied_beds",
+          "available_beds",
+          "occupancy_pct"
+        ],
+        "type": "object"
+      },
       "AdminListQuery": {
         "properties": {
           "cursor": {
@@ -9456,6 +9561,38 @@
           "handoff"
         ],
         "type": "string"
+      },
+      "ObjectResponse_AdminCapacitySummary": {
+        "properties": {
+          "data": {
+            "properties": {
+              "summary": {
+                "$ref": "#/components/schemas/AdminCapacityCounts"
+              },
+              "wait_time": {
+                "$ref": "#/components/schemas/AdminCapacityWaitTime"
+              },
+              "wards": {
+                "items": {
+                  "$ref": "#/components/schemas/AdminCapacityWard"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "summary",
+              "wait_time",
+              "wards"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
       },
       "ObjectResponse_AdmissionCaseListItem": {
         "properties": {
@@ -22883,6 +23020,66 @@
         ],
         "tags": [
           "consent"
+        ]
+      }
+    },
+    "/api/v2/dashboards/admin-v2/capacity": {
+      "get": {
+        "operationId": "getAdminDashboardV2Capacity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AdminCapacitySummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "dashboards"
         ]
       }
     },

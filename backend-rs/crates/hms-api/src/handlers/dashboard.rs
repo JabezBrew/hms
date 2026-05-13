@@ -7,8 +7,9 @@ use hms_access::require_permission;
 use hms_db::dashboard::NotificationCursor;
 use hms_domain::auth::AuthUser;
 use hms_domain::dashboard::{
-    DashboardSnapshot, MarkNotificationReadRequest, NotificationListItem, NotificationListQuery,
-    RealtimeChannelKind, RealtimeMessage, RealtimeSubscribeQuery, RealtimeSubscription,
+    AdminCapacityQuery, AdminCapacitySummary, DashboardSnapshot, MarkNotificationReadRequest,
+    NotificationListItem, NotificationListQuery, RealtimeChannelKind, RealtimeMessage,
+    RealtimeSubscribeQuery, RealtimeSubscription,
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use serde_json::json;
@@ -21,6 +22,8 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
+const DEFAULT_CAPACITY_LIMIT: u8 = 8;
+const MAX_CAPACITY_LIMIT: u8 = 25;
 
 #[utoipa::path(get, path = "/api/v2/dashboards/snapshot", operation_id = "getDashboardSnapshot", tag = "dashboards", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<DashboardSnapshot>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_snapshot(
@@ -35,6 +38,26 @@ pub async fn dashboard_snapshot(
         )
     })?;
     Ok(Json(object(snapshot)))
+}
+
+#[utoipa::path(get, path = "/api/v2/dashboards/admin-v2/capacity", operation_id = "getAdminDashboardV2Capacity", tag = "dashboards", security(("bearerAuth" = [])), params(AdminCapacityQuery), responses((status = 200, body = ObjectResponse<AdminCapacitySummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn admin_capacity_summary(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<AdminCapacityQuery>,
+) -> Result<Json<ObjectResponse<AdminCapacitySummary>>, ApiError> {
+    require_dashboard_access(&user, state.facility_id())?;
+    let limit = query
+        .limit
+        .unwrap_or(DEFAULT_CAPACITY_LIMIT)
+        .clamp(1, MAX_CAPACITY_LIMIT) as i64;
+    let summary = state.admin_capacity_summary(limit).await.map_err(|_| {
+        ApiError::conflict(
+            "admin_capacity_summary_failed",
+            "Admin capacity summary could not be loaded.",
+        )
+    })?;
+    Ok(Json(object(summary)))
 }
 
 #[utoipa::path(get, path = "/api/v2/notifications", operation_id = "getNotifications", tag = "notifications", security(("bearerAuth" = [])), params(NotificationListQuery), responses((status = 200, body = ListResponse<NotificationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]

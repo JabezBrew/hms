@@ -146,35 +146,6 @@ function adaptV2AppointmentsToClinicSchedule(response, params = {}) {
   };
 }
 
-function adaptV2WardsToCapacity(response) {
-  const wards = (response?.data || []).map((ward) => {
-    const totalBeds = Number(ward.active_bed_count || 0);
-    const occupiedBeds = Number(ward.occupied_bed_count || 0);
-    const availableBeds = Math.max(totalBeds - occupiedBeds, 0);
-    const occupancyPct = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
-    return {
-      ward_id: ward.id,
-      ward_name: ward.name,
-      total_beds: totalBeds,
-      occupied_beds: occupiedBeds,
-      available_beds: availableBeds,
-      occupancy_pct: occupancyPct,
-    };
-  });
-
-  return {
-    summary: {
-      ward_count: wards.length,
-      high_occupancy_wards: wards.filter((ward) => Number(ward.occupancy_pct || 0) >= 85).length,
-    },
-    wait_time: {
-      median_minutes: 0,
-      p95_minutes: 0,
-    },
-    wards,
-  };
-}
-
 function emptyV2WorkforceDetails() {
   return {
     summary: {
@@ -326,13 +297,27 @@ export const dashboardsApi = {
    * @param {Object} params - Query parameters (window)
    * @returns {Promise<Object>} Admin dashboard v2 capacity detail
    */
-  getAdminDashboardV2Capacity: async (params = {}) => {
+  getAdminDashboardV2Capacity: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return adaptV2WardsToCapacity(await v2Api.getWards({ query: { limit: 100 } }));
+        const response = await v2Api.getAdminDashboardV2Capacity({
+          query: { limit: 8 },
+          signal: options.signal,
+        });
+        return response?.data || {
+          summary: {
+            ward_count: 0,
+            high_occupancy_wards: 0,
+          },
+          wait_time: {
+            median_minutes: 0,
+            p95_minutes: 0,
+          },
+          wards: [],
+        };
       }
       const endpoint = `/dashboards/admin-v2/capacity/${buildQueryString(params)}`;
-      return await apiClient.get(endpoint);
+      return await apiClient.get(endpoint, options);
     } catch (error) {
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch admin capacity details'));

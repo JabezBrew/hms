@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_domain::dashboard::{
+    AdminCapacityCounts, AdminCapacitySummary, AdminCapacityWaitTime, AdminCapacityWard,
     DashboardMetric, DashboardSnapshot, NotificationListItem, NotificationPriority,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, NavigationManifest, PermissionCode};
@@ -42,6 +43,18 @@ struct NotificationRow {
     created_at: DateTime<Utc>,
 }
 
+#[derive(FromRow)]
+struct AdminCapacityWardRow {
+    ward_id: Uuid,
+    ward_name: String,
+    total_beds: i64,
+    occupied_beds: i64,
+    available_beds: i64,
+    occupancy_pct: f64,
+    ward_count: i64,
+    high_occupancy_wards: i64,
+}
+
 pub async fn dashboard_snapshot(
     pool: &PgPool,
     facility_id: Uuid,
@@ -76,6 +89,78 @@ pub async fn dashboard_snapshot(
         generated_at: row.generated_at,
         metrics: serde_json::from_value(row.metrics)?,
         navigation,
+    })
+}
+
+pub async fn admin_capacity_summary(
+    pool: &PgPool,
+    facility_id: Uuid,
+    limit: i64,
+) -> anyhow::Result<AdminCapacitySummary> {
+    let rows = sqlx::query_as::<_, AdminCapacityWardRow>(
+        r#"
+        WITH ward_capacity AS (
+            SELECT wards.id AS ward_id,
+                   wards.name AS ward_name,
+                   count(beds.id) FILTER (WHERE beds.status != 'closed') AS total_beds,
+                   count(beds.id) FILTER (WHERE beds.status = 'occupied') AS occupied_beds
+            FROM wards
+            LEFT JOIN beds
+              ON beds.ward_id = wards.id
+             AND beds.facility_id = wards.facility_id
+            WHERE wards.facility_id = $1
+              AND wards.status = 'active'
+            GROUP BY wards.id, wards.name
+        ),
+        enriched AS (
+            SELECT ward_id,
+                   ward_name,
+                   COALESCE(total_beds, 0)::bigint AS total_beds,
+                   COALESCE(occupied_beds, 0)::bigint AS occupied_beds,
+                   GREATEST(COALESCE(total_beds, 0) - COALESCE(occupied_beds, 0), 0)::bigint AS available_beds,
+                   CASE
+                       WHEN COALESCE(total_beds, 0) > 0
+                       THEN (COALESCE(occupied_beds, 0)::double precision * 100.0)
+                            / COALESCE(total_beds, 0)::double precision
+                       ELSE 0.0
+                   END AS occupancy_pct
+            FROM ward_capacity
+        )
+        SELECT ward_id,
+               ward_name,
+               total_beds,
+               occupied_beds,
+               available_beds,
+               occupancy_pct,
+               count(*) OVER ()::bigint AS ward_count,
+               count(*) FILTER (WHERE occupancy_pct >= 85.0) OVER ()::bigint AS high_occupancy_wards
+        FROM enriched
+        ORDER BY occupancy_pct DESC, ward_name ASC, ward_id ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    let ward_count = rows.first().map(|row| row.ward_count).unwrap_or(0);
+    let high_occupancy_wards = rows
+        .first()
+        .map(|row| row.high_occupancy_wards)
+        .unwrap_or(0);
+    let wards: Vec<_> = rows.into_iter().map(admin_capacity_ward_from_row).collect();
+
+    Ok(AdminCapacitySummary {
+        summary: AdminCapacityCounts {
+            ward_count,
+            high_occupancy_wards,
+        },
+        wait_time: AdminCapacityWaitTime {
+            median_minutes: 0,
+            p95_minutes: 0,
+        },
+        wards,
     })
 }
 
@@ -236,6 +321,17 @@ async fn dashboard_metrics(
             permission: PermissionCode::BillingView,
         },
     ])
+}
+
+fn admin_capacity_ward_from_row(row: AdminCapacityWardRow) -> AdminCapacityWard {
+    AdminCapacityWard {
+        ward_id: row.ward_id,
+        ward_name: row.ward_name,
+        total_beds: row.total_beds,
+        occupied_beds: row.occupied_beds,
+        available_beds: row.available_beds,
+        occupancy_pct: row.occupancy_pct,
+    }
 }
 
 async fn get_notification(

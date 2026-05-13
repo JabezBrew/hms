@@ -199,4 +199,64 @@ describe('Rust V2 dashboard bridge', () => {
       completed: [expect.objectContaining({ id: 'appointment-2' })],
     }));
   });
+
+  it('loads admin capacity details from the Rust capacity summary endpoint', async () => {
+    const abortController = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            summary: {
+              ward_count: 2,
+              high_occupancy_wards: 1,
+            },
+            wait_time: {
+              median_minutes: 0,
+              p95_minutes: 0,
+            },
+            wards: [
+              {
+                ward_id: 'ward-1',
+                ward_name: 'Surgical Ward',
+                total_beds: 10,
+                occupied_beds: 9,
+                available_beds: 1,
+                occupancy_pct: 90,
+              },
+            ],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await dashboardsApi.getAdminDashboardV2Capacity(
+      { window: 'today' },
+      { signal: abortController.signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/dashboards/admin-v2/capacity?limit=8',
+      expect.objectContaining({
+        method: 'GET',
+        signal: abortController.signal,
+      }),
+    );
+    expect(response).toEqual(expect.objectContaining({
+      summary: {
+        ward_count: 2,
+        high_occupancy_wards: 1,
+      },
+      wards: [
+        expect.objectContaining({
+          ward_id: 'ward-1',
+          occupancy_pct: 90,
+        }),
+      ],
+    }));
+  });
 });

@@ -4905,6 +4905,45 @@ async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() 
     assert!(metric_keys.contains(&"active_patients"));
     assert!(snapshot_body["data"]["navigation"]["groups"].is_array());
 
+    let capacity = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/dashboards/admin-v2/capacity?limit=8")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("admin capacity summary succeeds");
+    assert_eq!(capacity.status(), StatusCode::OK);
+    let capacity_body = json_body(capacity).await;
+    assert!(
+        capacity_body["data"]["summary"]["ward_count"]
+            .as_i64()
+            .expect("ward count is numeric")
+            > 0
+    );
+    assert!(
+        capacity_body["data"]["summary"]["high_occupancy_wards"]
+            .as_i64()
+            .expect("high occupancy count is numeric")
+            >= 0
+    );
+    assert!(capacity_body["data"]["wait_time"]["median_minutes"].is_i64());
+    assert!(capacity_body["data"]["wards"]
+        .as_array()
+        .expect("ward capacity details are array")
+        .iter()
+        .all(|ward| ward["ward_id"].is_string()
+            && ward["ward_name"].is_string()
+            && ward["total_beds"].is_i64()
+            && ward["occupied_beds"].is_i64()
+            && ward["available_beds"].is_i64()
+            && ward["occupancy_pct"].is_number()));
+    assert!(!capacity_body.to_string().contains("P-10001"));
+
     let notifications = app
         .clone()
         .oneshot(

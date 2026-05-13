@@ -70,7 +70,9 @@ use hms_domain::clinical::{
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
-use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
+use hms_domain::dashboard::{
+    AdminCapacitySummary, DashboardSnapshot, NotificationListItem, RealtimeChannelKind,
+};
 use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceBalanceValidation,
@@ -468,6 +470,10 @@ impl AppState {
             capabilities.navigation,
         )
         .await
+    }
+
+    pub async fn admin_capacity_summary(&self, limit: i64) -> Result<AdminCapacitySummary> {
+        hms_db::dashboard::admin_capacity_summary(&self.inner.pool, self.facility_id(), limit).await
     }
 
     pub async fn list_notifications(

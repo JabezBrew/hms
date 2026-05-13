@@ -23,6 +23,40 @@ pub struct DashboardMetric {
     pub permission: PermissionCode,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AdminCapacitySummary {
+    pub summary: AdminCapacityCounts,
+    pub wait_time: AdminCapacityWaitTime,
+    pub wards: Vec<AdminCapacityWard>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AdminCapacityCounts {
+    pub ward_count: i64,
+    pub high_occupancy_wards: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AdminCapacityWaitTime {
+    pub median_minutes: i64,
+    pub p95_minutes: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AdminCapacityWard {
+    pub ward_id: Uuid,
+    pub ward_name: String,
+    pub total_beds: i64,
+    pub occupied_beds: i64,
+    pub available_beds: i64,
+    pub occupancy_pct: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct AdminCapacityQuery {
+    pub limit: Option<u8>,
+}
+
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 pub struct NotificationListQuery {
     pub cursor: Option<String>,
