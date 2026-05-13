@@ -52,9 +52,9 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
-    BillingRuleListItem, CashDrawerListItem, CashSessionListItem, ClaimListItem,
-    CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem, PaymentListItem,
-    PaymentMethod, ReceiptListItem, RemittanceImportListItem, ServiceCatalogItem,
+    BillingDashboardSummary, BillingRuleListItem, CashDrawerListItem, CashSessionListItem,
+    ClaimListItem, CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
+    PaymentListItem, PaymentMethod, ReceiptListItem, RemittanceImportListItem, ServiceCatalogItem,
     ServicePriceListItem,
 };
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -1918,6 +1918,10 @@ impl AppState {
 
     pub async fn list_billing_rules(&self) -> Result<Vec<BillingRuleListItem>> {
         hms_db::billing::list_billing_rules(&self.inner.pool, self.facility_id()).await
+    }
+
+    pub async fn billing_dashboard_summary(&self) -> Result<BillingDashboardSummary> {
+        hms_db::billing::billing_dashboard_summary(&self.inner.pool, self.facility_id()).await
     }
 
     pub async fn list_billing_invoices(

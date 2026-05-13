@@ -174,6 +174,117 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
 }
 
 #[tokio::test]
+async fn billing_dashboard_summary_uses_facility_scoped_aggregates() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+    let service_price_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM service_prices WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("service price exists");
+
+    let invoice = hms_db::billing::create_invoice(
+        &pool,
+        NewInvoice {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            service_price_id,
+            quantity: 2,
+            invoice_number: "INV-DASH-1".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("invoice is created");
+    let payment_amount = invoice.gross_amount_minor / 2;
+    hms_db::billing::create_payment(
+        &pool,
+        NewPayment {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            invoice_id: invoice.id,
+            receipt_id: uuid::Uuid::new_v4(),
+            receipt_number: "RCT-DASH-1".to_owned(),
+            amount_minor: payment_amount,
+            method: PaymentMethod::MobileMoney,
+            cash_session_id: None,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("payment is created");
+    hms_db::billing::create_claim(
+        &pool,
+        NewClaim {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            invoice_id: invoice.id,
+            claim_number: "CLM-DASH-1".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("claim is created");
+
+    let summary = hms_db::billing::billing_dashboard_summary(&pool, facility_id)
+        .await
+        .expect("dashboard summary aggregates");
+
+    assert_eq!(summary.revenue_today_minor, payment_amount);
+    assert_eq!(summary.revenue_this_week_minor, payment_amount);
+    assert_eq!(
+        summary.outstanding_amount_minor,
+        invoice.gross_amount_minor - payment_amount
+    );
+    assert_eq!(summary.outstanding_invoices, 1);
+    assert_eq!(summary.pending_claims, 1);
+    assert_eq!(
+        summary.pending_claims_amount_minor,
+        invoice.gross_amount_minor
+    );
+    assert_eq!(summary.invoices_created_today, 1);
+    assert_eq!(summary.payments_received_today, 1);
+    assert_eq!(summary.unique_patients_billed, 1);
+    assert_eq!(
+        summary.average_invoice_amount_minor,
+        invoice.gross_amount_minor
+    );
+}
+
+#[tokio::test]
 async fn cash_session_repository_filters_open_sessions_and_loads_details() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

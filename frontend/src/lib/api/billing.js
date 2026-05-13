@@ -277,47 +277,19 @@ function emptyAgingSnapshot() {
   return { bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0, total: 0 };
 }
 
-function isSameLocalDay(value, reference = new Date()) {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    && date.getFullYear() === reference.getFullYear()
-    && date.getMonth() === reference.getMonth()
-    && date.getDate() === reference.getDate();
-}
-
-function isWithinLastSevenDays(value, reference = new Date()) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    return false;
-  }
-  const start = new Date(reference);
-  start.setDate(reference.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
-  return date >= start && date <= reference;
-}
-
-function calculateV2DashboardMetrics(invoices, payments, claims) {
-  const today = new Date();
-  const invoicesToday = invoices.filter((invoice) => isSameLocalDay(invoice.issued_at, today));
-  const paymentsToday = payments.filter((payment) => isSameLocalDay(payment.paid_at, today));
-  const weekPayments = payments.filter((payment) => isWithinLastSevenDays(payment.paid_at, today));
-  const outstandingInvoices = invoices.filter((invoice) => Number(invoice.balance_minor || 0) > 0);
-  const pendingClaims = claims.filter((claim) => ['draft', 'ready', 'submitted'].includes(claim.status));
-  const averageInvoiceMinor = invoices.length > 0
-    ? invoices.reduce((sum, invoice) => sum + Number(invoice.gross_amount_minor || 0), 0) / invoices.length
-    : 0;
-
+function adaptV2DashboardSummary(response) {
+  const summary = response?.data || response || {};
   return {
-    revenue_today: minorToMajor(paymentsToday.reduce((sum, payment) => sum + Number(payment.amount_minor || 0), 0)),
-    revenue_this_week: minorToMajor(weekPayments.reduce((sum, payment) => sum + Number(payment.amount_minor || 0), 0)),
-    outstanding_amount: minorToMajor(outstandingInvoices.reduce((sum, invoice) => sum + Number(invoice.balance_minor || 0), 0)),
-    outstanding_invoices: outstandingInvoices.length,
-    pending_claims: pendingClaims.length,
-    pending_claims_amount: minorToMajor(pendingClaims.reduce((sum, claim) => sum + Number(claim.amount_minor || 0), 0)),
-    invoices_created_today: invoicesToday.length,
-    payments_received_today: paymentsToday.length,
-    unique_patients_billed: new Set(invoicesToday.map((invoice) => invoice.patient_id).filter(Boolean)).size,
-    average_invoice_amount: minorToMajor(averageInvoiceMinor),
+    revenue_today: minorToMajor(summary.revenue_today_minor),
+    revenue_this_week: minorToMajor(summary.revenue_this_week_minor),
+    outstanding_amount: minorToMajor(summary.outstanding_amount_minor),
+    outstanding_invoices: Number(summary.outstanding_invoices || 0),
+    pending_claims: Number(summary.pending_claims || 0),
+    pending_claims_amount: minorToMajor(summary.pending_claims_amount_minor),
+    invoices_created_today: Number(summary.invoices_created_today || 0),
+    payments_received_today: Number(summary.payments_received_today || 0),
+    unique_patients_billed: Number(summary.unique_patients_billed || 0),
+    average_invoice_amount: minorToMajor(summary.average_invoice_amount_minor),
   };
 }
 
@@ -407,16 +379,10 @@ export const billingApi = {
   getDashboardMetrics: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const [invoiceResponse, paymentResponse, claimResponse] = await Promise.all([
-          v2Api.getBillingInvoices({ query: { limit: 100 }, signal: options.signal }),
-          v2Api.getBillingPayments({ query: { limit: 100 }, signal: options.signal }),
-          v2Api.getNhisClaims({ query: { limit: 100 }, signal: options.signal }),
-        ]);
-        return calculateV2DashboardMetrics(
-          v2List(invoiceResponse),
-          v2List(paymentResponse),
-          v2List(claimResponse),
+        const response = await v2Api.getBillingDashboardSummary(
+          { signal: options.signal },
         );
+        return adaptV2DashboardSummary(response);
       }
 
       const queryString = new URLSearchParams(params).toString();

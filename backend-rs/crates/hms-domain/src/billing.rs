@@ -123,6 +123,20 @@ pub struct BillingRuleListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BillingDashboardSummary {
+    pub revenue_today_minor: i64,
+    pub revenue_this_week_minor: i64,
+    pub outstanding_amount_minor: i64,
+    pub outstanding_invoices: i64,
+    pub pending_claims: i64,
+    pub pending_claims_amount_minor: i64,
+    pub invoices_created_today: i64,
+    pub payments_received_today: i64,
+    pub unique_patients_billed: i64,
+    pub average_invoice_amount_minor: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct InvoiceListItem {
     pub id: Uuid,
     pub patient_id: Uuid,

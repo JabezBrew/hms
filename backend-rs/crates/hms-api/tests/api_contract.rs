@@ -4256,6 +4256,63 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     assert_eq!(claim_detail["data"]["patient_id"], patient_id);
     assert_eq!(claim_detail["data"]["amount_minor"], gross_amount);
 
+    let dashboard_summary_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/billing/dashboard-summary")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("billing dashboard summary succeeds");
+    assert_eq!(dashboard_summary_response.status(), StatusCode::OK);
+    let dashboard_summary = json_body(dashboard_summary_response).await;
+    assert!(
+        dashboard_summary["data"]["revenue_today_minor"]
+            .as_i64()
+            .expect("revenue today exists")
+            >= gross_amount
+    );
+    assert!(
+        dashboard_summary["data"]["revenue_this_week_minor"]
+            .as_i64()
+            .expect("week revenue exists")
+            >= gross_amount
+    );
+    assert!(
+        dashboard_summary["data"]["pending_claims"]
+            .as_i64()
+            .expect("pending claims count exists")
+            >= 1
+    );
+    assert!(
+        dashboard_summary["data"]["pending_claims_amount_minor"]
+            .as_i64()
+            .expect("pending claims amount exists")
+            >= gross_amount
+    );
+    assert!(
+        dashboard_summary["data"]["invoices_created_today"]
+            .as_i64()
+            .expect("today invoice count exists")
+            >= 1
+    );
+    assert!(
+        dashboard_summary["data"]["payments_received_today"]
+            .as_i64()
+            .expect("today payment count exists")
+            >= 1
+    );
+    assert!(
+        dashboard_summary["data"]["unique_patients_billed"]
+            .as_i64()
+            .expect("unique patients count exists")
+            >= 1
+    );
+
     let batch_response = app
         .clone()
         .oneshot(

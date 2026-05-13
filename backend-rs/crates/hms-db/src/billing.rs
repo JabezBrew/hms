@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use hms_domain::billing::{
-    BillingRuleListItem, BillingRuleType, CashDrawerListItem, CashSessionListItem,
-    CashSessionStatus, ClaimListItem, ClaimStatus, InvoiceListItem, InvoiceStatus, NhisBatchExport,
-    NhisBatchListItem, NhisBatchStatus, PaymentListItem, PaymentMethod, PaymentStatus,
-    ReceiptListItem, RemittanceImportListItem, RemittanceImportStatus, ServiceCatalogItem,
-    ServiceKind, ServicePriceListItem,
+    BillingDashboardSummary, BillingRuleListItem, BillingRuleType, CashDrawerListItem,
+    CashSessionListItem, CashSessionStatus, ClaimListItem, ClaimStatus, InvoiceListItem,
+    InvoiceStatus, NhisBatchExport, NhisBatchListItem, NhisBatchStatus, PaymentListItem,
+    PaymentMethod, PaymentStatus, ReceiptListItem, RemittanceImportListItem,
+    RemittanceImportStatus, ServiceCatalogItem, ServiceKind, ServicePriceListItem,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -124,6 +124,20 @@ struct BillingRuleRow {
     name: String,
     rule_type: String,
     active: bool,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct BillingDashboardSummaryRow {
+    revenue_today_minor: i64,
+    revenue_this_week_minor: i64,
+    outstanding_amount_minor: i64,
+    outstanding_invoices: i64,
+    pending_claims: i64,
+    pending_claims_amount_minor: i64,
+    invoices_created_today: i64,
+    payments_received_today: i64,
+    unique_patients_billed: i64,
+    average_invoice_amount_minor: i64,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -313,6 +327,110 @@ pub async fn list_billing_rules(
     .fetch_all(pool)
     .await?;
     rows.into_iter().map(rule_from_row).collect()
+}
+
+pub async fn billing_dashboard_summary(
+    pool: &PgPool,
+    facility_id: Uuid,
+) -> anyhow::Result<BillingDashboardSummary> {
+    let payment_recorded = codec::encode(PaymentStatus::Recorded)?;
+    let invoice_void = codec::encode(InvoiceStatus::Void)?;
+    let claim_draft = codec::encode(ClaimStatus::Draft)?;
+    let claim_ready = codec::encode(ClaimStatus::Ready)?;
+    let claim_submitted = codec::encode(ClaimStatus::Submitted)?;
+
+    let row = sqlx::query_as::<_, BillingDashboardSummaryRow>(
+        r#"
+        WITH bounds AS (
+            SELECT date_trunc('day', now()) AS today_start,
+                   date_trunc('day', now()) + INTERVAL '1 day' AS tomorrow_start,
+                   date_trunc('day', now()) - INTERVAL '6 days' AS week_start,
+                   now() AS current_time
+        ),
+        invoice_metrics AS (
+            SELECT COALESCE(SUM(gross_amount_minor - paid_amount_minor)
+                       FILTER (WHERE gross_amount_minor > paid_amount_minor), 0)::BIGINT
+                       AS outstanding_amount_minor,
+                   (COUNT(*) FILTER (WHERE gross_amount_minor > paid_amount_minor))::BIGINT
+                       AS outstanding_invoices,
+                   (COUNT(*) FILTER (
+                       WHERE issued_at >= bounds.today_start
+                         AND issued_at < bounds.tomorrow_start
+                   ))::BIGINT AS invoices_created_today,
+                   (COUNT(DISTINCT patient_id) FILTER (
+                       WHERE issued_at >= bounds.today_start
+                         AND issued_at < bounds.tomorrow_start
+                   ))::BIGINT AS unique_patients_billed,
+                   COALESCE(ROUND(AVG(gross_amount_minor))::BIGINT, 0)::BIGINT
+                       AS average_invoice_amount_minor
+            FROM invoices
+            CROSS JOIN bounds
+            WHERE facility_id = $1
+              AND status <> $3
+        ),
+        payment_metrics AS (
+            SELECT COALESCE(SUM(amount_minor) FILTER (
+                       WHERE paid_at >= bounds.today_start
+                         AND paid_at < bounds.tomorrow_start
+                         AND paid_at <= bounds.current_time
+                   ), 0)::BIGINT AS revenue_today_minor,
+                   COALESCE(SUM(amount_minor) FILTER (
+                       WHERE paid_at >= bounds.week_start
+                         AND paid_at <= bounds.current_time
+                   ), 0)::BIGINT AS revenue_this_week_minor,
+                   (COUNT(*) FILTER (
+                       WHERE paid_at >= bounds.today_start
+                         AND paid_at < bounds.tomorrow_start
+                         AND paid_at <= bounds.current_time
+                   ))::BIGINT AS payments_received_today
+            FROM payments
+            CROSS JOIN bounds
+            WHERE facility_id = $1
+              AND status = $2
+        ),
+        claim_metrics AS (
+            SELECT COUNT(*)::BIGINT AS pending_claims,
+                   COALESCE(SUM(amount_minor), 0)::BIGINT AS pending_claims_amount_minor
+            FROM nhis_claims
+            WHERE facility_id = $1
+              AND status IN ($4, $5, $6)
+        )
+        SELECT payment_metrics.revenue_today_minor,
+               payment_metrics.revenue_this_week_minor,
+               invoice_metrics.outstanding_amount_minor,
+               invoice_metrics.outstanding_invoices,
+               claim_metrics.pending_claims,
+               claim_metrics.pending_claims_amount_minor,
+               invoice_metrics.invoices_created_today,
+               payment_metrics.payments_received_today,
+               invoice_metrics.unique_patients_billed,
+               invoice_metrics.average_invoice_amount_minor
+        FROM invoice_metrics
+        CROSS JOIN payment_metrics
+        CROSS JOIN claim_metrics
+        "#,
+    )
+    .bind(facility_id)
+    .bind(payment_recorded)
+    .bind(invoice_void)
+    .bind(claim_draft)
+    .bind(claim_ready)
+    .bind(claim_submitted)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(BillingDashboardSummary {
+        revenue_today_minor: row.revenue_today_minor,
+        revenue_this_week_minor: row.revenue_this_week_minor,
+        outstanding_amount_minor: row.outstanding_amount_minor,
+        outstanding_invoices: row.outstanding_invoices,
+        pending_claims: row.pending_claims,
+        pending_claims_amount_minor: row.pending_claims_amount_minor,
+        invoices_created_today: row.invoices_created_today,
+        payments_received_today: row.payments_received_today,
+        unique_patients_billed: row.unique_patients_billed,
+        average_invoice_amount_minor: row.average_invoice_amount_minor,
+    })
 }
 
 pub async fn list_invoices(

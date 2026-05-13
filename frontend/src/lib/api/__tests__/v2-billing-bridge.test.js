@@ -90,83 +90,36 @@ describe('Rust V2 billing bridge', () => {
     ).rejects.toBe(abortError);
   });
 
-  it('builds dashboard metrics from bounded Rust V2 billing lists', async () => {
-    const today = new Date().toISOString();
-    globalThis.fetch
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'invoice-1',
-              patient_id: 'patient-1',
-              patient_code: 'P-0001',
-              invoice_number: 'INV-1',
-              status: 'issued',
-              gross_amount_minor: 10000,
-              paid_amount_minor: 4000,
-              balance_minor: 6000,
-              currency: 'GHS',
-              issued_at: today,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'payment-1',
-              invoice_id: 'invoice-1',
-              receipt_number: 'RCT-1',
-              amount_minor: 4000,
-              currency: 'GHS',
-              method: 'cash',
-              status: 'recorded',
-              paid_at: today,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'claim-1',
-              invoice_id: 'invoice-1',
-              patient_id: 'patient-1',
-              patient_code: 'P-0001',
-              claim_number: 'CLM-1',
-              status: 'ready',
-              amount_minor: 3000,
-              currency: 'GHS',
-              created_at: today,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      );
-
-    const metrics = await billingApi.getDashboardMetrics();
-
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      1,
-      'http://localhost:8080/api/v2/billing/invoices?limit=100',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+  it('builds dashboard metrics from the Rust V2 dashboard summary endpoint', async () => {
+    const abortController = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          revenue_today_minor: 4000,
+          revenue_this_week_minor: 4000,
+          outstanding_amount_minor: 6000,
+          outstanding_invoices: 1,
+          pending_claims: 1,
+          pending_claims_amount_minor: 3000,
+          invoices_created_today: 1,
+          payments_received_today: 1,
+          unique_patients_billed: 1,
+          average_invoice_amount_minor: 10000,
+        },
+        meta: {},
+      }),
     );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:8080/api/v2/billing/payments?limit=100',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      3,
-      'http://localhost:8080/api/v2/nhis/claims?limit=100',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+
+    const metrics = await billingApi.getDashboardMetrics({}, { signal: abortController.signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/billing/dashboard-summary',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        signal: abortController.signal,
+      }),
     );
     expect(metrics).toEqual(
       expect.objectContaining({

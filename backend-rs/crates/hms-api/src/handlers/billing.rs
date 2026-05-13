@@ -7,9 +7,9 @@ use hms_access::{require_patient_demographics_access, require_permission};
 use hms_db::billing::{BillingCursor, CashSessionFilters};
 use hms_domain::auth::AuthUser;
 use hms_domain::billing::{
-    BillingListQuery, BillingRuleListItem, CashDrawerListItem, CashSessionListItem,
-    CashSessionListQuery, ClaimListItem, CloseCashSessionRequest, CreateClaimRequest,
-    CreateInvoiceRequest, CreateNhisBatchRequest, CreatePaymentRequest,
+    BillingDashboardSummary, BillingListQuery, BillingRuleListItem, CashDrawerListItem,
+    CashSessionListItem, CashSessionListQuery, ClaimListItem, CloseCashSessionRequest,
+    CreateClaimRequest, CreateInvoiceRequest, CreateNhisBatchRequest, CreatePaymentRequest,
     CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
     OpenCashSessionRequest, PaymentListItem, ReceiptListItem, RemittanceImportListItem,
     ServiceCatalogItem, ServicePriceListItem,
@@ -71,6 +71,21 @@ pub async fn list_billing_rules(
             ApiError::conflict("billing_rule_failed", "Billing rules could not be loaded.")
         })?,
     )))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/dashboard-summary", operation_id = "getBillingDashboardSummary", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<BillingDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn dashboard_summary(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+) -> Result<Json<ObjectResponse<BillingDashboardSummary>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let summary = state.billing_dashboard_summary().await.map_err(|_| {
+        ApiError::conflict(
+            "billing_dashboard_summary_failed",
+            "Billing dashboard summary could not be loaded.",
+        )
+    })?;
+    Ok(Json(object(summary)))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/invoices", operation_id = "getBillingInvoices", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]

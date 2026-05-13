@@ -16,6 +16,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/billing/rules", get(billing::list_billing_rules))
         .route(
+            "/api/v2/billing/dashboard-summary",
+            get(billing::dashboard_summary),
+        )
+        .route(
             "/api/v2/billing/invoices",
             get(billing::list_invoices).post(billing::create_invoice),
         )
