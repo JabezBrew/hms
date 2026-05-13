@@ -555,6 +555,183 @@ describe('Rust V2 billing bridge', () => {
     ]);
   });
 
+  it('routes billing write workflows through Rust V2 endpoints with abort signals', async () => {
+    const signal = new AbortController().signal;
+
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'invoice-1',
+          patient_id: 'patient-1',
+          patient_code: 'P-0001',
+          invoice_number: 'INV-1',
+          status: 'issued',
+          gross_amount_minor: 15000,
+          paid_amount_minor: 0,
+          balance_minor: 15000,
+          currency: 'GHS',
+          issued_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'payment-1',
+          invoice_id: 'invoice-1',
+          receipt_number: 'RCT-1',
+          amount_minor: 5000,
+          currency: 'GHS',
+          method: 'cash',
+          status: 'recorded',
+          paid_at: '2026-05-12T08:05:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'claim-1',
+          invoice_id: 'invoice-1',
+          patient_id: 'patient-1',
+          patient_code: 'P-0001',
+          claim_number: 'CLM-1',
+          status: 'ready',
+          amount_minor: 3000,
+          currency: 'GHS',
+          created_at: '2026-05-12T08:10:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'session-1',
+          drawer_id: 'drawer-1',
+          status: 'open',
+          opening_float_minor: 2500,
+          expected_cash_minor: 2500,
+          counted_cash_minor: null,
+          variance_minor: null,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'session-1',
+          drawer_id: 'drawer-1',
+          status: 'closed',
+          opening_float_minor: 2500,
+          expected_cash_minor: 2500,
+          counted_cash_minor: 2500,
+          variance_minor: 0,
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'batch-1',
+          batch_number: 'BATCH-1',
+          status: 'draft',
+          claim_count: 1,
+          total_amount_minor: 3000,
+          currency: 'GHS',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'export-1',
+          batch_id: 'batch-1',
+          status: 'queued',
+        },
+        meta: {},
+      }));
+
+    await expect(billingApi.createInvoice({
+      patient: 'patient-1',
+      items: [{ service_price_id: 'price-1', quantity: 2 }],
+    }, { signal })).resolves.toMatchObject({ id: 'invoice-1', total_amount: 150 });
+    await expect(billingApi.recordPayment('invoice-1', {
+      amount: 50,
+      payment_method: 'cash',
+      cash_session_id: 'session-1',
+    }, { signal })).resolves.toMatchObject({ id: 'payment-1', amount: 50 });
+    await expect(billingApi.generateClaim('invoice-1', { signal })).resolves.toMatchObject({
+      id: 'claim-1',
+      claimed_amount: 30,
+    });
+    await expect(billingApi.openCashSession({
+      drawer_id: 'drawer-1',
+      opening_float_amount: 25,
+    }, { signal })).resolves.toMatchObject({ id: 'session-1', opening_float_amount: 25 });
+    await expect(billingApi.closeCashSession('session-1', {
+      counted_cash_amount: 25,
+    }, { signal })).resolves.toMatchObject({ id: 'session-1', counted_cash_amount: 25 });
+    await expect(billingApi.createNhisClaimBatch({
+      claim_ids: ['claim-1'],
+    }, { signal })).resolves.toMatchObject({ id: 'batch-1', total_amount: 30 });
+    await expect(billingApi.exportNhisClaimBatch('batch-1', {}, { signal })).resolves.toEqual({
+      id: 'export-1',
+      batch_id: 'batch-1',
+      status: 'queued',
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
+      [
+        'http://localhost:8080/api/v2/billing/invoices',
+        'POST',
+        JSON.stringify({
+          patient_id: 'patient-1',
+          service_price_id: 'price-1',
+          quantity: 2,
+        }),
+        signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/billing/payments',
+        'POST',
+        JSON.stringify({
+          invoice_id: 'invoice-1',
+          amount_minor: 5000,
+          method: 'cash',
+          cash_session_id: 'session-1',
+        }),
+        signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/nhis/claims',
+        'POST',
+        JSON.stringify({ invoice_id: 'invoice-1' }),
+        signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/billing/cash-sessions',
+        'POST',
+        JSON.stringify({
+          drawer_id: 'drawer-1',
+          opening_float_minor: 2500,
+        }),
+        signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/billing/cash-sessions/session-1/close',
+        'POST',
+        JSON.stringify({ counted_cash_minor: 2500 }),
+        signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/nhis/batches',
+        'POST',
+        JSON.stringify({ claim_ids: ['claim-1'] }),
+        signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/nhis/batches/batch-1/export',
+        'POST',
+        undefined,
+        signal,
+      ],
+    ]);
+  });
+
   it('fails closed for unsupported Rust V2 billing mutations and downloads instead of calling Django', async () => {
     await expect(billingApi.updateInvoice('invoice-1', { status: 'void' })).rejects.toThrow(
       /Rust V2 .* invoice updates/i,

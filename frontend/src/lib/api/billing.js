@@ -561,9 +561,10 @@ export const billingApi = {
    * @param {Object} data - Invoice data with items
    * @returns {Promise<Object>} Created invoice
    */
-  createInvoice: async (data) => {
+  createInvoice: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
+        const signal = options.signal || data?.signal;
         const firstItem = (Array.isArray(data.items) ? data.items : [])
           .find((item) => item?.service || item?.service_price_id);
         if (!firstItem) {
@@ -571,7 +572,7 @@ export const billingApi = {
         }
         let servicePriceId = firstItem.service_price_id || null;
         if (!servicePriceId) {
-          const services = await getV2ServicesPage({ is_active: true });
+          const services = await getV2ServicesPage({ is_active: true }, { signal });
           servicePriceId = services.results.find((service) => service.id === firstItem.service)?.service_price_id;
         }
         if (!servicePriceId) {
@@ -581,6 +582,8 @@ export const billingApi = {
           patient_id: data.patient_id || data.patient,
           service_price_id: servicePriceId,
           quantity: Number.parseInt(String(firstItem.quantity || 1), 10) || 1,
+        }, {
+          signal,
         });
         return adaptV2Invoice(response?.data);
       }
@@ -627,7 +630,7 @@ export const billingApi = {
    * @param {string} data.notes - Optional notes
    * @returns {Promise<Object>} Payment and receipt data
    */
-  recordPayment: async (invoiceId, data) => {
+  recordPayment: async (invoiceId, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postBillingPayments({
@@ -635,6 +638,8 @@ export const billingApi = {
           amount_minor: data.amount_minor ?? majorToMinor(data.amount),
           method: data.method || data.payment_method || 'cash',
           cash_session_id: data.cash_session_id || null,
+        }, {
+          signal: options.signal || data?.signal,
         });
         return adaptV2Payment(response?.data);
       }
@@ -655,10 +660,13 @@ export const billingApi = {
    * @param {string} invoiceId - Invoice ID
    * @returns {Promise<Object>} Created claim
    */
-  generateClaim: async (invoiceId) => {
+  generateClaim: async (invoiceId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postNhisClaims({ invoice_id: invoiceId });
+        const response = await v2Api.postNhisClaims(
+          { invoice_id: invoiceId },
+          { signal: options.signal },
+        );
         return adaptV2Claim(response?.data);
       }
 
