@@ -94,12 +94,14 @@ async function patchV2FeatureEntitlement(featureKey, data = {}, options = {}) {
 }
 
 export const systemApi = {
-  getDeploymentCapabilities: async () => {
+  getDeploymentCapabilities: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return adaptV2DeploymentCapabilities(await v2Api.getSystemDeploymentCapabilities())
+        return adaptV2DeploymentCapabilities(
+          await v2Api.getSystemDeploymentCapabilities({ signal: options.signal }),
+        )
       }
-      return apiClient.get('/settings/deployment-capabilities/')
+      return apiClient.get('/settings/deployment-capabilities/', options)
     } catch (error) {
       rethrowAbortError(error)
       if (isRustV2ApiMode()) {

@@ -11,7 +11,7 @@ const systemKeys = {
 export function useSystemCapabilities(options = {}) {
   return useQuery({
     queryKey: systemKeys.deploymentCapabilities(),
-    queryFn: () => systemApi.getDeploymentCapabilities(),
+    queryFn: ({ signal }) => systemApi.getDeploymentCapabilities({ signal }),
     ...immutableMetadataQueryOptions(),
     ...options,
   })

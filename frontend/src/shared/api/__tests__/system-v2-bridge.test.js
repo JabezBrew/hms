@@ -65,11 +65,12 @@ describe('Rust V2 system bridge', () => {
       ),
     );
 
-    const response = await systemApi.getDeploymentCapabilities();
+    const signal = new AbortController().signal;
+    const response = await systemApi.getDeploymentCapabilities({ signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/system/deployment-capabilities',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal }),
     );
     expect(response.features).toMatchObject({
       patients: true,
