@@ -79,7 +79,7 @@ describe('Rust V2 organization bridge', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/org-units?limit=100',
+      'http://localhost:8080/api/v2/admin/org-units?unit_type=department&is_active=true&limit=100',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(response).toEqual([

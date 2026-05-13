@@ -121,11 +121,21 @@ function unitTypeFromCode(code) {
 }
 
 async function listV2OrgUnits(params = {}) {
+  const query = {};
+  const unitType = params.unit_type || params.unit_type_code;
+  if (unitType) {
+    query.unit_type = unitType;
+  }
+  if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
+    query.is_active = params.is_active === true || params.is_active === 'true';
+  }
+  if (params.cursor) {
+    query.cursor = params.cursor;
+  }
+  query.limit = normalizeV2OrgLimit(params);
+
   const response = await v2Api.getAdminOrgUnits({
-    query: {
-      cursor: params.cursor,
-      limit: normalizeV2OrgLimit(params),
-    },
+    query,
     signal: params.signal,
   });
   const units = Array.isArray(response?.data)
