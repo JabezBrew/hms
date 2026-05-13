@@ -36,8 +36,8 @@ use hms_db::patients::{NewPatient, PatientContextCursor, PatientCursor, PatientU
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
 use hms_db::ward::{
-    AdmissionContext, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewHandoff,
-    NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
+    AdmissionContext, BedUpdate, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
+    NewHandoff, NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
     NewPatientVitals, NewTreatmentSheet, NewWard, NewWardSection, NewWardStockRequest, WardCursor,
     WardUpdate,
 };
@@ -2912,6 +2912,10 @@ impl AppState {
             },
         )
         .await
+    }
+
+    pub async fn update_bed(&self, bed_id: Uuid, update: BedUpdate) -> Result<Option<BedListItem>> {
+        hms_db::ward::update_bed(&self.inner.pool, self.facility_id(), bed_id, update).await
     }
 
     pub async fn list_ward_board(

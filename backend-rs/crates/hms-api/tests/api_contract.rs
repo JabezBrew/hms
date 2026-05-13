@@ -4440,6 +4440,31 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let bed_body = json_body(bed_response).await;
     let bed_id = bed_body["data"]["id"].as_str().expect("bed id exists");
     assert_eq!(bed_body["data"]["status"], "available");
+    let updated_bed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/wards/beds/{bed_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "section_id": section_id,
+                        "bed_code": "E-100",
+                        "status": "cleaning"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward bed update succeeds");
+    assert_eq!(updated_bed_response.status(), StatusCode::OK);
+    let updated_bed_body = json_body(updated_bed_response).await;
+    assert_eq!(updated_bed_body["data"]["id"], bed_id);
+    assert_eq!(updated_bed_body["data"]["bed_code"], "E-100");
+    assert_eq!(updated_bed_body["data"]["status"], "cleaning");
 
     let bed_list = app
         .clone()

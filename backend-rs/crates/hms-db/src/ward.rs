@@ -64,6 +64,13 @@ pub struct NewBed {
 }
 
 #[derive(Clone, Debug)]
+pub struct BedUpdate {
+    pub section_id: Option<Uuid>,
+    pub bed_code: Option<String>,
+    pub status: Option<BedStatus>,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewAdmission {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -843,6 +850,67 @@ pub async fn create_bed(pool: &PgPool, bed: NewBed) -> anyhow::Result<BedListIte
     .ok_or_else(|| anyhow::anyhow!("ward or section not found for bed"))?;
 
     bed_from_row(row)
+}
+
+pub async fn update_bed(
+    pool: &PgPool,
+    facility_id: Uuid,
+    bed_id: Uuid,
+    update: BedUpdate,
+) -> anyhow::Result<Option<BedListItem>> {
+    let status = update.status.map(codec::encode).transpose()?;
+    let row = sqlx::query_as::<_, BedRow>(
+        r#"
+        WITH target AS (
+            SELECT id, ward_id
+            FROM beds
+            WHERE facility_id = $1
+              AND id = $2
+        ),
+        updated AS (
+            UPDATE beds
+               SET section_id = COALESCE($3, section_id),
+                   bed_code = COALESCE($4, bed_code),
+                   status = COALESCE($5, status),
+                   updated_at = now()
+              FROM target
+             WHERE beds.id = target.id
+               AND (
+                   $3::uuid IS NULL
+                   OR EXISTS (
+                       SELECT 1
+                       FROM ward_sections
+                       WHERE ward_sections.facility_id = $1
+                         AND ward_sections.ward_id = target.ward_id
+                         AND ward_sections.id = $3
+                         AND ward_sections.status = 'active'
+                   )
+               )
+            RETURNING beds.id,
+                      beds.ward_id,
+                      beds.section_id,
+                      beds.bed_code,
+                      beds.status,
+                      beds.created_at
+        )
+        SELECT id,
+               ward_id,
+               section_id,
+               bed_code,
+               status,
+               created_at
+        FROM updated
+        "#,
+    )
+    .bind(facility_id)
+    .bind(bed_id)
+    .bind(update.section_id)
+    .bind(update.bed_code)
+    .bind(status)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(bed_from_row).transpose()
 }
 
 pub async fn list_ward_board(

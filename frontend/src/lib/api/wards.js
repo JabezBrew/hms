@@ -141,6 +141,22 @@ function bedCodeFrom(data = {}) {
   return data.bed_code || data.bed_number || data.name || '';
 }
 
+function bedUpdatePayloadFrom(data = {}) {
+  const payload = {};
+  const sectionId = data.section_id ?? data.section;
+  if (sectionId !== undefined && sectionId !== null) {
+    payload.section_id = sectionId;
+  }
+  const bedCode = data.bed_code ?? data.bed_number ?? data.name;
+  if (bedCode !== undefined && bedCode !== null) {
+    payload.bed_code = String(bedCode).trim();
+  }
+  if (data.status) {
+    payload.status = data.status;
+  }
+  return payload;
+}
+
 function wardPayloadFrom(data = {}) {
   const name = String(data.name || data.label || data.code || '').trim();
   const code = String(data.code || data.ward_code || data.ward_type || name).trim();
@@ -474,7 +490,10 @@ export const wardsApi = {
   updateBed: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('bed mutations');
+        const response = await v2Api.patchWardBed({ id }, bedUpdatePayloadFrom(data), {
+          signal: data?.signal,
+        });
+        return adaptV2Bed(response?.data);
       }
       return await apiClient.patch(`/wards/beds/${id}/`, data);
     } catch (error) {

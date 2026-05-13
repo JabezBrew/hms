@@ -1,7 +1,7 @@
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
-    AdmissionContext, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewMonitoringEvent,
-    NewNursingAlert, NewNursingTask, NewPatientVitals, NewWard, NewWardSection,
+    AdmissionContext, BedUpdate, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
+    NewMonitoringEvent, NewNursingAlert, NewNursingTask, NewPatientVitals, NewWard, NewWardSection,
     NewWardStockRequest, WardUpdate,
 };
 use hms_domain::deployment::DeploymentProfile;
@@ -132,6 +132,35 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
     .await
     .expect("bed create succeeds");
     assert_eq!(bed.status, BedStatus::Available);
+    let updated_bed = hms_db::ward::update_bed(
+        &pool,
+        facility_id,
+        bed.id,
+        BedUpdate {
+            section_id: Some(section.id),
+            bed_code: Some("E-100".to_owned()),
+            status: Some(BedStatus::Cleaning),
+        },
+    )
+    .await
+    .expect("bed update succeeds")
+    .expect("bed update returns row");
+    assert_eq!(updated_bed.bed_code, "E-100");
+    assert_eq!(updated_bed.status, BedStatus::Cleaning);
+    assert_eq!(updated_bed.section_id, Some(section.id));
+    assert!(hms_db::ward::update_bed(
+        &pool,
+        uuid::Uuid::new_v4(),
+        bed.id,
+        BedUpdate {
+            section_id: Some(section.id),
+            bed_code: Some("CROSS-FACILITY".to_owned()),
+            status: Some(BedStatus::Available),
+        },
+    )
+    .await
+    .expect("cross-facility bed update succeeds")
+    .is_none());
 
     let beds = hms_db::ward::list_ward_beds(&pool, facility_id, ward_id, None, 25)
         .await

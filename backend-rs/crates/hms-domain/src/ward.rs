@@ -169,6 +169,13 @@ pub struct CreateBedRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateBedRequest {
+    pub section_id: Option<Uuid>,
+    pub bed_code: Option<String>,
+    pub status: Option<BedStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct WardBoardItem {
     pub admission_id: Uuid,
     pub patient_id: Uuid,

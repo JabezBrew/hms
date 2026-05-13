@@ -2,7 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::ward::{AdmissionContext, WardCursor, WardUpdate};
+use hms_db::ward::{AdmissionContext, BedUpdate, WardCursor, WardUpdate};
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
@@ -17,8 +17,8 @@ use hms_domain::ward::{
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventListItem,
     NursingAlertListItem, NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem,
     PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
-    TreatmentSheetListItem, UpdateWardRequest, WardBoardItem, WardBoardQuery, WardListItem,
-    WardSectionListItem, WardStockRequestListItem,
+    TreatmentSheetListItem, UpdateBedRequest, UpdateWardRequest, WardBoardItem, WardBoardQuery,
+    WardListItem, WardSectionListItem, WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -33,6 +33,7 @@ const MAX_LIMIT: u8 = 100;
 const MAX_DISCHARGE_REASON_LEN: usize = 240;
 const MAX_WARD_CODE_LEN: usize = 64;
 const MAX_WARD_NAME_LEN: usize = 160;
+const MAX_BED_CODE_LEN: usize = 64;
 
 #[utoipa::path(
     get,
@@ -376,11 +377,66 @@ pub async fn get_bed(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
+    let bed = load_bed(&state, id).await?;
+    Ok(Json(object(bed)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/wards/beds/{id}",
+    operation_id = "patchWardBed",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward bed id")),
+    request_body = UpdateBedRequest,
+    responses(
+        (status = 200, description = "Ward bed updated", body = ObjectResponse<BedListItem>),
+        (status = 400, description = "Invalid bed update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward bed not found", body = ApiErrorResponse),
+        (status = 409, description = "Ward bed could not be updated", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_bed(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateBedRequest>,
+) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
+
+    let bed_code = normalize_bed_code(payload.bed_code)?;
+    if payload.section_id.is_none() && bed_code.is_none() && payload.status.is_none() {
+        return Err(ApiError::bad_request(
+            "invalid_bed",
+            "At least one bed field is required.",
+        ));
+    }
+    if let Some(section_id) = payload.section_id {
+        let bed = load_bed(&state, id).await?;
+        let section = load_ward_section(&state, section_id).await?;
+        if section.ward_id != bed.ward_id {
+            return Err(ApiError::bad_request(
+                "invalid_bed_section",
+                "Bed section must belong to the same ward.",
+            ));
+        }
+    }
+
     let bed = state
-        .get_bed(id)
+        .update_bed(
+            id,
+            BedUpdate {
+                section_id: payload.section_id,
+                bed_code,
+                status: payload.status,
+            },
+        )
         .await
-        .map_err(|_| ApiError::conflict("bed_load_failed", "Bed could not be loaded."))?
+        .map_err(|_| ApiError::conflict("bed_update_failed", "Bed could not be updated."))?
         .ok_or_else(|| ApiError::not_found("bed_not_found", "Bed was not found."))?;
+
     Ok(Json(object(bed)))
 }
 
@@ -2079,6 +2135,14 @@ async fn load_ward_section(
         .ok_or_else(|| ApiError::not_found("ward_section_not_found", "Ward section was not found."))
 }
 
+async fn load_bed(state: &AppState, bed_id: Uuid) -> Result<BedListItem, ApiError> {
+    state
+        .get_bed(bed_id)
+        .await
+        .map_err(|_| ApiError::conflict("bed_load_failed", "Bed could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("bed_not_found", "Bed was not found."))
+}
+
 async fn load_patient_for_access(
     state: &AppState,
     user: &AuthUser,
@@ -2153,6 +2217,27 @@ fn normalize_ward_text(value: Option<String>, max_len: usize) -> Result<Option<S
                 return Err(ApiError::bad_request(
                     "invalid_ward",
                     "Ward code or name is too long.",
+                ));
+            }
+            Ok(trimmed.to_owned())
+        })
+        .transpose()
+}
+
+fn normalize_bed_code(value: Option<String>) -> Result<Option<String>, ApiError> {
+    value
+        .map(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Err(ApiError::bad_request(
+                    "invalid_bed",
+                    "Bed code is required.",
+                ));
+            }
+            if trimmed.len() > MAX_BED_CODE_LEN {
+                return Err(ApiError::bad_request(
+                    "invalid_bed",
+                    "Bed code is too long.",
                 ));
             }
             Ok(trimmed.to_owned())
