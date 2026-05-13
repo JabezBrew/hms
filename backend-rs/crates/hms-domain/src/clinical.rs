@@ -117,6 +117,13 @@ pub struct ChangeProblemStatusRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateProblemRequest {
+    pub label: Option<String>,
+    pub onset_date: Option<NaiveDate>,
+    pub status: Option<ProblemStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AllergyListItem {
     pub id: Uuid,
     pub patient_id: Uuid,

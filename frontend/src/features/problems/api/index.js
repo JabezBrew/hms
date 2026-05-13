@@ -55,6 +55,16 @@ function normalizeCreatePayload(payload = {}) {
   };
 }
 
+function normalizeUpdatePayload(payload = {}) {
+  const label = payload.label ?? payload.free_text_label ?? payload.display;
+  const status = payload.status ?? payload.clinical_status;
+  return {
+    ...(label !== undefined ? { label: String(label).trim() } : {}),
+    ...(payload.onset_date !== undefined ? { onset_date: payload.onset_date || null } : {}),
+    ...(status ? { status } : {}),
+  };
+}
+
 function unsupportedInRustV2(message) {
   return new Error(message);
 }
@@ -92,12 +102,17 @@ export const problemsApi = {
   },
 
   detail: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose standalone problem detail yet.');
-    }
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getClinicalProblemById({ id });
+        return adaptV2Problem(response?.data);
+      }
       return await apiClient.get(`/problems/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch problem'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch problem'));
     }
   },
@@ -124,12 +139,20 @@ export const problemsApi = {
   },
 
   update: async (id, payload) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose problem updates yet.');
-    }
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.patchClinicalProblemById(
+          { id },
+          normalizeUpdatePayload(payload),
+        );
+        return adaptV2Problem(response?.data);
+      }
       return await apiClient.patch(`/problems/${id}/`, payload);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to update problem'));
+      }
       throw new Error(handleApiError(error, 'Failed to update problem'));
     }
   },

@@ -2,7 +2,7 @@ use chrono::{Datelike, NaiveDate, Utc};
 use hms_db::clinical::{NewAllergy, NewChartEntry, NewClinicalNote, NewPrescription, NewProblem};
 use hms_db::patients::{PatientContextCursor, PatientUpdate};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::clinical::{AllergySeverity, ChartEntryType, ProblemStatus};
+use hms_domain::clinical::{AllergySeverity, ChartEntryType, ProblemStatus, UpdateProblemRequest};
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::patients::{PatientAdministrativeStatus, Sex};
 
@@ -348,5 +348,89 @@ async fn problem_status_updates_are_facility_scoped() {
     )
     .await
     .expect("cross-facility problem status update succeeds")
+    .is_none());
+}
+
+#[tokio::test]
+async fn problem_updates_are_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+
+    let problem = hms_db::clinical::create_problem(
+        &pool,
+        NewProblem {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            label: "Hypertension".to_owned(),
+            onset_date: None,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("problem is created");
+
+    let updated = hms_db::clinical::update_problem(
+        &pool,
+        facility_id,
+        problem.id,
+        UpdateProblemRequest {
+            label: Some("Essential hypertension".to_owned()),
+            onset_date: Some(NaiveDate::from_ymd_opt(2026, 1, 5).expect("date is valid")),
+            status: Some(ProblemStatus::Resolved),
+        },
+    )
+    .await
+    .expect("problem update succeeds")
+    .expect("problem exists");
+    assert_eq!(updated.label, "Essential hypertension");
+    assert_eq!(
+        updated.onset_date,
+        Some(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap())
+    );
+    assert_eq!(updated.status, ProblemStatus::Resolved);
+
+    assert!(hms_db::clinical::update_problem(
+        &pool,
+        uuid::Uuid::new_v4(),
+        problem.id,
+        UpdateProblemRequest {
+            label: Some("Cross Facility".to_owned()),
+            onset_date: None,
+            status: None,
+        },
+    )
+    .await
+    .expect("cross-facility problem update succeeds")
     .is_none());
 }

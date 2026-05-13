@@ -1491,6 +1491,50 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     let problem_status_body = json_body(problem_status).await;
     assert_eq!(problem_status_body["data"]["status"], "resolved");
 
+    let problem_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/clinical/problems/{problem_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("problem detail succeeds");
+    assert_eq!(problem_detail.status(), StatusCode::OK);
+    let problem_detail_body = json_body(problem_detail).await;
+    assert_eq!(problem_detail_body["data"]["id"], problem_id);
+
+    let problem_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/problems/{problem_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "label": "Essential hypertension",
+                        "onset_date": "2026-01-05",
+                        "status": "active"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("problem update succeeds");
+    assert_eq!(problem_update.status(), StatusCode::OK);
+    let problem_update_body = json_body(problem_update).await;
+    assert_eq!(
+        problem_update_body["data"]["label"],
+        "Essential hypertension"
+    );
+    assert_eq!(problem_update_body["data"]["status"], "active");
+
     let allergy = app
         .clone()
         .oneshot(
@@ -1612,7 +1656,10 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         let body = json_body(response).await;
         assert_eq!(body["data"]["patient"]["id"], patient_id);
         assert_eq!(body["data"]["notes"][0]["title"], "Review note");
-        assert_eq!(body["data"]["problems"][0]["label"], "Hypertension");
+        assert_eq!(
+            body["data"]["problems"][0]["label"],
+            "Essential hypertension"
+        );
         assert_eq!(body["data"]["allergies"][0]["substance"], "Penicillin");
         assert_eq!(
             body["data"]["prescriptions"][0]["medication_name"],
@@ -1666,6 +1713,21 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .await
         .expect("clinical problem status denial succeeds");
     assert_eq!(denied_problem_status.status(), StatusCode::FORBIDDEN);
+
+    let denied_problem_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/problems/{problem_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "label": "Denied" }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinical problem update denial succeeds");
+    assert_eq!(denied_problem_update.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

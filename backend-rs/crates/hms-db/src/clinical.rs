@@ -3,7 +3,7 @@ use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
     ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate, ClinicalNoteVersion,
     PatientChronicleSummary, PrescriptionListItem, PrescriptionStatus, ProblemListItem,
-    ProblemStatus,
+    ProblemStatus, UpdateProblemRequest,
 };
 use hms_domain::patients::PatientDetail;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -413,6 +413,35 @@ pub async fn update_problem_status(
         "#,
     )
     .bind(codec::encode(status)?)
+    .bind(facility_id)
+    .bind(problem_id)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(problem_from_row).transpose()
+}
+
+pub async fn update_problem(
+    pool: &PgPool,
+    facility_id: Uuid,
+    problem_id: Uuid,
+    update: UpdateProblemRequest,
+) -> anyhow::Result<Option<ProblemListItem>> {
+    let status = update.status.map(codec::encode).transpose()?;
+    let row = sqlx::query_as::<_, ProblemRow>(
+        r#"
+        UPDATE patient_problems
+        SET label = COALESCE($1, label),
+            onset_date = COALESCE($2, onset_date),
+            status = COALESCE($3, status)
+        WHERE facility_id = $4
+          AND id = $5
+        RETURNING id, patient_id, label, status, onset_date, created_at
+        "#,
+    )
+    .bind(update.label)
+    .bind(update.onset_date)
+    .bind(status)
     .bind(facility_id)
     .bind(problem_id)
     .fetch_optional(pool)

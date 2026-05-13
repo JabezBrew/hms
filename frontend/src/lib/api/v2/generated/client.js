@@ -335,6 +335,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalProblemById": {
+    "operationId": "getClinicalProblemById",
+    "method": "GET",
+    "path": "/api/v2/clinical/problems/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinics": {
     "operationId": "getClinics",
     "method": "GET",
@@ -1322,6 +1332,16 @@ export const operations = {
     "method": "PATCH",
     "path": "/api/v2/auth/me",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchClinicalProblemById": {
+    "operationId": "patchClinicalProblemById",
+    "method": "PATCH",
+    "path": "/api/v2/clinical/problems/{id}",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -2397,6 +2417,7 @@ export function createGeneratedClient(request) {
     getCashSessions: createOperation(request, operations.getCashSessions),
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
+    getClinicalProblemById: createOperation(request, operations.getClinicalProblemById),
     getClinics: createOperation(request, operations.getClinics),
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
     getConsents: createOperation(request, operations.getConsents),
@@ -2490,6 +2511,7 @@ export function createGeneratedClient(request) {
     patchAdminStaff: createOperation(request, operations.patchAdminStaff),
     patchAppointmentById: createOperation(request, operations.patchAppointmentById),
     patchAuthMe: createOperation(request, operations.patchAuthMe),
+    patchClinicalProblemById: createOperation(request, operations.patchClinicalProblemById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
     patchPatientById: createOperation(request, operations.patchPatientById),
     postAdminAuthorityAppointments: createOperation(request, operations.postAdminAuthorityAppointments),

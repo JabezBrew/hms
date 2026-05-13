@@ -161,6 +161,85 @@ describe('Rust V2 problems bridge', () => {
     );
   });
 
+  it('loads and updates standalone problems through Rust /api/v2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'problem-1',
+              patient_id: 'patient-1',
+              label: 'Hypertension',
+              status: 'active',
+              onset_date: '2026-05-01',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'problem-1',
+              patient_id: 'patient-1',
+              label: 'Essential hypertension',
+              status: 'resolved',
+              onset_date: '2026-01-05',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const detail = await problemsApi.detail('problem-1');
+    const updated = await problemsApi.update('problem-1', {
+      label: 'Essential hypertension',
+      onset_date: '2026-01-05',
+      clinical_status: 'resolved',
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinical/problems/problem-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/clinical/problems/problem-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({
+          label: 'Essential hypertension',
+          onset_date: '2026-01-05',
+          status: 'resolved',
+        }),
+      }),
+    );
+    expect(detail).toEqual(expect.objectContaining({ id: 'problem-1', status: 'active' }));
+    expect(updated).toEqual(
+      expect.objectContaining({
+        id: 'problem-1',
+        label: 'Essential hypertension',
+        clinical_status: 'resolved',
+      }),
+    );
+  });
+
   it('does not call legacy problem catalog or link endpoints in Rust mode', async () => {
     await expect(problemsApi.searchCodes('hyp')).resolves.toEqual([]);
     await expect(problemsApi.listLinks({ patient: 'patient-1' })).resolves.toEqual([]);

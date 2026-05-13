@@ -23,6 +23,10 @@ pub fn routes() -> Router<AppState> {
             get(clinical::list_problems).post(clinical::create_problem),
         )
         .route(
+            "/api/v2/clinical/problems/:id",
+            get(clinical::get_problem).patch(clinical::update_problem),
+        )
+        .route(
             "/api/v2/clinical/problems/:id/status",
             post(clinical::change_problem_status),
         )
