@@ -319,6 +319,131 @@ describe('Rust V2 referrals bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('routes referral notification reads and mark-read through bounded Rust notifications', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'notification-1',
+                notification_type: 'referral.submitted',
+                title: 'Referral REF-001',
+                body: 'Medicine review requested',
+                priority: 'high',
+                read_at: null,
+                created_at: '2026-05-12T08:00:00Z',
+              },
+              {
+                id: 'notification-2',
+                notification_type: 'dashboard',
+                title: 'Dashboard ready',
+                body: 'Operational snapshot refreshed',
+                priority: 'normal',
+                read_at: null,
+                created_at: '2026-05-12T09:00:00Z',
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'notification-1',
+                notification_type: 'referral.submitted',
+                title: 'Referral REF-001',
+                body: 'Medicine review requested',
+                priority: 'high',
+                read_at: null,
+                created_at: '2026-05-12T08:00:00Z',
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'notification-1',
+              notification_type: 'referral.submitted',
+              title: 'Referral REF-001',
+              body: 'Medicine review requested',
+              priority: 'high',
+              read_at: '2026-05-12T09:30:00Z',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const notifications = await referralsApi.getNotifications(
+      { page_size: 20 },
+      { signal: new AbortController().signal },
+    );
+    const count = await referralsApi.getUnreadNotificationCount({
+      signal: new AbortController().signal,
+    });
+    const marked = await referralsApi.markNotificationRead('notification-1', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/notifications?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/notifications?limit=100&unread_only=true',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/notifications/notification-1/read',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ read: true }),
+      }),
+    );
+    expect(notifications).toEqual([
+      expect.objectContaining({
+        id: 'notification-1',
+        event: 'submitted',
+        referral_number: 'Referral REF-001',
+        referred_to_department: 'Medicine review requested',
+        urgency: 'urgent',
+        is_read: false,
+      }),
+    ]);
+    expect(count).toBe(1);
+    expect(marked).toEqual(expect.objectContaining({
+      id: 'notification-1',
+      is_read: true,
+    }));
+  });
+
   it('preserves AbortError from Rust referral page queries without logging API errors', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});

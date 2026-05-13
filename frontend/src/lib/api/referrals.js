@@ -2,6 +2,7 @@
  * Referrals API service
  */
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
 import { v2Api } from './v2/client';
 
@@ -107,6 +108,44 @@ function adaptV2WaitlistEntry(entry) {
     patient_id: entry.patient_id,
     patient_name: entry.patient_display_name,
     patient_mrn: entry.patient_code,
+  };
+}
+
+function isV2ReferralNotification(item) {
+  const type = String(item?.notification_type || '').toLowerCase();
+  return type === 'referral' || type.startsWith('referral.');
+}
+
+function v2ReferralNotificationEvent(item) {
+  const type = String(item?.notification_type || '').toLowerCase();
+  const event = type.startsWith('referral.') ? type.slice('referral.'.length) : 'submitted';
+  return ['submitted', 'accepted', 'declined', 'scheduled', 'completed'].includes(event)
+    ? event
+    : 'submitted';
+}
+
+function v2NotificationUrgency(priority) {
+  switch (String(priority || '').toLowerCase()) {
+    case 'high':
+      return 'urgent';
+    case 'low':
+      return 'routine';
+    default:
+      return 'routine';
+  }
+}
+
+function adaptV2ReferralNotification(item) {
+  if (!item) {
+    return item;
+  }
+  return {
+    ...item,
+    event: v2ReferralNotificationEvent(item),
+    referral_number: item.title || `V2-NOTIF-${String(item.id || '').slice(0, 8).toUpperCase()}`,
+    referred_to_department: item.body || 'Referrals',
+    urgency: v2NotificationUrgency(item.priority),
+    is_read: Boolean(item.read_at),
   };
 }
 
@@ -493,6 +532,19 @@ export const referralsApi = {
   // Notification endpoints
   getNotifications: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getNotifications({
+          query: {
+            cursor: params.cursor || params.next_cursor,
+            limit: normalizeLimit(params, 20),
+            unread_only: params.status === 'unread' ? true : undefined,
+          },
+          signal: options.signal,
+        });
+        return (response?.data || [])
+          .filter(isV2ReferralNotification)
+          .map(adaptV2ReferralNotification);
+      }
       const response = await apiClient.getWithPagination('/referrals/notifications/', {
         ...options,
         params,
@@ -500,23 +552,52 @@ export const referralsApi = {
       return normalizeListResponse(response);
     } catch (error) {
       rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch referral notifications'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch referral notifications'));
     }
   },
 
-  markNotificationRead: async (id) => {
+  markNotificationRead: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postNotificationRead(
+          { id },
+          { read: true },
+          { signal: options.signal },
+        );
+        return adaptV2ReferralNotification(response?.data);
+      }
       return await apiClient.post(`/referrals/notifications/${id}/mark-read/`, {});
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to mark notification as read'));
+      }
       throw new Error(handleApiError(error, 'Failed to mark notification as read'));
     }
   },
 
-  getUnreadNotificationCount: async () => {
+  getUnreadNotificationCount: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getNotifications({
+          query: {
+            limit: DEFAULT_REFERRAL_PAGE_SIZE * 2,
+            unread_only: true,
+          },
+          signal: options.signal,
+        });
+        return (response?.data || []).filter(isV2ReferralNotification).length;
+      }
       const response = await apiClient.get('/referrals/notifications/unread-count/');
       return response?.count || 0;
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        return 0;
+      }
       // Return 0 on error to avoid breaking the UI
       console.error('Failed to fetch unread count:', error);
       return 0;
