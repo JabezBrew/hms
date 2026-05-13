@@ -218,6 +218,69 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
 }
 
 #[tokio::test]
+async fn ward_list_search_filters_server_side_and_stays_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let cardiology = hms_db::ward::create_ward(
+        &pool,
+        NewWard {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            code: "CARDIO".to_owned(),
+            name: "Cardiology North".to_owned(),
+        },
+    )
+    .await
+    .expect("cardiology ward create succeeds");
+    hms_db::ward::create_ward(
+        &pool,
+        NewWard {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            code: "SURG".to_owned(),
+            name: "Surgical Overflow".to_owned(),
+        },
+    )
+    .await
+    .expect("surgical ward create succeeds");
+    let rows = hms_db::ward::list_wards(&pool, facility_id, None, 25, Some("cardio"))
+        .await
+        .expect("ward search succeeds");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, cardiology.id);
+    assert_eq!(rows[0].code, "CARDIO");
+
+    let cross_facility_rows =
+        hms_db::ward::list_wards(&pool, uuid::Uuid::new_v4(), None, 25, Some("cardio"))
+            .await
+            .expect("cross-facility ward search succeeds");
+    assert!(cross_facility_rows.is_empty());
+
+    let wildcard_rows = hms_db::ward::list_wards(&pool, facility_id, None, 25, Some("%"))
+        .await
+        .expect("wildcard ward search succeeds");
+    assert!(wildcard_rows.is_empty());
+}
+
+#[tokio::test]
 async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

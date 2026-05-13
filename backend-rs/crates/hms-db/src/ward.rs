@@ -399,6 +399,7 @@ pub async fn list_wards(
     facility_id: Uuid,
     cursor: Option<WardCursor>,
     limit: i64,
+    search: Option<&str>,
 ) -> anyhow::Result<Vec<WardListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
@@ -427,6 +428,14 @@ pub async fn list_wards(
         "#,
     );
     query.push_bind(facility_id);
+
+    if let Some(pattern) = like_contains_pattern(search) {
+        query.push(" AND (wards.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR wards.code ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (wards.created_at, wards.id) > (");
@@ -3103,6 +3112,23 @@ fn ward_from_row(row: WardRow) -> anyhow::Result<WardListItem> {
         occupied_bed_count: row.occupied_bed_count,
         created_at: row.created_at,
     })
+}
+
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let search = search?.trim();
+    if search.is_empty() {
+        return None;
+    }
+    let mut escaped = String::with_capacity(search.len());
+    for ch in search.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '%' => escaped.push_str("\\%"),
+            '_' => escaped.push_str("\\_"),
+            _ => escaped.push(ch),
+        }
+    }
+    Some(format!("%{escaped}%"))
 }
 
 fn ward_section_from_row(row: WardSectionRow) -> anyhow::Result<WardSectionListItem> {

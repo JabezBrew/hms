@@ -200,6 +200,14 @@ pub struct WardBoardItem {
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 #[into_params(parameter_in = Query)]
+pub struct WardListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct WardBoardQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,

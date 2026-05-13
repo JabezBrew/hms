@@ -256,20 +256,14 @@ export const wardsApi = {
       }
 
       if (isRustV2ApiMode()) {
-        const term = String(query).trim().toLowerCase();
         const response = await v2Api.getWards({
           query: {
             limit: normalizeV2Limit(filters, 50),
+            search: String(query).trim(),
           },
           signal: filters.signal,
         });
-        return v2ListData(response)
-          .map(adaptV2Ward)
-          .filter((ward) => (
-            ward.name?.toLowerCase().includes(term)
-            || ward.code?.toLowerCase().includes(term)
-            || ward.ward_type?.toLowerCase().includes(term)
-          ));
+        return v2ListData(response).map(adaptV2Ward);
       }
 
       const params = new URLSearchParams({ q: query });

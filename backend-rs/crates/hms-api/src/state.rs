@@ -3052,8 +3052,16 @@ impl AppState {
         &self,
         cursor: Option<WardCursor>,
         limit: i64,
+        search: Option<String>,
     ) -> Result<Vec<WardListItem>> {
-        hms_db::ward::list_wards(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::ward::list_wards(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            search.as_deref(),
+        )
+        .await
     }
 
     pub async fn get_ward(&self, ward_id: Uuid) -> Result<Option<WardListItem>> {

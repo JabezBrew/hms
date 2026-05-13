@@ -360,6 +360,15 @@ async fn openapi_contains_foundation_paths() {
             .any(|parameter| parameter["name"] == "patient_id"),
         "ward board exposes patient_id filter for patient-scoped monitoring routes"
     );
+    let ward_parameters = paths["/api/v2/wards"]["get"]["parameters"]
+        .as_array()
+        .expect("ward list parameters exist");
+    assert!(
+        ward_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "search"),
+        "ward list exposes search filter for server-side ward picker search"
+    );
 }
 
 #[tokio::test]

@@ -18,7 +18,8 @@ use hms_domain::ward::{
     NursingAlertListItem, NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem,
     PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
     TreatmentSheetListItem, UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
-    WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem, WardStockRequestListItem,
+    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
+    WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -41,7 +42,7 @@ const MAX_BED_CODE_LEN: usize = 64;
     operation_id = "getWards",
     tag = "wards",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(WardListQuery),
     responses(
         (status = 200, description = "Wards list", body = ListResponse<WardListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -51,12 +52,15 @@ const MAX_BED_CODE_LEN: usize = 64;
 pub async fn list_wards(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<WardListQuery>,
 ) -> Result<Json<ListResponse<WardListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_wards(cursor, page_size as i64 + 1)
+        .list_wards(cursor, page_size as i64 + 1, query.search)
         .await
         .map_err(|_| ApiError::conflict("ward_list_failed", "Wards could not be loaded."))?;
 
