@@ -128,6 +128,42 @@ describe('Rust V2 wards bridge', () => {
     ]);
   });
 
+  it('threads AbortSignal into Rust V2 ward detail reads', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'ward-1',
+            code: 'general',
+            name: 'General Ward',
+            status: 'active',
+            active_bed_count: 20,
+            occupied_bed_count: 5,
+            created_at: '2026-05-12T03:12:42Z',
+          },
+          meta: {},
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await expect(wardsApi.getWard('ward-1', { signal: controller.signal })).resolves.toMatchObject({
+      id: 'ward-1',
+      total_beds: 20,
+      occupied_beds_count: 5,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/ward-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        signal: controller.signal,
+      }),
+    );
+  });
+
   it('loads admitted ward patients through Rust ward board data for existing ward dashboards', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

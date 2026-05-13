@@ -292,10 +292,10 @@ export const wardsApi = {
    * @param {string} id - Ward ID
    * @returns {Promise<Object>} Ward data
    */
-  getWard: async (id) => {
+  getWard: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getWardById({ id });
+        const response = await v2Api.getWardById({ id }, { signal: options.signal });
         return adaptV2Ward(response?.data || {});
       }
       return await apiClient.get(`/wards/wards/${id}/`);

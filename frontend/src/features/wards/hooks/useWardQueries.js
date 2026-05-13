@@ -58,7 +58,7 @@ export function useWardsRoot() {
 export function useWards(filters = {}) {
   return useQuery({
     queryKey: wardKeys.list(filters),
-    queryFn: () => wardsApi.getWards(filters),
+    queryFn: ({ signal }) => wardsApi.getWards({ ...filters, signal }),
   });
 }
 
@@ -90,7 +90,7 @@ export function useWardSearch(filters = {}, options = {}) {
 export function useWard(id) {
   return useQuery({
     queryKey: wardKeys.detail(id),
-    queryFn: () => wardsApi.getWard(id),
+    queryFn: ({ signal }) => wardsApi.getWard(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
 
   });
@@ -192,7 +192,7 @@ export function useDeleteWard() {
 export function useBeds(filters = {}) {
   return useQuery({
     queryKey: wardKeys.bedsList(filters),
-    queryFn: () => wardsApi.getBeds(filters),
+    queryFn: ({ signal }) => wardsApi.getBeds({ ...filters, signal }),
   });
 }
 
@@ -205,7 +205,7 @@ export function useBeds(filters = {}) {
 export function useWardBeds(wardId, filters = {}) {
   return useQuery({
     queryKey: wardKeys.wardBeds(wardId, filters),
-    queryFn: () => wardsApi.getBeds({ ward: wardId, ...filters }),
+    queryFn: ({ signal }) => wardsApi.getBeds({ ward: wardId, ...filters, signal }),
     enabled: !!wardId,
   });
 }
@@ -218,7 +218,7 @@ export function useWardBeds(wardId, filters = {}) {
 export function useBed(id) {
   return useQuery({
     queryKey: wardKeys.bed(id),
-    queryFn: () => wardsApi.getBed(id),
+    queryFn: ({ signal }) => wardsApi.getBed(id, { signal }),
     enabled: !!id,
   });
 }
@@ -404,7 +404,7 @@ export function useAllocationLogs(filters = {}) {
 export function useSections(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.sectionsList(filters),
-    queryFn: () => wardsApi.getSections(filters),
+    queryFn: ({ signal }) => wardsApi.getSections({ ...filters, signal }),
     ...options,
   });
 }
@@ -418,7 +418,7 @@ export function useSections(filters = {}, options = {}) {
 export function useWardSections(wardId, options = {}) {
   return useQuery({
     queryKey: wardKeys.wardSections(wardId),
-    queryFn: () => wardsApi.getWardSections(wardId),
+    queryFn: ({ signal }) => wardsApi.getWardSections(wardId, { signal }),
     enabled: !!wardId,
     ...options,
   });
@@ -433,7 +433,7 @@ export function useWardSections(wardId, options = {}) {
 export function useSection(id, options = {}) {
   return useQuery({
     queryKey: wardKeys.section(id),
-    queryFn: () => wardsApi.getSection(id),
+    queryFn: ({ signal }) => wardsApi.getSection(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -448,7 +448,7 @@ export function useSection(id, options = {}) {
 export function useSectionBeds(sectionId, options = {}) {
   return useQuery({
     queryKey: wardKeys.sectionBeds(sectionId),
-    queryFn: () => wardsApi.getSectionBeds(sectionId),
+    queryFn: ({ signal }) => wardsApi.getSectionBeds(sectionId, {}, { signal }),
     enabled: !!sectionId,
     ...options,
   });
