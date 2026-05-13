@@ -115,6 +115,19 @@ pub struct ClinicListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateClinicRequest {
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateClinicRequest {
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct AppointmentListItem {
     pub id: Uuid,
     pub patient_id: Uuid,

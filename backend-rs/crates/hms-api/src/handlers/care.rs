@@ -6,11 +6,11 @@ use hms_db::care::CareCursor;
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, CareTeamAssignment, CheckInVisitRequest,
-    ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest,
+    ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
     CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
     EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageListQuery,
-    TriageStatus, UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery,
-    VisitStatus,
+    TriageStatus, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
+    VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -24,6 +24,8 @@ use crate::state::AppState;
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
+const MAX_CLINIC_CODE_LEN: usize = 48;
+const MAX_CLINIC_NAME_LEN: usize = 160;
 
 #[utoipa::path(
     get,
@@ -119,6 +121,122 @@ pub async fn get_clinic(
         .get_clinic(id)
         .await
         .map_err(|_| ApiError::conflict("clinic_load_failed", "Clinic could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
+
+    Ok(Json(object(clinic)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/clinics",
+    operation_id = "postClinics",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    request_body = CreateClinicRequest,
+    responses(
+        (status = 200, description = "Clinic created", body = ObjectResponse<ClinicListItem>),
+        (status = 400, description = "Invalid clinic request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Clinic could not be saved", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_clinic(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<CreateClinicRequest>,
+) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::AppointmentManage,
+    )?;
+    let clinic = state
+        .create_clinic(
+            validate_required_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
+            validate_required_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
+            user.id,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("clinic_create_failed", "Clinic could not be created."))?;
+
+    Ok(Json(object(clinic)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/clinics/{id}",
+    operation_id = "patchClinicById",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinic id")),
+    request_body = UpdateClinicRequest,
+    responses(
+        (status = 200, description = "Clinic updated", body = ObjectResponse<ClinicListItem>),
+        (status = 400, description = "Invalid clinic request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinic not found", body = ApiErrorResponse),
+        (status = 409, description = "Clinic could not be saved", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_clinic(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateClinicRequest>,
+) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::AppointmentManage,
+    )?;
+    let clinic = state
+        .update_clinic(
+            id,
+            validate_optional_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
+            validate_optional_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
+            payload.is_active,
+            user.id,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("clinic_update_failed", "Clinic could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
+
+    Ok(Json(object(clinic)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v2/clinics/{id}",
+    operation_id = "deleteClinicById",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinic id")),
+    responses(
+        (status = 200, description = "Clinic deactivated", body = ObjectResponse<ClinicListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinic not found", body = ApiErrorResponse),
+        (status = 409, description = "Clinic could not be saved", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_clinic(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::AppointmentManage,
+    )?;
+    let clinic = state
+        .deactivate_clinic(id, user.id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict("clinic_delete_failed", "Clinic could not be deactivated.")
+        })?
         .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
 
     Ok(Json(object(clinic)))
@@ -1263,6 +1381,44 @@ fn require_action_permission(
             "You do not have permission to perform this action.",
         ))
     }
+}
+
+fn validate_required_text(
+    value: String,
+    max_len: usize,
+    field_name: &'static str,
+) -> Result<String, ApiError> {
+    validate_optional_text(Some(value), max_len, field_name)?.ok_or_else(|| {
+        ApiError::bad_request("invalid_clinic", "Clinic code and name are required.")
+    })
+}
+
+fn validate_optional_text(
+    value: Option<String>,
+    max_len: usize,
+    field_name: &'static str,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Err(ApiError::bad_request(
+            "invalid_clinic",
+            "Clinic code and name cannot be blank.",
+        ));
+    }
+    if value.len() > max_len {
+        return Err(ApiError::bad_request(
+            "invalid_clinic",
+            match field_name {
+                "clinic_code" => "Clinic code is too long.",
+                "clinic_name" => "Clinic name is too long.",
+                _ => "Clinic field is too long.",
+            },
+        ));
+    }
+    Ok(Some(value))
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<CareCursor>, u8), ApiError> {

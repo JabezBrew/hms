@@ -261,6 +261,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/appointments/{id}",
         "/api/v2/appointments/{id}/cancel",
         "/api/v2/clinics",
+        "/api/v2/clinics/{id}",
         "/api/v2/visits",
         "/api/v2/visits/{id}",
         "/api/v2/visits/check-in",
@@ -7295,6 +7296,76 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     assert_eq!(clinic_detail_body["data"]["id"], clinic_id);
     assert_eq!(clinic_detail_body["data"]["code"], "general");
     assert_eq!(clinic_detail_body["data"]["name"], "General Clinic");
+
+    let created_clinic = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/clinics")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "dermatology",
+                        "name": "Dermatology"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinic create succeeds");
+    assert_eq!(created_clinic.status(), StatusCode::OK);
+    let created_clinic_body = json_body(created_clinic).await;
+    let managed_clinic_id = created_clinic_body["data"]["id"]
+        .as_str()
+        .expect("managed clinic id exists");
+    assert_eq!(created_clinic_body["data"]["code"], "dermatology");
+    assert_eq!(created_clinic_body["data"]["name"], "Dermatology");
+    assert_eq!(created_clinic_body["data"]["is_active"], true);
+
+    let updated_clinic = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinics/{managed_clinic_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "name": "Skin Clinic",
+                        "is_active": false
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinic update succeeds");
+    assert_eq!(updated_clinic.status(), StatusCode::OK);
+    let updated_clinic_body = json_body(updated_clinic).await;
+    assert_eq!(updated_clinic_body["data"]["id"], managed_clinic_id);
+    assert_eq!(updated_clinic_body["data"]["name"], "Skin Clinic");
+    assert_eq!(updated_clinic_body["data"]["is_active"], false);
+
+    let deleted_clinic = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/v2/clinics/{managed_clinic_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinic delete succeeds");
+    assert_eq!(deleted_clinic.status(), StatusCode::OK);
+    let deleted_clinic_body = json_body(deleted_clinic).await;
+    assert_eq!(deleted_clinic_body["data"]["id"], managed_clinic_id);
+    assert_eq!(deleted_clinic_body["data"]["is_active"], false);
 
     let patient_response = app
         .clone()

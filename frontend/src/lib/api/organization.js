@@ -177,6 +177,54 @@ async function getV2Clinic(id, options = {}) {
   return adaptV2Clinic(response?.data || response || {});
 }
 
+function normalizeV2ClinicCreatePayload(data = {}) {
+  return {
+    code: data.code,
+    name: data.name,
+  };
+}
+
+function normalizeV2ClinicUpdatePayload(data = {}) {
+  const payload = {};
+  if (data.code !== undefined) {
+    payload.code = data.code;
+  }
+  if (data.name !== undefined) {
+    payload.name = data.name;
+  }
+  if (data.is_active !== undefined) {
+    payload.is_active = data.is_active;
+  }
+  return payload;
+}
+
+async function createV2Clinic(data = {}, options = {}) {
+  const { signal, ...payload } = data;
+  const response = await v2Api.postClinics(
+    normalizeV2ClinicCreatePayload(payload),
+    { signal: options.signal || signal },
+  );
+  return adaptV2Clinic(response?.data || response || {});
+}
+
+async function updateV2Clinic(id, data = {}, options = {}) {
+  const { signal, ...payload } = data;
+  const response = await v2Api.patchClinicById(
+    { id },
+    normalizeV2ClinicUpdatePayload(payload),
+    { signal: options.signal || signal },
+  );
+  return adaptV2Clinic(response?.data || response || {});
+}
+
+async function deleteV2Clinic(id, options = {}) {
+  const response = await v2Api.deleteClinicById(
+    { id },
+    { signal: options.signal },
+  );
+  return adaptV2Clinic(response?.data || response || {});
+}
+
 async function listV2UnitTypes(params = {}, options = {}) {
   const units = await listV2OrgUnits(params, options);
   const seen = new Set(DEFAULT_V2_UNIT_TYPES.map((unitType) => unitType.code));
@@ -876,21 +924,21 @@ export const clinicsApi = {
     }
     return apiClient.get(`/organization/clinics/${id}/`, options);
   },
-  create: (data) => {
+  create: (data, options = {}) => {
     if (isRustV2ApiMode()) {
-      return unsupportedInRustV2('Rust V2 does not expose clinic management yet.');
+      return createV2Clinic(data, options);
     }
     return apiClient.post('/organization/clinics/', data);
   },
-  update: (id, data) => {
+  update: (id, data, options = {}) => {
     if (isRustV2ApiMode()) {
-      return unsupportedInRustV2('Rust V2 does not expose clinic management yet.');
+      return updateV2Clinic(id, data, options);
     }
     return apiClient.patch(`/organization/clinics/${id}/`, data);
   },
-  delete: (id) => {
+  delete: (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      return unsupportedInRustV2('Rust V2 does not expose clinic management yet.');
+      return deleteV2Clinic(id, options);
     }
     return apiClient.delete(`/organization/clinics/${id}/`);
   },

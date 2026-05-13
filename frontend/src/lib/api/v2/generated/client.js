@@ -31,6 +31,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "deleteClinicById": {
+    "operationId": "deleteClinicById",
+    "method": "DELETE",
+    "path": "/api/v2/clinics/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdminAuditEvents": {
     "operationId": "getAdminAuditEvents",
     "method": "GET",
@@ -1635,6 +1645,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "patchClinicById": {
+    "operationId": "patchClinicById",
+    "method": "PATCH",
+    "path": "/api/v2/clinics/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "patchEncounterById": {
     "operationId": "patchEncounterById",
     "method": "PATCH",
@@ -1968,6 +1988,14 @@ export const operations = {
     "pathParamNames": [
       "id"
     ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinics": {
+    "operationId": "postClinics",
+    "method": "POST",
+    "path": "/api/v2/clinics",
+    "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -2760,6 +2788,7 @@ export function createGeneratedClient(request) {
     deleteAdminFeature: createOperation(request, operations.deleteAdminFeature),
     deleteClinicalAllergy: createOperation(request, operations.deleteClinicalAllergy),
     deleteClinicalNoteTemplate: createOperation(request, operations.deleteClinicalNoteTemplate),
+    deleteClinicById: createOperation(request, operations.deleteClinicById),
     getAdminAuditEvents: createOperation(request, operations.getAdminAuditEvents),
     getAdminAuthorityAppointments: createOperation(request, operations.getAdminAuthorityAppointments),
     getAdminCommittees: createOperation(request, operations.getAdminCommittees),
@@ -2909,6 +2938,7 @@ export function createGeneratedClient(request) {
     patchClinicalNoteTemplate: createOperation(request, operations.patchClinicalNoteTemplate),
     patchClinicalPrescription: createOperation(request, operations.patchClinicalPrescription),
     patchClinicalProblemById: createOperation(request, operations.patchClinicalProblemById),
+    patchClinicById: createOperation(request, operations.patchClinicById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
     patchPatientById: createOperation(request, operations.patchPatientById),
     patchWard: createOperation(request, operations.patchWard),
@@ -2947,6 +2977,7 @@ export function createGeneratedClient(request) {
     postClinicalNoteTemplates: createOperation(request, operations.postClinicalNoteTemplates),
     postClinicalNoteVersions: createOperation(request, operations.postClinicalNoteVersions),
     postClinicalProblemStatus: createOperation(request, operations.postClinicalProblemStatus),
+    postClinics: createOperation(request, operations.postClinics),
     postClinicWaitlist: createOperation(request, operations.postClinicWaitlist),
     postClinicWaitlistOfferNext: createOperation(request, operations.postClinicWaitlistOfferNext),
     postConsentRevoke: createOperation(request, operations.postConsentRevoke),

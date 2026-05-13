@@ -183,6 +183,123 @@ describe('Rust V2 organization bridge', () => {
     });
   });
 
+  it('creates updates and deactivates clinics through Rust /api/v2', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'clinic-2',
+              code: 'dermatology',
+              name: 'Dermatology',
+              is_active: true,
+              created_at: '2026-05-12T04:02:42Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'clinic-2',
+              code: 'dermatology',
+              name: 'Skin Clinic',
+              is_active: false,
+              created_at: '2026-05-12T04:02:42Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'clinic-2',
+              code: 'dermatology',
+              name: 'Skin Clinic',
+              is_active: false,
+              created_at: '2026-05-12T04:02:42Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const created = await clinicsApi.create({
+      code: 'dermatology',
+      name: 'Dermatology',
+      department: 'ignored-old-field',
+      signal,
+    });
+    const updated = await clinicsApi.update('clinic-2', {
+      name: 'Skin Clinic',
+      is_active: false,
+      signal,
+    });
+    const deactivated = await clinicsApi.delete('clinic-2', { signal });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinics',
+      expect.objectContaining({
+        method: 'POST',
+        signal,
+        body: JSON.stringify({
+          code: 'dermatology',
+          name: 'Dermatology',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/clinics/clinic-2',
+      expect.objectContaining({
+        method: 'PATCH',
+        signal,
+        body: JSON.stringify({
+          name: 'Skin Clinic',
+          is_active: false,
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/clinics/clinic-2',
+      expect.objectContaining({ method: 'DELETE', signal }),
+    );
+    expect(created).toEqual(expect.objectContaining({
+      id: 'clinic-2',
+      code: 'dermatology',
+      name: 'Dermatology',
+      waitlist_enabled: false,
+    }));
+    expect(updated).toEqual(expect.objectContaining({
+      id: 'clinic-2',
+      name: 'Skin Clinic',
+      is_active: false,
+    }));
+    expect(deactivated).toEqual(expect.objectContaining({
+      id: 'clinic-2',
+      is_active: false,
+    }));
+  });
+
   it('derives unit types from Rust org units without calling Django unit-type endpoints', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

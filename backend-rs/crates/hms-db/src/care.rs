@@ -42,6 +42,25 @@ pub struct AppointmentUpdate {
 }
 
 #[derive(Clone, Debug)]
+pub struct NewClinic {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub actor_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClinicUpdate {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub is_active: Option<bool>,
+    pub actor_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewVisit {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -280,6 +299,86 @@ pub async fn get_clinic(
     .await?;
 
     Ok(row.map(clinic_from_row))
+}
+
+pub async fn create_clinic(pool: &PgPool, clinic: NewClinic) -> anyhow::Result<ClinicListItem> {
+    let row = sqlx::query_as::<_, ClinicRow>(
+        r#"
+        INSERT INTO clinics (
+            id,
+            facility_id,
+            code,
+            name
+        )
+        VALUES ($1, $2, $3, $4)
+        RETURNING id,
+                  code,
+                  name,
+                  is_active,
+                  created_at
+        "#,
+    )
+    .bind(clinic.id)
+    .bind(clinic.facility_id)
+    .bind(clinic.code)
+    .bind(clinic.name)
+    .fetch_one(pool)
+    .await?;
+
+    let _ = clinic.actor_user_id;
+    Ok(clinic_from_row(row))
+}
+
+pub async fn update_clinic(
+    pool: &PgPool,
+    clinic: ClinicUpdate,
+) -> anyhow::Result<Option<ClinicListItem>> {
+    let row = sqlx::query_as::<_, ClinicRow>(
+        r#"
+        UPDATE clinics
+        SET code = COALESCE($3, code),
+            name = COALESCE($4, name),
+            is_active = COALESCE($5, is_active),
+            updated_at = now()
+        WHERE facility_id = $1
+          AND id = $2
+        RETURNING id,
+                  code,
+                  name,
+                  is_active,
+                  created_at
+        "#,
+    )
+    .bind(clinic.facility_id)
+    .bind(clinic.id)
+    .bind(clinic.code)
+    .bind(clinic.name)
+    .bind(clinic.is_active)
+    .fetch_optional(pool)
+    .await?;
+
+    let _ = clinic.actor_user_id;
+    Ok(row.map(clinic_from_row))
+}
+
+pub async fn deactivate_clinic(
+    pool: &PgPool,
+    facility_id: Uuid,
+    clinic_id: Uuid,
+    actor_user_id: Uuid,
+) -> anyhow::Result<Option<ClinicListItem>> {
+    update_clinic(
+        pool,
+        ClinicUpdate {
+            id: clinic_id,
+            facility_id,
+            code: None,
+            name: None,
+            is_active: Some(false),
+            actor_user_id,
+        },
+    )
+    .await
 }
 
 pub async fn create_appointment(

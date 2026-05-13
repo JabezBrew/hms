@@ -1,7 +1,7 @@
 use chrono::{NaiveDate, TimeZone, Utc};
 use hms_db::care::{
-    AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter, NewTriage, NewVisit,
-    TriageFilters,
+    AppointmentUpdate, ClinicUpdate, EncounterUpdate, NewAppointment, NewClinic, NewEncounter,
+    NewTriage, NewVisit, TriageFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{
@@ -9,6 +9,96 @@ use hms_domain::care::{
     TriageStatus, VisitStatus,
 };
 use hms_domain::deployment::DeploymentProfile;
+
+#[tokio::test]
+async fn clinic_repository_manages_clinics_with_facility_scope() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    let clinic = hms_db::care::create_clinic(
+        &pool,
+        NewClinic {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            code: "dermatology".to_owned(),
+            name: "Dermatology".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("clinic creates");
+    assert_eq!(clinic.code, "dermatology");
+    assert_eq!(clinic.name, "Dermatology");
+    assert!(clinic.is_active);
+
+    let updated = hms_db::care::update_clinic(
+        &pool,
+        ClinicUpdate {
+            facility_id,
+            id: clinic.id,
+            code: Some("skin".to_owned()),
+            name: Some("Skin Clinic".to_owned()),
+            is_active: Some(false),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("clinic updates")
+    .expect("clinic exists");
+    assert_eq!(updated.code, "skin");
+    assert_eq!(updated.name, "Skin Clinic");
+    assert!(!updated.is_active);
+
+    let deactivated = hms_db::care::deactivate_clinic(&pool, facility_id, clinic.id, owner_id)
+        .await
+        .expect("clinic deactivates")
+        .expect("clinic exists");
+    assert!(!deactivated.is_active);
+
+    assert!(hms_db::care::update_clinic(
+        &pool,
+        ClinicUpdate {
+            facility_id: uuid::Uuid::new_v4(),
+            id: clinic.id,
+            code: None,
+            name: Some("Wrong facility".to_owned()),
+            is_active: None,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("cross-facility update succeeds")
+    .is_none());
+    assert!(
+        hms_db::care::deactivate_clinic(&pool, uuid::Uuid::new_v4(), clinic.id, owner_id)
+            .await
+            .expect("cross-facility deactivate succeeds")
+            .is_none()
+    );
+}
 
 #[tokio::test]
 async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped() {

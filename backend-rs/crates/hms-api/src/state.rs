@@ -15,8 +15,8 @@ use hms_db::billing::{
     NewInvoice, NewNhisBatch, NewPayment, NewRemittanceImport,
 };
 use hms_db::care::{
-    AppointmentUpdate, CareCursor, EncounterUpdate, NewAppointment, NewCareTeamAssignment,
-    NewEncounter, NewTriage, NewVisit,
+    AppointmentUpdate, CareCursor, ClinicUpdate, EncounterUpdate, NewAppointment,
+    NewCareTeamAssignment, NewClinic, NewEncounter, NewTriage, NewVisit,
 };
 use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
@@ -2944,6 +2944,61 @@ impl AppState {
 
     pub async fn get_clinic(&self, clinic_id: Uuid) -> Result<Option<ClinicListItem>> {
         hms_db::care::get_clinic(&self.inner.pool, self.facility_id(), clinic_id).await
+    }
+
+    pub async fn create_clinic(
+        &self,
+        code: String,
+        name: String,
+        actor_user_id: Uuid,
+    ) -> Result<ClinicListItem> {
+        hms_db::care::create_clinic(
+            &self.inner.pool,
+            NewClinic {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                code,
+                name,
+                actor_user_id,
+            },
+        )
+        .await
+    }
+
+    pub async fn update_clinic(
+        &self,
+        clinic_id: Uuid,
+        code: Option<String>,
+        name: Option<String>,
+        is_active: Option<bool>,
+        actor_user_id: Uuid,
+    ) -> Result<Option<ClinicListItem>> {
+        hms_db::care::update_clinic(
+            &self.inner.pool,
+            ClinicUpdate {
+                id: clinic_id,
+                facility_id: self.facility_id(),
+                code,
+                name,
+                is_active,
+                actor_user_id,
+            },
+        )
+        .await
+    }
+
+    pub async fn deactivate_clinic(
+        &self,
+        clinic_id: Uuid,
+        actor_user_id: Uuid,
+    ) -> Result<Option<ClinicListItem>> {
+        hms_db::care::deactivate_clinic(
+            &self.inner.pool,
+            self.facility_id(),
+            clinic_id,
+            actor_user_id,
+        )
+        .await
     }
 
     pub async fn create_appointment(
