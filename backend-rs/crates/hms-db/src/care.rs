@@ -163,6 +163,7 @@ pub async fn list_appointments(
     facility_id: Uuid,
     cursor: Option<CareCursor>,
     date: Option<NaiveDate>,
+    clinic_id: Option<Uuid>,
     limit: i64,
 ) -> anyhow::Result<Vec<AppointmentListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
@@ -198,6 +199,11 @@ pub async fn list_appointments(
         query.push_bind(starts_at);
         query.push(" AND appointments.starts_at < ");
         query.push_bind(ends_before);
+    }
+
+    if let Some(clinic_id) = clinic_id {
+        query.push(" AND appointments.clinic_id = ");
+        query.push_bind(clinic_id);
     }
 
     if let Some(cursor) = cursor {

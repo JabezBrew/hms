@@ -2778,10 +2778,18 @@ impl AppState {
         &self,
         cursor: Option<CareCursor>,
         date: Option<NaiveDate>,
+        clinic_id: Option<Uuid>,
         limit: i64,
     ) -> Result<Vec<AppointmentListItem>> {
-        hms_db::care::list_appointments(&self.inner.pool, self.facility_id(), cursor, date, limit)
-            .await
+        hms_db::care::list_appointments(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            date,
+            clinic_id,
+            limit,
+        )
+        .await
     }
 
     pub async fn list_clinics(

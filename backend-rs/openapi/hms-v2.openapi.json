@@ -386,6 +386,13 @@
       },
       "AppointmentListQuery": {
         "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cursor": {
             "type": [
               "string",
@@ -20232,6 +20239,18 @@
             "required": false,
             "schema": {
               "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
               "type": [
                 "string",
                 "null"

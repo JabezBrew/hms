@@ -79,6 +79,7 @@ pub struct AppointmentListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub date: Option<NaiveDate>,
+    pub clinic_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]

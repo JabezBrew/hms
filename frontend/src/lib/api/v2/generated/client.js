@@ -278,7 +278,8 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "date"
+      "date",
+      "clinic_id"
     ],
     "hasBody": false
   },

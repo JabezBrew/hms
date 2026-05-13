@@ -147,6 +147,23 @@ async fn appointment_list_can_filter_by_schedule_date() {
     .fetch_one(&pool)
     .await
     .expect("patient exists");
+    let default_clinic_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM clinics WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("default clinic exists");
+    let other_clinic_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO clinics (id, facility_id, code, name)
+         VALUES ($1, $2, 'OTHER-APPT', 'Other Appointment Clinic')",
+    )
+    .bind(other_clinic_id)
+    .bind(facility_id)
+    .execute(&pool)
+    .await
+    .expect("other clinic inserts");
 
     let target = hms_db::care::create_appointment(
         &pool,
@@ -186,12 +203,38 @@ async fn appointment_list_can_filter_by_schedule_date() {
     )
     .await
     .expect("other appointment is created");
+    let other_clinic_same_day = hms_db::care::create_appointment(
+        &pool,
+        NewAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            starts_at: Utc
+                .with_ymd_and_hms(2030, 5, 12, 10, 0, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            ends_at: Utc
+                .with_ymd_and_hms(2030, 5, 12, 10, 30, 0)
+                .single()
+                .expect("static timestamp is valid"),
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("other clinic same-day appointment is created");
+    sqlx::query("UPDATE appointments SET clinic_id = $1 WHERE id = $2")
+        .bind(other_clinic_id)
+        .bind(other_clinic_same_day.id)
+        .execute(&pool)
+        .await
+        .expect("same-day appointment moves to other clinic");
 
     let filtered = hms_db::care::list_appointments(
         &pool,
         facility_id,
         None,
         Some(NaiveDate::from_ymd_opt(2030, 5, 12).expect("static date is valid")),
+        Some(default_clinic_id),
         25,
     )
     .await
@@ -203,6 +246,9 @@ async fn appointment_list_can_filter_by_schedule_date() {
     assert!(!filtered
         .iter()
         .any(|appointment| appointment.id == other_day.id));
+    assert!(!filtered
+        .iter()
+        .any(|appointment| appointment.id == other_clinic_same_day.id));
     assert!(filtered
         .iter()
         .all(|appointment| appointment.starts_at.date_naive()

@@ -56,10 +56,11 @@ describe('Rust V2 appointments bridge', () => {
       page: 1,
       limit: 10,
       date: '2026-05-12',
+      clinic_id: 'clinic-1',
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/appointments?limit=10&date=2026-05-12',
+      'http://localhost:8080/api/v2/appointments?limit=10&date=2026-05-12&clinic_id=clinic-1',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

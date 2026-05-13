@@ -45,12 +45,13 @@ pub async fn list_appointments(
 ) -> Result<Json<ListResponse<AppointmentListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
     let date = query.date;
+    let clinic_id = query.clinic_id;
     let (cursor, page_size) = page_request(CursorListQuery {
         cursor: query.cursor,
         limit: query.limit,
     })?;
     let rows = state
-        .list_appointments(cursor, date, page_size as i64 + 1)
+        .list_appointments(cursor, date, clinic_id, page_size as i64 + 1)
         .await
         .map_err(|_| {
             ApiError::conflict(

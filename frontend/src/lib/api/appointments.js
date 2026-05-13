@@ -211,6 +211,10 @@ function getV2AppointmentListQuery(params = {}) {
   if (date) {
     query.date = String(date).slice(0, 10);
   }
+  const clinicId = params.clinic_id || params.clinic;
+  if (clinicId) {
+    query.clinic_id = clinicId;
+  }
   const cursor = getCursorForParams(params);
   if (cursor) {
     query.cursor = cursor;

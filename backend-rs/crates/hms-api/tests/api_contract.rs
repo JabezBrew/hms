@@ -379,6 +379,15 @@ async fn openapi_contains_foundation_paths() {
             .any(|parameter| parameter["name"] == "status"),
         "patient list exposes status filter for registry scope tabs"
     );
+    let appointment_parameters = paths["/api/v2/appointments"]["get"]["parameters"]
+        .as_array()
+        .expect("appointment list parameters exist");
+    assert!(
+        appointment_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "clinic_id"),
+        "appointment list exposes clinic_id filter for clinic schedule views"
+    );
     let triage_parameters = paths["/api/v2/triage"]["get"]["parameters"]
         .as_array()
         .expect("triage queue parameters exist");
