@@ -1546,6 +1546,29 @@ pub async fn complete_nursing_task(
     optional_nursing_task_by_id(pool, facility_id, task_id).await
 }
 
+pub async fn cancel_nursing_task(
+    pool: &PgPool,
+    facility_id: Uuid,
+    task_id: Uuid,
+) -> anyhow::Result<Option<NursingTaskListItem>> {
+    sqlx::query(
+        r#"
+        UPDATE nursing_tasks
+        SET status = $1,
+            completed_at = NULL,
+            updated_at = now()
+        WHERE facility_id = $2 AND id = $3
+        "#,
+    )
+    .bind(codec::encode(NursingTaskStatus::Cancelled)?)
+    .bind(facility_id)
+    .bind(task_id)
+    .execute(pool)
+    .await?;
+
+    optional_nursing_task_by_id(pool, facility_id, task_id).await
+}
+
 pub async fn get_nursing_task(
     pool: &PgPool,
     facility_id: Uuid,

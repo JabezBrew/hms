@@ -3035,6 +3035,10 @@ impl AppState {
         hms_db::ward::complete_nursing_task(&self.inner.pool, self.facility_id(), task_id).await
     }
 
+    pub async fn cancel_nursing_task(&self, task_id: Uuid) -> Result<Option<NursingTaskListItem>> {
+        hms_db::ward::cancel_nursing_task(&self.inner.pool, self.facility_id(), task_id).await
+    }
+
     pub async fn get_nursing_task(&self, task_id: Uuid) -> Result<Option<NursingTaskListItem>> {
         hms_db::ward::get_nursing_task(&self.inner.pool, self.facility_id(), task_id).await
     }

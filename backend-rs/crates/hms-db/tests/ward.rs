@@ -1,12 +1,12 @@
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
     AdmissionContext, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewMonitoringEvent,
-    NewNursingAlert, NewPatientVitals, NewWardSection, NewWardStockRequest,
+    NewNursingAlert, NewNursingTask, NewPatientVitals, NewWardSection, NewWardStockRequest,
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
     AdmissionStatus, BedStatus, DischargeStatus, MonitoringEventKind, NursingAlertSeverity,
-    NursingAlertStatus, WardStatus, WardStockRequestStatus,
+    NursingAlertStatus, NursingTaskStatus, NursingTaskType, WardStatus, WardStockRequestStatus,
 };
 
 #[tokio::test]
@@ -497,6 +497,36 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
             .expect("alert exists");
     assert_eq!(acknowledged.status, NursingAlertStatus::Acknowledged);
 
+    let other_facility = uuid::Uuid::new_v4();
+    let task = hms_db::ward::create_nursing_task(
+        &pool,
+        NewNursingTask {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            admission_case_id: admission.id,
+            patient_id,
+            ward_id,
+            task_type: NursingTaskType::Observation,
+            due_at: chrono::Utc::now(),
+            assigned_to_user_id: Some(owner_id),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("nursing task create succeeds");
+    assert_eq!(task.status, NursingTaskStatus::Open);
+    let cancelled_task = hms_db::ward::cancel_nursing_task(&pool, facility_id, task.id)
+        .await
+        .expect("nursing task cancel query succeeds")
+        .expect("nursing task exists");
+    assert_eq!(cancelled_task.status, NursingTaskStatus::Cancelled);
+    assert!(
+        hms_db::ward::cancel_nursing_task(&pool, other_facility, task.id)
+            .await
+            .expect("cross-facility nursing task cancel query succeeds")
+            .is_none()
+    );
+
     let event = hms_db::ward::create_monitoring_event(
         &pool,
         NewMonitoringEvent {
@@ -557,7 +587,6 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
             .expect("stock request exists");
     assert_eq!(fulfilled.status, WardStockRequestStatus::Fulfilled);
 
-    let other_facility = uuid::Uuid::new_v4();
     assert!(
         hms_db::ward::list_patient_vitals(&pool, other_facility, None, None, None, None, 25)
             .await

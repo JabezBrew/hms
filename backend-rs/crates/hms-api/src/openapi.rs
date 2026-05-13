@@ -194,6 +194,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::ward::activate_admission_case,
         crate::handlers::ward::cancel_admission_case,
         crate::handlers::ward::cancel_discharge,
+        crate::handlers::ward::cancel_nursing_task,
         crate::handlers::ward::complete_discharge,
         crate::handlers::ward::acknowledge_nursing_alert,
         crate::handlers::ward::approve_ward_stock_request,

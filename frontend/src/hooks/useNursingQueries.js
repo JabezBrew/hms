@@ -1312,14 +1312,23 @@ export const useUpdateTask = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ taskId, data }) => {
+    mutationFn: async ({ taskId, data, status }) => {
       if (isRustV2ApiMode()) {
-        if (data?.status === 'completed' || data?.complete === true) {
+        const requestedStatus = data?.status || status;
+        if (requestedStatus === 'completed' || data?.complete === true) {
           try {
             const response = await v2Api.postNursingTaskComplete({ id: taskId });
             return adaptV2NursingTask(response?.data);
           } catch (error) {
             rethrowV2Error(error, 'Failed to complete nursing task');
+          }
+        }
+        if (requestedStatus === 'cancelled') {
+          try {
+            const response = await v2Api.postNursingTaskCancel({ id: taskId });
+            return adaptV2NursingTask(response?.data);
+          } catch (error) {
+            rethrowV2Error(error, 'Failed to cancel nursing task');
           }
         }
         throw new Error('Rust V2 does not expose general nursing task edits yet.');

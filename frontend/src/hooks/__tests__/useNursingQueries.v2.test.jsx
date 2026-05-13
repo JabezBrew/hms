@@ -47,6 +47,7 @@ import {
   useTreatmentSheetByAdmission,
   useTreatmentSheetEntry,
   useTodayTasks,
+  useUpdateTask,
   useTodayFluidBalance,
   useVitalSigns,
   useVitalSignsTrends,
@@ -573,6 +574,43 @@ describe('Rust V2 nursing dashboard hooks', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/nursing/tasks/task-1/complete',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('cancels nursing tasks through the Rust V2 cancel action used by the task page', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'task-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            task_type: 'observation',
+            status: 'cancelled',
+            due_at: '2026-05-12T11:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useUpdateTask(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ taskId: 'task-1', status: 'cancelled' });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/nursing/tasks/task-1/cancel',
       expect.objectContaining({ method: 'POST' }),
     );
   });

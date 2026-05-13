@@ -4603,6 +4603,51 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let complete_task_body = json_body(complete_task).await;
     assert_eq!(complete_task_body["data"]["status"], "completed");
 
+    let cancellable_task_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/nursing/tasks")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_id,
+                        "task_type": "observation",
+                        "due_at": "2026-05-10T11:30:00Z",
+                        "assigned_to_user_id": owner_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancellable nursing task create succeeds");
+    assert_eq!(cancellable_task_response.status(), StatusCode::OK);
+    let cancellable_task_body = json_body(cancellable_task_response).await;
+    let cancellable_task_id = cancellable_task_body["data"]["id"]
+        .as_str()
+        .expect("task id exists");
+
+    let cancel_task = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/nursing/tasks/{cancellable_task_id}/cancel"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("nursing task cancel succeeds");
+    assert_eq!(cancel_task.status(), StatusCode::OK);
+    let cancel_task_body = json_body(cancel_task).await;
+    assert_eq!(cancel_task_body["data"]["status"], "cancelled");
+
     let medication_response = app
         .clone()
         .oneshot(

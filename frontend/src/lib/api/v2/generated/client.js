@@ -1919,6 +1919,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postNursingTaskCancel": {
+    "operationId": "postNursingTaskCancel",
+    "method": "POST",
+    "path": "/api/v2/nursing/tasks/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postNursingTaskComplete": {
     "operationId": "postNursingTaskComplete",
     "method": "POST",
@@ -2469,6 +2479,7 @@ export function createGeneratedClient(request) {
     postNotificationRead: createOperation(request, operations.postNotificationRead),
     postNursingAlertAcknowledge: createOperation(request, operations.postNursingAlertAcknowledge),
     postNursingAlerts: createOperation(request, operations.postNursingAlerts),
+    postNursingTaskCancel: createOperation(request, operations.postNursingTaskCancel),
     postNursingTaskComplete: createOperation(request, operations.postNursingTaskComplete),
     postNursingTasks: createOperation(request, operations.postNursingTasks),
     postPatientAllergies: createOperation(request, operations.postPatientAllergies),

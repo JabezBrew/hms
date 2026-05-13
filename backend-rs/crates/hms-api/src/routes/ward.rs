@@ -67,6 +67,10 @@ pub fn routes() -> Router<AppState> {
             post(ward::complete_nursing_task),
         )
         .route(
+            "/api/v2/nursing/tasks/:id/cancel",
+            post(ward::cancel_nursing_task),
+        )
+        .route(
             "/api/v2/nursing/medication-administrations",
             get(ward::list_medication_administrations)
                 .post(ward::schedule_medication_administration),

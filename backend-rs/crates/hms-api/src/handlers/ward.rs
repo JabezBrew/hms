@@ -15,9 +15,9 @@ use hms_domain::ward::{
     CreateTreatmentSheetRequest, CreateWardSectionRequest, CreateWardStockRequestRequest,
     DischargeCaseListItem, DischargeStatus, FluidBalanceListItem, HandoffListItem,
     MedicationAdministrationListItem, MonitoringEventListItem, NursingAlertListItem,
-    NursingTaskListItem, PatientVitalsListItem, PatientVitalsListQuery, ReserveAdmissionBedRequest,
-    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, WardBoardItem, WardBoardQuery,
-    WardListItem, WardSectionListItem, WardStockRequestListItem,
+    NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem, PatientVitalsListQuery,
+    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
+    WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem, WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -955,6 +955,67 @@ pub async fn complete_nursing_task(
             ApiError::conflict(
                 "nursing_task_complete_failed",
                 "Nursing task could not be completed.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
+        })?;
+
+    Ok(Json(object(task)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/nursing/tasks/{id}/cancel",
+    operation_id = "postNursingTaskCancel",
+    tag = "nursing",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Nursing task id")),
+    responses(
+        (status = 200, description = "Nursing task cancelled", body = ObjectResponse<NursingTaskListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Nursing task not found", body = ApiErrorResponse),
+        (status = 409, description = "Nursing task cannot be cancelled", body = ApiErrorResponse)
+    )
+)]
+pub async fn cancel_nursing_task(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
+    require_facility_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::NursingTaskManage,
+    )?;
+    let existing = state
+        .get_nursing_task(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nursing_task_load_failed",
+                "Nursing task could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
+        })?;
+    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
+    if existing.status == NursingTaskStatus::Completed {
+        return Err(ApiError::conflict(
+            "nursing_task_cancel_invalid_status",
+            "Completed nursing tasks cannot be cancelled.",
+        ));
+    }
+
+    let task = state
+        .cancel_nursing_task(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nursing_task_cancel_failed",
+                "Nursing task could not be cancelled.",
             )
         })?
         .ok_or_else(|| {
