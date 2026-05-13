@@ -54,6 +54,13 @@ pub struct NewWardSection {
 }
 
 #[derive(Clone, Debug)]
+pub struct WardSectionUpdate {
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub status: Option<WardStatus>,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewBed {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -696,6 +703,59 @@ pub async fn create_ward_section(
     .ok_or_else(|| anyhow::anyhow!("ward not found for section"))?;
 
     ward_section_from_row(row)
+}
+
+pub async fn update_ward_section(
+    pool: &PgPool,
+    facility_id: Uuid,
+    section_id: Uuid,
+    update: WardSectionUpdate,
+) -> anyhow::Result<Option<WardSectionListItem>> {
+    let status = update.status.map(codec::encode).transpose()?;
+    let row = sqlx::query_as::<_, WardSectionRow>(
+        r#"
+        WITH updated AS (
+            UPDATE ward_sections
+               SET code = COALESCE($3, code),
+                   name = COALESCE($4, name),
+                   status = COALESCE($5, status),
+                   updated_at = now()
+             WHERE facility_id = $1
+               AND id = $2
+            RETURNING id,
+                      ward_id,
+                      code,
+                      name,
+                      status,
+                      created_at
+        )
+        SELECT updated.id,
+               updated.ward_id,
+               updated.code,
+               updated.name,
+               updated.status,
+               COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               updated.created_at
+        FROM updated
+        LEFT JOIN (
+            SELECT section_id,
+                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count
+            FROM beds
+            WHERE facility_id = $1
+              AND section_id = $2
+            GROUP BY section_id
+        ) bed_counts ON bed_counts.section_id = updated.id
+        "#,
+    )
+    .bind(facility_id)
+    .bind(section_id)
+    .bind(update.code)
+    .bind(update.name)
+    .bind(status)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(ward_section_from_row).transpose()
 }
 
 pub async fn list_ward_beds(

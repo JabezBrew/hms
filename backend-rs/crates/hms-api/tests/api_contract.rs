@@ -4465,6 +4465,32 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(updated_bed_body["data"]["id"], bed_id);
     assert_eq!(updated_bed_body["data"]["bed_code"], "E-100");
     assert_eq!(updated_bed_body["data"]["status"], "cleaning");
+    let updated_section_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/wards/sections/{section_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "EAST-RENAMED",
+                        "name": "Renamed East Section",
+                        "status": "inactive"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward section update succeeds");
+    assert_eq!(updated_section_response.status(), StatusCode::OK);
+    let updated_section_body = json_body(updated_section_response).await;
+    assert_eq!(updated_section_body["data"]["id"], section_id);
+    assert_eq!(updated_section_body["data"]["code"], "EAST-RENAMED");
+    assert_eq!(updated_section_body["data"]["name"], "Renamed East Section");
+    assert_eq!(updated_section_body["data"]["status"], "inactive");
 
     let bed_list = app
         .clone()

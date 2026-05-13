@@ -841,7 +841,10 @@ export const wardsApi = {
   updateSection: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('section mutations');
+        const response = await v2Api.patchWardSection({ id }, wardUpdatePayloadFrom(data), {
+          signal: data?.signal,
+        });
+        return adaptV2Section(response?.data);
       }
       return await apiClient.patch(`/wards/sections/${id}/`, data);
     } catch (error) {

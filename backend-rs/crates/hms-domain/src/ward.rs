@@ -163,6 +163,13 @@ pub struct CreateWardSectionRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateWardSectionRequest {
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub status: Option<WardStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateBedRequest {
     pub section_id: Option<Uuid>,
     pub bed_code: String,

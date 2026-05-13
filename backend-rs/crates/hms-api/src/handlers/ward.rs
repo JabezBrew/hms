@@ -2,7 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::ward::{AdmissionContext, BedUpdate, WardCursor, WardUpdate};
+use hms_db::ward::{AdmissionContext, BedUpdate, WardCursor, WardSectionUpdate, WardUpdate};
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
@@ -17,8 +17,8 @@ use hms_domain::ward::{
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventListItem,
     NursingAlertListItem, NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem,
     PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
-    TreatmentSheetListItem, UpdateBedRequest, UpdateWardRequest, WardBoardItem, WardBoardQuery,
-    WardListItem, WardSectionListItem, WardStockRequestListItem,
+    TreatmentSheetListItem, UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
+    WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem, WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -240,6 +240,63 @@ pub async fn get_ward_section(
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
     let section = load_ward_section(&state, id).await?;
+    Ok(Json(object(section)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/wards/sections/{id}",
+    operation_id = "patchWardSection",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward section id")),
+    request_body = UpdateWardSectionRequest,
+    responses(
+        (status = 200, description = "Ward section updated", body = ObjectResponse<WardSectionListItem>),
+        (status = 400, description = "Invalid section update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward section not found", body = ApiErrorResponse),
+        (status = 409, description = "Ward section could not be updated", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_ward_section(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateWardSectionRequest>,
+) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
+
+    let code = normalize_ward_text(payload.code, MAX_WARD_CODE_LEN)?;
+    let name = normalize_ward_text(payload.name, MAX_WARD_NAME_LEN)?;
+    if code.is_none() && name.is_none() && payload.status.is_none() {
+        return Err(ApiError::bad_request(
+            "invalid_ward_section",
+            "At least one ward section field is required.",
+        ));
+    }
+
+    let section = state
+        .update_ward_section(
+            id,
+            WardSectionUpdate {
+                code,
+                name,
+                status: payload.status,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_section_update_failed",
+                "Ward section could not be updated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("ward_section_not_found", "Ward section was not found.")
+        })?;
+
     Ok(Json(object(section)))
 }
 

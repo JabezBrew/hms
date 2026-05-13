@@ -289,6 +289,53 @@ describe('Rust V2 wards bridge', () => {
     }));
   });
 
+  it('updates ward sections through the Rust V2 ward setup contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'section-2',
+            ward_id: 'ward-1',
+            code: 'WEST-RENAMED',
+            name: 'Renamed West Section',
+            status: 'inactive',
+            active_bed_count: 3,
+            created_at: '2026-05-12T09:05:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const section = await wardsApi.updateSection('section-2', {
+      code: 'WEST-RENAMED',
+      name: 'Renamed West Section',
+      is_active: false,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/sections/section-2',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          code: 'WEST-RENAMED',
+          name: 'Renamed West Section',
+          status: 'inactive',
+        }),
+      }),
+    );
+    expect(section).toEqual(expect.objectContaining({
+      id: 'section-2',
+      code: 'WEST-RENAMED',
+      name: 'Renamed West Section',
+      is_active: false,
+    }));
+  });
+
   it('uses Rust V2 for root metadata, scoped sections, and supported ward setup mutations', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -536,9 +583,6 @@ describe('Rust V2 wards bridge', () => {
 
   it('fails closed or returns safe empty lists for unsupported Rust V2 ward calls', async () => {
     await expect(wardsApi.deleteWard('ward-1')).rejects.toThrow(/Rust V2 .* ward mutations/i);
-    await expect(wardsApi.updateSection('section-1', { name: 'East' })).rejects.toThrow(
-      /Rust V2 .* section mutations/i,
-    );
     await expect(wardsApi.updateAdmission('admission-1', { status: 'closed' })).rejects.toThrow(
       /Rust V2 .* admission updates/i,
     );
