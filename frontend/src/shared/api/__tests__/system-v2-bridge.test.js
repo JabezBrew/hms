@@ -278,4 +278,35 @@ describe('Rust V2 system bridge', () => {
       source: 'deployment_profile',
     });
   });
+
+  it('preserves AbortError from Rust V2 system calls', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError);
+
+    await expect(systemApi.getDeploymentCapabilities()).rejects.toBe(abortError);
+    await expect(
+      systemApi.getFeatureEntitlements({}, { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+    await expect(
+      systemApi.createFeatureEntitlement(
+        { scope: 'global', feature_key: 'patients', is_enabled: true },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toBe(abortError);
+    await expect(
+      systemApi.updateFeatureEntitlement(
+        'patients',
+        { is_enabled: false },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toBe(abortError);
+    await expect(
+      systemApi.deleteFeatureEntitlement('patients', { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+  });
 });

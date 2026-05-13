@@ -78,6 +78,12 @@ function assertGlobalFeatureOverride(data = {}) {
   }
 }
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error
+  }
+}
+
 async function patchV2FeatureEntitlement(featureKey, data = {}, options = {}) {
   const response = await v2Api.patchAdminFeature(
     { key: featureKey },
@@ -95,6 +101,7 @@ export const systemApi = {
       }
       return apiClient.get('/settings/deployment-capabilities/')
     } catch (error) {
+      rethrowAbortError(error)
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to load deployment capabilities'))
       }
@@ -110,6 +117,7 @@ export const systemApi = {
       }
       return apiClient.getWithPagination('/settings/feature-entitlements/', { ...options, params })
     } catch (error) {
+      rethrowAbortError(error)
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to load feature entitlements'))
       }
@@ -122,6 +130,7 @@ export const systemApi = {
         assertGlobalFeatureOverride(data)
         return await patchV2FeatureEntitlement(data.feature_key || data.feature, data, options)
       } catch (error) {
+        rethrowAbortError(error)
         if (/facility feature overrides/i.test(error?.message || '')) {
           throw error
         }
@@ -136,6 +145,7 @@ export const systemApi = {
         assertGlobalFeatureOverride(data)
         return await patchV2FeatureEntitlement(data.feature_key || data.feature || id, data, options)
       } catch (error) {
+        rethrowAbortError(error)
         if (/facility feature overrides/i.test(error?.message || '')) {
           throw error
         }
@@ -153,6 +163,7 @@ export const systemApi = {
         )
         return adaptV2FeatureEntitlement(response?.data)
       } catch (error) {
+        rethrowAbortError(error)
         throw new Error(handleV2ApiError(error, 'Failed to remove feature entitlement'))
       }
     }
