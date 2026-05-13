@@ -296,7 +296,7 @@ export function useDeleteBlockedTime() {
 export function useAppointmentTypes() {
   return useQuery({
     queryKey: appointmentKeys.types(),
-    queryFn: () => appointmentsApi.getAppointmentTypes(),
+    queryFn: ({ signal }) => appointmentsApi.getAppointmentTypes({ signal }),
     ...immutableMetadataQueryOptions(),
   });
 }
@@ -309,7 +309,7 @@ export function useAppointmentTypes() {
 export function useAppointmentType(id) {
   return useQuery({
     queryKey: appointmentKeys.type(id),
-    queryFn: () => appointmentsApi.getAppointmentType(id),
+    queryFn: ({ signal }) => appointmentsApi.getAppointmentType(id, { signal }),
     enabled: !!id,
     ...immutableMetadataQueryOptions(),
   });
@@ -351,7 +351,7 @@ export function useAvailabilityRules(params = {}, options = {}) {
 export function useAvailabilityRule(id) {
   return useQuery({
     queryKey: appointmentKeys.availabilityRule(id),
-    queryFn: () => appointmentsApi.getAvailabilityRule(id),
+    queryFn: ({ signal }) => appointmentsApi.getAvailabilityRule(id, { signal }),
     enabled: !!id,
   });
 }

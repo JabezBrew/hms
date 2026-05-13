@@ -672,7 +672,7 @@ export const appointmentsApi = {
    * @param {string} id - Availability rule ID
    * @returns {Promise<Object>} Availability rule data
    */
-  getAvailabilityRule: async (id) => {
+  getAvailabilityRule: async (id, _options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return null;
@@ -792,7 +792,7 @@ export const appointmentsApi = {
    * @param {string} id - Appointment type ID
    * @returns {Promise<Object>} Appointment type data
    */
-  getAppointmentType: async (id) => {
+  getAppointmentType: async (id, _options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return DEFAULT_APPOINTMENT_TYPES.find((type) => type.id === id) || null;
