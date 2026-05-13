@@ -152,6 +152,7 @@ describe('Rust V2 chart query bridge', () => {
       wrapper: createWrapper(),
     });
 
+    const signal = new AbortController().signal;
     let created;
     await act(async () => {
       created = await result.current.mutateAsync({
@@ -160,6 +161,7 @@ describe('Rust V2 chart query bridge', () => {
         measured_at: '2026-05-12T08:30:00Z',
         value: 82,
         unit: 'bpm',
+        signal,
       });
     });
 
@@ -173,6 +175,7 @@ describe('Rust V2 chart query bridge', () => {
           value: '82',
           unit: 'bpm',
         }),
+        signal,
       }),
     );
     expect(created).toEqual(expect.objectContaining({

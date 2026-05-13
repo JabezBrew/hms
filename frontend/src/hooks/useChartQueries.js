@@ -1079,7 +1079,11 @@ export function useCreateChartEntry() {
       if (isRustV2ApiMode()) {
         const { patientId, payload } = normalizeV2ChartEntryPayload(entryData);
         try {
-          const response = await v2Api.postPatientChartEntries({ patient_id: patientId }, payload);
+          const response = await v2Api.postPatientChartEntries(
+            { patient_id: patientId },
+            payload,
+            { signal: entryData?.signal },
+          );
           return adaptV2ChartEntry(response?.data || response);
         } catch (error) {
           rethrowV2ChartError(error, 'Failed to record chart entry');
