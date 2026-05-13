@@ -410,6 +410,31 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
     let me_body = json_body(me_response).await;
     assert_eq!(me_body["data"]["password_change_required"], true);
 
+    let profile_update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "display_name": "Limited Updated"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("profile update request succeeds");
+    assert_eq!(profile_update_response.status(), StatusCode::OK);
+    let profile_update_body = json_body(profile_update_response).await;
+    assert_eq!(
+        profile_update_body["data"]["display_name"],
+        "Limited Updated"
+    );
+
     let refresh_response = app
         .clone()
         .oneshot(

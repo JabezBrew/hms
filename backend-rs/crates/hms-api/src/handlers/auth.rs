@@ -3,7 +3,7 @@ use axum::http::header::{COOKIE, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::Json;
 use cookie::{Cookie, SameSite};
-use hms_domain::auth::AuthUser;
+use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -15,6 +15,7 @@ use crate::state::{AppState, LoginOutcome};
 const REFRESH_COOKIE_NAME: &str = "hms_refresh";
 const CSRF_COOKIE_NAME: &str = "hms_v2_csrf";
 const CSRF_HEADER_NAME: &str = "x-hms-csrf";
+const MAX_DISPLAY_NAME_LEN: usize = 160;
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct LoginRequest {
@@ -154,6 +155,34 @@ pub async fn me(AuthenticatedUser(user): AuthenticatedUser) -> Json<ObjectRespon
 }
 
 #[utoipa::path(
+    patch,
+    path = "/api/v2/auth/me",
+    operation_id = "patchAuthMe",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = UpdateAuthProfileRequest,
+    responses(
+        (status = 200, description = "Current user profile updated", body = ObjectResponse<AuthUser>),
+        (status = 400, description = "Invalid profile update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 404, description = "User not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_me(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<UpdateAuthProfileRequest>,
+) -> Result<Json<ObjectResponse<AuthUser>>, ApiError> {
+    validate_profile_update(&payload)?;
+    let updated = state
+        .update_auth_profile(user.id, user.facility_id, payload)
+        .await
+        .map_err(|_| ApiError::conflict("profile_update_failed", "Profile could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("user_not_found", "User was not found."))?;
+    Ok(Json(object(updated)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/auth/password-reset/request",
     operation_id = "postAuthPasswordResetRequest",
@@ -206,6 +235,18 @@ pub async fn complete_password_reset(
     }
 
     Ok(Json(object(PasswordResetCompleteResponse { completed })))
+}
+
+fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), ApiError> {
+    if let Some(value) = payload.display_name.as_ref() {
+        if value.trim().is_empty() || value.len() > MAX_DISPLAY_NAME_LEN {
+            return Err(ApiError::bad_request(
+                "invalid_display_name",
+                "Display name is invalid.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn auth_response(

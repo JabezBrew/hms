@@ -11,6 +11,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::auth::me,
         crate::handlers::auth::complete_password_reset,
         crate::handlers::auth::request_password_reset,
+        crate::handlers::auth::update_me,
         crate::handlers::auth::refresh,
         crate::handlers::admin::create_authority_appointment,
         crate::handlers::admin::create_committee,

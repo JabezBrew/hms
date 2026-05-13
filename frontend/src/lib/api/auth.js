@@ -101,6 +101,16 @@ function adaptV2AuthUser(user) {
   };
 }
 
+function normalizeV2ProfileUpdate(data = {}) {
+  const displayName = data.display_name
+    ?? data.name
+    ?? ([data.first_name, data.last_name].filter(Boolean).join(' ').trim() || undefined);
+
+  return {
+    ...(displayName ? { display_name: displayName } : {}),
+  };
+}
+
 function unsupportedInRustV2(message) {
   return Promise.reject(new Error(message));
 }
@@ -252,7 +262,8 @@ export const authApi = {
   updateProfile: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose profile updates yet');
+        const response = await v2Api.patchAuthMe(normalizeV2ProfileUpdate(data));
+        return adaptV2AuthUser(response?.data);
       }
       return await apiClient.patch('/auth/profile/', data);
     } catch (error) {

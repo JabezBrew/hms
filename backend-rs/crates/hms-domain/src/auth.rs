@@ -20,6 +20,11 @@ pub struct AuthUser {
     pub password_change_required: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateAuthProfileRequest {
+    pub display_name: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PatientDataVisibility {

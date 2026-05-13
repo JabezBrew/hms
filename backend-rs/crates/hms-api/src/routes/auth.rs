@@ -9,7 +9,7 @@ pub fn routes() -> Router<AppState> {
         .route("/login", post(auth::login))
         .route("/refresh", post(auth::refresh))
         .route("/logout", post(auth::logout))
-        .route("/me", get(auth::me))
+        .route("/me", get(auth::me).patch(auth::update_me))
         .route(
             "/password-reset/request",
             post(auth::request_password_reset),

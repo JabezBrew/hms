@@ -174,6 +174,56 @@ describe('Rust V2 auth bridge', () => {
     });
   });
 
+  it('updates the current profile through /api/v2/auth/me', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'user-1',
+            email: 'owner@hms.local',
+            display_name: 'Updated Owner',
+            facility_id: 'facility-1',
+            facility_code: 'HMS',
+            active_profile: 'hospital',
+            permissions: ['system.deployment_capabilities.view'],
+            features: ['patient_chronicle'],
+            patient_visibility: ['demographics'],
+            session_version: 1,
+            permission_version: 1,
+            password_change_required: false,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const profile = await authApi.updateProfile({
+      first_name: 'Updated',
+      last_name: 'Owner',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/auth/me',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({
+          display_name: 'Updated Owner',
+        }),
+      }),
+    );
+    expect(profile).toMatchObject({
+      id: 'user-1',
+      first_name: 'Updated',
+      last_name: 'Owner',
+      facility_code: 'HMS',
+    });
+  });
+
   it('requests and completes password reset through /api/v2', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -230,9 +280,6 @@ describe('Rust V2 auth bridge', () => {
   });
 
   it('fails closed for Rust V2 auth operations that are not exposed yet', async () => {
-    await expect(authApi.updateProfile({ first_name: 'HMS' })).rejects.toThrow(
-      'Rust V2 does not expose profile updates yet',
-    );
     await expect(authApi.mfaStatus()).rejects.toThrow(
       'Rust V2 does not expose MFA management yet',
     );

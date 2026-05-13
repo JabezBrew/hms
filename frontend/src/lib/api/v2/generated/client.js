@@ -1317,6 +1317,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "patchAuthMe": {
+    "operationId": "patchAuthMe",
+    "method": "PATCH",
+    "path": "/api/v2/auth/me",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "patchEncounterById": {
     "operationId": "patchEncounterById",
     "method": "PATCH",
@@ -2471,6 +2479,7 @@ export function createGeneratedClient(request) {
     patchAdminFeature: createOperation(request, operations.patchAdminFeature),
     patchAdminStaff: createOperation(request, operations.patchAdminStaff),
     patchAppointmentById: createOperation(request, operations.patchAppointmentById),
+    patchAuthMe: createOperation(request, operations.patchAuthMe),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
     patchPatientById: createOperation(request, operations.patchPatientById),
     postAdminAuthorityAppointments: createOperation(request, operations.postAdminAuthorityAppointments),

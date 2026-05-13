@@ -49,7 +49,7 @@ use hms_domain::admin::{
     PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
     StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
-use hms_domain::auth::AuthUser;
+use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
     BillingRuleListItem, CashDrawerListItem, CashSessionListItem, ClaimListItem,
     CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem, PaymentListItem,
@@ -200,6 +200,19 @@ impl AppState {
         Ok(hms_db::auth::user_by_id(&self.inner.pool, user_id)
             .await?
             .map(|user| user.to_auth_user()))
+    }
+
+    pub async fn update_auth_profile(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        payload: UpdateAuthProfileRequest,
+    ) -> Result<Option<AuthUser>> {
+        Ok(
+            hms_db::auth::update_user_profile(&self.inner.pool, facility_id, user_id, payload)
+                .await?
+                .map(|user| user.to_auth_user()),
+        )
     }
 
     pub async fn login(

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
+use hms_domain::auth::{AuthUser, PatientDataVisibility, UpdateAuthProfileRequest};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -156,6 +156,36 @@ pub async fn user_by_email_and_facility(
     .await?;
 
     hydrate_user(pool, row).await
+}
+
+pub async fn update_user_profile(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    update: UpdateAuthProfileRequest,
+) -> anyhow::Result<Option<UserAccount>> {
+    let display_name = update.display_name.map(|value| value.trim().to_owned());
+    let result = sqlx::query(
+        r#"
+        UPDATE users
+        SET display_name = COALESCE($1, display_name),
+            updated_at = now()
+        WHERE id = $2
+          AND facility_id = $3
+          AND is_active = TRUE
+        "#,
+    )
+    .bind(display_name)
+    .bind(user_id)
+    .bind(facility_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Ok(None);
+    }
+
+    user_by_id(pool, user_id).await
 }
 
 pub async fn insert_refresh_session(
