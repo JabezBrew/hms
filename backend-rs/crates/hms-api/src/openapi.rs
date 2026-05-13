@@ -136,6 +136,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::inventory::list_purchase_orders,
         crate::handlers::inventory::list_requisitions,
         crate::handlers::inventory::list_transfers,
+        crate::handlers::inventory::send_purchase_order,
         crate::handlers::inventory::submit_requisition,
         crate::handlers::inventory::validate_controlled_register_balance,
         crate::handlers::laboratory::get_order,

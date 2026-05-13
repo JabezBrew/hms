@@ -42,6 +42,7 @@ pub enum RequisitionStatus {
 pub enum PurchaseOrderStatus {
     Draft,
     Approved,
+    Sent,
     Ordered,
     Closed,
 }

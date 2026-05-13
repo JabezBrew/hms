@@ -567,6 +567,31 @@ pub async fn approve_purchase_order(
     Ok(Json(object(order)))
 }
 
+#[utoipa::path(post, path = "/api/v2/inventory/purchase-orders/{id}/send", operation_id = "postPurchaseOrderSend", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn send_purchase_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let order = state
+        .send_purchase_order(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "purchase_order_send_failed",
+                "Purchase order could not be sent.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "purchase_order_not_found",
+                "Purchase order could not be found.",
+            )
+        })?;
+    Ok(Json(object(order)))
+}
+
 #[utoipa::path(get, path = "/api/v2/inventory/goods-received-notes", operation_id = "getGoodsReceivedNotes", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_grns(
     State(state): State<AppState>,

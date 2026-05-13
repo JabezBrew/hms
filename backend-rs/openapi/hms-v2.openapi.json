@@ -13993,6 +13993,7 @@
         "enum": [
           "draft",
           "approved",
+          "sent",
           "ordered",
           "closed"
         ],
@@ -21198,6 +21199,73 @@
     "/api/v2/inventory/purchase-orders/{id}/approve": {
       "post": {
         "operationId": "postPurchaseOrderApprove",
+        "parameters": [
+          {
+            "description": "Purchase order ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PurchaseOrderListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/purchase-orders/{id}/send": {
+      "post": {
+        "operationId": "postPurchaseOrderSend",
         "parameters": [
           {
             "description": "Purchase order ID",

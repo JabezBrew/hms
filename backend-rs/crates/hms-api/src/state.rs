@@ -2082,6 +2082,18 @@ impl AppState {
         .await
     }
 
+    pub async fn send_purchase_order(
+        &self,
+        purchase_order_id: Uuid,
+    ) -> Result<Option<PurchaseOrderListItem>> {
+        hms_db::inventory::send_purchase_order(
+            &self.inner.pool,
+            self.facility_id(),
+            purchase_order_id,
+        )
+        .await
+    }
+
     pub async fn list_goods_received_notes(
         &self,
         cursor: Option<InventoryCursor>,

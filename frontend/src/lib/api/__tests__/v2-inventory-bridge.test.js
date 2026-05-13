@@ -885,6 +885,15 @@ describe('Rust V2 inventory bridge', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         data: {
+          id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'sent',
+          created_at: '2026-05-12T08:05:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
           id: 'grn-1',
           purchase_order_id: 'po-1',
           supplier_name: 'Acme Medical',
@@ -939,6 +948,10 @@ describe('Rust V2 inventory bridge', () => {
       id: 'po-1',
       status: 'approved',
     });
+    await expect(inventoryApi.sendPurchaseOrder('po-1')).resolves.toMatchObject({
+      id: 'po-1',
+      status: 'sent',
+    });
     await expect(inventoryApi.createGRN({
       purchase_order: 'po-1',
     })).resolves.toMatchObject({ id: 'grn-1' });
@@ -982,6 +995,11 @@ describe('Rust V2 inventory bridge', () => {
         undefined,
       ],
       [
+        'http://localhost:8080/api/v2/inventory/purchase-orders/po-1/send',
+        'POST',
+        undefined,
+      ],
+      [
         'http://localhost:8080/api/v2/inventory/goods-received-notes',
         'POST',
         JSON.stringify({ purchase_order_id: 'po-1' }),
@@ -1017,7 +1035,6 @@ describe('Rust V2 inventory bridge', () => {
     await expect(inventoryApi.createInventoryItem({ name: 'Paracetamol' })).rejects.toThrow('/api/v2 inventory item mutation contract');
     await expect(inventoryApi.createStockMovement({ item: 'item-1' })).rejects.toThrow('/api/v2 stock movement mutation contract');
     await expect(inventoryApi.rejectRequisition('req-1', { reason: 'Duplicate' })).rejects.toThrow('/api/v2 stock requisition action contract');
-    await expect(inventoryApi.sendPurchaseOrder('po-1')).rejects.toThrow('/api/v2 purchase order action contract');
     await expect(inventoryApi.acceptGRN('grn-1')).rejects.toThrow('/api/v2 goods received note action contract');
     await expect(inventoryApi.approveTransferRequest('transfer-1')).rejects.toThrow('/api/v2 stock transfer action contract');
     await expect(inventoryApi.createStandingOrder({})).rejects.toThrow('/api/v2 standing order contract');

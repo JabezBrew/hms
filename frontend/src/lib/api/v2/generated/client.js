@@ -1822,6 +1822,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postPurchaseOrderSend": {
+    "operationId": "postPurchaseOrderSend",
+    "method": "POST",
+    "path": "/api/v2/inventory/purchase-orders/{id}/send",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postReferralAccept": {
     "operationId": "postReferralAccept",
     "method": "POST",
@@ -2214,6 +2224,7 @@ export function createGeneratedClient(request) {
     postPharmacyDispenses: createOperation(request, operations.postPharmacyDispenses),
     postPurchaseOrderApprove: createOperation(request, operations.postPurchaseOrderApprove),
     postPurchaseOrders: createOperation(request, operations.postPurchaseOrders),
+    postPurchaseOrderSend: createOperation(request, operations.postPurchaseOrderSend),
     postReferralAccept: createOperation(request, operations.postReferralAccept),
     postReferralComplete: createOperation(request, operations.postReferralComplete),
     postReferralDecline: createOperation(request, operations.postReferralDecline),

@@ -1509,11 +1509,15 @@ export const inventoryApi = {
   sendPurchaseOrder: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 purchase order action contract');
+        const response = await v2Api.postPurchaseOrderSend({ id });
+        return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/purchase-orders/${id}/send/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to send purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to send purchase order'));
     }
   },

@@ -2374,6 +2374,25 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(po_approve_body["data"]["id"], purchase_order_id);
     assert_eq!(po_approve_body["data"]["status"], "approved");
 
+    let po_send_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/purchase-orders/{purchase_order_id}/send"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("purchase order send succeeds");
+    assert_eq!(po_send_response.status(), StatusCode::OK);
+    let po_send_body = json_body(po_send_response).await;
+    assert_eq!(po_send_body["data"]["id"], purchase_order_id);
+    assert_eq!(po_send_body["data"]["status"], "sent");
+
     let grn_response = app
         .clone()
         .oneshot(
@@ -2735,6 +2754,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     for denied_path in [
         format!("/api/v2/inventory/requisitions/{requisition_id}/approve"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/approve"),
+        format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/send"),
     ] {
         let denied_action = app
             .clone()

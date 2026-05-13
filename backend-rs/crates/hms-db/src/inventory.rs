@@ -891,6 +891,21 @@ pub async fn approve_purchase_order(
     .await
 }
 
+pub async fn send_purchase_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    purchase_order_id: Uuid,
+) -> anyhow::Result<Option<PurchaseOrderListItem>> {
+    transition_purchase_order_status(
+        pool,
+        facility_id,
+        purchase_order_id,
+        &[PurchaseOrderStatus::Approved, PurchaseOrderStatus::Sent],
+        PurchaseOrderStatus::Sent,
+    )
+    .await
+}
+
 pub async fn list_grns(
     pool: &PgPool,
     facility_id: Uuid,
