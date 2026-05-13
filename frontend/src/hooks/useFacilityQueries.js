@@ -10,7 +10,7 @@ const facilitiesKeys = {
 export function useFacilities({ includeInactive = false } = {}) {
   return useQuery({
     queryKey: facilitiesKeys.list(includeInactive),
-    queryFn: () => facilitiesApi.listFacilities({ includeInactive }),
+    queryFn: ({ signal }) => facilitiesApi.listFacilities({ includeInactive, signal }),
     ...immutableMetadataQueryOptions(),
   });
 }

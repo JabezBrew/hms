@@ -116,4 +116,13 @@ describe('Rust V2 facilities bridge', () => {
 
     expect(response.map((facility) => facility.code)).toEqual(['HMS', 'OLD']);
   });
+
+  it('preserves AbortError from Rust V2 facility reads', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError);
+
+    await expect(
+      facilitiesApi.listFacilities({ signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+  });
 });

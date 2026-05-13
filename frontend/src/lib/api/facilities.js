@@ -19,6 +19,12 @@ function adaptV2FacilitiesResponse(response, includeInactive) {
     .filter((facility) => includeInactive || facility.is_active);
 }
 
+function rethrowAbortError(error) {
+  if (error?.name === "AbortError") {
+    throw error;
+  }
+}
+
 export const facilitiesApi = {
   listFacilities: async ({ includeInactive = false, signal } = {}) => {
     try {
@@ -41,6 +47,7 @@ export const facilitiesApi = {
       const endpoint = query ? `/facilities/?${query}` : "/facilities/";
       return await apiClient.get(endpoint);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, "Failed to load facilities"));
       }
