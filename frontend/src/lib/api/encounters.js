@@ -424,24 +424,17 @@ export const encountersApi = {
       }
 
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getStaffDirectory({
-          query: { limit: 20 },
+        const response = await v2Api.getAdminPractitioners({
+          query: {
+            limit: 20,
+            search: query.trim(),
+            is_active: true,
+          },
           signal: options.signal,
         });
-        const practitioners = Array.isArray(response?.data)
+        return Array.isArray(response?.data)
           ? response.data.map(adaptV2PractitionerSearchItem)
           : [];
-        const normalizedQuery = query.toLowerCase();
-        return practitioners.filter((practitioner) => {
-          const haystack = `${practitioner.name || ''} ${practitioner.email || ''}`.toLowerCase();
-          if (!haystack.includes(normalizedQuery)) {
-            return false;
-          }
-          if (!doctorsOnly) {
-            return true;
-          }
-          return String(practitioner.role || '').toLowerCase().includes('doctor');
-        });
       }
 
       const params = new URLSearchParams({

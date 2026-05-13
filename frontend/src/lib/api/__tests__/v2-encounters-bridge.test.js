@@ -207,6 +207,48 @@ describe('Rust V2 encounters bridge', () => {
     );
   });
 
+  it('searches encounter practitioners through Rust /api/v2 server-side filters', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'practitioner-1',
+              user_id: 'user-1',
+              display_name: 'Ama Doctor',
+              email: 'ama.doctor@hms.test',
+              staff_role: 'Doctor',
+            },
+          ],
+          page: { limit: 20, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await encountersApi.searchPractitioners('ama', true, {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/practitioners?limit=20&search=ama&is_active=true',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual([
+      expect.objectContaining({
+        id: 'practitioner-1',
+        user_id: 'user-1',
+        name: 'Ama Doctor',
+        email: 'ama.doctor@hms.test',
+        role: 'Doctor',
+      }),
+    ]);
+  });
+
   it('preserves AbortError from Rust patient encounter calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);
