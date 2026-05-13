@@ -38,7 +38,7 @@ export function useSafetyCheck() {
 export function useDrugSearch(query, options = {}) {
   return useQuery({
     queryKey: drugSafetyKeys.drugSearch(query),
-    queryFn: () => drugSafetyApi.searchDrugs(query, options.maxResults || 10),
+    queryFn: ({ signal }) => drugSafetyApi.searchDrugs(query, options.maxResults || 10, { signal }),
     enabled: !!query && query.length >= 2, // Only search if query is at least 2 characters
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
@@ -55,7 +55,7 @@ export function useDrugForms(rxcui, options = {}) {
   const { enabled = true, ...queryOptions } = options;
   return useQuery({
     queryKey: drugSafetyKeys.drugForms(rxcui),
-    queryFn: () => drugSafetyApi.getDrugForms(rxcui),
+    queryFn: ({ signal }) => drugSafetyApi.getDrugForms(rxcui, { signal }),
     enabled: !!rxcui && enabled,
     ...immutableMetadataQueryOptions(queryOptions),
   });
@@ -99,7 +99,7 @@ export function useAllergies(filters = {}) {
 export function useAllergy(id) {
   return useQuery({
     queryKey: drugSafetyKeys.allergy(id),
-    queryFn: () => drugSafetyApi.getAllergy(id),
+    queryFn: ({ signal }) => drugSafetyApi.getAllergy(id, { signal }),
     enabled: !!id,
   });
 }
@@ -269,7 +269,7 @@ export function useAlerts(filters = {}) {
 export function useAlert(id) {
   return useQuery({
     queryKey: drugSafetyKeys.alert(id),
-    queryFn: () => drugSafetyApi.getAlert(id),
+    queryFn: ({ signal }) => drugSafetyApi.getAlert(id, { signal }),
     enabled: !!id,
   });
 }

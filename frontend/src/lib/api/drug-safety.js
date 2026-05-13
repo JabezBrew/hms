@@ -144,14 +144,15 @@ export const drugSafetyApi = {
    * @param {number} maxResults - Maximum number of results
    * @returns {Promise<Object>} Search results { results: [...] }
    */
-  searchDrugs: async (query, maxResults = 10) => {
+  searchDrugs: async (query, maxResults = 10, options = {}) => {
     if (isRustV2ApiMode()) {
       throwRustV2Unsupported('/api/v2 drug search contract');
     }
     try {
       const params = new URLSearchParams({ q: query, max_results: maxResults });
-      return await apiClient.get(`/drug-safety/safety/search_drugs/?${params.toString()}`);
+      return await apiClient.get(`/drug-safety/safety/search_drugs/?${params.toString()}`, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to search drugs'));
     }
   },
@@ -161,14 +162,15 @@ export const drugSafetyApi = {
    * @param {string} rxcui - RxNorm Concept Unique Identifier
    * @returns {Promise<Object>} Drug forms { forms: [...] }
    */
-  getDrugForms: async (rxcui) => {
+  getDrugForms: async (rxcui, options = {}) => {
     if (isRustV2ApiMode()) {
       throwRustV2Unsupported('/api/v2 drug forms contract');
     }
     try {
       const params = new URLSearchParams({ rxcui });
-      return await apiClient.get(`/drug-safety/safety/drug_forms/?${params.toString()}`);
+      return await apiClient.get(`/drug-safety/safety/drug_forms/?${params.toString()}`, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch drug forms'));
     }
   },
@@ -253,7 +255,7 @@ export const drugSafetyApi = {
         );
         return adaptV2Allergy(response?.data);
       }
-      return await apiClient.get(`/drug-safety/allergies/${id}/`);
+      return await apiClient.get(`/drug-safety/allergies/${id}/`, options);
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
@@ -405,13 +407,14 @@ export const drugSafetyApi = {
    * @param {string} id - Alert ID
    * @returns {Promise<Object>} Alert data
    */
-  getAlert: async (id) => {
+  getAlert: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
       throwRustV2Unsupported('/api/v2 drug safety alerts contract');
     }
     try {
-      return await apiClient.get(`/drug-safety/alerts/${id}/`);
+      return await apiClient.get(`/drug-safety/alerts/${id}/`, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch safety alert'));
     }
   },
