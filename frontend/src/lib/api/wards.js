@@ -522,7 +522,8 @@ export const wardsApi = {
   getAdmission: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('admission detail');
+        const response = await v2Api.getAdmissionById({ id });
+        return adaptV2WardBoardAdmission(response?.data);
       }
       return await apiClient.get(`/wards/admissions/${id}/`);
     } catch (error) {

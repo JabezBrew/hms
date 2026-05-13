@@ -2753,6 +2753,14 @@ impl AppState {
             .await
     }
 
+    pub async fn get_ward_board_admission(
+        &self,
+        admission_id: Uuid,
+    ) -> Result<Option<WardBoardItem>> {
+        hms_db::ward::get_ward_board_admission(&self.inner.pool, self.facility_id(), admission_id)
+            .await
+    }
+
     pub async fn get_admission_context(
         &self,
         admission_case_id: Uuid,

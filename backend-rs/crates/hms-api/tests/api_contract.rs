@@ -301,6 +301,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/wards/{id}/sections",
         "/api/v2/wards/board",
         "/api/v2/admissions",
+        "/api/v2/admissions/{id}",
         "/api/v2/admissions/cases",
         "/api/v2/admissions/cases/{id}",
         "/api/v2/admissions/cases/{id}/reserve-bed",
@@ -4198,6 +4199,20 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let reserve_body = json_body(reserve_response).await;
     assert!(reserve_body["data"]["bed_id"].is_string());
 
+    let inactive_admission_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admissions/{admission_case_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("inactive admission detail succeeds");
+    assert_eq!(inactive_admission_detail.status(), StatusCode::NOT_FOUND);
+
     let activate_response = app
         .clone()
         .oneshot(
@@ -4215,6 +4230,33 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(activate_response.status(), StatusCode::OK);
     let activate_body = json_body(activate_response).await;
     assert_eq!(activate_body["data"]["status"], "admitted");
+
+    let active_admission_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admissions/{admission_case_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("active admission detail succeeds");
+    assert_eq!(active_admission_detail.status(), StatusCode::OK);
+    let active_admission_detail_body = json_body(active_admission_detail).await;
+    assert_eq!(
+        active_admission_detail_body["data"]["admission_id"],
+        admission_case_id
+    );
+    assert_eq!(
+        active_admission_detail_body["data"]["patient_id"],
+        case_patient_id
+    );
+    assert_eq!(
+        active_admission_detail_body["data"]["admission_status"],
+        "admitted"
+    );
 
     let cancellable_case = app
         .clone()
@@ -4544,6 +4586,20 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .await
         .expect("admission case detail denial succeeds");
     assert_eq!(admission_case_denied.status(), StatusCode::FORBIDDEN);
+
+    let active_admission_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admissions/{admission_case_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("active admission detail denial succeeds");
+    assert_eq!(active_admission_denied.status(), StatusCode::FORBIDDEN);
 
     let discharge_denied = app
         .clone()

@@ -38,6 +38,7 @@ pub fn routes() -> Router<AppState> {
             post(ward::cancel_admission_case),
         )
         .route("/api/v2/admissions", post(ward::admit_patient))
+        .route("/api/v2/admissions/:id", get(ward::get_admission))
         .route(
             "/api/v2/discharges",
             get(ward::list_discharges).post(ward::request_discharge),

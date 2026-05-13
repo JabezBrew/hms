@@ -189,25 +189,22 @@ describe('Rust V2 admission cases bridge', () => {
     ]);
   });
 
-  it('loads admission detail from a bounded Rust V2 ward board lookup', async () => {
+  it('loads admission detail through the Rust /api/v2 admission detail endpoint', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          data: [
-            {
-              admission_id: 'admission-2',
-              patient_id: 'patient-2',
-              patient_code: 'MRN-002',
-              patient_display_name: 'Kojo Mensah',
-              ward_id: 'ward-2',
-              ward_name: 'Surgical Ward',
-              bed_id: 'bed-2',
-              bed_code: 'B4',
-              admission_status: 'admitted',
-              admitted_at: '2026-05-12T05:45:00Z',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          data: {
+            admission_id: 'admission-2',
+            patient_id: 'patient-2',
+            patient_code: 'MRN-002',
+            patient_display_name: 'Kojo Mensah',
+            ward_id: 'ward-2',
+            ward_name: 'Surgical Ward',
+            bed_id: 'bed-2',
+            bed_code: 'B4',
+            admission_status: 'admitted',
+            admitted_at: '2026-05-12T05:45:00Z',
+          },
           meta: {},
         }),
         {
@@ -222,7 +219,7 @@ describe('Rust V2 admission cases bridge', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/wards/board?limit=100',
+      'http://localhost:8080/api/v2/admissions/admission-2',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(admission).toEqual(expect.objectContaining({

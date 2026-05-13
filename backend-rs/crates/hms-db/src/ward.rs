@@ -683,6 +683,24 @@ pub async fn list_ward_board(
     rows.into_iter().map(ward_board_from_row).collect()
 }
 
+pub async fn get_ward_board_admission(
+    pool: &PgPool,
+    facility_id: Uuid,
+    admission_id: Uuid,
+) -> anyhow::Result<Option<WardBoardItem>> {
+    let mut query = ward_board_query();
+    query.push(" WHERE admission_cases.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND admission_cases.status IN ('admitted', 'discharge_pending')");
+    query.push(" AND admission_cases.id = ");
+    query.push_bind(admission_id);
+    let row = query
+        .build_query_as::<WardBoardRow>()
+        .fetch_optional(pool)
+        .await?;
+    row.map(ward_board_from_row).transpose()
+}
+
 pub async fn get_admission_context(
     pool: &PgPool,
     facility_id: Uuid,
@@ -2278,16 +2296,9 @@ async fn ward_board_item_by_admission(
     facility_id: Uuid,
     admission_id: Uuid,
 ) -> anyhow::Result<WardBoardItem> {
-    let mut query = ward_board_query();
-    query.push(" WHERE admission_cases.facility_id = ");
-    query.push_bind(facility_id);
-    query.push(" AND admission_cases.id = ");
-    query.push_bind(admission_id);
-    let row = query
-        .build_query_as::<WardBoardRow>()
-        .fetch_one(pool)
-        .await?;
-    ward_board_from_row(row)
+    get_ward_board_admission(pool, facility_id, admission_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("ward board admission was not found after write"))
 }
 
 async fn discharge_item_by_admission(

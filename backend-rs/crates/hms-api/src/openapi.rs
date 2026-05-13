@@ -207,6 +207,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::ward::create_ward_stock_request,
         crate::handlers::ward::fulfill_ward_stock_request,
         crate::handlers::ward::get_admission_case,
+        crate::handlers::ward::get_admission,
         crate::handlers::ward::get_discharge,
         crate::handlers::ward::get_ward,
         crate::handlers::ward::list_admission_cases,

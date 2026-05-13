@@ -266,6 +266,44 @@ describe('Rust V2 wards bridge', () => {
     expect(createdBed).toEqual(expect.objectContaining({ id: 'bed-1', bed_number: 'W-01', ward: 'ward-1' }));
   });
 
+  it('loads active admission detail through the Rust V2 admission detail endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            admission_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            ward_id: 'ward-1',
+            ward_name: 'Medical Ward',
+            bed_id: 'bed-1',
+            bed_code: 'A1',
+            admission_status: 'admitted',
+            admitted_at: '2026-05-12T05:30:00Z',
+          },
+          meta: {},
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await expect(wardsApi.getAdmission('admission-1')).resolves.toMatchObject({
+      id: 'admission-1',
+      admission_id: 'admission-1',
+      patient_name: 'Ama Mensah',
+      status: 'admitted',
+      bed: expect.objectContaining({
+        bed_number: 'A1',
+        ward_id: 'ward-1',
+      }),
+    });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admissions/admission-1',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
   it('fails closed or returns safe empty lists for unsupported Rust V2 ward calls', async () => {
     await expect(wardsApi.createWard({ name: 'New Ward' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.updateWard('ward-1', { name: 'Renamed' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
@@ -276,7 +314,6 @@ describe('Rust V2 wards bridge', () => {
     await expect(wardsApi.updateSection('section-1', { name: 'East' })).rejects.toThrow(
       /Rust V2 .* section mutations/i,
     );
-    await expect(wardsApi.getAdmission('admission-1')).rejects.toThrow(/Rust V2 .* admission detail/i);
     await expect(wardsApi.updateAdmission('admission-1', { status: 'closed' })).rejects.toThrow(
       /Rust V2 .* admission updates/i,
     );

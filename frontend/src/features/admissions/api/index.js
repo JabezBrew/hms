@@ -255,11 +255,6 @@ async function getV2WardBoardAdmissions(params = {}, options = {}) {
   return v2ListData(response).map(adaptV2WardBoardAdmission)
 }
 
-async function findV2Admission(id, options = {}) {
-  const admissions = await getV2WardBoardAdmissions({ limit: 100 }, options)
-  return admissions.find((item) => item.id === id || item.admission_id === id) || null
-}
-
 export const admissionsApi = {
   getAdmissions: async (params = {}, options = {}) => {
     try {
@@ -294,7 +289,8 @@ export const admissionsApi = {
   getAdmission: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await findV2Admission(id, options)
+        const response = await v2Api.getAdmissionById({ id }, { signal: options.signal })
+        return adaptV2WardBoardAdmission(response?.data)
       }
       return await apiClient.get(`/wards/admissions/${id}/`)
     } catch (error) {

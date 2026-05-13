@@ -273,6 +273,35 @@ pub async fn ward_board(
 
 #[utoipa::path(
     get,
+    path = "/api/v2/admissions/{id}",
+    operation_id = "getAdmissionById",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Admission id")),
+    responses(
+        (status = 200, description = "Active admission", body = ObjectResponse<WardBoardItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Admission not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_admission(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<WardBoardItem>>, ApiError> {
+    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
+    let admission = state
+        .get_ward_board_admission(id)
+        .await
+        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, admission.patient_id).await?;
+    Ok(Json(object(admission)))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/v2/admissions/cases",
     operation_id = "getAdmissionCases",
     tag = "wards",
