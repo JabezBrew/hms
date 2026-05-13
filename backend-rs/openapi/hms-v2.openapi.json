@@ -7805,6 +7805,13 @@
           "data": {
             "items": {
               "properties": {
+                "cancelled_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
@@ -7812,6 +7819,19 @@
                 "id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "rejected_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rejection_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "requesting_location_id": {
                   "format": "uuid",
@@ -12448,6 +12468,13 @@
         "properties": {
           "data": {
             "properties": {
+              "cancelled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
@@ -12455,6 +12482,19 @@
               "id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "rejected_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rejection_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "requesting_location_id": {
                 "format": "uuid",
@@ -14297,6 +14337,17 @@
         ],
         "type": "string"
       },
+      "RejectStockRequisitionRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "RemittanceImportListItem": {
         "properties": {
           "batch_id": {
@@ -14347,7 +14398,9 @@
           "requested",
           "pending",
           "approved",
-          "fulfilled"
+          "fulfilled",
+          "rejected",
+          "cancelled"
         ],
         "type": "string"
       },
@@ -14741,6 +14794,13 @@
       },
       "StockRequisitionListItem": {
         "properties": {
+          "cancelled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -14748,6 +14808,19 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "rejected_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rejection_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "requesting_location_id": {
             "format": "uuid",
@@ -21727,6 +21800,73 @@
         ]
       }
     },
+    "/api/v2/inventory/requisitions/{id}/cancel": {
+      "post": {
+        "operationId": "postStockRequisitionCancel",
+        "parameters": [
+          {
+            "description": "Stock requisition ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StockRequisitionListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/v2/inventory/requisitions/{id}/fulfill": {
       "post": {
         "operationId": "postStockRequisitionFulfill",
@@ -21748,6 +21888,93 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ObjectResponse_StockRequisitionListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/requisitions/{id}/reject": {
+      "post": {
+        "operationId": "postStockRequisitionReject",
+        "parameters": [
+          {
+            "description": "Stock requisition ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectStockRequisitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StockRequisitionListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             },

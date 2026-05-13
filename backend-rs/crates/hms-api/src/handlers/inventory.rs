@@ -13,8 +13,9 @@ use hms_domain::inventory::{
     CreateStockRequisitionRequest, CreateStockTransferRequest, GoodsReceivedNoteListItem,
     InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
     InventoryItemsQuery, InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem,
-    StockBatchListItem, StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
-    StorageLocationListItem, StorageLocationStockItem,
+    RejectStockRequisitionRequest, StockBatchListItem, StockMovementListItem,
+    StockRequisitionListItem, StockTransferListItem, StorageLocationListItem,
+    StorageLocationStockItem,
 };
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -489,6 +490,58 @@ pub async fn fulfill_requisition(
             ApiError::conflict(
                 "stock_requisition_fulfill_failed",
                 "Requisition could not be fulfilled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "stock_requisition_not_found",
+                "Requisition could not be found.",
+            )
+        })?;
+    Ok(Json(object(requisition)))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/reject", operation_id = "postStockRequisitionReject", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), request_body = RejectStockRequisitionRequest, responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn reject_requisition(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<RejectStockRequisitionRequest>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let reason = normalize_text(payload.reason, "reason")?;
+    let requisition = state
+        .reject_stock_requisition(id, reason)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_reject_failed",
+                "Requisition could not be rejected.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "stock_requisition_not_found",
+                "Requisition could not be found.",
+            )
+        })?;
+    Ok(Json(object(requisition)))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/cancel", operation_id = "postStockRequisitionCancel", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn cancel_requisition(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let requisition = state
+        .cancel_stock_requisition(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_cancel_failed",
+                "Requisition could not be cancelled.",
             )
         })?
         .ok_or_else(|| {

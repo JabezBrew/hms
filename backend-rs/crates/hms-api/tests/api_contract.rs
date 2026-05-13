@@ -2335,6 +2335,93 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(requisition_fulfill_body["data"]["id"], requisition_id);
     assert_eq!(requisition_fulfill_body["data"]["status"], "fulfilled");
 
+    let reject_requisition_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/inventory/requisitions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "requesting_location_id": pharmacy_location_id }).to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition create for rejection succeeds");
+    assert_eq!(reject_requisition_response.status(), StatusCode::OK);
+    let reject_requisition_body = json_body(reject_requisition_response).await;
+    let reject_requisition_id = reject_requisition_body["data"]["id"]
+        .as_str()
+        .expect("reject requisition id exists");
+    let reject_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/requisitions/{reject_requisition_id}/reject"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "reason": "Duplicate ward stock request" }).to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition reject succeeds");
+    assert_eq!(reject_response.status(), StatusCode::OK);
+    let reject_body = json_body(reject_response).await;
+    assert_eq!(reject_body["data"]["id"], reject_requisition_id);
+    assert_eq!(reject_body["data"]["status"], "rejected");
+    assert_eq!(
+        reject_body["data"]["rejection_reason"],
+        "Duplicate ward stock request"
+    );
+    assert!(reject_body["data"]["rejected_at"].is_string());
+
+    let cancel_requisition_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/inventory/requisitions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "requesting_location_id": pharmacy_location_id }).to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition create for cancellation succeeds");
+    assert_eq!(cancel_requisition_response.status(), StatusCode::OK);
+    let cancel_requisition_body = json_body(cancel_requisition_response).await;
+    let cancel_requisition_id = cancel_requisition_body["data"]["id"]
+        .as_str()
+        .expect("cancel requisition id exists");
+    let cancel_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/requisitions/{cancel_requisition_id}/cancel"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition cancel succeeds");
+    assert_eq!(cancel_response.status(), StatusCode::OK);
+    let cancel_body = json_body(cancel_response).await;
+    assert_eq!(cancel_body["data"]["id"], cancel_requisition_id);
+    assert_eq!(cancel_body["data"]["status"], "cancelled");
+    assert!(cancel_body["data"]["cancelled_at"].is_string());
+
     let po_response = app
         .clone()
         .oneshot(
@@ -2810,9 +2897,27 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .expect("controlled count denial succeeds");
     assert_eq!(count_denied.status(), StatusCode::FORBIDDEN);
 
+    let reject_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/requisitions/{requisition_id}/reject"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "reason": "No access" }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("requisition reject denial succeeds");
+    assert_eq!(reject_denied.status(), StatusCode::FORBIDDEN);
+
     for denied_path in [
         format!("/api/v2/inventory/requisitions/{requisition_id}/approve"),
         format!("/api/v2/inventory/requisitions/{requisition_id}/fulfill"),
+        format!("/api/v2/inventory/requisitions/{requisition_id}/cancel"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/approve"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/send"),
         format!("/api/v2/inventory/goods-received-notes/{grn_id}/inspect"),

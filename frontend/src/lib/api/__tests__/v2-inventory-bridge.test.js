@@ -1152,13 +1152,88 @@ describe('Rust V2 inventory bridge', () => {
     ]);
   });
 
+  it('routes requisition reject and cancel actions through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'rejected',
+          rejection_reason: 'Duplicate request',
+          rejected_at: '2026-05-12T08:30:00Z',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'rejected',
+          rejection_reason: 'No stock available',
+          rejected_at: '2026-05-12T08:35:00Z',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-2',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'cancelled',
+          cancelled_at: '2026-05-12T08:40:00Z',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.rejectRequisition('req-1', {
+      reason: 'Duplicate request',
+    })).resolves.toMatchObject({
+      id: 'req-1',
+      status: 'rejected',
+      rejection_reason: 'Duplicate request',
+    });
+    await expect(inventoryApi.rejectInternalRequisition('internal-req-1', {
+      reason: 'No stock available',
+    })).resolves.toMatchObject({
+      id: 'internal-req-1',
+      status: 'rejected',
+      rejection_reason: 'No stock available',
+    });
+    await expect(inventoryApi.cancelInternalRequisition('internal-req-2')).resolves.toMatchObject({
+      id: 'internal-req-2',
+      status: 'cancelled',
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions/req-1/reject',
+        'POST',
+        JSON.stringify({ reason: 'Duplicate request' }),
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/reject',
+        'POST',
+        JSON.stringify({ reason: 'No stock available' }),
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions/internal-req-2/cancel',
+        'POST',
+        undefined,
+      ],
+    ]);
+  });
+
   it('fails closed for inventory actions without generated Rust V2 contracts', async () => {
     await expect(inventoryApi.createCategory({ name: 'Medication' })).rejects.toThrow('/api/v2 inventory category mutation contract');
     await expect(inventoryApi.createSupplier({ name: 'Acme Medical' })).rejects.toThrow('/api/v2 supplier contract');
     await expect(inventoryApi.createStorageLocation({ name: 'Main Store' })).rejects.toThrow('/api/v2 storage location mutation contract');
     await expect(inventoryApi.createInventoryItem({ name: 'Paracetamol' })).rejects.toThrow('/api/v2 inventory item mutation contract');
     await expect(inventoryApi.createStockMovement({ item: 'item-1' })).rejects.toThrow('/api/v2 stock movement mutation contract');
-    await expect(inventoryApi.rejectRequisition('req-1', { reason: 'Duplicate' })).rejects.toThrow('/api/v2 stock requisition action contract');
     await expect(inventoryApi.approveTransferRequest('transfer-1')).rejects.toThrow('/api/v2 stock transfer action contract');
     await expect(inventoryApi.createStandingOrder({})).rejects.toThrow('/api/v2 standing order contract');
     await expect(inventoryApi.createInventoryAudit({})).rejects.toThrow('/api/v2 inventory audit contract');

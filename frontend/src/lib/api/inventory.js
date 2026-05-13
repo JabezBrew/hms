@@ -1388,11 +1388,18 @@ export const inventoryApi = {
   rejectRequisition: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionReject(
+          { id },
+          { reason: data?.reason || data?.rejection_reason || '' }
+        );
+        return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/requisitions/${id}/reject/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to reject requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to reject requisition'));
     }
   },
@@ -1843,11 +1850,18 @@ export const inventoryApi = {
   rejectInternalRequisition: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionReject(
+          { id },
+          { reason: data?.reason || data?.rejection_reason || '' }
+        );
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/reject/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to reject internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to reject internal requisition'));
     }
   },
@@ -1881,11 +1895,15 @@ export const inventoryApi = {
   cancelInternalRequisition: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionCancel({ id });
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/cancel/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to cancel internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to cancel internal requisition'));
     }
   },

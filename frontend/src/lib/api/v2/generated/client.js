@@ -1908,6 +1908,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postStockRequisitionCancel": {
+    "operationId": "postStockRequisitionCancel",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postStockRequisitionFulfill": {
     "operationId": "postStockRequisitionFulfill",
     "method": "POST",
@@ -1917,6 +1927,16 @@ export const operations = {
     ],
     "queryParamNames": [],
     "hasBody": false
+  },
+  "postStockRequisitionReject": {
+    "operationId": "postStockRequisitionReject",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/reject",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
   },
   "postStockRequisitions": {
     "operationId": "postStockRequisitions",
@@ -2263,7 +2283,9 @@ export function createGeneratedClient(request) {
     postReferrals: createOperation(request, operations.postReferrals),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),
+    postStockRequisitionCancel: createOperation(request, operations.postStockRequisitionCancel),
     postStockRequisitionFulfill: createOperation(request, operations.postStockRequisitionFulfill),
+    postStockRequisitionReject: createOperation(request, operations.postStockRequisitionReject),
     postStockRequisitions: createOperation(request, operations.postStockRequisitions),
     postStockRequisitionSubmit: createOperation(request, operations.postStockRequisitionSubmit),
     postStockTransfers: createOperation(request, operations.postStockTransfers),

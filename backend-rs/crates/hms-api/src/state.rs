@@ -2040,6 +2040,28 @@ impl AppState {
             .await
     }
 
+    pub async fn reject_stock_requisition(
+        &self,
+        requisition_id: Uuid,
+        reason: String,
+    ) -> Result<Option<StockRequisitionListItem>> {
+        hms_db::inventory::reject_requisition(
+            &self.inner.pool,
+            self.facility_id(),
+            requisition_id,
+            reason,
+        )
+        .await
+    }
+
+    pub async fn cancel_stock_requisition(
+        &self,
+        requisition_id: Uuid,
+    ) -> Result<Option<StockRequisitionListItem>> {
+        hms_db::inventory::cancel_requisition(&self.inner.pool, self.facility_id(), requisition_id)
+            .await
+    }
+
     pub async fn list_purchase_orders(
         &self,
         cursor: Option<InventoryCursor>,

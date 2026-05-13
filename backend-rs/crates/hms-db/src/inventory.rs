@@ -181,6 +181,9 @@ struct RequisitionRow {
     requesting_location_id: Uuid,
     requesting_location_name: String,
     status: String,
+    rejection_reason: Option<String>,
+    rejected_at: Option<DateTime<Utc>>,
+    cancelled_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -840,6 +843,66 @@ pub async fn fulfill_requisition(
         RequisitionStatus::Fulfilled,
     )
     .await
+}
+
+pub async fn reject_requisition(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+    reason: String,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    sqlx::query(
+        r#"
+        UPDATE stock_requisitions
+        SET status = $1,
+            rejection_reason = $2,
+            rejected_at = now(),
+            cancelled_at = NULL
+        WHERE facility_id = $3
+          AND id = $4
+          AND status = ANY($5)
+        "#,
+    )
+    .bind(codec::encode(RequisitionStatus::Rejected)?)
+    .bind(reason)
+    .bind(facility_id)
+    .bind(requisition_id)
+    .bind(codec::encode_slice(&[
+        RequisitionStatus::Requested,
+        RequisitionStatus::Pending,
+    ])?)
+    .execute(pool)
+    .await?;
+    fetch_requisition_by_id(pool, facility_id, requisition_id).await
+}
+
+pub async fn cancel_requisition(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    sqlx::query(
+        r#"
+        UPDATE stock_requisitions
+        SET status = $1,
+            cancelled_at = now()
+        WHERE facility_id = $2
+          AND id = $3
+          AND status = ANY($4)
+        "#,
+    )
+    .bind(codec::encode(RequisitionStatus::Cancelled)?)
+    .bind(facility_id)
+    .bind(requisition_id)
+    .bind(codec::encode_slice(&[
+        RequisitionStatus::Requested,
+        RequisitionStatus::Pending,
+        RequisitionStatus::Approved,
+        RequisitionStatus::Cancelled,
+    ])?)
+    .execute(pool)
+    .await?;
+    fetch_requisition_by_id(pool, facility_id, requisition_id).await
 }
 
 pub async fn list_purchase_orders(
@@ -1763,6 +1826,9 @@ fn requisition_query() -> QueryBuilder<'static, Postgres> {
                stock_requisitions.requesting_location_id,
                storage_locations.name AS requesting_location_name,
                stock_requisitions.status,
+               stock_requisitions.rejection_reason,
+               stock_requisitions.rejected_at,
+               stock_requisitions.cancelled_at,
                stock_requisitions.created_at
         FROM stock_requisitions
         INNER JOIN storage_locations ON storage_locations.id = stock_requisitions.requesting_location_id
@@ -2029,6 +2095,9 @@ fn requisition_from_row(row: RequisitionRow) -> anyhow::Result<StockRequisitionL
         requesting_location_id: row.requesting_location_id,
         requesting_location_name: row.requesting_location_name,
         status: codec::decode(&row.status)?,
+        rejection_reason: row.rejection_reason,
+        rejected_at: row.rejected_at,
+        cancelled_at: row.cancelled_at,
         created_at: row.created_at,
     })
 }

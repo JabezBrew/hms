@@ -35,6 +35,8 @@ pub enum RequisitionStatus {
     Pending,
     Approved,
     Fulfilled,
+    Rejected,
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
@@ -186,12 +188,20 @@ pub struct StockRequisitionListItem {
     pub requesting_location_id: Uuid,
     pub requesting_location_name: String,
     pub status: RequisitionStatus,
+    pub rejection_reason: Option<String>,
+    pub rejected_at: Option<DateTime<Utc>>,
+    pub cancelled_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateStockRequisitionRequest {
     pub requesting_location_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RejectStockRequisitionRequest {
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
