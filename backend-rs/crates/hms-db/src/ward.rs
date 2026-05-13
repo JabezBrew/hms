@@ -504,6 +504,41 @@ pub async fn list_ward_sections(
     rows.into_iter().map(ward_section_from_row).collect()
 }
 
+pub async fn get_ward_section_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    section_id: Uuid,
+) -> anyhow::Result<Option<WardSectionListItem>> {
+    let row = sqlx::query_as::<_, WardSectionRow>(
+        r#"
+        SELECT ward_sections.id,
+               ward_sections.ward_id,
+               ward_sections.code,
+               ward_sections.name,
+               ward_sections.status,
+               COALESCE(bed_counts.active_bed_count, 0) AS active_bed_count,
+               ward_sections.created_at
+        FROM ward_sections
+        LEFT JOIN (
+            SELECT section_id,
+                   count(*) FILTER (WHERE status != 'closed') AS active_bed_count
+            FROM beds
+            WHERE facility_id = $1
+              AND section_id = $2
+            GROUP BY section_id
+        ) bed_counts ON bed_counts.section_id = ward_sections.id
+        WHERE ward_sections.facility_id = $1
+          AND ward_sections.id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(section_id)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(ward_section_from_row).transpose()
+}
+
 pub async fn create_ward_section(
     pool: &PgPool,
     section: NewWardSection,
@@ -594,6 +629,70 @@ pub async fn list_ward_beds(
 
     let rows = query.build_query_as::<BedRow>().fetch_all(pool).await?;
     rows.into_iter().map(bed_from_row).collect()
+}
+
+pub async fn list_section_beds(
+    pool: &PgPool,
+    facility_id: Uuid,
+    section_id: Uuid,
+    cursor: Option<WardCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<BedListItem>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT beds.id,
+               beds.ward_id,
+               beds.section_id,
+               beds.bed_code,
+               beds.status,
+               beds.created_at
+        FROM beds
+        WHERE beds.facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND beds.section_id = ");
+    query.push_bind(section_id);
+
+    if let Some(cursor) = cursor {
+        query.push(" AND (beds.created_at, beds.id) > (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+
+    query.push(" ORDER BY beds.created_at ASC, beds.id ASC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = query.build_query_as::<BedRow>().fetch_all(pool).await?;
+    rows.into_iter().map(bed_from_row).collect()
+}
+
+pub async fn get_bed_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    bed_id: Uuid,
+) -> anyhow::Result<Option<BedListItem>> {
+    let row = sqlx::query_as::<_, BedRow>(
+        r#"
+        SELECT beds.id,
+               beds.ward_id,
+               beds.section_id,
+               beds.bed_code,
+               beds.status,
+               beds.created_at
+        FROM beds
+        WHERE beds.facility_id = $1
+          AND beds.id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(bed_id)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(bed_from_row).transpose()
 }
 
 pub async fn create_bed(pool: &PgPool, bed: NewBed) -> anyhow::Result<BedListItem> {

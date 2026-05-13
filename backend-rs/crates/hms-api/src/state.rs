@@ -2712,6 +2712,10 @@ impl AppState {
         .await
     }
 
+    pub async fn get_ward_section(&self, section_id: Uuid) -> Result<Option<WardSectionListItem>> {
+        hms_db::ward::get_ward_section_by_id(&self.inner.pool, self.facility_id(), section_id).await
+    }
+
     pub async fn list_ward_beds(
         &self,
         ward_id: Uuid,
@@ -2720,6 +2724,26 @@ impl AppState {
     ) -> Result<Vec<BedListItem>> {
         hms_db::ward::list_ward_beds(&self.inner.pool, self.facility_id(), ward_id, cursor, limit)
             .await
+    }
+
+    pub async fn list_section_beds(
+        &self,
+        section_id: Uuid,
+        cursor: Option<WardCursor>,
+        limit: i64,
+    ) -> Result<Vec<BedListItem>> {
+        hms_db::ward::list_section_beds(
+            &self.inner.pool,
+            self.facility_id(),
+            section_id,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn get_bed(&self, bed_id: Uuid) -> Result<Option<BedListItem>> {
+        hms_db::ward::get_bed_by_id(&self.inner.pool, self.facility_id(), bed_id).await
     }
 
     pub async fn create_bed(

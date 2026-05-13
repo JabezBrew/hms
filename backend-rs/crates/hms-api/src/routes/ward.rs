@@ -12,9 +12,15 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/wards/:id/beds",
             get(ward::list_ward_beds).post(ward::create_bed),
         )
+        .route("/api/v2/wards/beds/:id", get(ward::get_bed))
         .route(
             "/api/v2/wards/:id/sections",
             get(ward::list_ward_sections).post(ward::create_ward_section),
+        )
+        .route("/api/v2/wards/sections/:id", get(ward::get_ward_section))
+        .route(
+            "/api/v2/wards/sections/:id/beds",
+            get(ward::list_section_beds),
         )
         .route("/api/v2/wards/board", get(ward::ward_board))
         .route(

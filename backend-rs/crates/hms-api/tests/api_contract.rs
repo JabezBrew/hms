@@ -4072,6 +4072,7 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .expect("ward bed create succeeds");
     assert_eq!(bed_response.status(), StatusCode::OK);
     let bed_body = json_body(bed_response).await;
+    let bed_id = bed_body["data"]["id"].as_str().expect("bed id exists");
     assert_eq!(bed_body["data"]["status"], "available");
 
     let bed_list = app
@@ -4089,6 +4090,23 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     assert_eq!(bed_list.status(), StatusCode::OK);
     let bed_list_body = json_body(bed_list).await;
     assert_eq!(bed_list_body["page"]["limit"], 10);
+
+    let bed_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/beds/{bed_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward bed detail succeeds");
+    assert_eq!(bed_detail.status(), StatusCode::OK);
+    let bed_detail_body = json_body(bed_detail).await;
+    assert_eq!(bed_detail_body["data"]["id"], bed_id);
+    assert_eq!(bed_detail_body["data"]["section_id"], section_id);
 
     let section_list = app
         .clone()
@@ -4109,6 +4127,43 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .expect("sections are an array")
         .iter()
         .any(|section| section["id"] == section_id));
+
+    let section_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/sections/{section_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward section detail succeeds");
+    assert_eq!(section_detail.status(), StatusCode::OK);
+    let section_detail_body = json_body(section_detail).await;
+    assert_eq!(section_detail_body["data"]["id"], section_id);
+    assert_eq!(section_detail_body["data"]["ward_id"], ward_id);
+
+    let section_beds = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/sections/{section_id}/beds?limit=10"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward section beds list succeeds");
+    assert_eq!(section_beds.status(), StatusCode::OK);
+    let section_beds_body = json_body(section_beds).await;
+    assert!(section_beds_body["data"]
+        .as_array()
+        .expect("section beds are an array")
+        .iter()
+        .any(|bed| bed["id"] == bed_id));
 
     let patient_response = app
         .clone()
@@ -4572,6 +4627,34 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .await
         .expect("ward detail denial succeeds");
     assert_eq!(denied_detail.status(), StatusCode::FORBIDDEN);
+
+    let bed_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/beds/{bed_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward bed detail denial succeeds");
+    assert_eq!(bed_denied.status(), StatusCode::FORBIDDEN);
+
+    let section_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/wards/sections/{section_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward section detail denial succeeds");
+    assert_eq!(section_denied.status(), StatusCode::FORBIDDEN);
 
     let admission_case_denied = app
         .clone()

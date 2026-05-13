@@ -384,10 +384,11 @@ export const wardsApi = {
    * @param {string} id - Bed ID
    * @returns {Promise<Object>} Bed data
    */
-  getBed: async (id) => {
+  getBed: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('bed detail');
+        const response = await v2Api.getWardBedById({ id }, { signal: options.signal });
+        return adaptV2Bed(response?.data);
       }
       return await apiClient.get(`/wards/beds/${id}/`);
     } catch (error) {
@@ -733,10 +734,11 @@ export const wardsApi = {
    * @param {string} id - Section ID
    * @returns {Promise<Object>} Section data
    */
-  getSection: async (id) => {
+  getSection: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('section detail');
+        const response = await v2Api.getWardSectionById({ id }, { signal: options.signal });
+        return adaptV2Section(response?.data);
       }
       return await apiClient.get(`/wards/sections/${id}/`);
     } catch (error) {
@@ -821,10 +823,20 @@ export const wardsApi = {
    * @param {string} sectionId - Section ID
    * @returns {Promise<Array>} List of beds in the section
    */
-  getSectionBeds: async (sectionId) => {
+  getSectionBeds: async (sectionId, params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('section bed list');
+        const response = await v2Api.getWardSectionBeds(
+          { id: sectionId },
+          {
+            query: {
+              cursor: params.cursor,
+              limit: normalizeV2Limit(params, 25),
+            },
+            signal: options.signal,
+          },
+        );
+        return v2ListData(response).map(adaptV2Bed);
       }
       return await apiClient.get(`/wards/sections/${sectionId}/beds/`);
     } catch (error) {

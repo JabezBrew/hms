@@ -1126,6 +1126,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getWardBedById": {
+    "operationId": "getWardBedById",
+    "method": "GET",
+    "path": "/api/v2/wards/beds/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getWardBeds": {
     "operationId": "getWardBeds",
     "method": "GET",
@@ -1170,6 +1180,29 @@ export const operations = {
       "cursor",
       "limit"
     ],
+    "hasBody": false
+  },
+  "getWardSectionBeds": {
+    "operationId": "getWardSectionBeds",
+    "method": "GET",
+    "path": "/api/v2/wards/sections/{id}/beds",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getWardSectionById": {
+    "operationId": "getWardSectionById",
+    "method": "GET",
+    "path": "/api/v2/wards/sections/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getWardSections": {
@@ -2293,10 +2326,13 @@ export function createGeneratedClient(request) {
     getTriageQueue: createOperation(request, operations.getTriageQueue),
     getVisitById: createOperation(request, operations.getVisitById),
     getVisits: createOperation(request, operations.getVisits),
+    getWardBedById: createOperation(request, operations.getWardBedById),
     getWardBeds: createOperation(request, operations.getWardBeds),
     getWardBoard: createOperation(request, operations.getWardBoard),
     getWardById: createOperation(request, operations.getWardById),
     getWards: createOperation(request, operations.getWards),
+    getWardSectionBeds: createOperation(request, operations.getWardSectionBeds),
+    getWardSectionById: createOperation(request, operations.getWardSectionById),
     getWardSections: createOperation(request, operations.getWardSections),
     getWardStockRequests: createOperation(request, operations.getWardStockRequests),
     patchAdminFeature: createOperation(request, operations.patchAdminFeature),

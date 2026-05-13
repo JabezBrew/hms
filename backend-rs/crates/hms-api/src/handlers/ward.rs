@@ -120,6 +120,65 @@ pub async fn list_ward_sections(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/wards/sections/{id}",
+    operation_id = "getWardSectionById",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward section id")),
+    responses(
+        (status = 200, description = "Ward section detail", body = ObjectResponse<WardSectionListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward section not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_ward_section(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
+    let section = load_ward_section(&state, id).await?;
+    Ok(Json(object(section)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/sections/{id}/beds",
+    operation_id = "getWardSectionBeds",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(CursorListQuery, ("id" = Uuid, Path, description = "Ward section id")),
+    responses(
+        (status = 200, description = "Ward section beds", body = ListResponse<BedListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward section not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_section_beds(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CursorListQuery>,
+) -> Result<Json<ListResponse<BedListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
+    let _section = load_ward_section(&state, id).await?;
+    let (cursor, page_size) = page_request(query)?;
+    let rows = state
+        .list_section_beds(id, cursor, page_size as i64 + 1)
+        .await
+        .map_err(|_| {
+            ApiError::conflict("section_beds_failed", "Section beds could not be loaded.")
+        })?;
+
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
+    })))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/wards/{id}/sections",
     operation_id = "postWardSection",
@@ -196,6 +255,34 @@ pub async fn list_ward_beds(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.created_at, item.id)
     })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/wards/beds/{id}",
+    operation_id = "getWardBedById",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Ward bed id")),
+    responses(
+        (status = 200, description = "Ward bed detail", body = ObjectResponse<BedListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Ward bed not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_bed(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
+    let bed = state
+        .get_bed(id)
+        .await
+        .map_err(|_| ApiError::conflict("bed_load_failed", "Bed could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("bed_not_found", "Bed was not found."))?;
+    Ok(Json(object(bed)))
 }
 
 #[utoipa::path(
@@ -1758,6 +1845,22 @@ async fn load_ward(state: &AppState, ward_id: Uuid) -> Result<WardListItem, ApiE
         .await
         .map_err(|_| ApiError::conflict("ward_load_failed", "Ward could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))
+}
+
+async fn load_ward_section(
+    state: &AppState,
+    section_id: Uuid,
+) -> Result<WardSectionListItem, ApiError> {
+    state
+        .get_ward_section(section_id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_section_load_failed",
+                "Ward section could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("ward_section_not_found", "Ward section was not found."))
 }
 
 async fn load_patient_for_access(

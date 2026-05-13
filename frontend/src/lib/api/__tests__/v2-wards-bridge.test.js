@@ -304,13 +304,101 @@ describe('Rust V2 wards bridge', () => {
     );
   });
 
+  it('loads bed detail, section detail, and section-scoped beds through Rust V2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'bed-1',
+              ward_id: 'ward-1',
+              section_id: 'section-1',
+              bed_code: 'E-01',
+              status: 'available',
+              created_at: '2026-05-12T09:10:00Z',
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'section-1',
+              ward_id: 'ward-1',
+              code: 'EAST',
+              name: 'East Section',
+              status: 'active',
+              active_bed_count: 1,
+              created_at: '2026-05-12T09:00:00Z',
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'bed-1',
+                ward_id: 'ward-1',
+                section_id: 'section-1',
+                bed_code: 'E-01',
+                status: 'available',
+                created_at: '2026-05-12T09:10:00Z',
+              },
+            ],
+            page: { limit: 25, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    await expect(wardsApi.getBed('bed-1')).resolves.toMatchObject({
+      id: 'bed-1',
+      bed_number: 'E-01',
+      ward: 'ward-1',
+      section: 'section-1',
+    });
+    await expect(wardsApi.getSection('section-1')).resolves.toMatchObject({
+      id: 'section-1',
+      ward: 'ward-1',
+      bed_count: 1,
+    });
+    await expect(wardsApi.getSectionBeds('section-1')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'bed-1',
+        bed_number: 'E-01',
+      }),
+    ]);
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/wards/beds/bed-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/wards/sections/section-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/wards/sections/section-1/beds?limit=25',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+  });
+
   it('fails closed or returns safe empty lists for unsupported Rust V2 ward calls', async () => {
     await expect(wardsApi.createWard({ name: 'New Ward' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.updateWard('ward-1', { name: 'Renamed' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.deleteWard('ward-1')).rejects.toThrow(/Rust V2 .* ward mutations/i);
-    await expect(wardsApi.getBed('bed-1')).rejects.toThrow(/Rust V2 .* bed detail/i);
     await expect(wardsApi.updateBed('bed-1', { status: 'closed' })).rejects.toThrow(/Rust V2 .* bed mutations/i);
-    await expect(wardsApi.getSection('section-1')).rejects.toThrow(/Rust V2 .* section detail/i);
     await expect(wardsApi.updateSection('section-1', { name: 'East' })).rejects.toThrow(
       /Rust V2 .* section mutations/i,
     );
