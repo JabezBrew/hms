@@ -492,9 +492,10 @@ async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted()
         .expect("template exists");
     assert!(!deactivated.is_active);
 
-    let active_templates = hms_db::clinical::list_note_templates(&pool, facility_id)
+    let active_templates = hms_db::clinical::list_note_templates(&pool, facility_id, 1)
         .await
         .expect("template list succeeds");
+    assert_eq!(active_templates.len(), 1);
     assert!(!active_templates
         .iter()
         .any(|active_template| active_template.id == template.id));

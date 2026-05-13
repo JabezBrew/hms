@@ -1494,7 +1494,7 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/clinical/note-templates")
+                .uri("/api/v2/clinical/note-templates?limit=1")
                 .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())
                 .expect("request builds"),
@@ -1503,6 +1503,7 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("template list succeeds");
     assert_eq!(templates.status(), StatusCode::OK);
     let templates_body = json_body(templates).await;
+    assert_eq!(templates_body["page"]["limit"], 1);
     assert_eq!(templates_body["data"][0]["title"], "General Clinical Note");
 
     let template_create = app

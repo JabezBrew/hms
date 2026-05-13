@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::patients::PatientDetail;
@@ -63,6 +63,11 @@ pub struct ClinicalNoteTemplate {
     pub note_type: String,
     pub body_template: String,
     pub is_active: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ClinicalNoteTemplateListQuery {
+    pub limit: Option<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

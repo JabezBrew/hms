@@ -155,7 +155,10 @@ export const clinicalNotesApi = {
   getNoteTemplates: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getClinicalNoteTemplates({ signal: options.signal });
+        const response = await v2Api.getClinicalNoteTemplates({
+          query: { limit: v2Limit(params.limit || params.page_size, 25) },
+          signal: options.signal,
+        });
         return (Array.isArray(response?.data) ? response.data : []).map(adaptV2Template);
       }
       const response = await apiClient.getWithPagination('/clinical-notes/templates/', {

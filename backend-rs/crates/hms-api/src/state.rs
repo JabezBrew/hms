@@ -1304,8 +1304,11 @@ impl AppState {
         .await
     }
 
-    pub async fn list_clinical_note_templates(&self) -> Result<Vec<ClinicalNoteTemplate>> {
-        hms_db::clinical::list_note_templates(&self.inner.pool, self.facility_id()).await
+    pub async fn list_clinical_note_templates(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<ClinicalNoteTemplate>> {
+        hms_db::clinical::list_note_templates(&self.inner.pool, self.facility_id(), limit).await
     }
 
     pub async fn get_clinical_note_template(

@@ -48,10 +48,13 @@ describe('Rust V2 clinical notes bridge', () => {
       ),
     );
 
-    const templates = await clinicalNotesApi.getNoteTemplates({}, { signal: new AbortController().signal });
+    const templates = await clinicalNotesApi.getNoteTemplates(
+      { page_size: 25 },
+      { signal: new AbortController().signal },
+    );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/clinical/note-templates',
+      'http://localhost:8080/api/v2/clinical/note-templates?limit=25',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

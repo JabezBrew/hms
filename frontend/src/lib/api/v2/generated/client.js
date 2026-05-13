@@ -478,7 +478,9 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/clinical/note-templates",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "limit"
+    ],
     "hasBody": false
   },
   "getClinicalNoteVersions": {

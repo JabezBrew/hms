@@ -189,6 +189,7 @@ struct NoteContextRow {
 pub async fn list_note_templates(
     pool: &PgPool,
     facility_id: Uuid,
+    limit: i64,
 ) -> anyhow::Result<Vec<ClinicalNoteTemplate>> {
     let rows = sqlx::query_as::<_, TemplateRow>(
         r#"
@@ -196,10 +197,11 @@ pub async fn list_note_templates(
         FROM clinical_note_templates
         WHERE facility_id = $1 AND is_active = TRUE
         ORDER BY title ASC, id ASC
-        LIMIT 100
+        LIMIT $2
         "#,
     )
     .bind(facility_id)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(template_from_row).collect())

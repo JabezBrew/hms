@@ -1443,6 +1443,19 @@
         ],
         "type": "object"
       },
+      "ClinicalNoteTemplateListQuery": {
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ClinicalNoteVersion": {
         "properties": {
           "body": {
@@ -22316,6 +22329,21 @@
     "/api/v2/clinical/note-templates": {
       "get": {
         "operationId": "getClinicalNoteTemplates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

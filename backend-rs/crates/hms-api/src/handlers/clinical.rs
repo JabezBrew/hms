@@ -7,11 +7,11 @@ use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
     AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest,
-    CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
-    CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
-    PrescriptionListItem, ProblemListItem, UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest,
-    UpdatePrescriptionRequest, UpdateProblemRequest,
+    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteTemplateListQuery, ClinicalNoteVersion,
+    CreateAllergyRequest, CreateChartEntryRequest, CreateClinicalNoteRequest,
+    CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
+    CreateProblemRequest, PrescriptionListItem, ProblemListItem, UpdateAllergyRequest,
+    UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -35,6 +35,7 @@ const MAX_NOTE_BODY_LEN: usize = 20_000;
     operation_id = "getClinicalNoteTemplates",
     tag = "clinical",
     security(("bearerAuth" = [])),
+    params(ClinicalNoteTemplateListQuery),
     responses(
         (status = 200, description = "Clinical note templates", body = ListResponse<ClinicalNoteTemplate>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -44,21 +45,26 @@ const MAX_NOTE_BODY_LEN: usize = 20_000;
 pub async fn list_note_templates(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<ClinicalNoteTemplateListQuery>,
 ) -> Result<Json<ListResponse<ClinicalNoteTemplate>>, ApiError> {
     require_clinical_list_access(&user, state.facility_id())?;
-    let templates = state.list_clinical_note_templates().await.map_err(|_| {
-        ApiError::conflict(
-            "clinical_template_list_failed",
-            "Clinical note templates could not be loaded.",
-        )
-    })?;
+    let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let templates = state
+        .list_clinical_note_templates(page_size as i64)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_template_list_failed",
+                "Clinical note templates could not be loaded.",
+            )
+        })?;
 
     Ok(Json(list(
         templates,
         PageInfo {
             next_cursor: None,
             has_next: false,
-            limit: MAX_LIMIT,
+            limit: page_size,
         },
     )))
 }

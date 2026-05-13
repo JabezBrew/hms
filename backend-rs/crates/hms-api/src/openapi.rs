@@ -402,6 +402,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::clinical::ClinicalNoteListItem,
         hms_domain::clinical::ClinicalNoteStatus,
         hms_domain::clinical::ClinicalNoteTemplate,
+        hms_domain::clinical::ClinicalNoteTemplateListQuery,
         hms_domain::clinical::ClinicalNoteVersion,
         hms_domain::clinical::CreateAllergyRequest,
         hms_domain::clinical::CreateChartEntryRequest,
