@@ -49,6 +49,7 @@ pub struct RefreshSessionRow {
     pub csrf_token_hash: String,
     pub expires_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
+    pub device_label: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -63,6 +64,17 @@ pub struct NewRefreshSession {
     pub permission_version_at_issue: i64,
     pub csrf_token_hash: String,
     pub expires_at: DateTime<Utc>,
+    pub device_label: Option<String>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+pub struct UserSessionRow {
+    pub id: Uuid,
+    pub device_label: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    pub is_current: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -204,9 +216,10 @@ pub async fn insert_refresh_session(
             session_version,
             permission_version_at_issue,
             csrf_token_hash,
-            expires_at
+            expires_at,
+            device_label
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
     .bind(&session.token_hash)
@@ -219,6 +232,7 @@ pub async fn insert_refresh_session(
     .bind(session.permission_version_at_issue)
     .bind(&session.csrf_token_hash)
     .bind(session.expires_at)
+    .bind(session.device_label.as_deref())
     .execute(pool)
     .await?;
     Ok(())
@@ -238,7 +252,8 @@ pub async fn refresh_session_by_token_hash(
                permission_version_at_issue,
                csrf_token_hash,
                expires_at,
-               revoked_at
+               revoked_at,
+               device_label
         FROM refresh_sessions
         WHERE token_hash = $1
         "#,
@@ -246,6 +261,100 @@ pub async fn refresh_session_by_token_hash(
     .bind(token_hash)
     .fetch_optional(pool)
     .await?)
+}
+
+pub async fn list_active_user_sessions(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    current_session_id: Uuid,
+    limit: i64,
+) -> anyhow::Result<Vec<UserSessionRow>> {
+    Ok(sqlx::query_as::<_, UserSessionRow>(
+        r#"
+        SELECT session_id AS id,
+               device_label,
+               created_at,
+               last_seen_at,
+               expires_at,
+               session_id = $3 AS is_current
+        FROM refresh_sessions
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND revoked_at IS NULL
+          AND expires_at > now()
+        ORDER BY (session_id = $3) DESC,
+                 COALESCE(last_seen_at, created_at) DESC,
+                 created_at DESC
+        LIMIT $4
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(current_session_id)
+    .bind(limit.clamp(1, 50))
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn revoke_user_session(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    session_id: Uuid,
+    reason: &str,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET revoked_at = COALESCE(revoked_at, now()),
+            last_seen_at = now(),
+            revoked_reason = COALESCE(revoked_reason, $4)
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND session_id = $3
+          AND revoked_at IS NULL
+          AND expires_at > now()
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(session_id)
+    .bind(reason)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn revoke_other_user_sessions(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    current_session_id: Uuid,
+    reason: &str,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET revoked_at = COALESCE(revoked_at, now()),
+            last_seen_at = now(),
+            revoked_reason = COALESCE(revoked_reason, $4)
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND session_id <> $3
+          AND revoked_at IS NULL
+          AND expires_at > now()
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(current_session_id)
+    .bind(reason)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
 }
 
 pub async fn revoke_refresh_session(

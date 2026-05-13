@@ -54,7 +54,7 @@ const settingsApi = {
   getSessions: async () => {
     try {
       if (isRustV2ApiMode()) {
-        return { results: [], rust_v2_unsupported: true };
+        return await authApi.listSessions();
       }
       return await apiClient.get('/users/sessions/');
     } catch (error) {
@@ -65,7 +65,7 @@ const settingsApi = {
   revokeSession: async (sessionId) => {
     try {
       if (isRustV2ApiMode()) {
-        return Promise.reject(new Error('Rust V2 does not expose session revocation yet'));
+        return await authApi.revokeSession(sessionId);
       }
       return await apiClient.post(`/users/sessions/${sessionId}/revoke/`);
     } catch (error) {
@@ -76,7 +76,7 @@ const settingsApi = {
   revokeAllSessions: async (excludeCurrent = true) => {
     try {
       if (isRustV2ApiMode()) {
-        return Promise.reject(new Error('Rust V2 does not expose session revocation yet'));
+        return await authApi.revokeAllSessions(excludeCurrent);
       }
       return await apiClient.post('/users/sessions/revoke_all/', {
         exclude_current: excludeCurrent,

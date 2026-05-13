@@ -291,6 +291,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getAuthSessions": {
+    "operationId": "getAuthSessions",
+    "method": "GET",
+    "path": "/api/v2/auth/sessions",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getBillingDashboardSummary": {
     "operationId": "getBillingDashboardSummary",
     "method": "GET",
@@ -1873,6 +1881,24 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postAuthSessionRevoke": {
+    "operationId": "postAuthSessionRevoke",
+    "method": "POST",
+    "path": "/api/v2/auth/sessions/{session_id}/revoke",
+    "pathParamNames": [
+      "session_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postAuthSessionsRevokeAll": {
+    "operationId": "postAuthSessionsRevokeAll",
+    "method": "POST",
+    "path": "/api/v2/auth/sessions/revoke-all",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postBillingInvoices": {
     "operationId": "postBillingInvoices",
     "method": "POST",
@@ -2747,6 +2773,7 @@ export function createGeneratedClient(request) {
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),
     getAuthMe: createOperation(request, operations.getAuthMe),
+    getAuthSessions: createOperation(request, operations.getAuthSessions),
     getBillingDashboardSummary: createOperation(request, operations.getBillingDashboardSummary),
     getBillingInvoiceById: createOperation(request, operations.getBillingInvoiceById),
     getBillingInvoices: createOperation(request, operations.getBillingInvoices),
@@ -2900,6 +2927,8 @@ export function createGeneratedClient(request) {
     postAuthPasswordResetComplete: createOperation(request, operations.postAuthPasswordResetComplete),
     postAuthPasswordResetRequest: createOperation(request, operations.postAuthPasswordResetRequest),
     postAuthRefresh: createOperation(request, operations.postAuthRefresh),
+    postAuthSessionRevoke: createOperation(request, operations.postAuthSessionRevoke),
+    postAuthSessionsRevokeAll: createOperation(request, operations.postAuthSessionsRevokeAll),
     postBillingInvoices: createOperation(request, operations.postBillingInvoices),
     postBillingPayments: createOperation(request, operations.postBillingPayments),
     postCashSessionClose: createOperation(request, operations.postCashSessionClose),

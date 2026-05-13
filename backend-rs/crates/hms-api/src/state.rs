@@ -9,7 +9,7 @@ use hms_db::admin::{
     NewOrganizationUnit, NewPermissionAssignment, NewPosition, NewPositionTemplate,
     NewPractitionerProfile, NewStaffAccount,
 };
-use hms_db::auth::{NewRefreshSession, UserAccount};
+use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::billing::{
     BillingCursor, CashSessionFilters, ClaimContext, InvoiceContext, NewCashSession, NewClaim,
     NewInvoice, NewNhisBatch, NewPayment, NewRemittanceImport,
@@ -236,6 +236,7 @@ impl AppState {
         email: &str,
         password: &str,
         facility_code: &str,
+        device_label: Option<&str>,
     ) -> Result<Option<LoginOutcome>> {
         if !self
             .inner
@@ -260,7 +261,8 @@ impl AppState {
             return Ok(None);
         }
 
-        self.issue_session_for_user(&user, None, None).await
+        self.issue_session_for_user(&user, None, None, device_label)
+            .await
     }
 
     pub async fn refresh(
@@ -323,6 +325,7 @@ impl AppState {
             &user,
             Some(old_session.session_family_id),
             Some(old_session.session_id),
+            old_session.device_label.as_deref(),
         )
         .await
     }
@@ -504,6 +507,63 @@ impl AppState {
         } else {
             ChangePasswordOutcome::UserNotFound
         })
+    }
+
+    pub async fn list_auth_sessions(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        current_session_id: Uuid,
+    ) -> Result<Vec<UserSessionRow>> {
+        if facility_id != self.facility_id() {
+            return Ok(Vec::new());
+        }
+        hms_db::auth::list_active_user_sessions(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            current_session_id,
+            20,
+        )
+        .await
+    }
+
+    pub async fn revoke_auth_session(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        session_id: Uuid,
+    ) -> Result<bool> {
+        if facility_id != self.facility_id() {
+            return Ok(false);
+        }
+        hms_db::auth::revoke_user_session(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            session_id,
+            "user_revoked",
+        )
+        .await
+    }
+
+    pub async fn revoke_other_auth_sessions(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        current_session_id: Uuid,
+    ) -> Result<u64> {
+        if facility_id != self.facility_id() {
+            return Ok(0);
+        }
+        hms_db::auth::revoke_other_user_sessions(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            current_session_id,
+            "user_revoked_others",
+        )
+        .await
     }
 
     pub async fn deployment_capabilities(&self) -> Result<DeploymentCapabilities> {
@@ -3894,6 +3954,7 @@ impl AppState {
         user: &UserAccount,
         session_family_id: Option<Uuid>,
         rotated_from_session_id: Option<Uuid>,
+        device_label: Option<&str>,
     ) -> Result<Option<LoginOutcome>> {
         let session_id = Uuid::new_v4();
         let session_family_id = session_family_id.unwrap_or(session_id);
@@ -3916,6 +3977,7 @@ impl AppState {
                 permission_version_at_issue: user.permission_version,
                 csrf_token_hash: hash_refresh_token(&csrf_token),
                 expires_at,
+                device_label: device_label.map(ToOwned::to_owned),
             },
         )
         .await?;

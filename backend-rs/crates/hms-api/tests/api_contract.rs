@@ -98,12 +98,26 @@ async fn login_with_password(
     email: &str,
     password: &str,
 ) -> (String, String, String) {
+    login_with_password_and_device(app, email, password, None).await
+}
+
+async fn login_with_password_and_device(
+    app: TestApp,
+    email: &str,
+    password: &str,
+    device_label: Option<&str>,
+) -> (String, String, String) {
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v2/auth/login")
+        .header("content-type", "application/json");
+    if let Some(device_label) = device_label {
+        request = request.header("x-device-label", device_label);
+    }
+
     let response = app
         .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/v2/auth/login")
-                .header("content-type", "application/json")
+            request
                 .body(Body::from(
                     json!({
                         "email": email,
@@ -207,6 +221,9 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/auth/password",
         "/api/v2/auth/password-reset/request",
         "/api/v2/auth/password-reset/complete",
+        "/api/v2/auth/sessions",
+        "/api/v2/auth/sessions/{session_id}/revoke",
+        "/api/v2/auth/sessions/revoke-all",
         "/api/v2/system/deployment-capabilities",
         "/api/v2/admin/org-units",
         "/api/v2/admin/org-units/{id}",
@@ -545,6 +562,143 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
         .await
         .expect("csrf rejection succeeds");
     assert_eq!(rejected_refresh.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn auth_sessions_can_be_listed_and_revoked_by_owner() {
+    let app = app().await;
+    let (current_access_token, current_cookie, current_csrf) = login_with_password_and_device(
+        app.clone(),
+        "owner@hms.local",
+        "ChangeMe123!",
+        Some("Safari on macOS"),
+    )
+    .await;
+    let (_, other_cookie, other_csrf) = login_with_password_and_device(
+        app.clone(),
+        "owner@hms.local",
+        "ChangeMe123!",
+        Some("Chrome on Windows"),
+    )
+    .await;
+    let (_, third_cookie, third_csrf) = login_with_password_and_device(
+        app.clone(),
+        "owner@hms.local",
+        "ChangeMe123!",
+        Some("Safari on iOS"),
+    )
+    .await;
+    let auth_header = format!("Bearer {current_access_token}");
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("session list request succeeds");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = json_body(list_response).await;
+    let sessions = list_body["data"]["results"]
+        .as_array()
+        .expect("sessions are returned");
+    assert_eq!(sessions.len(), 3);
+    assert_eq!(
+        sessions
+            .iter()
+            .filter(|session| session["is_current"] == true)
+            .count(),
+        1
+    );
+    let other_session_id = sessions
+        .iter()
+        .find(|session| session["device_label"] == "Chrome on Windows")
+        .and_then(|session| session["id"].as_str())
+        .expect("other session is present")
+        .to_owned();
+
+    let revoke_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/auth/sessions/{other_session_id}/revoke"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("session revoke request succeeds");
+    assert_eq!(revoke_response.status(), StatusCode::OK);
+    let revoke_body = json_body(revoke_response).await;
+    assert_eq!(revoke_body["data"]["revoked"], true);
+
+    let rejected_other_refresh = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, other_cookie)
+                .header("x-hms-csrf", other_csrf)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("revoked refresh request succeeds");
+    assert_eq!(rejected_other_refresh.status(), StatusCode::UNAUTHORIZED);
+
+    let revoke_others_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/sessions/revoke-all")
+                .header(AUTHORIZATION, auth_header)
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "exclude_current": true }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("session revoke-all request succeeds");
+    assert_eq!(revoke_others_response.status(), StatusCode::OK);
+    let revoke_others_body = json_body(revoke_others_response).await;
+    assert_eq!(revoke_others_body["data"]["revoked_count"], 1);
+
+    let rejected_third_refresh = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, third_cookie)
+                .header("x-hms-csrf", third_csrf)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("revoked refresh request succeeds");
+    assert_eq!(rejected_third_refresh.status(), StatusCode::UNAUTHORIZED);
+
+    let current_refresh = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/refresh")
+                .header(COOKIE, current_cookie)
+                .header("x-hms-csrf", current_csrf)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("current refresh request succeeds");
+    assert_eq!(current_refresh.status(), StatusCode::OK);
 }
 
 #[tokio::test]

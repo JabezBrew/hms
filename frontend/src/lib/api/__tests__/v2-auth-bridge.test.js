@@ -298,6 +298,75 @@ describe('Rust V2 auth bridge', () => {
     );
   });
 
+  it('manages auth sessions through /api/v2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              results: [
+                {
+                  id: 'session-current',
+                  device_label: 'Safari on macOS',
+                  created_at: '2026-05-13T12:00:00Z',
+                  last_seen_at: '2026-05-13T12:05:00Z',
+                  expires_at: '2026-05-13T18:00:00Z',
+                  is_current: true,
+                },
+              ],
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { revoked: true }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { revoked_count: 2 }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    await expect(authApi.listSessions()).resolves.toEqual({
+      results: [
+        expect.objectContaining({
+          id: 'session-current',
+          is_current: true,
+        }),
+      ],
+    });
+    await expect(authApi.revokeSession('session-other')).resolves.toEqual({ revoked: true });
+    await expect(authApi.revokeAllSessions(true)).resolves.toEqual({ revoked_count: 2 });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/auth/sessions',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/auth/sessions/session-other/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/auth/sessions/revoke-all',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ exclude_current: true }),
+      }),
+    );
+  });
+
   it('allows reset-token submission when Rust V2 has no token pre-validation endpoint', async () => {
     await expect(authApi.validateResetToken('reset-token')).resolves.toEqual({
       valid: true,

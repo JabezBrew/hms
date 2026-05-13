@@ -1,21 +1,26 @@
+use axum::extract::Path;
 use axum::extract::State;
 use axum::http::header::{COOKIE, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::Json;
+use chrono::{DateTime, Utc};
 use cookie::{Cookie, SameSite};
 use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::{AuthenticatedSession, AuthenticatedUser};
 use crate::response::{object, ObjectResponse};
 use crate::state::{AppState, ChangePasswordOutcome, LoginOutcome};
 
 const REFRESH_COOKIE_NAME: &str = "hms_refresh";
 const CSRF_COOKIE_NAME: &str = "hms_v2_csrf";
 const CSRF_HEADER_NAME: &str = "x-hms-csrf";
+const DEVICE_LABEL_HEADER_NAME: &str = "x-device-label";
 const MAX_DISPLAY_NAME_LEN: usize = 160;
+const MAX_DEVICE_LABEL_LEN: usize = 120;
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct LoginRequest {
@@ -71,6 +76,36 @@ pub struct ChangePasswordResponse {
     pub changed: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AuthSessionListResponse {
+    pub results: Vec<AuthSessionItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AuthSessionItem {
+    pub id: Uuid,
+    pub device_label: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    pub is_current: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RevokeSessionResponse {
+    pub revoked: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+pub struct RevokeAllSessionsRequest {
+    pub exclude_current: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RevokeAllSessionsResponse {
+    pub revoked_count: u64,
+}
+
 #[utoipa::path(
     post,
     path = "/api/v2/auth/login",
@@ -84,10 +119,17 @@ pub struct ChangePasswordResponse {
 )]
 pub async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<ObjectResponse<AuthTokenResponse>>), ApiError> {
+    let device_label = device_label_from_headers(&headers);
     let outcome = state
-        .login(&payload.email, &payload.password, &payload.facility_code)
+        .login(
+            &payload.email,
+            &payload.password,
+            &payload.facility_code,
+            device_label.as_deref(),
+        )
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;
@@ -299,6 +341,118 @@ pub async fn change_password(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v2/auth/sessions",
+    operation_id = "getAuthSessions",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Active auth sessions", body = ObjectResponse<AuthSessionListResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    AuthenticatedSession { user, session_id }: AuthenticatedSession,
+) -> Result<Json<ObjectResponse<AuthSessionListResponse>>, ApiError> {
+    let sessions = state
+        .list_auth_sessions(user.id, user.facility_id, session_id)
+        .await
+        .map_err(|_| {
+            ApiError::bad_request("sessions_load_failed", "Sessions could not be loaded.")
+        })?
+        .into_iter()
+        .map(|session| AuthSessionItem {
+            id: session.id,
+            device_label: session.device_label,
+            created_at: session.created_at,
+            last_seen_at: session.last_seen_at,
+            expires_at: session.expires_at,
+            is_current: session.is_current,
+        })
+        .collect();
+
+    Ok(Json(object(AuthSessionListResponse { results: sessions })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/sessions/{session_id}/revoke",
+    operation_id = "postAuthSessionRevoke",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    params(("session_id" = Uuid, Path, description = "Auth session ID")),
+    responses(
+        (status = 200, description = "Session revoked", body = ObjectResponse<RevokeSessionResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn revoke_session(
+    State(state): State<AppState>,
+    AuthenticatedSession { user, .. }: AuthenticatedSession,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<RevokeSessionResponse>>, ApiError> {
+    let revoked = state
+        .revoke_auth_session(user.id, user.facility_id, session_id)
+        .await
+        .map_err(|_| {
+            ApiError::bad_request("session_revoke_failed", "Session could not be revoked.")
+        })?;
+
+    Ok(Json(object(RevokeSessionResponse { revoked })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/sessions/revoke-all",
+    operation_id = "postAuthSessionsRevokeAll",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = RevokeAllSessionsRequest,
+    responses(
+        (status = 200, description = "Sessions revoked", body = ObjectResponse<RevokeAllSessionsResponse>),
+        (status = 400, description = "Session revocation failed", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn revoke_all_sessions(
+    State(state): State<AppState>,
+    AuthenticatedSession { user, session_id }: AuthenticatedSession,
+    Json(payload): Json<RevokeAllSessionsRequest>,
+) -> Result<Json<ObjectResponse<RevokeAllSessionsResponse>>, ApiError> {
+    if payload.exclude_current == Some(false) {
+        let sessions = state
+            .list_auth_sessions(user.id, user.facility_id, session_id)
+            .await
+            .map_err(|_| {
+                ApiError::bad_request("sessions_load_failed", "Sessions could not be loaded.")
+            })?;
+        let mut revoked_count = 0;
+        for session in sessions {
+            if state
+                .revoke_auth_session(user.id, user.facility_id, session.id)
+                .await
+                .map_err(|_| {
+                    ApiError::bad_request("session_revoke_failed", "Session could not be revoked.")
+                })?
+            {
+                revoked_count += 1;
+            }
+        }
+        return Ok(Json(object(RevokeAllSessionsResponse { revoked_count })));
+    }
+
+    let revoked_count = state
+        .revoke_other_auth_sessions(user.id, user.facility_id, session_id)
+        .await
+        .map_err(|_| {
+            ApiError::bad_request("session_revoke_failed", "Sessions could not be revoked.")
+        })?;
+
+    Ok(Json(object(RevokeAllSessionsResponse { revoked_count })))
+}
+
 fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), ApiError> {
     if let Some(value) = payload.display_name.as_ref() {
         if value.trim().is_empty() || value.len() > MAX_DISPLAY_NAME_LEN {
@@ -309,6 +463,15 @@ fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), Api
         }
     }
     Ok(())
+}
+
+fn device_label_from_headers(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(DEVICE_LABEL_HEADER_NAME)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(MAX_DEVICE_LABEL_LEN).collect())
 }
 
 fn auth_response(

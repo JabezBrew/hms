@@ -1,3 +1,5 @@
+use chrono::Utc;
+use hms_db::auth::NewRefreshSession;
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::auth::UpdateAuthProfileRequest;
 use hms_domain::deployment::DeploymentProfile;
@@ -118,4 +120,133 @@ async fn auth_password_changes_are_user_and_facility_scoped() {
     .await
     .expect("cross-facility password change succeeds")
     .is_none());
+}
+
+#[tokio::test]
+async fn auth_sessions_are_listed_and_revoked_by_user_and_facility() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let current_session_id = Uuid::new_v4();
+    let other_session_id = Uuid::new_v4();
+    let expired_session_id = Uuid::new_v4();
+
+    for (session_id, token_hash, device_label, expires_at) in [
+        (
+            current_session_id,
+            "current-token",
+            "Safari on macOS",
+            Utc::now() + chrono::Duration::hours(1),
+        ),
+        (
+            other_session_id,
+            "other-token",
+            "Chrome on Windows",
+            Utc::now() + chrono::Duration::hours(1),
+        ),
+        (
+            expired_session_id,
+            "expired-token",
+            "Old Browser",
+            Utc::now() - chrono::Duration::hours(1),
+        ),
+    ] {
+        hms_db::auth::insert_refresh_session(
+            &pool,
+            &NewRefreshSession {
+                token_hash: token_hash.to_owned(),
+                session_id,
+                session_family_id: session_id,
+                rotated_from_session_id: None,
+                user_id: owner_id,
+                facility_id,
+                session_version: 1,
+                permission_version_at_issue: 1,
+                csrf_token_hash: format!("{token_hash}-csrf"),
+                expires_at,
+                device_label: Some(device_label.to_owned()),
+            },
+        )
+        .await
+        .expect("session inserts");
+    }
+
+    let sessions = hms_db::auth::list_active_user_sessions(
+        &pool,
+        facility_id,
+        owner_id,
+        current_session_id,
+        20,
+    )
+    .await
+    .expect("sessions list");
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions.iter().any(|session| session.is_current));
+    assert!(sessions
+        .iter()
+        .any(|session| session.device_label.as_deref() == Some("Chrome on Windows")));
+
+    assert!(hms_db::auth::revoke_user_session(
+        &pool,
+        facility_id,
+        owner_id,
+        other_session_id,
+        "user_revoked",
+    )
+    .await
+    .expect("session revokes"));
+    assert!(!hms_db::auth::revoke_user_session(
+        &pool,
+        Uuid::new_v4(),
+        owner_id,
+        current_session_id,
+        "cross_facility",
+    )
+    .await
+    .expect("cross-facility revoke checks"));
+
+    let revoked_count = hms_db::auth::revoke_other_user_sessions(
+        &pool,
+        facility_id,
+        owner_id,
+        current_session_id,
+        "user_revoked_others",
+    )
+    .await
+    .expect("other sessions revoke");
+    assert_eq!(revoked_count, 0);
+
+    let current_session_still_active = hms_db::auth::list_active_user_sessions(
+        &pool,
+        facility_id,
+        owner_id,
+        current_session_id,
+        20,
+    )
+    .await
+    .expect("sessions list");
+    assert_eq!(current_session_still_active.len(), 1);
+    assert_eq!(current_session_still_active[0].id, current_session_id);
 }

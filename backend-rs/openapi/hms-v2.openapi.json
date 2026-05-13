@@ -489,6 +489,59 @@
         ],
         "type": "object"
       },
+      "AuthSessionItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "device_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_current": {
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "is_current"
+        ],
+        "type": "object"
+      },
+      "AuthSessionListResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/AuthSessionItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
       "AuthTokenResponse": {
         "properties": {
           "access_token": {
@@ -9995,6 +10048,30 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_AuthSessionListResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "results": {
+                "items": {
+                  "$ref": "#/components/schemas/AuthSessionItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "results"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_AuthTokenResponse": {
         "properties": {
           "data": {
@@ -13626,6 +13703,50 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_RevokeAllSessionsResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "revoked_count": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "revoked_count"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_RevokeSessionResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "revoked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "revoked"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_SpecimenListItem": {
         "properties": {
           "data": {
@@ -15829,6 +15950,41 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "RevokeAllSessionsRequest": {
+        "properties": {
+          "exclude_current": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "RevokeAllSessionsResponse": {
+        "properties": {
+          "revoked_count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revoked_count"
+        ],
+        "type": "object"
+      },
+      "RevokeSessionResponse": {
+        "properties": {
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revoked"
+        ],
         "type": "object"
       },
       "ScheduleMedicationAdministrationRequest": {
@@ -20998,6 +21154,143 @@
             "description": "Refresh failed"
           }
         },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions": {
+      "get": {
+        "operationId": "getAuthSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AuthSessionListResponse"
+                }
+              }
+            },
+            "description": "Active auth sessions"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions/revoke-all": {
+      "post": {
+        "operationId": "postAuthSessionsRevokeAll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeAllSessionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RevokeAllSessionsResponse"
+                }
+              }
+            },
+            "description": "Sessions revoked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session revocation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions/{session_id}/revoke": {
+      "post": {
+        "operationId": "postAuthSessionRevoke",
+        "parameters": [
+          {
+            "description": "Auth session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RevokeSessionResponse"
+                }
+              }
+            },
+            "description": "Session revoked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "tags": [
           "auth"
         ]

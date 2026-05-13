@@ -295,6 +295,55 @@ export const authApi = {
     }
   },
 
+  listSessions: async () => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getAuthSessions();
+        return response?.data || response;
+      }
+      return await apiClient.get('/users/sessions/');
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch sessions'));
+      }
+      throw new Error(handleApiError(error, 'Failed to fetch sessions'));
+    }
+  },
+
+  revokeSession: async (sessionId) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postAuthSessionRevoke({ session_id: sessionId });
+        return response?.data || response;
+      }
+      return await apiClient.post(`/users/sessions/${sessionId}/revoke/`);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to revoke session'));
+      }
+      throw new Error(handleApiError(error, 'Failed to revoke session'));
+    }
+  },
+
+  revokeAllSessions: async (excludeCurrent = true) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postAuthSessionsRevokeAll({
+          exclude_current: excludeCurrent,
+        });
+        return response?.data || response;
+      }
+      return await apiClient.post('/users/sessions/revoke_all/', {
+        exclude_current: excludeCurrent,
+      });
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to revoke sessions'));
+      }
+      throw new Error(handleApiError(error, 'Failed to revoke sessions'));
+    }
+  },
+
   /**
    * Logout user
    * @returns {Promise<Object>} Success message

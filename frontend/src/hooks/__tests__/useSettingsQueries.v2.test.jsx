@@ -6,6 +6,8 @@ import {
   useChangePassword,
   useMfaStatus,
   useProfile,
+  useRevokeAllSessions,
+  useRevokeSession,
   useUserSessions,
 } from '../useSettingsQueries';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
@@ -94,16 +96,90 @@ describe('Rust V2 settings queries', () => {
     });
   });
 
-  it('does not call legacy session endpoints when Rust V2 has no session list contract', async () => {
+  it('loads active sessions through the Rust V2 auth contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            results: [
+              {
+                id: 'session-current',
+                device_label: 'Safari on macOS',
+                created_at: '2026-05-13T12:00:00Z',
+                last_seen_at: '2026-05-13T12:05:00Z',
+                is_current: true,
+              },
+            ],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
     const { result } = renderHook(() => useUserSessions(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/auth/sessions',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer access-token-123',
+        }),
+      }),
+    );
     expect(result.current.data).toEqual({
-      results: [],
-      rust_v2_unsupported: true,
+      results: [
+        expect.objectContaining({
+          id: 'session-current',
+          device_label: 'Safari on macOS',
+          is_current: true,
+        }),
+      ],
     });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('revokes sessions through the Rust V2 auth contract', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { revoked: true }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { revoked_count: 2 }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    const revokeOne = renderHook(() => useRevokeSession(), { wrapper });
+    const revokeAll = renderHook(() => useRevokeAllSessions(), { wrapper });
+
+    await act(async () => {
+      await revokeOne.result.current.mutateAsync('session-other');
+      await revokeAll.result.current.mutateAsync(true);
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/auth/sessions/session-other/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/auth/sessions/revoke-all',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ exclude_current: true }),
+      }),
+    );
   });
 
   it('changes the signed-in password through the Rust V2 auth contract', async () => {
