@@ -16,6 +16,12 @@ pub struct CareCursor {
     pub id: Uuid,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TriageFilters {
+    pub acuity: Option<TriageAcuity>,
+    pub status: Option<TriageStatus>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewAppointment {
     pub id: Uuid,
@@ -653,6 +659,7 @@ pub async fn list_triage(
     facility_id: Uuid,
     cursor: Option<CareCursor>,
     limit: i64,
+    filters: TriageFilters,
 ) -> anyhow::Result<Vec<TriageListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
@@ -673,6 +680,15 @@ pub async fn list_triage(
     query.push_bind(facility_id);
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
+
+    if let Some(acuity) = filters.acuity {
+        query.push(" AND triage_queue.acuity = ");
+        query.push_bind(codec::encode(acuity)?);
+    }
+    if let Some(status) = filters.status {
+        query.push(" AND triage_queue.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (triage_queue.created_at, triage_queue.id) > (");

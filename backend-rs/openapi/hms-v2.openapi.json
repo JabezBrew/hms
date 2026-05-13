@@ -16455,6 +16455,45 @@
         ],
         "type": "object"
       },
+      "TriageListQuery": {
+        "properties": {
+          "acuity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TriageAcuity"
+              }
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TriageStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "TriageStatus": {
         "enum": [
           "waiting",
@@ -34208,10 +34247,7 @@
             "name": "cursor",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
@@ -34221,10 +34257,23 @@
             "schema": {
               "format": "int32",
               "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TriageStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "acuity",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TriageAcuity"
             }
           }
         ],
@@ -34646,9 +34695,9 @@
         "operationId": "getVisits",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -34657,14 +34706,26 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int32",
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
                 "null"
               ]
             }

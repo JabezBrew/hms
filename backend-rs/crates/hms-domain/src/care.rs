@@ -89,6 +89,15 @@ pub struct VisitListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct TriageListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<TriageStatus>,
+    pub acuity: Option<TriageAcuity>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 pub struct EncounterListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,

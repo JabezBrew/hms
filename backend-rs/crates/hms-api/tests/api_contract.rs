@@ -369,6 +369,17 @@ async fn openapi_contains_foundation_paths() {
             .any(|parameter| parameter["name"] == "search"),
         "ward list exposes search filter for server-side ward picker search"
     );
+    let triage_parameters = paths["/api/v2/triage"]["get"]["parameters"]
+        .as_array()
+        .expect("triage queue parameters exist");
+    for filter_name in ["status", "acuity"] {
+        assert!(
+            triage_parameters
+                .iter()
+                .any(|parameter| parameter["name"] == filter_name),
+            "triage queue exposes {filter_name} filter for server-side queue filtering"
+        );
+    }
 }
 
 #[tokio::test]

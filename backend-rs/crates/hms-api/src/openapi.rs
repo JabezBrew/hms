@@ -382,6 +382,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::care::EncounterType,
         hms_domain::care::TriageAcuity,
         hms_domain::care::TriageAssessmentRequest,
+        hms_domain::care::TriageListQuery,
         hms_domain::care::TriageListItem,
         hms_domain::care::TriageStatus,
         hms_domain::care::UpdateAppointmentRequest,

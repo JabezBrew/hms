@@ -61,7 +61,7 @@ use hms_domain::capabilities::{deployment_capabilities_from_features, Deployment
 use hms_domain::care::{
     AppointmentListItem, CareTeamAssignment, CareTeamRole, ClinicListItem, EncounterListItem,
     EncounterStatus, EncounterType, TriageAcuity, TriageAssessmentRequest, TriageListItem,
-    VisitListItem, VisitStatus,
+    TriageStatus, VisitListItem, VisitStatus,
 };
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
@@ -2890,8 +2890,17 @@ impl AppState {
         &self,
         cursor: Option<CareCursor>,
         limit: i64,
+        status: Option<TriageStatus>,
+        acuity: Option<TriageAcuity>,
     ) -> Result<Vec<TriageListItem>> {
-        hms_db::care::list_triage(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::care::list_triage(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            hms_db::care::TriageFilters { acuity, status },
+        )
+        .await
     }
 
     pub async fn get_triage(&self, triage_id: Uuid) -> Result<Option<TriageListItem>> {

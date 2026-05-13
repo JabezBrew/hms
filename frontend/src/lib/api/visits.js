@@ -94,6 +94,23 @@ function adaptV2TriageStatus(status) {
   return status || 'waiting';
 }
 
+function v2TriageStatusFromUi(status) {
+  if (!status || status === 'all') {
+    return undefined;
+  }
+  if (status === 'triaged') {
+    return 'completed';
+  }
+  return status;
+}
+
+function v2TriageAcuityFromUi(priority) {
+  if (!priority || priority === 'all') {
+    return undefined;
+  }
+  return priority;
+}
+
 function adaptV2TriageEntry(entry) {
   if (!entry) {
     return entry;
@@ -120,13 +137,7 @@ function adaptV2TriageEntry(entry) {
 function adaptV2TriageListResponse(response, params = {}) {
   const limit = Number(response?.page?.limit || params.page_size || params.limit || DEFAULT_VISIT_PAGE_SIZE);
   const currentPage = Number(params.page || 1);
-  let results = Array.isArray(response?.data) ? response.data.map(adaptV2TriageEntry) : [];
-  if (params.priority && params.priority !== 'all') {
-    results = results.filter((entry) => entry.priority === params.priority);
-  }
-  if (params.status && params.status !== 'all') {
-    results = results.filter((entry) => entry.status === params.status);
-  }
+  const results = Array.isArray(response?.data) ? response.data.map(adaptV2TriageEntry) : [];
   const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
   const estimatedTotal = ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0);
 
@@ -347,6 +358,8 @@ export const triageApi = {
           query: {
             limit: normalizeLimit(params),
             cursor: params.cursor || params.next_cursor,
+            status: v2TriageStatusFromUi(params.status),
+            acuity: v2TriageAcuityFromUi(params.priority || params.acuity),
           },
           signal: params.signal,
         });

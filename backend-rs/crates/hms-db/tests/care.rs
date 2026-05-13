@@ -1,6 +1,7 @@
 use chrono::{NaiveDate, TimeZone, Utc};
 use hms_db::care::{
     AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter, NewTriage, NewVisit,
+    TriageFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{
@@ -516,6 +517,37 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
     .await
     .expect("cross-facility triage assessment query succeeds")
     .is_none());
+
+    let urgent_completed_triage = hms_db::care::list_triage(
+        &pool,
+        facility_id,
+        None,
+        10,
+        TriageFilters {
+            acuity: Some(TriageAcuity::Emergency),
+            status: Some(TriageStatus::Completed),
+        },
+    )
+    .await
+    .expect("filtered triage queue loads");
+    assert_eq!(urgent_completed_triage.len(), 1);
+    assert_eq!(urgent_completed_triage[0].id, assessed.id);
+    assert_eq!(urgent_completed_triage[0].acuity, TriageAcuity::Emergency);
+    assert_eq!(urgent_completed_triage[0].status, TriageStatus::Completed);
+
+    let cross_facility_filtered_triage = hms_db::care::list_triage(
+        &pool,
+        uuid::Uuid::new_v4(),
+        None,
+        10,
+        TriageFilters {
+            acuity: Some(TriageAcuity::Emergency),
+            status: Some(TriageStatus::Completed),
+        },
+    )
+    .await
+    .expect("cross-facility filtered triage queue loads");
+    assert!(cross_facility_filtered_triage.is_empty());
 
     let overflow_visit = hms_db::care::check_in_visit(
         &pool,

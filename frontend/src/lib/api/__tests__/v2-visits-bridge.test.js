@@ -324,6 +324,57 @@ describe('Rust V2 visits and triage bridge', () => {
     });
   });
 
+  it('sends triage status and priority filters to Rust /api/v2 instead of filtering a page locally', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'triage-1',
+              visit_id: 'visit-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-MAIN-2026-000001',
+              patient_display_name: 'Ama Mensah',
+              acuity: 'urgent',
+              status: 'completed',
+              created_at: '2026-05-12T08:30:00Z',
+            },
+          ],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const list = await triageApi.list({
+      priority: 'urgent',
+      status: 'triaged',
+      page_size: 25,
+      signal: controller.signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/triage?limit=25&status=completed&acuity=urgent',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        signal: controller.signal,
+      }),
+    );
+    expect(list.results).toEqual([
+      expect.objectContaining({
+        id: 'triage-1',
+        priority: 'urgent',
+        status: 'triaged',
+      }),
+    ]);
+  });
+
   it('loads triage entry detail through Rust /api/v2', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

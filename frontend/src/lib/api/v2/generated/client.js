@@ -1388,7 +1388,9 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "status",
+      "acuity"
     ],
     "hasBody": false
   },
@@ -1407,7 +1409,11 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/visits",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "clinic_id"
+    ],
     "hasBody": false
   },
   "getWardBedById": {

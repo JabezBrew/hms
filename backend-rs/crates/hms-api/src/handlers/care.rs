@@ -8,8 +8,9 @@ use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, CareTeamAssignment, CheckInVisitRequest,
     ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest,
     CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
-    EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageStatus,
-    UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
+    EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageListQuery,
+    TriageStatus, UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery,
+    VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -302,7 +303,7 @@ pub async fn cancel_appointment(
     operation_id = "getVisits",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(VisitListQuery),
     responses(
         (status = 200, description = "Clinic waiting room visits", body = ListResponse<VisitListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -573,7 +574,7 @@ pub async fn no_show_visit(
     operation_id = "getTriageQueue",
     tag = "care",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(TriageListQuery),
     responses(
         (status = 200, description = "Triage queue", body = ListResponse<TriageListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -583,16 +584,19 @@ pub async fn no_show_visit(
 pub async fn list_triage(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<TriageListQuery>,
 ) -> Result<Json<ListResponse<TriageListItem>>, ApiError> {
     require_workflow_list_access(
         &user,
         state.facility_id(),
         PermissionCode::NursingTaskManage,
     )?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_triage(cursor, page_size as i64 + 1)
+        .list_triage(cursor, page_size as i64 + 1, query.status, query.acuity)
         .await
         .map_err(|_| {
             ApiError::conflict("triage_list_failed", "Triage queue could not be loaded.")
