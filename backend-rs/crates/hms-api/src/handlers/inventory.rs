@@ -658,6 +658,56 @@ pub async fn create_grn(
     Ok(Json(object(grn)))
 }
 
+#[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes/{id}/inspect", operation_id = "postGoodsReceivedNoteInspect", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn inspect_grn(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let grn = state
+        .inspect_goods_received_note(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "grn_inspect_failed",
+                "Goods received note could not be inspected.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "goods_received_note_not_found",
+                "Goods received note could not be found.",
+            )
+        })?;
+    Ok(Json(object(grn)))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes/{id}/accept", operation_id = "postGoodsReceivedNoteAccept", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn accept_grn(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let grn = state
+        .accept_goods_received_note(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "grn_accept_failed",
+                "Goods received note could not be accepted.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "goods_received_note_not_found",
+                "Goods received note could not be found.",
+            )
+        })?;
+    Ok(Json(object(grn)))
+}
+
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register", operation_id = "getControlledSubstanceRegister", tag = "pharmacy", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<ControlledSubstanceRegisterItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_controlled_register(
     State(state): State<AppState>,

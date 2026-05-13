@@ -2411,6 +2411,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(grn_response.status(), StatusCode::OK);
     let grn_body = json_body(grn_response).await;
     let grn_id = grn_body["data"]["id"].as_str().expect("GRN id exists");
+    assert_eq!(grn_body["data"]["status"], "pending_inspection");
     let grn_detail_response = app
         .clone()
         .oneshot(
@@ -2426,6 +2427,45 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(grn_detail_response.status(), StatusCode::OK);
     let grn_detail_body = json_body(grn_detail_response).await;
     assert_eq!(grn_detail_body["data"]["id"], grn_id);
+    assert_eq!(grn_detail_body["data"]["status"], "pending_inspection");
+
+    let grn_inspect_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/goods-received-notes/{grn_id}/inspect"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("GRN inspect succeeds");
+    assert_eq!(grn_inspect_response.status(), StatusCode::OK);
+    let grn_inspect_body = json_body(grn_inspect_response).await;
+    assert_eq!(grn_inspect_body["data"]["id"], grn_id);
+    assert_eq!(grn_inspect_body["data"]["status"], "inspecting");
+
+    let grn_accept_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/goods-received-notes/{grn_id}/accept"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("GRN accept succeeds");
+    assert_eq!(grn_accept_response.status(), StatusCode::OK);
+    let grn_accept_body = json_body(grn_accept_response).await;
+    assert_eq!(grn_accept_body["data"]["id"], grn_id);
+    assert_eq!(grn_accept_body["data"]["status"], "accepted");
 
     let controlled_receipt = app
         .clone()
@@ -2755,6 +2795,8 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         format!("/api/v2/inventory/requisitions/{requisition_id}/approve"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/approve"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/send"),
+        format!("/api/v2/inventory/goods-received-notes/{grn_id}/inspect"),
+        format!("/api/v2/inventory/goods-received-notes/{grn_id}/accept"),
     ] {
         let denied_action = app
             .clone()

@@ -897,7 +897,27 @@ describe('Rust V2 inventory bridge', () => {
           id: 'grn-1',
           purchase_order_id: 'po-1',
           supplier_name: 'Acme Medical',
-          status: 'received',
+          status: 'pending_inspection',
+          received_at: '2026-05-12T08:10:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'grn-1',
+          purchase_order_id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'inspecting',
+          received_at: '2026-05-12T08:10:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'grn-1',
+          purchase_order_id: 'po-1',
+          supplier_name: 'Acme Medical',
+          status: 'accepted',
           received_at: '2026-05-12T08:10:00Z',
         },
         meta: {},
@@ -954,7 +974,15 @@ describe('Rust V2 inventory bridge', () => {
     });
     await expect(inventoryApi.createGRN({
       purchase_order: 'po-1',
-    })).resolves.toMatchObject({ id: 'grn-1' });
+    })).resolves.toMatchObject({ id: 'grn-1', status: 'pending_inspection' });
+    await expect(inventoryApi.inspectGRN('grn-1')).resolves.toMatchObject({
+      id: 'grn-1',
+      status: 'inspecting',
+    });
+    await expect(inventoryApi.acceptGRN('grn-1')).resolves.toMatchObject({
+      id: 'grn-1',
+      status: 'accepted',
+    });
     await expect(inventoryApi.createTransferRequest({
       item: 'item-1',
       from_location: 'location-1',
@@ -1005,6 +1033,16 @@ describe('Rust V2 inventory bridge', () => {
         JSON.stringify({ purchase_order_id: 'po-1' }),
       ],
       [
+        'http://localhost:8080/api/v2/inventory/goods-received-notes/grn-1/inspect',
+        'POST',
+        undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/goods-received-notes/grn-1/accept',
+        'POST',
+        undefined,
+      ],
+      [
         'http://localhost:8080/api/v2/inventory/transfers',
         'POST',
         JSON.stringify({
@@ -1035,7 +1073,6 @@ describe('Rust V2 inventory bridge', () => {
     await expect(inventoryApi.createInventoryItem({ name: 'Paracetamol' })).rejects.toThrow('/api/v2 inventory item mutation contract');
     await expect(inventoryApi.createStockMovement({ item: 'item-1' })).rejects.toThrow('/api/v2 stock movement mutation contract');
     await expect(inventoryApi.rejectRequisition('req-1', { reason: 'Duplicate' })).rejects.toThrow('/api/v2 stock requisition action contract');
-    await expect(inventoryApi.acceptGRN('grn-1')).rejects.toThrow('/api/v2 goods received note action contract');
     await expect(inventoryApi.approveTransferRequest('transfer-1')).rejects.toThrow('/api/v2 stock transfer action contract');
     await expect(inventoryApi.createStandingOrder({})).rejects.toThrow('/api/v2 standing order contract');
     await expect(inventoryApi.createInventoryAudit({})).rejects.toThrow('/api/v2 inventory audit contract');

@@ -952,13 +952,50 @@ pub async fn create_grn(
     .bind(grn.id)
     .bind(grn.facility_id)
     .bind(grn.purchase_order_id)
-    .bind(codec::encode(GoodsReceivedStatus::Received)?)
+    .bind(codec::encode(GoodsReceivedStatus::PendingInspection)?)
     .bind(grn.actor_user_id)
     .execute(pool)
     .await?;
     fetch_grn_by_id(pool, grn.facility_id, grn.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created GRN was not found"))
+}
+
+pub async fn inspect_grn(
+    pool: &PgPool,
+    facility_id: Uuid,
+    grn_id: Uuid,
+) -> anyhow::Result<Option<GoodsReceivedNoteListItem>> {
+    transition_grn_status(
+        pool,
+        facility_id,
+        grn_id,
+        &[
+            GoodsReceivedStatus::Received,
+            GoodsReceivedStatus::PendingInspection,
+            GoodsReceivedStatus::Inspecting,
+        ],
+        GoodsReceivedStatus::Inspecting,
+    )
+    .await
+}
+
+pub async fn accept_grn(
+    pool: &PgPool,
+    facility_id: Uuid,
+    grn_id: Uuid,
+) -> anyhow::Result<Option<GoodsReceivedNoteListItem>> {
+    transition_grn_status(
+        pool,
+        facility_id,
+        grn_id,
+        &[
+            GoodsReceivedStatus::Inspecting,
+            GoodsReceivedStatus::Accepted,
+        ],
+        GoodsReceivedStatus::Accepted,
+    )
+    .await
 }
 
 pub async fn list_controlled_register(
@@ -1542,6 +1579,33 @@ async fn fetch_grn_by_id(
         .await?
         .map(grn_from_row)
         .transpose()
+}
+
+async fn transition_grn_status(
+    pool: &PgPool,
+    facility_id: Uuid,
+    grn_id: Uuid,
+    allowed_statuses: &[GoodsReceivedStatus],
+    target_status: GoodsReceivedStatus,
+) -> anyhow::Result<Option<GoodsReceivedNoteListItem>> {
+    let allowed = codec::encode_slice(allowed_statuses)?;
+    let target = codec::encode(target_status)?;
+    sqlx::query(
+        r#"
+        UPDATE goods_received_notes
+        SET status = $4
+        WHERE facility_id = $1
+          AND id = $2
+          AND status = ANY($3)
+        "#,
+    )
+    .bind(facility_id)
+    .bind(grn_id)
+    .bind(allowed)
+    .bind(target)
+    .execute(pool)
+    .await?;
+    fetch_grn_by_id(pool, facility_id, grn_id).await
 }
 
 async fn fetch_controlled_by_id(

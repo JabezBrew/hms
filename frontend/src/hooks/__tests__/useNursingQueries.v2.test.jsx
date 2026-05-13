@@ -1445,6 +1445,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
   });
 
   it('derives fluid balance summaries and trends from Rust V2 bounded entries', async () => {
+    const todayKey = new Date().toISOString().slice(0, 10);
     const payload = {
       data: [
         {
@@ -1453,7 +1454,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
           patient_id: 'patient-1',
           patient_code: 'MRN-001',
           patient_display_name: 'Ama Mensah',
-          recorded_at: '2026-05-12T08:00:00Z',
+          recorded_at: `${todayKey}T08:00:00Z`,
           intake_ml: 500,
           output_ml: 0,
           net_ml: 500,
@@ -1464,7 +1465,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
           patient_id: 'patient-1',
           patient_code: 'MRN-001',
           patient_display_name: 'Ama Mensah',
-          recorded_at: '2026-05-12T09:00:00Z',
+          recorded_at: `${todayKey}T09:00:00Z`,
           intake_ml: 0,
           output_ml: 200,
           net_ml: -200,
@@ -1487,14 +1488,14 @@ describe('Rust V2 nursing dashboard hooks', () => {
         headers: { 'content-type': 'application/json' },
       }));
 
-    const summary = renderHook(() => useFluidBalanceSummary('patient-1', '2026-05-12'), {
+    const summary = renderHook(() => useFluidBalanceSummary('patient-1', todayKey), {
       wrapper: createWrapper(),
     });
     const today = renderHook(() => useTodayFluidBalance('patient-1'), {
       wrapper: createWrapper(),
     });
     const trends = renderHook(
-      () => useFluidBalanceTrends('patient-1', { start_date: '2026-05-12', end_date: '2026-05-12' }),
+      () => useFluidBalanceTrends('patient-1', { start_date: todayKey, end_date: todayKey }),
       {
         wrapper: createWrapper(),
       },
@@ -1510,7 +1511,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
       balance: 300,
     }));
     expect(trends.result.current.data[0]).toEqual(expect.objectContaining({
-      date: '2026-05-12',
+      date: todayKey,
       intake: 500,
       output: 200,
       balance: 300,

@@ -200,6 +200,27 @@ function adaptV2PurchaseOrder(order) {
   };
 }
 
+function normalizeV2GrnStatus(status) {
+  if (status === 'received') {
+    return 'pending_inspection';
+  }
+  return status;
+}
+
+function adaptV2GoodsReceivedNote(grn) {
+  const status = normalizeV2GrnStatus(grn?.status);
+  const receivedAt = grn?.received_at || grn?.created_at || null;
+  return {
+    ...grn,
+    status,
+    purchase_order: grn?.purchase_order_id || grn?.purchase_order || null,
+    received_date: grn?.received_date || (receivedAt ? String(receivedAt).slice(0, 10) : null),
+    created_at: grn?.created_at || receivedAt,
+    items: Array.isArray(grn?.items) ? grn.items : [],
+    grn_items: Array.isArray(grn?.grn_items) ? grn.grn_items : [],
+  };
+}
+
 function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, params = {}) {
   const expiringDays = boundedLimit(params.days, 30);
   const lowStockCount = batches.filter((batch) => toNumber(batch?.quantity_on_hand) <= 0).length;
@@ -212,7 +233,7 @@ function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, par
     total_stock_value: 0,
     total_value: 0,
     pending_requisitions: requisitions.filter((item) => item?.status === 'pending' || item?.status === 'requested').length,
-    pending_grns: grns.filter((item) => item?.status === 'received').length,
+    pending_grns: grns.filter((item) => ['received', 'pending_inspection', 'inspecting'].includes(item?.status)).length,
     discrepancies: 0,
   };
 }
@@ -1539,7 +1560,7 @@ export const inventoryApi = {
         const response = await v2Api.getGoodsReceivedNotes({
           query: buildV2CursorQuery(params, 20),
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, adaptV2GoodsReceivedNote);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1564,7 +1585,7 @@ export const inventoryApi = {
         const response = await v2Api.getGoodsReceivedNoteById({ id }, {
           signal: options.signal,
         });
-        return v2Object(response);
+        return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.get(`/inventory/grns/${id}/`);
@@ -1588,7 +1609,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postGoodsReceivedNotes(buildV2GoodsReceivedNotePayload(data));
-        return v2Object(response);
+        return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.post('/inventory/grns/', data);
@@ -1645,11 +1666,15 @@ export const inventoryApi = {
   inspectGRN: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 goods received note action contract');
+        const response = await v2Api.postGoodsReceivedNoteInspect({ id });
+        return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/grns/${id}/inspect/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to inspect GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to inspect GRN'));
     }
   },
@@ -1662,11 +1687,15 @@ export const inventoryApi = {
   acceptGRN: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 goods received note action contract');
+        const response = await v2Api.postGoodsReceivedNoteAccept({ id });
+        return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/grns/${id}/accept/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to accept GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to accept GRN'));
     }
   },

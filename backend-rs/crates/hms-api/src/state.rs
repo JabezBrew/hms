@@ -2126,6 +2126,20 @@ impl AppState {
         .await
     }
 
+    pub async fn inspect_goods_received_note(
+        &self,
+        grn_id: Uuid,
+    ) -> Result<Option<GoodsReceivedNoteListItem>> {
+        hms_db::inventory::inspect_grn(&self.inner.pool, self.facility_id(), grn_id).await
+    }
+
+    pub async fn accept_goods_received_note(
+        &self,
+        grn_id: Uuid,
+    ) -> Result<Option<GoodsReceivedNoteListItem>> {
+        hms_db::inventory::accept_grn(&self.inner.pool, self.facility_id(), grn_id).await
+    }
+
     pub async fn list_controlled_substance_register(
         &self,
         cursor: Option<InventoryCursor>,

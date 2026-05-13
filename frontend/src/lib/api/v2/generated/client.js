@@ -1564,6 +1564,26 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postGoodsReceivedNoteAccept": {
+    "operationId": "postGoodsReceivedNoteAccept",
+    "method": "POST",
+    "path": "/api/v2/inventory/goods-received-notes/{id}/accept",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postGoodsReceivedNoteInspect": {
+    "operationId": "postGoodsReceivedNoteInspect",
+    "method": "POST",
+    "path": "/api/v2/inventory/goods-received-notes/{id}/inspect",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postGoodsReceivedNotes": {
     "operationId": "postGoodsReceivedNotes",
     "method": "POST",
@@ -2195,6 +2215,8 @@ export function createGeneratedClient(request) {
     postEncounterComplete: createOperation(request, operations.postEncounterComplete),
     postEncounters: createOperation(request, operations.postEncounters),
     postFluidBalanceEntries: createOperation(request, operations.postFluidBalanceEntries),
+    postGoodsReceivedNoteAccept: createOperation(request, operations.postGoodsReceivedNoteAccept),
+    postGoodsReceivedNoteInspect: createOperation(request, operations.postGoodsReceivedNoteInspect),
     postGoodsReceivedNotes: createOperation(request, operations.postGoodsReceivedNotes),
     postHandoffComplete: createOperation(request, operations.postHandoffComplete),
     postHandoffs: createOperation(request, operations.postHandoffs),

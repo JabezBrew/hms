@@ -51,6 +51,11 @@ pub enum PurchaseOrderStatus {
 #[serde(rename_all = "snake_case")]
 pub enum GoodsReceivedStatus {
     Received,
+    PendingInspection,
+    Inspecting,
+    Accepted,
+    PartiallyAccepted,
+    Rejected,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]

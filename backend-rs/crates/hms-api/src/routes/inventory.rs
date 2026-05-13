@@ -93,6 +93,14 @@ pub fn routes() -> Router<AppState> {
             get(inventory::get_grn),
         )
         .route(
+            "/api/v2/inventory/goods-received-notes/:id/inspect",
+            post(inventory::inspect_grn),
+        )
+        .route(
+            "/api/v2/inventory/goods-received-notes/:id/accept",
+            post(inventory::accept_grn),
+        )
+        .route(
             "/api/v2/pharmacy/controlled-substances/register",
             get(inventory::list_controlled_register).post(inventory::create_controlled_movement),
         )
