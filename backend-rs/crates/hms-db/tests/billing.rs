@@ -1,7 +1,49 @@
-use hms_db::billing::{CashSessionFilters, NewCashSession, NewClaim, NewInvoice, NewPayment};
+use hms_db::billing::{
+    CashSessionFilters, NewCashSession, NewClaim, NewInvoice, NewPayment, ServiceCatalogFilters,
+};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::billing::{CashSessionStatus, PaymentMethod};
 use hms_domain::deployment::DeploymentProfile;
+
+#[tokio::test]
+async fn service_catalog_list_is_bounded_and_includes_active_price() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let rows = hms_db::billing::list_service_catalog(
+        &pool,
+        facility_id,
+        None,
+        1,
+        ServiceCatalogFilters {
+            search: None,
+            is_active: Some(true),
+        },
+    )
+    .await
+    .expect("service catalog lists");
+
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].active);
+    assert!(rows[0].active_price_id.is_some());
+    assert!(rows[0].active_price_amount_minor.unwrap_or_default() > 0);
+}
 
 #[tokio::test]
 async fn billing_rule_detail_is_facility_scoped() {

@@ -1914,8 +1914,20 @@ impl AppState {
         hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
     }
 
-    pub async fn list_service_catalog(&self) -> Result<Vec<ServiceCatalogItem>> {
-        hms_db::billing::list_service_catalog(&self.inner.pool, self.facility_id()).await
+    pub async fn list_service_catalog(
+        &self,
+        cursor: Option<BillingCursor>,
+        limit: i64,
+        filters: hms_db::billing::ServiceCatalogFilters,
+    ) -> Result<Vec<ServiceCatalogItem>> {
+        hms_db::billing::list_service_catalog(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
     }
 
     pub async fn list_service_prices(&self) -> Result<Vec<ServicePriceListItem>> {

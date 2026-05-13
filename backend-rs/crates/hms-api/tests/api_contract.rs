@@ -3917,6 +3917,40 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
 
+    let limited_catalog_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/billing/service-catalog?limit=1&is_active=true")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("limited service catalog request succeeds");
+    let limited_catalog_status = limited_catalog_response.status();
+    let limited_catalog_body = json_body(limited_catalog_response).await;
+    assert_eq!(
+        limited_catalog_status,
+        StatusCode::OK,
+        "{limited_catalog_body}"
+    );
+    let limited_services = limited_catalog_body["data"]
+        .as_array()
+        .expect("limited catalog array exists");
+    assert_eq!(limited_services.len(), 1);
+    assert_eq!(limited_catalog_body["page"]["limit"], 1);
+    assert!(limited_catalog_body["page"]["has_next"].as_bool().unwrap());
+    assert!(limited_services[0]["active"].as_bool().unwrap());
+    assert!(limited_services[0]["active_price_id"].as_str().is_some());
+    assert!(
+        limited_services[0]["active_price_amount_minor"]
+            .as_i64()
+            .unwrap_or_default()
+            > 0
+    );
+
     let rules_response = app
         .clone()
         .oneshot(

@@ -12,7 +12,7 @@ use hms_domain::billing::{
     CreateClaimRequest, CreateInvoiceRequest, CreateNhisBatchRequest, CreatePaymentRequest,
     CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
     OpenCashSessionRequest, PaymentListItem, ReceiptListItem, RemittanceImportListItem,
-    ServiceCatalogItem, ServicePriceListItem,
+    ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -28,20 +28,30 @@ const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_TEXT_LEN: usize = 160;
 
-#[utoipa::path(get, path = "/api/v2/billing/service-catalog", operation_id = "getBillingServiceCatalog", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<ServiceCatalogItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/billing/service-catalog", operation_id = "getBillingServiceCatalog", tag = "billing", security(("bearerAuth" = [])), params(ServiceCatalogQuery), responses((status = 200, body = ListResponse<ServiceCatalogItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_service_catalog(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<ServiceCatalogQuery>,
 ) -> Result<Json<ListResponse<ServiceCatalogItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    Ok(Json(static_list(
-        state.list_service_catalog().await.map_err(|_| {
+    let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
+    let filters = hms_db::billing::ServiceCatalogFilters {
+        search: query.search.clone(),
+        is_active: query.is_active,
+    };
+    let rows = state
+        .list_service_catalog(cursor, page_size as i64 + 1, filters)
+        .await
+        .map_err(|_| {
             ApiError::conflict(
                 "service_catalog_failed",
                 "Service catalog could not be loaded.",
             )
-        })?,
-    )))
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
+    })))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/service-prices", operation_id = "getBillingServicePrices", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<ServicePriceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]

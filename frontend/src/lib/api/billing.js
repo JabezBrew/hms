@@ -201,57 +201,50 @@ function adaptV2ServiceCatalogItem(item, price) {
   if (!item) {
     return item;
   }
+  const priceId = price?.id || item.active_price_id || null;
+  const priceAmountMinor = price?.amount_minor ?? item.active_price_amount_minor;
+  const priceCurrency = price?.currency || item.active_price_currency || 'GHS';
   const active = item.active !== false && price?.active !== false;
-  const amount = price ? minorToMajor(price.amount_minor) : 0;
+  const amount = priceAmountMinor ? minorToMajor(priceAmountMinor) : 0;
   return {
     ...item,
     id: item.id,
     service_id: item.id,
-    service_price_id: price?.id || null,
+    service_price_id: priceId,
     category: item.service_kind,
     category_name: titleCase(item.service_kind) || 'Other',
     base_price: amount,
     total_price: amount,
     price: amount,
-    currency: price?.currency || 'GHS',
+    currency: priceCurrency,
     is_active: active,
     active,
   };
 }
 
-function filterV2Services(services, params = {}) {
-  const isActiveFilter = params.is_active;
-  const search = String(params.search || '').trim().toLowerCase();
-  return services.filter((service) => {
-    if (isActiveFilter !== undefined && isActiveFilter !== null && isActiveFilter !== '') {
-      const shouldBeActive = isActiveFilter === true || isActiveFilter === 'true' || isActiveFilter === '1';
-      if (service.is_active !== shouldBeActive) {
-        return false;
-      }
-    }
-    if (!search) {
-      return true;
-    }
-    return [service.name, service.code, service.category_name]
-      .some((value) => String(value || '').toLowerCase().includes(search));
-  });
+function serviceCatalogQuery(params = {}) {
+  const query = {
+    limit: normalizeLimit(params),
+  };
+  if (params.search) {
+    query.search = String(params.search).trim();
+  }
+  if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
+    query.is_active = params.is_active === true || params.is_active === 'true' || params.is_active === '1';
+  }
+  return query;
 }
 
 async function getV2ServicesPage(params = {}, options = {}) {
-  const [catalogResponse, priceResponse] = await Promise.all([
-    v2Api.getBillingServiceCatalog({ signal: options.signal }),
-    v2Api.getBillingServicePrices({ signal: options.signal }),
-  ]);
-  const pricesByServiceId = new Map(
-    v2List(priceResponse).map((price) => [price.service_id, price]),
-  );
-  const services = filterV2Services(
-    v2List(catalogResponse).map((item) => adaptV2ServiceCatalogItem(item, pricesByServiceId.get(item.id))),
-    params,
-  );
+  const catalogResponse = await v2Api.getBillingServiceCatalog({
+    query: serviceCatalogQuery(params),
+    signal: options.signal,
+  });
+  const services = v2List(catalogResponse).map((item) => adaptV2ServiceCatalogItem(item));
   return {
     ...emptyPage(),
-    count: services.length,
+    count: catalogResponse?.page?.has_next ? services.length + 1 : services.length,
+    next: catalogResponse?.page?.next_cursor || null,
     results: services,
   };
 }
@@ -1334,7 +1327,10 @@ export const billingApi = {
   getServiceCategories: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getBillingServiceCatalog({ signal: options.signal });
+        const response = await v2Api.getBillingServiceCatalog({
+          query: serviceCatalogQuery(params),
+          signal: options.signal,
+        });
         return v2ServiceCategoriesPage(response, params);
       }
 

@@ -360,6 +360,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::billing::RemittanceImportListItem,
         hms_domain::billing::RemittanceImportStatus,
         hms_domain::billing::ServiceCatalogItem,
+        hms_domain::billing::ServiceCatalogQuery,
         hms_domain::billing::ServiceKind,
         hms_domain::billing::ServicePriceListItem,
         hms_domain::care::AppointmentListItem,

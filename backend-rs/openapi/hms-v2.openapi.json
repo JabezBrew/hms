@@ -7967,7 +7967,31 @@
                 "active": {
                   "type": "boolean"
                 },
+                "active_price_amount_minor": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "active_price_currency": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "active_price_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
                   "type": "string"
                 },
                 "id": {
@@ -7986,7 +8010,8 @@
                 "code",
                 "name",
                 "service_kind",
-                "active"
+                "active",
+                "created_at"
               ],
               "type": "object"
             },
@@ -15572,7 +15597,31 @@
           "active": {
             "type": "boolean"
           },
+          "active_price_amount_minor": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "active_price_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active_price_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
             "type": "string"
           },
           "id": {
@@ -15591,8 +15640,40 @@
           "code",
           "name",
           "service_kind",
-          "active"
+          "active",
+          "created_at"
         ],
+        "type": "object"
+      },
+      "ServiceCatalogQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ServiceKind": {
@@ -21581,6 +21662,54 @@
     "/api/v2/billing/service-catalog": {
       "get": {
         "operationId": "getBillingServiceCatalog",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

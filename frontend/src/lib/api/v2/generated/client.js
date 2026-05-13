@@ -392,7 +392,12 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/billing/service-catalog",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active"
+    ],
     "hasBody": false
   },
   "getBillingServicePrices": {

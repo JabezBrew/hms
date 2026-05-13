@@ -100,6 +100,10 @@ pub struct ServiceCatalogItem {
     pub name: String,
     pub service_kind: ServiceKind,
     pub active: bool,
+    pub active_price_id: Option<Uuid>,
+    pub active_price_amount_minor: Option<i64>,
+    pub active_price_currency: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -111,6 +115,14 @@ pub struct ServicePriceListItem {
     pub amount_minor: i64,
     pub currency: String,
     pub active: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ServiceCatalogQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

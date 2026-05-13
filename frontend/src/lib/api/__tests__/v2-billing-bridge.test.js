@@ -557,27 +557,15 @@ describe('Rust V2 billing bridge', () => {
             {
               id: 'service-1',
               code: 'CONS-GEN',
-              name: 'General Consultation',
-              service_kind: 'consultation',
-              active: true,
+            name: 'General Consultation',
+            service_kind: 'consultation',
+            active: true,
+              active_price_id: 'price-1',
+              active_price_amount_minor: 7500,
+              active_price_currency: 'GHS',
             },
           ],
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'price-1',
-              service_id: 'service-1',
-              service_code: 'CONS-GEN',
-              service_name: 'General Consultation',
-              amount_minor: 7500,
-              currency: 'GHS',
-              active: true,
-            },
-          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
           meta: {},
         }),
       )
@@ -590,8 +578,12 @@ describe('Rust V2 billing bridge', () => {
               name: 'General Consultation',
               service_kind: 'consultation',
               active: true,
+              active_price_id: 'price-1',
+              active_price_amount_minor: 7500,
+              active_price_currency: 'GHS',
             },
           ],
+          page: { limit: 100, has_next: false, next_cursor: null },
           meta: {},
         }),
       );
@@ -601,19 +593,15 @@ describe('Rust V2 billing bridge', () => {
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
-      'http://localhost:8080/api/v2/billing/service-catalog',
+      'http://localhost:8080/api/v2/billing/service-catalog?limit=100&is_active=true',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:8080/api/v2/billing/service-prices',
+      'http://localhost:8080/api/v2/billing/service-catalog?limit=100',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      3,
-      'http://localhost:8080/api/v2/billing/service-catalog',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
-    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(services.results).toEqual([
       expect.objectContaining({
         id: 'service-1',

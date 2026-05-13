@@ -31,6 +31,12 @@ pub struct ClaimContext {
     pub patient_id: Uuid,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ServiceCatalogFilters {
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewInvoice {
     pub id: Uuid,
@@ -104,6 +110,10 @@ struct ServiceRow {
     name: String,
     service_kind: String,
     active: bool,
+    active_price_id: Option<Uuid>,
+    active_price_amount_minor: Option<i64>,
+    active_price_currency: Option<String>,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -268,19 +278,57 @@ struct BatchExportRow {
 pub async fn list_service_catalog(
     pool: &PgPool,
     facility_id: Uuid,
+    cursor: Option<BillingCursor>,
+    limit: i64,
+    filters: ServiceCatalogFilters,
 ) -> anyhow::Result<Vec<ServiceCatalogItem>> {
-    let rows = sqlx::query_as::<_, ServiceRow>(
+    let mut query = QueryBuilder::new(
         r#"
-        SELECT id, code, name, service_kind, active
+        SELECT service_catalog.id,
+               service_catalog.code,
+               service_catalog.name,
+               service_catalog.service_kind,
+               service_catalog.active,
+               active_prices.id AS active_price_id,
+               active_prices.amount_minor AS active_price_amount_minor,
+               active_prices.currency AS active_price_currency,
+               service_catalog.created_at
         FROM service_catalog
-        WHERE facility_id = $1
-        ORDER BY code ASC
-        LIMIT 100
+        LEFT JOIN LATERAL (
+            SELECT service_prices.id, service_prices.amount_minor, service_prices.currency
+            FROM service_prices
+            WHERE service_prices.facility_id = service_catalog.facility_id
+              AND service_prices.service_id = service_catalog.id
+              AND service_prices.active = TRUE
+            ORDER BY service_prices.created_at DESC, service_prices.id DESC
+            LIMIT 1
+        ) active_prices ON TRUE
+        WHERE service_catalog.facility_id =
         "#,
-    )
-    .bind(facility_id)
-    .fetch_all(pool)
-    .await?;
+    );
+    query.push_bind(facility_id);
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND service_catalog.active = ");
+        query.push_bind(is_active);
+    }
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (service_catalog.name ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR service_catalog.code ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR service_catalog.service_kind ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    apply_cursor(
+        &mut query,
+        "service_catalog.created_at",
+        "service_catalog.id",
+        cursor,
+    );
+    query.push(" ORDER BY service_catalog.created_at DESC, service_catalog.id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query.build_query_as::<ServiceRow>().fetch_all(pool).await?;
     rows.into_iter().map(service_from_row).collect()
 }
 
@@ -1528,6 +1576,23 @@ fn apply_cursor(
     }
 }
 
+fn like_contains_pattern(search: Option<&str>) -> Option<String> {
+    let search = search?.trim();
+    if search.is_empty() {
+        return None;
+    }
+    let mut escaped = String::with_capacity(search.len());
+    for ch in search.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '%' => escaped.push_str("\\%"),
+            '_' => escaped.push_str("\\_"),
+            _ => escaped.push(ch),
+        }
+    }
+    Some(format!("%{escaped}%"))
+}
+
 fn service_from_row(row: ServiceRow) -> anyhow::Result<ServiceCatalogItem> {
     Ok(ServiceCatalogItem {
         id: row.id,
@@ -1535,6 +1600,10 @@ fn service_from_row(row: ServiceRow) -> anyhow::Result<ServiceCatalogItem> {
         name: row.name,
         service_kind: codec::decode::<ServiceKind>(&row.service_kind)?,
         active: row.active,
+        active_price_id: row.active_price_id,
+        active_price_amount_minor: row.active_price_amount_minor,
+        active_price_currency: row.active_price_currency,
+        created_at: row.created_at,
     })
 }
 
