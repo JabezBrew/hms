@@ -171,6 +171,38 @@ function adaptV2AppointmentListResponse(response, params = {}) {
   };
 }
 
+function adaptV2VisitCheckIn(visit) {
+  if (!visit) {
+    return visit;
+  }
+
+  const [firstName, lastName] = splitDisplayName(visit.patient_display_name);
+
+  return {
+    id: visit.id,
+    visit_id: visit.id,
+    encounter_id: visit.id,
+    patient: visit.patient_id,
+    patient_id: visit.patient_id,
+    patient_name: visit.patient_display_name,
+    patient_identifier: visit.patient_code,
+    patient_mrn: visit.patient_code,
+    patient_details: {
+      id: visit.patient_id,
+      user_details: {
+        first_name: firstName,
+        last_name: lastName,
+      },
+    },
+    appointment: visit.appointment_id || null,
+    appointment_id: visit.appointment_id || null,
+    clinic_id: visit.clinic_id || null,
+    visit_status: visit.status,
+    v2_status: visit.status,
+    checked_in_at: visit.checked_in_at,
+  };
+}
+
 function getV2AppointmentListQuery(params = {}) {
   const query = {
     limit: normalizeV2Limit(params),
@@ -522,13 +554,21 @@ export const appointmentsApi = {
   checkInAppointment: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        throw unsupportedInRustV2('Rust V2 check-in is exposed through the waiting-room visit workflow, not appointment start_visit.');
+        const appointmentResponse = await v2Api.getAppointmentById({ id });
+        const appointment = appointmentResponse?.data;
+        const response = await v2Api.postVisitCheckIn({
+          patient_id: appointment?.patient_id,
+          appointment_id: id,
+          clinic_id: null,
+        });
+        return adaptV2VisitCheckIn(response?.data);
       }
 
       return await apiClient.post(`/appointments/appointments/${id}/start_visit/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
-        throw error;
+        throw new Error(handleV2ApiError(error, 'Failed to check in appointment'));
       }
       throw new Error(handleApiError(error, 'Failed to check in appointment'));
     }
