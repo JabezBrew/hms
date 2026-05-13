@@ -1317,15 +1317,21 @@ export const inventoryApi = {
    * @param {Object} data - Requisition data with items
    * @returns {Promise<Object>} Created requisition
    */
-  createRequisition: async (data) => {
+  createRequisition: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitions(buildV2StockRequisitionPayload(data));
+        const response = await v2Api.postStockRequisitions(
+          buildV2StockRequisitionPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post('/inventory/requisitions/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to create requisition'));
       }
@@ -1356,15 +1362,20 @@ export const inventoryApi = {
    * @param {string} id - Requisition ID
    * @returns {Promise<Object>} Updated requisition
    */
-  submitRequisition: async (id) => {
+  submitRequisition: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitionSubmit({ id });
+        const response = await v2Api.postStockRequisitionSubmit({ id }, {
+          signal: options.signal,
+        });
         return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/requisitions/${id}/submit/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to submit requisition'));
       }
@@ -1377,15 +1388,20 @@ export const inventoryApi = {
    * @param {string} id - Requisition ID
    * @returns {Promise<Object>} Updated requisition
    */
-  approveRequisition: async (id) => {
+  approveRequisition: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitionApprove({ id });
+        const response = await v2Api.postStockRequisitionApprove({ id }, {
+          signal: options.signal,
+        });
         return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/requisitions/${id}/approve/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to approve requisition'));
       }
@@ -1399,18 +1415,22 @@ export const inventoryApi = {
    * @param {Object} data - Rejection data with reason
    * @returns {Promise<Object>} Updated requisition
    */
-  rejectRequisition: async (id, data) => {
+  rejectRequisition: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postStockRequisitionReject(
           { id },
-          { reason: data?.reason || data?.rejection_reason || '' }
+          { reason: data?.reason || data?.rejection_reason || '' },
+          { signal: options.signal || data?.signal },
         );
         return adaptV2Requisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/requisitions/${id}/reject/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to reject requisition'));
       }
@@ -1498,15 +1518,21 @@ export const inventoryApi = {
    * @param {Object} data - Purchase order data with items
    * @returns {Promise<Object>} Created purchase order
    */
-  createPurchaseOrder: async (data) => {
+  createPurchaseOrder: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postPurchaseOrders(buildV2PurchaseOrderPayload(data));
+        const response = await v2Api.postPurchaseOrders(
+          buildV2PurchaseOrderPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.post('/inventory/purchase-orders/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to create purchase order'));
       }
@@ -1537,15 +1563,20 @@ export const inventoryApi = {
    * @param {string} id - Purchase order ID
    * @returns {Promise<Object>} Updated purchase order
    */
-  approvePurchaseOrder: async (id) => {
+  approvePurchaseOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postPurchaseOrderApprove({ id });
+        const response = await v2Api.postPurchaseOrderApprove({ id }, {
+          signal: options.signal,
+        });
         return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/purchase-orders/${id}/approve/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to approve purchase order'));
       }
@@ -1558,15 +1589,20 @@ export const inventoryApi = {
    * @param {string} id - Purchase order ID
    * @returns {Promise<Object>} Updated purchase order
    */
-  sendPurchaseOrder: async (id) => {
+  sendPurchaseOrder: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postPurchaseOrderSend({ id });
+        const response = await v2Api.postPurchaseOrderSend({ id }, {
+          signal: options.signal,
+        });
         return adaptV2PurchaseOrder(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/purchase-orders/${id}/send/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to send purchase order'));
       }
@@ -1636,15 +1672,21 @@ export const inventoryApi = {
    * @param {Object} data - GRN data with items
    * @returns {Promise<Object>} Created GRN
    */
-  createGRN: async (data) => {
+  createGRN: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postGoodsReceivedNotes(buildV2GoodsReceivedNotePayload(data));
+        const response = await v2Api.postGoodsReceivedNotes(
+          buildV2GoodsReceivedNotePayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.post('/inventory/grns/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to create GRN'));
       }
@@ -1694,15 +1736,20 @@ export const inventoryApi = {
    * @param {string} id - GRN ID
    * @returns {Promise<Object>} Updated GRN
    */
-  inspectGRN: async (id) => {
+  inspectGRN: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postGoodsReceivedNoteInspect({ id });
+        const response = await v2Api.postGoodsReceivedNoteInspect({ id }, {
+          signal: options.signal,
+        });
         return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/grns/${id}/inspect/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to inspect GRN'));
       }
@@ -1715,15 +1762,20 @@ export const inventoryApi = {
    * @param {string} id - GRN ID
    * @returns {Promise<Object>} Updated GRN
    */
-  acceptGRN: async (id) => {
+  acceptGRN: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postGoodsReceivedNoteAccept({ id });
+        const response = await v2Api.postGoodsReceivedNoteAccept({ id }, {
+          signal: options.signal,
+        });
         return adaptV2GoodsReceivedNote(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/grns/${id}/accept/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to accept GRN'));
       }
@@ -2110,15 +2162,21 @@ export const inventoryApi = {
    * @param {Object} data - Transfer request data
    * @returns {Promise<Object>} Created transfer request
    */
-  createTransferRequest: async (data) => {
+  createTransferRequest: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockTransfers(buildV2StockTransferPayload(data));
+        const response = await v2Api.postStockTransfers(
+          buildV2StockTransferPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return v2Object(response);
       }
 
       return await apiClient.post('/inventory/transfer-requests/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to create transfer request'));
       }
@@ -2324,17 +2382,21 @@ export const inventoryApi = {
    * @param {string} data.witness - Witness user ID (required)
    * @returns {Promise<Object>} Created entry
    */
-  dispenseControlledSubstance: async (data) => {
+  dispenseControlledSubstance: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postControlledSubstanceRegister(
           buildV2ControlledMovementPayload(data, 'dispense', -1),
+          { signal: options.signal || data?.signal },
         );
         return v2Object(response);
       }
 
       return await apiClient.post('/inventory/controlled/dispense/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to dispense controlled substance'));
       }

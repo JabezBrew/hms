@@ -870,6 +870,7 @@ describe('Rust V2 inventory bridge', () => {
   });
 
   it('routes inventory creation and approval workflows through generated Rust V2 endpoints', async () => {
+    const signal = new AbortController().signal;
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({
         data: {
@@ -988,34 +989,34 @@ describe('Rust V2 inventory bridge', () => {
 
     await expect(inventoryApi.createRequisition({
       requesting_location: 'location-1',
-    })).resolves.toMatchObject({ id: 'req-1' });
-    await expect(inventoryApi.submitRequisition('req-1')).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({ id: 'req-1' });
+    await expect(inventoryApi.submitRequisition('req-1', { signal })).resolves.toMatchObject({
       id: 'req-1',
       status: 'pending',
     });
-    await expect(inventoryApi.approveRequisition('req-1')).resolves.toMatchObject({
+    await expect(inventoryApi.approveRequisition('req-1', { signal })).resolves.toMatchObject({
       id: 'req-1',
       status: 'approved',
     });
     await expect(inventoryApi.createPurchaseOrder({
       supplier: { name: 'Acme Medical' },
-    })).resolves.toMatchObject({ id: 'po-1' });
-    await expect(inventoryApi.approvePurchaseOrder('po-1')).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({ id: 'po-1' });
+    await expect(inventoryApi.approvePurchaseOrder('po-1', { signal })).resolves.toMatchObject({
       id: 'po-1',
       status: 'approved',
     });
-    await expect(inventoryApi.sendPurchaseOrder('po-1')).resolves.toMatchObject({
+    await expect(inventoryApi.sendPurchaseOrder('po-1', { signal })).resolves.toMatchObject({
       id: 'po-1',
       status: 'sent',
     });
     await expect(inventoryApi.createGRN({
       purchase_order: 'po-1',
-    })).resolves.toMatchObject({ id: 'grn-1', status: 'pending_inspection' });
-    await expect(inventoryApi.inspectGRN('grn-1')).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({ id: 'grn-1', status: 'pending_inspection' });
+    await expect(inventoryApi.inspectGRN('grn-1', { signal })).resolves.toMatchObject({
       id: 'grn-1',
       status: 'inspecting',
     });
-    await expect(inventoryApi.acceptGRN('grn-1')).resolves.toMatchObject({
+    await expect(inventoryApi.acceptGRN('grn-1', { signal })).resolves.toMatchObject({
       id: 'grn-1',
       status: 'accepted',
     });
@@ -1024,59 +1025,68 @@ describe('Rust V2 inventory bridge', () => {
       from_location: 'location-1',
       to_location: 'location-2',
       quantity: '5',
-    })).resolves.toMatchObject({ id: 'transfer-1' });
+    }, { signal })).resolves.toMatchObject({ id: 'transfer-1' });
     await expect(inventoryApi.dispenseControlledSubstance({
       item: 'item-2',
       location: 'location-1',
       quantity: 1,
       witness: 'user-2',
-    })).resolves.toMatchObject({ id: 'register-1', quantity_delta: -1 });
+    }, { signal })).resolves.toMatchObject({ id: 'register-1', quantity_delta: -1 });
 
-    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
       [
         'http://localhost:8080/api/v2/inventory/requisitions',
         'POST',
         JSON.stringify({ requesting_location_id: 'location-1' }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/req-1/submit',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/req-1/approve',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/purchase-orders',
         'POST',
         JSON.stringify({ supplier_name: 'Acme Medical' }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/purchase-orders/po-1/approve',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/purchase-orders/po-1/send',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/goods-received-notes',
         'POST',
         JSON.stringify({ purchase_order_id: 'po-1' }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/goods-received-notes/grn-1/inspect',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/goods-received-notes/grn-1/accept',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/transfers',
@@ -1087,6 +1097,7 @@ describe('Rust V2 inventory bridge', () => {
           to_location_id: 'location-2',
           quantity: 5,
         }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/pharmacy/controlled-substances/register',
@@ -1098,6 +1109,7 @@ describe('Rust V2 inventory bridge', () => {
           quantity_delta: -1,
           witness_user_id: 'user-2',
         }),
+        signal,
       ],
     ]);
   });
