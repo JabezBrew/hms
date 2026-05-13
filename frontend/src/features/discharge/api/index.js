@@ -72,6 +72,32 @@ function filterV2Discharges(items, params = {}) {
   return items.filter((item) => item.admission === admissionId || item.admission_case === admissionId)
 }
 
+function deriveV2DischargeTasks(cases, params = {}) {
+  const taskType = params.task_type && params.task_type !== 'all'
+    ? String(params.task_type)
+    : null
+  const status = params.status && params.status !== 'all'
+    ? String(params.status)
+    : null
+
+  return cases
+    .flatMap((item) => (item.blockers || []).map((task) => ({
+      ...task,
+      discharge_case: item.id,
+      discharge: item.id,
+      admission_case: item.admission_case,
+      admission: item.admission,
+      patient: item.patient,
+      patient_name: item.patient_name,
+      medical_record_number: item.medical_record_number,
+      ward_name: item.ward_name,
+      created_at: item.medical_ready_at,
+      updated_at: item.medical_ready_at,
+    })))
+    .filter((task) => !taskType || task.task_type === taskType)
+    .filter((task) => !status || task.status === status)
+}
+
 async function getV2DischargeCases(params = {}, options = {}) {
   const response = await v2Api.getDischarges({
     query: {
@@ -106,7 +132,9 @@ export const dischargeApi = {
   },
   getTasks: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return []
+      return getV2DischargeCases(params, options).then((cases) =>
+        deriveV2DischargeTasks(cases, params)
+      )
     }
     return apiClient.get('/discharges/tasks/', { ...options, params })
   },

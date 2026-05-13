@@ -162,6 +162,59 @@ describe('Rust V2 discharge bridge', () => {
     }));
   });
 
+  it('derives discharge task rows from Rust /api/v2 discharge blockers', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'discharge-1',
+              admission_case_id: 'admission-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-001',
+              patient_display_name: 'Ama Mensah',
+              status: 'requested',
+              requested_at: '2026-05-12T09:00:00Z',
+              discharged_at: null,
+            },
+          ],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const tasks = await dischargeApi.getTasks({ admission: 'admission-1' }, { signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/discharges?limit=25',
+      expect.objectContaining({ method: 'GET', credentials: 'include', signal }),
+    );
+    expect(tasks).toEqual([
+      expect.objectContaining({
+        id: 'discharge-1:billing_clearance',
+        discharge_case: 'discharge-1',
+        admission_case: 'admission-1',
+        patient: 'patient-1',
+        patient_name: 'Ama Mensah',
+        task_type: 'billing_clearance',
+        status: 'pending',
+      }),
+      expect.objectContaining({
+        id: 'discharge-1:nursing_finalization',
+        discharge_case: 'discharge-1',
+        admission_case: 'admission-1',
+        task_type: 'nursing_finalization',
+        status: 'pending',
+      }),
+    ]);
+  });
+
   it('cancels a discharge case through Rust /api/v2 and preserves the reason body', async () => {
     const signal = new AbortController().signal;
     globalThis.fetch.mockResolvedValueOnce(
