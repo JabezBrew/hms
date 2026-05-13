@@ -1195,7 +1195,10 @@ export const useCreateVitalSigns = () => {
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postPatientVitals(normalizeV2CreateVitalsPayload(data));
+          const response = await v2Api.postPatientVitals(
+            normalizeV2CreateVitalsPayload(data),
+            { signal: data?.signal },
+          );
           return adaptV2PatientVitals(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to record vital signs');
@@ -1265,7 +1268,10 @@ export const useCreateNursingTask = () => {
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postNursingTasks(normalizeV2TaskPayload(data));
+          const response = await v2Api.postNursingTasks(
+            normalizeV2TaskPayload(data),
+            { signal: data?.signal },
+          );
           return adaptV2NursingTask(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to create nursing task');
@@ -1287,10 +1293,12 @@ export const useCompleteTask = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ taskId, data }) => {
+    mutationFn: async ({ taskId, data, signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postNursingTaskComplete({ id: taskId });
+          const response = await v2Api.postNursingTaskComplete({ id: taskId }, {
+            signal: signal || data?.signal,
+          });
           return adaptV2NursingTask(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to complete nursing task');
@@ -1312,12 +1320,14 @@ export const useUpdateTask = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ taskId, data, status }) => {
+    mutationFn: async ({ taskId, data, status, signal }) => {
       if (isRustV2ApiMode()) {
         const requestedStatus = data?.status || status;
         if (requestedStatus === 'completed' || data?.complete === true) {
           try {
-            const response = await v2Api.postNursingTaskComplete({ id: taskId });
+            const response = await v2Api.postNursingTaskComplete({ id: taskId }, {
+              signal: signal || data?.signal,
+            });
             return adaptV2NursingTask(response?.data);
           } catch (error) {
             rethrowV2Error(error, 'Failed to complete nursing task');
@@ -1325,7 +1335,9 @@ export const useUpdateTask = () => {
         }
         if (requestedStatus === 'cancelled') {
           try {
-            const response = await v2Api.postNursingTaskCancel({ id: taskId });
+            const response = await v2Api.postNursingTaskCancel({ id: taskId }, {
+              signal: signal || data?.signal,
+            });
             return adaptV2NursingTask(response?.data);
           } catch (error) {
             rethrowV2Error(error, 'Failed to cancel nursing task');
@@ -1405,10 +1417,12 @@ export const useAcknowledgeAlert = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ alertId, notes }) => {
+    mutationFn: async ({ alertId, notes, signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postNursingAlertAcknowledge({ id: alertId });
+          const response = await v2Api.postNursingAlertAcknowledge({ id: alertId }, {
+            signal,
+          });
           return adaptV2NursingAlert(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to acknowledge nursing alert');
@@ -1586,6 +1600,7 @@ export const useCreateMedicationAdministration = () => {
         try {
           const response = await v2Api.postMedicationAdministrations(
             normalizeV2MedicationAdministrationPayload(data),
+            { signal: data?.signal },
           );
           return adaptV2MedicationAdministration(response?.data);
         } catch (error) {
@@ -1608,12 +1623,13 @@ export const useAdministerMedication = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ medicationId, data }) => {
+    mutationFn: async ({ medicationId, data, signal }) => {
       if (isRustV2ApiMode()) {
         try {
           const response = await v2Api.postMedicationAdministrationAdminister(
             { id: medicationId },
             normalizeV2MedicationAdministerPayload(data),
+            { signal: signal || data?.signal },
           );
           return adaptV2MedicationAdministration(response?.data);
         } catch (error) {
@@ -1643,11 +1659,13 @@ export const useCreateAndAdminister = () => {
         try {
           const created = await v2Api.postMedicationAdministrations(
             normalizeV2MedicationAdministrationPayload(data),
+            { signal: data?.signal },
           );
           const createdAdministration = adaptV2MedicationAdministration(created?.data);
           const administered = await v2Api.postMedicationAdministrationAdminister(
             { id: createdAdministration.id },
             normalizeV2MedicationAdministerPayload(data),
+            { signal: data?.signal },
           );
           return adaptV2MedicationAdministration(administered?.data);
         } catch (error) {
@@ -1861,7 +1879,10 @@ export const useCreateShiftHandoff = () => {
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postHandoffs(normalizeV2HandoffPayload(data));
+          const response = await v2Api.postHandoffs(
+            normalizeV2HandoffPayload(data),
+            { signal: data?.signal },
+          );
           return adaptV2Handoff(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to create shift handoff');
@@ -1882,11 +1903,13 @@ export const useUpdateShiftHandoff = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ handoffId, data }) => {
+    mutationFn: async ({ handoffId, data, signal }) => {
       if (isRustV2ApiMode()) {
         if (data?.status === 'completed' || data?.complete === true) {
           try {
-            const response = await v2Api.postHandoffComplete({ id: handoffId });
+            const response = await v2Api.postHandoffComplete({ id: handoffId }, {
+              signal: signal || data?.signal,
+            });
             return adaptV2Handoff(response?.data);
           } catch (error) {
             rethrowV2Error(error, 'Failed to complete shift handoff');
@@ -2022,7 +2045,10 @@ export const useCreateTreatmentEntry = () => {
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postTreatmentSheets(normalizeV2TreatmentSheetPayload(data));
+          const response = await v2Api.postTreatmentSheets(
+            normalizeV2TreatmentSheetPayload(data),
+            { signal: data?.signal },
+          );
           return adaptV2TreatmentSheet(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to create treatment sheet');
@@ -2068,6 +2094,7 @@ export const useRequestSupply = () => {
         try {
           const response = await v2Api.postWardStockRequests(
             normalizeV2WardStockRequestPayload(variables),
+            { signal: variables?.signal },
           );
           return adaptV2WardStockRequest(response?.data);
         } catch (error) {
@@ -2131,10 +2158,12 @@ export const useDispenseSupply = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ requestId, quantityDispensed }) => {
+    mutationFn: async ({ requestId, quantityDispensed, signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postWardStockRequestFulfill({ id: requestId });
+          const response = await v2Api.postWardStockRequestFulfill({ id: requestId }, {
+            signal,
+          });
           return adaptV2WardStockRequest(response?.data);
         } catch (error) {
           rethrowV2Error(error, 'Failed to fulfill ward stock request');
@@ -2178,12 +2207,17 @@ export const useBulkDispenseSupply = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (requestIds) => {
+    mutationFn: async (variables) => {
+      const requestIds = Array.isArray(variables) ? variables : variables?.requestIds || [];
+      const signal = Array.isArray(variables) ? undefined : variables?.signal;
+
       if (isRustV2ApiMode()) {
         try {
           const results = [];
           for (const requestId of requestIds) {
-            const response = await v2Api.postWardStockRequestFulfill({ id: requestId });
+            const response = await v2Api.postWardStockRequestFulfill({ id: requestId }, {
+              signal,
+            });
             results.push(adaptV2WardStockRequest(response?.data));
           }
           return {
@@ -2382,7 +2416,10 @@ export const useCreateFluidBalance = () => {
     mutationFn: async (data) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postFluidBalanceEntries(normalizeV2FluidBalancePayload(data));
+          const response = await v2Api.postFluidBalanceEntries(
+            normalizeV2FluidBalancePayload(data),
+            { signal: data?.signal },
+          );
           return adaptV2FluidBalanceItem(response?.data)[0];
         } catch (error) {
           rethrowV2Error(error, 'Failed to record fluid balance');
