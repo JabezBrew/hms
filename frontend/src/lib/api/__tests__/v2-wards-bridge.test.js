@@ -453,6 +453,53 @@ describe('Rust V2 wards bridge', () => {
     expect(createdBed).toEqual(expect.objectContaining({ id: 'bed-1', bed_number: 'W-01', ward: 'ward-1' }));
   });
 
+  it('loads ward sections through the bounded Rust V2 section list helper', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'section-1',
+              ward_id: 'ward-1',
+              code: 'EAST',
+              name: 'East Section',
+              status: 'active',
+              active_bed_count: 3,
+              created_at: '2026-05-12T09:00:00Z',
+            },
+          ],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const sections = await wardsApi.getWardSections('ward-1', {
+      signal: controller.signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/ward-1/sections?limit=25',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        signal: controller.signal,
+      }),
+    );
+    expect(sections).toEqual([
+      expect.objectContaining({
+        id: 'section-1',
+        ward: 'ward-1',
+        is_active: true,
+      }),
+    ]);
+  });
+
   it('loads active admission detail through the Rust V2 admission detail endpoint', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

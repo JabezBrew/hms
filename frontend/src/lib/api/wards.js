@@ -767,10 +767,19 @@ export const wardsApi = {
    * @param {string} wardId - Ward ID
    * @returns {Promise<Array>} List of sections for the ward
    */
-  getWardSections: async (wardId) => {
+  getWardSections: async (wardId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getWardSections({ id: wardId }, { query: { limit: 100 } });
+        const response = await v2Api.getWardSections(
+          { id: wardId },
+          {
+            query: {
+              limit: normalizeV2Limit(options, 25),
+              ...(options.cursor ? { cursor: options.cursor } : {}),
+            },
+            signal: options.signal,
+          },
+        );
         return v2ListData(response).map(adaptV2Section);
       }
       return await apiClient.get(`/wards/sections/?ward=${wardId}`);
