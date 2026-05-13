@@ -217,11 +217,12 @@ describe('Rust V2 wards bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const ward = await wardsApi.createWard({
       code: 'TEST-WARD',
       name: 'Test Ward',
       ward_type: 'general',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/wards',
@@ -231,6 +232,7 @@ describe('Rust V2 wards bridge', () => {
           code: 'TEST-WARD',
           name: 'Test Ward',
         }),
+        signal,
       }),
     );
     expect(ward).toEqual(expect.objectContaining({
@@ -264,11 +266,12 @@ describe('Rust V2 wards bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const ward = await wardsApi.updateWard('ward-2', {
       ward_type: 'RENAMED',
       name: 'Renamed Ward',
       is_active: false,
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/wards/ward-2',
@@ -279,6 +282,7 @@ describe('Rust V2 wards bridge', () => {
           name: 'Renamed Ward',
           status: 'inactive',
         }),
+        signal,
       }),
     );
     expect(ward).toEqual(expect.objectContaining({
@@ -310,11 +314,12 @@ describe('Rust V2 wards bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const bed = await wardsApi.updateBed('bed-1', {
       section: 'section-2',
       bed_number: 'W-02',
       status: 'cleaning',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/wards/beds/bed-1',
@@ -325,6 +330,7 @@ describe('Rust V2 wards bridge', () => {
           bed_code: 'W-02',
           status: 'cleaning',
         }),
+        signal,
       }),
     );
     expect(bed).toEqual(expect.objectContaining({
@@ -357,11 +363,12 @@ describe('Rust V2 wards bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const section = await wardsApi.updateSection('section-2', {
       code: 'WEST-RENAMED',
       name: 'Renamed West Section',
       is_active: false,
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/wards/sections/section-2',
@@ -372,6 +379,7 @@ describe('Rust V2 wards bridge', () => {
           name: 'Renamed West Section',
           status: 'inactive',
         }),
+        signal,
       }),
     );
     expect(section).toEqual(expect.objectContaining({

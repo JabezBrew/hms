@@ -312,11 +312,11 @@ export const wardsApi = {
    * @param {Object} data - Ward data
    * @returns {Promise<Object>} Created ward data
    */
-  createWard: async (data) => {
+  createWard: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postWard(wardPayloadFrom(data), {
-          signal: data?.signal,
+          signal: options.signal || data?.signal,
         });
         return adaptV2Ward(response?.data || {});
       }
@@ -335,11 +335,11 @@ export const wardsApi = {
    * @param {Object} data - Ward data to update
    * @returns {Promise<Object>} Updated ward data
    */
-  updateWard: async (id, data) => {
+  updateWard: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.patchWard({ id }, wardUpdatePayloadFrom(data), {
-          signal: data?.signal,
+          signal: options.signal || data?.signal,
         });
         return adaptV2Ward(response?.data || {});
       }
@@ -484,11 +484,11 @@ export const wardsApi = {
    * @param {Object} data - Bed data to update
    * @returns {Promise<Object>} Updated bed data
    */
-  updateBed: async (id, data) => {
+  updateBed: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.patchWardBed({ id }, bedUpdatePayloadFrom(data), {
-          signal: data?.signal,
+          signal: options.signal || data?.signal,
         });
         return adaptV2Bed(response?.data);
       }
@@ -847,11 +847,11 @@ export const wardsApi = {
    * @param {Object} data - Section data to update
    * @returns {Promise<Object>} Updated section data
    */
-  updateSection: async (id, data) => {
+  updateSection: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.patchWardSection({ id }, wardUpdatePayloadFrom(data), {
-          signal: data?.signal,
+          signal: options.signal || data?.signal,
         });
         return adaptV2Section(response?.data);
       }
