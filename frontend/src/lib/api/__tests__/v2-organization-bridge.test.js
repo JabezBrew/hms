@@ -410,13 +410,14 @@ describe('Rust V2 organization bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await clinicalUnitsApi.create({
       code: 'PHARM',
       name: 'Pharmacy',
       unit_type_code: 'service',
       parentId: 'unit-1',
       ignored_legacy_field: 'not-sent',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/org-units',
@@ -428,6 +429,7 @@ describe('Rust V2 organization bridge', () => {
           unit_type: 'service',
           parent_unit_id: 'unit-1',
         }),
+        signal,
       }),
     );
     expect(response).toEqual({

@@ -249,11 +249,11 @@ function normalizeV2OrgUnitCreatePayload(data = {}) {
   };
 }
 
-async function createV2OrgUnit(data = {}) {
+async function createV2OrgUnit(data = {}, options = {}) {
   const { signal, ...payload } = data;
   const response = await v2Api.postAdminOrgUnits(
     normalizeV2OrgUnitCreatePayload(payload),
-    { signal },
+    { signal: options.signal || signal },
   );
   return adaptV2OrgUnit(response?.data || response || {});
 }
@@ -477,9 +477,9 @@ export const clinicalUnitsApi = {
     }
     return apiClient.get(`/organization/units/${id}/`, options);
   },
-  create: (data) => {
+  create: (data, options = {}) => {
     if (isRustV2ApiMode()) {
-      return createV2OrgUnit(data);
+      return createV2OrgUnit(data, options);
     }
     return apiClient.post('/organization/units/', data);
   },
