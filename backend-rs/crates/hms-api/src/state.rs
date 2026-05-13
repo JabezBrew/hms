@@ -5,9 +5,9 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_db::admin::{
-    AdminCursor, NewAuthorityAppointment, NewCommittee, NewDelegation, NewOrganizationUnit,
-    NewPermissionAssignment, NewPosition, NewPositionTemplate, NewPractitionerProfile,
-    NewStaffAccount,
+    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewCommittee, NewDelegation,
+    NewOrganizationUnit, NewPermissionAssignment, NewPosition, NewPositionTemplate,
+    NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount};
 use hms_db::billing::{
@@ -1191,8 +1191,16 @@ impl AppState {
         &self,
         cursor: Option<AdminCursor>,
         limit: i64,
+        filters: AuditEventFilters,
     ) -> Result<Vec<AuditEventListItem>> {
-        hms_db::admin::list_audit_events(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::admin::list_audit_events(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
     }
 
     pub async fn list_patients(

@@ -95,6 +95,15 @@ pub struct NewAuditEvent {
     pub metadata: Value,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct AuditEventFilters {
+    pub search: Option<String>,
+    pub category: Option<String>,
+    pub action: Option<String>,
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
+}
+
 pub struct NewPractitionerProfile {
     pub license_number: String,
     pub specialization: String,
@@ -1398,6 +1407,7 @@ pub async fn list_audit_events(
     facility_id: Uuid,
     cursor: Option<AdminCursor>,
     limit: i64,
+    filters: AuditEventFilters,
 ) -> anyhow::Result<Vec<AuditEventListItem>> {
     let mut query = QueryBuilder::new(
         "SELECT audit_events.id,
@@ -1413,6 +1423,38 @@ pub async fn list_audit_events(
          WHERE audit_events.facility_id = ",
     );
     query.push_bind(facility_id);
+    if let Some(pattern) = like_contains_pattern(filters.search.as_deref()) {
+        query.push(" AND (audit_events.event_type ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR audit_events.resource_type ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR audit_events.resource_id::text ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR audit_events.request_id ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" ESCAPE '\\' OR users.display_name ILIKE ");
+        query.push_bind(pattern);
+        query.push(" ESCAPE '\\')");
+    }
+    if let Some(start_date) = filters.start_date {
+        let starts_at = start_date
+            .and_hms_opt(0, 0, 0)
+            .expect("valid audit start date")
+            .and_utc();
+        query.push(" AND audit_events.occurred_at >= ");
+        query.push_bind(starts_at);
+    }
+    if let Some(end_date) = filters.end_date {
+        let ends_before = end_date
+            .succ_opt()
+            .and_then(|next| next.and_hms_opt(0, 0, 0))
+            .expect("valid audit end date")
+            .and_utc();
+        query.push(" AND audit_events.occurred_at < ");
+        query.push_bind(ends_before);
+    }
+    push_audit_category_filter(&mut query, filters.category.as_deref());
+    push_audit_action_filter(&mut query, filters.action.as_deref());
     if let Some(cursor) = cursor {
         query.push(" AND (audit_events.occurred_at, audit_events.id) < (");
         query.push_bind(cursor.occurred_at);
@@ -1427,6 +1469,86 @@ pub async fn list_audit_events(
         .fetch_all(pool)
         .await?;
     Ok(rows.into_iter().map(audit_event_from_row).collect())
+}
+
+fn push_audit_category_filter(
+    query: &mut QueryBuilder<'_, sqlx::Postgres>,
+    category: Option<&str>,
+) {
+    let Some(terms) = audit_category_terms(category) else {
+        return;
+    };
+    query.push(" AND (");
+    for (index, term) in terms.iter().enumerate() {
+        if index > 0 {
+            query.push(" OR ");
+        }
+        let pattern = format!("%{term}%");
+        query.push("audit_events.resource_type ILIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" OR audit_events.event_type ILIKE ");
+        query.push_bind(pattern);
+    }
+    query.push(")");
+}
+
+fn push_audit_action_filter(query: &mut QueryBuilder<'_, sqlx::Postgres>, action: Option<&str>) {
+    let Some(terms) = audit_action_terms(action) else {
+        return;
+    };
+    query.push(" AND (");
+    for (index, term) in terms.iter().enumerate() {
+        if index > 0 {
+            query.push(" OR ");
+        }
+        query.push("audit_events.event_type ILIKE ");
+        query.push_bind(format!("%{term}%"));
+    }
+    query.push(")");
+}
+
+fn audit_category_terms(category: Option<&str>) -> Option<&'static [&'static str]> {
+    match category?.trim().to_ascii_uppercase().as_str() {
+        "" | "ALL" => None,
+        "ADMIN" => Some(&[
+            "admin",
+            "authority",
+            "committee",
+            "delegation",
+            "feature",
+            "org",
+            "permission",
+            "position",
+            "staff",
+        ]),
+        "AUTHENTICATION" => Some(&["auth", "login", "logout", "password", "session"]),
+        "PATIENT" => Some(&["patient"]),
+        "CLINICAL" => Some(&["allergy", "clinical", "note", "prescription", "problem"]),
+        "ENCOUNTER" => Some(&["encounter", "triage", "visit"]),
+        "WARD" => Some(&["admission", "bed", "discharge", "transfer", "ward"]),
+        "APPOINTMENT" => Some(&["appointment", "schedule"]),
+        "LABORATORY" => Some(&["lab", "result", "specimen"]),
+        "BILLING" => Some(&["billing", "claim", "invoice", "nhis", "payment"]),
+        "PHARMACY" => Some(&["controlled", "dispense", "medication", "pharmacy"]),
+        "NURSING" => Some(&["handoff", "nursing", "vitals"]),
+        "REFERRAL" => Some(&["referral", "waitlist"]),
+        _ => None,
+    }
+}
+
+fn audit_action_terms(action: Option<&str>) -> Option<&'static [&'static str]> {
+    match action?.trim().to_ascii_uppercase().as_str() {
+        "" | "ALL" => None,
+        "CREATE" => Some(&["assigned", "created", "granted"]),
+        "READ" => Some(&["read", "viewed"]),
+        "UPDATE" => Some(&["approved", "completed", "fulfilled", "revoked", "updated"]),
+        "DELETE" => Some(&["deleted", "removed"]),
+        "ADMISSION" => Some(&["admission", "admitted"]),
+        "DISCHARGE" => Some(&["discharge", "discharged"]),
+        "TRANSFER" => Some(&["transfer", "transferred"]),
+        "CANCEL" => Some(&["cancel", "cancelled", "canceled"]),
+        _ => None,
+    }
 }
 
 pub async fn insert_audit_event(pool: &PgPool, event: NewAuditEvent) -> anyhow::Result<()> {

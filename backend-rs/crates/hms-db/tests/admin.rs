@@ -1,8 +1,9 @@
 use chrono::NaiveDate;
-use hms_db::admin::{NewOrganizationUnit, NewPractitionerProfile, NewStaffAccount};
+use hms_db::admin::{NewAuditEvent, NewOrganizationUnit, NewPractitionerProfile, NewStaffAccount};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::admin::OrgUnitType;
 use hms_domain::deployment::{DeploymentProfile, FeatureKey};
+use serde_json::json;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -141,6 +142,82 @@ async fn organization_unit_lists_can_filter_by_type_and_active_state() {
     assert!(!facility_units
         .iter()
         .any(|unit| unit.id == inactive_facility.id));
+}
+
+#[tokio::test]
+async fn audit_events_are_filtered_server_side() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = Uuid::new_v4();
+    let invoice_id = Uuid::new_v4();
+
+    hms_db::admin::insert_audit_event(
+        &pool,
+        NewAuditEvent {
+            facility_id,
+            actor_user_id: Some(owner_id),
+            request_id: Some("audit-filter-patient".to_owned()),
+            event_type: "patient.record.created".to_owned(),
+            resource_type: "patient".to_owned(),
+            resource_id: Some(patient_id),
+            metadata: json!({}),
+        },
+    )
+    .await
+    .expect("patient audit event inserts");
+    hms_db::admin::insert_audit_event(
+        &pool,
+        NewAuditEvent {
+            facility_id,
+            actor_user_id: Some(owner_id),
+            request_id: Some("audit-filter-invoice".to_owned()),
+            event_type: "billing.invoice.updated".to_owned(),
+            resource_type: "invoice".to_owned(),
+            resource_id: Some(invoice_id),
+            metadata: json!({}),
+        },
+    )
+    .await
+    .expect("billing audit event inserts");
+
+    let filters = hms_db::admin::AuditEventFilters {
+        search: Some("invoice".to_owned()),
+        action: Some("UPDATE".to_owned()),
+        category: Some("BILLING".to_owned()),
+        start_date: Some(chrono::Utc::now().date_naive()),
+        end_date: Some(chrono::Utc::now().date_naive()),
+    };
+    let events = hms_db::admin::list_audit_events(&pool, facility_id, None, 10, filters)
+        .await
+        .expect("filtered audit events load");
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "billing.invoice.updated");
+    assert_eq!(events[0].resource_type, "invoice");
+    assert_eq!(events[0].resource_id, Some(invoice_id));
 }
 
 #[tokio::test]

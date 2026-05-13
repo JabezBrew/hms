@@ -95,7 +95,7 @@ describe('Rust V2 audit log bridge', () => {
     await waitFor(() => expect(result.current.data?.results).toHaveLength(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/audit-events?limit=35',
+      'http://localhost:8080/api/v2/admin/audit-events?limit=35&search=permission',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

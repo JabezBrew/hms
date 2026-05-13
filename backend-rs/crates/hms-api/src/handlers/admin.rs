@@ -4,14 +4,15 @@ use chrono::{DateTime, Utc};
 use hms_access::require_permission;
 use hms_db::admin::AdminCursor;
 use hms_domain::admin::{
-    AdminLimitQuery, AdminListQuery, AuditEventListItem, AuthorityAppointmentListItem,
-    CommitteeListItem, CreateAuthorityAppointmentRequest, CreateCommitteeRequest,
-    CreateDelegationRequest, CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest,
-    CreatePositionRequest, CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
-    FeatureEntitlementListItem, OrganizationUnitListItem, OrganizationUnitListQuery,
-    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
-    PractitionerListQuery, StaffDirectoryItem, StaffListItem, StaffListQuery,
-    UpdateFeatureEntitlementRequest, UpdateStaffRequest, UpsertPractitionerProfileRequest,
+    AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
+    AuthorityAppointmentListItem, CommitteeListItem, CreateAuthorityAppointmentRequest,
+    CreateCommitteeRequest, CreateDelegationRequest, CreateOrganizationUnitRequest,
+    CreatePermissionAssignmentRequest, CreatePositionRequest, CreatePositionTemplateRequest,
+    CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem, OrganizationUnitListItem,
+    OrganizationUnitListQuery, PermissionAssignmentListItem, PositionListItem,
+    PositionTemplateListItem, PractitionerListItem, PractitionerListQuery, StaffDirectoryItem,
+    StaffListItem, StaffListQuery, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
+    UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::AuthUser;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
@@ -720,16 +721,26 @@ pub async fn create_delegation(
     Ok(Json(object(delegation)))
 }
 
-#[utoipa::path(get, path = "/api/v2/admin/audit-events", operation_id = "getAdminAuditEvents", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/audit-events", operation_id = "getAdminAuditEvents", tag = "admin", security(("bearerAuth" = [])), params(AuditEventListQuery), responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_audit_events(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<AdminListQuery>,
+    Query(query): Query<AuditEventListQuery>,
 ) -> Result<Json<ListResponse<AuditEventListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let filters = hms_db::admin::AuditEventFilters {
+        search: query.search,
+        category: query.category,
+        action: query.action,
+        start_date: query.start_date,
+        end_date: query.end_date,
+    };
+    let (cursor, page_size) = page_request(AdminListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_audit_events(cursor, page_size as i64 + 1)
+        .list_audit_events(cursor, page_size as i64 + 1, filters)
         .await
         .map_err(|_| {
             ApiError::conflict(

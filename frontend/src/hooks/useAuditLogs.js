@@ -192,11 +192,17 @@ const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 35, options = {
   if (isRustV2ApiMode()) {
     const cursor = getAuditCursor(filters, page);
     const limit = Math.min(Number(pageSize) || 35, 100);
+    const query = {
+      cursor,
+      limit,
+    };
+    if (filters.search) query.search = filters.search;
+    if (filters.category && filters.category !== 'all') query.category = filters.category;
+    if (filters.action && filters.action !== 'all') query.action = filters.action;
+    if (filters.start_date) query.start_date = filters.start_date;
+    if (filters.end_date) query.end_date = filters.end_date;
     const response = await v2Api.getAdminAuditEvents({
-      query: {
-        cursor,
-        limit,
-      },
+      query,
       signal: options.signal,
     });
     cacheNextAuditCursor(filters, page, response?.page?.next_cursor);
@@ -336,3 +342,7 @@ export async function exportAuditLogs(filters = {}) {
   link.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export const __auditLogTestInternals = {
+  fetchAuditLogs,
+};

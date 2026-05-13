@@ -4996,6 +4996,7 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
     assert_eq!(delegation.status(), StatusCode::OK);
 
     let audit_events = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -5016,6 +5017,27 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .collect();
     assert!(event_types.contains(&"admin.permission_assignment.created"));
     assert!(event_types.contains(&"admin.delegation.created"));
+
+    let filtered_audit_events = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/audit-events?limit=10&search=delegation&category=ADMIN&action=CREATE")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("filtered audit list succeeds");
+    assert_eq!(filtered_audit_events.status(), StatusCode::OK);
+    let filtered_audit_body = json_body(filtered_audit_events).await;
+    let filtered_event_types: Vec<_> = filtered_audit_body["data"]
+        .as_array()
+        .expect("filtered audit events are array")
+        .iter()
+        .filter_map(|event| event["event_type"].as_str())
+        .collect();
+    assert_eq!(filtered_event_types, vec!["admin.delegation.created"]);
 }
 
 #[tokio::test]
