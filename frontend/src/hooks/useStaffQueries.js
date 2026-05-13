@@ -212,7 +212,7 @@ export function useResendStaffSetupLink() {
 export function usePractitioners(filters = {}) {
   return useQuery({
     queryKey: staffKeys.practitionersList(filters),
-    queryFn: () => staffApi.getPractitioners(filters),
+    queryFn: ({ signal }) => staffApi.getPractitioners(filters, { signal }),
   });
 }
 
@@ -221,11 +221,13 @@ export function usePractitioners(filters = {}) {
  * @param {string} id - Practitioner ID
  * @returns {Object} Query result
  */
-export function usePractitioner(id) {
+export function usePractitioner(id, options = {}) {
+  const { enabled = true, ...queryOptions } = options;
   return useQuery({
     queryKey: staffKeys.practitioner(id),
-    queryFn: () => staffApi.getPractitioner(id),
-    enabled: !!id,
+    queryFn: ({ signal }) => staffApi.getPractitioner(id, { signal }),
+    enabled: Boolean(id && enabled),
+    ...queryOptions,
   });
 }
 
