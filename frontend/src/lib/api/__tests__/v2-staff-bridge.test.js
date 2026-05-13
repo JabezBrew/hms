@@ -274,11 +274,12 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.getStaffMember('staff-1');
+    const signal = new AbortController().signal;
+    const response = await staffApi.getStaffMember('staff-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/staff/staff-1',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal }),
     );
     expect(response).toMatchObject({
       id: 'staff-1',

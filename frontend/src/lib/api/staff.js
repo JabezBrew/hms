@@ -221,10 +221,10 @@ export const staffApi = {
    * @param {string} id - Staff ID
    * @returns {Promise<Object>} Staff data
    */
-  getStaffMember: async (id) => {
+  getStaffMember: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const response = await v2Api.getAdminStaffById({ id });
+        const response = await v2Api.getAdminStaffById({ id }, options);
         return adaptV2StaffListItem(response?.data);
       } catch (error) {
         if (error?.name === 'AbortError') {
@@ -235,7 +235,7 @@ export const staffApi = {
     }
 
     try {
-      return await apiClient.get(`/users/staff/${id}/`);
+      return await apiClient.get(`/users/staff/${id}/`, options);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch staff member'));
     }

@@ -38,7 +38,7 @@ export function useStaff(filters = {}) {
 export function useStaffMember(id) {
   return useQuery({
     queryKey: staffKeys.detail(id),
-    queryFn: () => staffApi.getStaffMember(id),
+    queryFn: ({ signal }) => staffApi.getStaffMember(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
   });
 }
