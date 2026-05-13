@@ -357,6 +357,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalNoteTemplateById": {
+    "operationId": "getClinicalNoteTemplateById",
+    "method": "GET",
+    "path": "/api/v2/clinical/note-templates/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinicalNoteTemplates": {
     "operationId": "getClinicalNoteTemplates",
     "method": "GET",
@@ -2555,6 +2565,7 @@ export function createGeneratedClient(request) {
     getCashSessions: createOperation(request, operations.getCashSessions),
     getClinicalAllergyById: createOperation(request, operations.getClinicalAllergyById),
     getClinicalNoteById: createOperation(request, operations.getClinicalNoteById),
+    getClinicalNoteTemplateById: createOperation(request, operations.getClinicalNoteTemplateById),
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
     getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),

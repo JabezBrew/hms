@@ -205,6 +205,25 @@ pub async fn list_note_templates(
     Ok(rows.into_iter().map(template_from_row).collect())
 }
 
+pub async fn get_note_template(
+    pool: &PgPool,
+    facility_id: Uuid,
+    template_id: Uuid,
+) -> anyhow::Result<Option<ClinicalNoteTemplate>> {
+    let row = sqlx::query_as::<_, TemplateRow>(
+        r#"
+        SELECT id, title, note_type, body_template, is_active
+        FROM clinical_note_templates
+        WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+        "#,
+    )
+    .bind(facility_id)
+    .bind(template_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(template_from_row))
+}
+
 pub async fn create_note_template(
     pool: &PgPool,
     template: NewClinicalNoteTemplate,

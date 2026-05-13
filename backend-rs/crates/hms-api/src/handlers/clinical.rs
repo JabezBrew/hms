@@ -100,6 +100,49 @@ pub async fn create_note_template(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/clinical/note-templates/{id}",
+    operation_id = "getClinicalNoteTemplateById",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinical note template id")),
+    responses(
+        (status = 200, description = "Clinical note template detail", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinical note template not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_note_template(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::ClinicalDocumentationView,
+    )?;
+    let template = state
+        .get_clinical_note_template(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_template_load_failed",
+                "Clinical note template could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "clinical_template_not_found",
+                "Clinical note template was not found.",
+            )
+        })?;
+
+    Ok(Json(object(template)))
+}
+
+#[utoipa::path(
     patch,
     path = "/api/v2/clinical/note-templates/{id}",
     operation_id = "patchClinicalNoteTemplate",

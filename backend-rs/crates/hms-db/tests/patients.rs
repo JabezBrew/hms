@@ -405,6 +405,12 @@ async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted()
     .expect("template create succeeds");
     assert!(template.is_active);
 
+    let detail = hms_db::clinical::get_note_template(&pool, facility_id, template.id)
+        .await
+        .expect("template detail succeeds")
+        .expect("template exists");
+    assert_eq!(detail.title, "Ward Round Note");
+
     let updated = hms_db::clinical::update_note_template(
         &pool,
         facility_id,
@@ -422,6 +428,12 @@ async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted()
     assert_eq!(updated.title, "Updated Ward Round Note");
     assert_eq!(updated.body_template, "Updated SOAP structure");
     assert!(updated.is_active);
+
+    let updated_detail = hms_db::clinical::get_note_template(&pool, facility_id, template.id)
+        .await
+        .expect("updated template detail succeeds")
+        .expect("template exists");
+    assert_eq!(updated_detail.title, "Updated Ward Round Note");
 
     assert!(hms_db::clinical::update_note_template(
         &pool,
@@ -450,6 +462,13 @@ async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted()
     assert!(!active_templates
         .iter()
         .any(|active_template| active_template.id == template.id));
+
+    assert!(
+        hms_db::clinical::get_note_template(&pool, uuid::Uuid::new_v4(), template.id)
+            .await
+            .expect("cross-facility template detail succeeds")
+            .is_none()
+    );
 }
 
 #[tokio::test]

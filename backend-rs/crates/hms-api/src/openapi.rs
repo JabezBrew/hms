@@ -102,6 +102,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::clinical::change_problem_status,
         crate::handlers::clinical::delete_allergy,
         crate::handlers::clinical::delete_note_template,
+        crate::handlers::clinical::get_note_template,
         crate::handlers::clinical::get_allergy,
         crate::handlers::clinical::get_note,
         crate::handlers::clinical::get_prescription,

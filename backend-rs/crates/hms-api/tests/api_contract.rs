@@ -1395,6 +1395,23 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(template_create_body["data"]["title"], "Ward Round Note");
     assert_eq!(template_create_body["data"]["is_active"], true);
 
+    let template_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/clinical/note-templates/{template_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("template detail succeeds");
+    assert_eq!(template_detail.status(), StatusCode::OK);
+    let template_detail_body = json_body(template_detail).await;
+    assert_eq!(template_detail_body["data"]["id"], template_id);
+    assert_eq!(template_detail_body["data"]["title"], "Ward Round Note");
+
     let template_update = app
         .clone()
         .oneshot(

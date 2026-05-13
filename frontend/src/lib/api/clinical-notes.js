@@ -177,14 +177,15 @@ export const clinicalNotesApi = {
    * @param {string} id - Note template ID
    * @returns {Promise<Object>} Note template data
    */
-  getNoteTemplate: async (id) => {
+  getNoteTemplate: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const templates = await clinicalNotesApi.getNoteTemplates();
-        return templates.find((template) => String(template.id) === String(id)) || null;
+        const response = await v2Api.getClinicalNoteTemplateById({ id }, { signal: options.signal });
+        return adaptV2Template(response?.data);
       }
       return await apiClient.get(`/clinical-notes/templates/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch note template'));
       }
@@ -463,13 +464,25 @@ export const clinicalNotesApi = {
    * @param {string} id - Template ID to duplicate
    * @returns {Promise<Object>} The newly created template copy
    */
-  duplicateTemplate: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw new Error('Clinical note template duplication is not supported by Rust V2');
-    }
+  duplicateTemplate: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const template = await clinicalNotesApi.getNoteTemplate(id, options);
+        return await clinicalNotesApi.createNoteTemplate(
+          {
+            title: `Copy of ${template.title}`,
+            note_type: template.note_type,
+            body_template: template.body_template,
+          },
+          { signal: options.signal },
+        );
+      }
       return await apiClient.post(`/clinical-notes/templates/${id}/duplicate/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to duplicate template'));
+      }
       throw new Error(handleApiError(error, 'Failed to duplicate template'));
     }
   },

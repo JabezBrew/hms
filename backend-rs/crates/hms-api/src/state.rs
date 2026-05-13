@@ -1253,6 +1253,13 @@ impl AppState {
         hms_db::clinical::list_note_templates(&self.inner.pool, self.facility_id()).await
     }
 
+    pub async fn get_clinical_note_template(
+        &self,
+        template_id: Uuid,
+    ) -> Result<Option<ClinicalNoteTemplate>> {
+        hms_db::clinical::get_note_template(&self.inner.pool, self.facility_id(), template_id).await
+    }
+
     pub async fn create_clinical_note_template(
         &self,
         title: String,
