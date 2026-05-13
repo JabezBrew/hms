@@ -63,6 +63,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::billing::open_cash_session,
         crate::handlers::care::assign_triage,
         crate::handlers::care::call_visit,
+        crate::handlers::care::cancel_triage,
         crate::handlers::care::cancel_encounter,
         crate::handlers::care::check_in_visit,
         crate::handlers::care::complete_encounter,

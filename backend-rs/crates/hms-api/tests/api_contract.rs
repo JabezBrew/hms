@@ -6007,6 +6007,72 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
     let triage_assign_body = json_body(triage_assign).await;
     assert_eq!(triage_assign_body["data"]["status"], "assigned");
 
+    let cancellable_visit = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/visits/check-in")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "clinic_id": clinic_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancellable visit check-in succeeds");
+    assert_eq!(cancellable_visit.status(), StatusCode::OK);
+    let cancellable_visit_body = json_body(cancellable_visit).await;
+    let cancellable_visit_id = cancellable_visit_body["data"]["id"]
+        .as_str()
+        .expect("visit id exists");
+
+    let cancellable_triage = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/triage")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "visit_id": cancellable_visit_id,
+                        "acuity": "urgent"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancellable triage create succeeds");
+    assert_eq!(cancellable_triage.status(), StatusCode::OK);
+    let cancellable_triage_body = json_body(cancellable_triage).await;
+    let cancellable_triage_id = cancellable_triage_body["data"]["id"]
+        .as_str()
+        .expect("triage id exists");
+
+    let triage_cancel = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/triage/{cancellable_triage_id}/cancel"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("triage cancellation succeeds");
+    assert_eq!(triage_cancel.status(), StatusCode::OK);
+    let triage_cancel_body = json_body(triage_cancel).await;
+    assert_eq!(triage_cancel_body["data"]["status"], "cancelled");
+
     let encounter_response = app
         .clone()
         .oneshot(

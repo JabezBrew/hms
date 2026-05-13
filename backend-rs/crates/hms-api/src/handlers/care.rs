@@ -8,7 +8,7 @@ use hms_domain::care::{
     AppointmentListItem, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
     CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateEncounterRequest,
     CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery, EncounterStatus,
-    TriageListItem, UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem,
+    TriageListItem, TriageStatus, UpdateAppointmentRequest, UpdateEncounterRequest, VisitListItem,
     VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
@@ -554,6 +554,58 @@ pub async fn assign_triage(
         .await
         .map_err(|_| {
             ApiError::conflict("triage_assign_failed", "Triage item could not be assigned.")
+        })?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+
+    Ok(Json(object(triage)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/triage/{id}/cancel",
+    operation_id = "postTriageCancel",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Triage id")),
+    responses(
+        (status = 200, description = "Triage item cancelled", body = ObjectResponse<TriageListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Triage item not found", body = ApiErrorResponse),
+        (status = 409, description = "Triage item cannot be cancelled", body = ApiErrorResponse)
+    )
+)]
+pub async fn cancel_triage(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::NursingTaskManage,
+    )?;
+    let existing = state
+        .get_triage(id)
+        .await
+        .map_err(|_| ApiError::conflict("triage_load_failed", "Triage item could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
+    if existing.status != TriageStatus::Waiting {
+        return Err(ApiError::conflict(
+            "triage_cancel_invalid_status",
+            "Only waiting triage entries can be cancelled.",
+        ));
+    }
+
+    let triage = state
+        .cancel_triage(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "triage_cancel_failed",
+                "Triage item could not be cancelled.",
+            )
         })?
         .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
 

@@ -1,7 +1,11 @@
 use chrono::{TimeZone, Utc};
-use hms_db::care::{AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter, NewVisit};
+use hms_db::care::{
+    AppointmentUpdate, EncounterUpdate, NewAppointment, NewEncounter, NewTriage, NewVisit,
+};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::care::{AppointmentStatus, EncounterStatus, EncounterType};
+use hms_domain::care::{
+    AppointmentStatus, EncounterStatus, EncounterType, TriageAcuity, TriageStatus, VisitStatus,
+};
 use hms_domain::deployment::DeploymentProfile;
 
 #[tokio::test]
@@ -307,6 +311,37 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
     )
     .await
     .expect("general visit is checked in");
+    let triage = hms_db::care::create_triage(
+        &pool,
+        NewTriage {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            visit_id: general_visit.id,
+            patient_id: general_visit.patient_id,
+            acuity: TriageAcuity::Urgent,
+            created_by_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("triage item is created");
+    assert_eq!(triage.status, TriageStatus::Waiting);
+    let cancelled_triage = hms_db::care::cancel_triage(&pool, facility_id, triage.id)
+        .await
+        .expect("triage cancel query succeeds")
+        .expect("triage item exists");
+    assert_eq!(cancelled_triage.status, TriageStatus::Cancelled);
+    let cancelled_visit = hms_db::care::get_visit(&pool, facility_id, general_visit.id)
+        .await
+        .expect("visit lookup succeeds")
+        .expect("visit exists");
+    assert_eq!(cancelled_visit.status, VisitStatus::Cancelled);
+    assert!(
+        hms_db::care::cancel_triage(&pool, uuid::Uuid::new_v4(), triage.id)
+            .await
+            .expect("cross-facility triage cancel query succeeds")
+            .is_none()
+    );
+
     let overflow_visit = hms_db::care::check_in_visit(
         &pool,
         NewVisit {

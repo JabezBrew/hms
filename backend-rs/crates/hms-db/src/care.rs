@@ -766,6 +766,71 @@ pub async fn assign_triage(
     row.map(triage_from_row).transpose()
 }
 
+pub async fn cancel_triage(
+    pool: &PgPool,
+    facility_id: Uuid,
+    triage_id: Uuid,
+) -> anyhow::Result<Option<TriageListItem>> {
+    let mut transaction = pool.begin().await?;
+    let row = sqlx::query_as::<_, TriageRow>(
+        r#"
+        WITH updated AS (
+            UPDATE triage_queue
+            SET status = $1,
+                updated_at = now()
+            WHERE facility_id = $2
+              AND id = $3
+              AND status = $4
+            RETURNING id,
+                      visit_id,
+                      patient_id,
+                      acuity,
+                      status,
+                      created_at
+        )
+        SELECT updated.id,
+               updated.visit_id,
+               updated.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               updated.acuity,
+               updated.status,
+               updated.created_at
+        FROM updated
+        JOIN patients ON patients.id = updated.patient_id
+        WHERE patients.facility_id = $2
+        "#,
+    )
+    .bind(codec::encode(TriageStatus::Cancelled)?)
+    .bind(facility_id)
+    .bind(triage_id)
+    .bind(codec::encode(TriageStatus::Waiting)?)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    if let Some(triage) = &row {
+        sqlx::query(
+            r#"
+            UPDATE visits
+            SET status = $1,
+                updated_at = now()
+            WHERE facility_id = $2
+              AND id = $3
+              AND patient_id = $4
+            "#,
+        )
+        .bind(codec::encode(VisitStatus::Cancelled)?)
+        .bind(facility_id)
+        .bind(triage.visit_id)
+        .bind(triage.patient_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    transaction.commit().await?;
+    row.map(triage_from_row).transpose()
+}
+
 pub async fn get_triage(
     pool: &PgPool,
     facility_id: Uuid,

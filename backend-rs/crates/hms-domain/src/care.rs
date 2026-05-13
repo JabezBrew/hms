@@ -12,7 +12,7 @@ pub enum AppointmentStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VisitStatus {
     Waiting,
@@ -32,7 +32,7 @@ pub enum TriageAcuity {
     Emergency,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TriageStatus {
     Waiting,

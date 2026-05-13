@@ -285,6 +285,42 @@ describe('Rust V2 visits and triage bridge', () => {
     });
   });
 
+  it('cancels triage entries through Rust /api/v2 instead of the legacy endpoint', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'triage-1',
+            visit_id: 'visit-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            patient_display_name: 'Ama Mensah',
+            acuity: 'urgent',
+            status: 'cancelled',
+            created_at: '2026-05-12T08:30:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const cancelled = await triageApi.cancel('triage-1');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/triage/triage-1/cancel',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(cancelled).toMatchObject({
+      id: 'triage-1',
+      status: 'cancelled',
+      priority: 'urgent',
+    });
+  });
+
   it('preserves AbortError from Rust waiting-room calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);

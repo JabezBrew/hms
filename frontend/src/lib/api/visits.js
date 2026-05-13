@@ -408,10 +408,18 @@ export const triageApi = {
    * Cancel triage entry (only if not yet assigned)
    */
   cancel: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose triage cancellation yet.');
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postTriageCancel({ id });
+        return adaptV2TriageEntry(response?.data);
+      }
+      return apiClient.post(`/encounters/triage/${id}/cancel/`);
+    } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to cancel triage entry'));
+      }
+      throw error;
     }
-    return apiClient.post(`/encounters/triage/${id}/cancel/`);
   },
 };
 

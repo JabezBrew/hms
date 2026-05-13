@@ -2187,6 +2187,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postTriageCancel": {
+    "operationId": "postTriageCancel",
+    "method": "POST",
+    "path": "/api/v2/triage/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postVisitCall": {
     "operationId": "postVisitCall",
     "method": "POST",
@@ -2508,6 +2518,7 @@ export function createGeneratedClient(request) {
     postTreatmentSheets: createOperation(request, operations.postTreatmentSheets),
     postTriage: createOperation(request, operations.postTriage),
     postTriageAssign: createOperation(request, operations.postTriageAssign),
+    postTriageCancel: createOperation(request, operations.postTriageCancel),
     postVisitCall: createOperation(request, operations.postVisitCall),
     postVisitCheckIn: createOperation(request, operations.postVisitCheckIn),
     postVisitCheckout: createOperation(request, operations.postVisitCheckout),

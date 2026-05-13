@@ -2614,6 +2614,10 @@ impl AppState {
         .await
     }
 
+    pub async fn cancel_triage(&self, triage_id: Uuid) -> Result<Option<TriageListItem>> {
+        hms_db::care::cancel_triage(&self.inner.pool, self.facility_id(), triage_id).await
+    }
+
     pub async fn list_encounters(
         &self,
         patient_id: Option<Uuid>,
