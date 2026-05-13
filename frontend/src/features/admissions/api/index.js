@@ -487,18 +487,17 @@ export const admissionsApi = {
       }
 
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getStaffDirectory({
-          query: { limit: 20 },
+        const response = await v2Api.getAdminPractitioners({
+          query: {
+            limit: 20,
+            search: query,
+            is_active: true,
+          },
           signal: options.signal,
         })
-        const normalizedQuery = query.toLowerCase()
         return v2ListData(response)
           .map(adaptV2PractitionerSearchItem)
           .filter((practitioner) => {
-            const haystack = `${practitioner.name || ''} ${practitioner.email || ''}`.toLowerCase()
-            if (!haystack.includes(normalizedQuery)) {
-              return false
-            }
             if (!doctorsOnly) {
               return true
             }

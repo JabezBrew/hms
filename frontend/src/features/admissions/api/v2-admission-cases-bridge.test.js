@@ -377,7 +377,7 @@ describe('Rust V2 admission cases bridge', () => {
     );
   });
 
-  it('searches patients and practitioners through bounded Rust V2 lists', async () => {
+  it('searches patients and practitioners through bounded Rust V2 search contracts', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
         new Response(
@@ -433,7 +433,7 @@ describe('Rust V2 admission cases bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:8080/api/v2/staff/directory?limit=20',
+      'http://localhost:8080/api/v2/admin/practitioners?limit=20&search=kofi&is_active=true',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(patients).toEqual([
