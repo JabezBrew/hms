@@ -199,7 +199,7 @@ export function usePatientHistory(id) {
 export function useSearchPatients(options = {}) {
   return useSearchQuery(
     [...patientKeys.lists(), 'search'],
-    (query) => patientsApi.searchPatients(query),
+    (query, requestOptions) => patientsApi.searchPatients(query, requestOptions),
     {
       staleTime: 1 * 60 * 1000, // Search results stale after 1 minute
       ...options,

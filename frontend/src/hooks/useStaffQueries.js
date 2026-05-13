@@ -240,7 +240,7 @@ export function usePractitioner(id, options = {}) {
 export function useSearchPractitioners(doctorsOnly = false, options = {}) {
   return useSearchQuery(
     [...staffKeys.practitioners(), 'search', { doctorsOnly }],
-    (query) => staffApi.searchPractitioners(query, doctorsOnly),
+    (query, requestOptions) => staffApi.searchPractitioners(query, doctorsOnly, requestOptions),
     {
       staleTime: 5 * 60 * 1000, // 5 minutes - practitioners list changes less frequently
       ...options,
@@ -257,7 +257,10 @@ export function useSearchPractitioners(doctorsOnly = false, options = {}) {
 export function useSearchStaff(filters = {}, options = {}) {
   return useSearchQuery(
     [...staffKeys.search(), { filters }],
-    (query) => staffApi.searchStaff(query, filters),
+    (query, requestOptions) => staffApi.searchStaff(query, {
+      ...filters,
+      signal: requestOptions?.signal,
+    }),
     {
       staleTime: 60 * 1000,
       ...options,

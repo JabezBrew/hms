@@ -71,7 +71,10 @@ export function useWards(filters = {}) {
 export function useWardSearch(filters = {}, options = {}) {
   return useSearchQuery(
     [...wardKeys.search(), { filters }],
-    (query) => wardsApi.searchWards(query, filters),
+    (query, requestOptions) => wardsApi.searchWards(query, {
+      ...filters,
+      signal: requestOptions?.signal,
+    }),
     {
       staleTime: 60 * 1000,
       ...options,

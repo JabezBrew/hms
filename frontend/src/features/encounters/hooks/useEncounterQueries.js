@@ -270,7 +270,7 @@ export function useCancelEncounter() {
 export function useSearchPatientsForEncounter(options = {}) {
   return useSearchQuery(
     [...encounterKeys.patients(), 'search'],
-    (query) => encountersApi.searchPatients(query),
+    (query, requestOptions) => encountersApi.searchPatients(query, requestOptions),
     {
       staleTime: 1 * 60 * 1000, // Search results stale after 1 minute
       ...options,
@@ -287,7 +287,7 @@ export function useSearchPatientsForEncounter(options = {}) {
 export function useSearchPractitioners(doctorsOnly = false, options = {}) {
   return useSearchQuery(
     [...encounterKeys.practitioners(), 'search', { doctorsOnly }],
-    (query) => encountersApi.searchPractitioners(query, doctorsOnly),
+    (query, requestOptions) => encountersApi.searchPractitioners(query, doctorsOnly, requestOptions),
     {
       staleTime: 5 * 60 * 1000, // Practitioners list changes less frequently
       ...options,

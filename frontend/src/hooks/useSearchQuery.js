@@ -21,7 +21,7 @@ export function useSearchQuery(queryKey, queryFn, options = {}) {
 
   const query = useQuery({
     queryKey: [...queryKey, debouncedSearchTerm],
-    queryFn: () => queryFn(debouncedSearchTerm),
+    queryFn: ({ signal }) => queryFn(debouncedSearchTerm, { signal }),
     enabled,
     staleTime: options.staleTime || 60 * 1000, // 1 minute by default
     ...options
