@@ -354,6 +354,12 @@ async fn openapi_contains_foundation_paths() {
             .any(|parameter| parameter["name"] == "ward_id"),
         "ward board exposes ward_id filter for ward-scoped UI routes"
     );
+    assert!(
+        ward_board_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "patient_id"),
+        "ward board exposes patient_id filter for patient-scoped monitoring routes"
+    );
 }
 
 #[tokio::test]

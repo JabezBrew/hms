@@ -1441,7 +1441,8 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "ward_id"
+      "ward_id",
+      "patient_id"
     ],
     "hasBody": false
   },

@@ -1067,13 +1067,13 @@ export const usePatientDetail = (patientId) => {
       if (isRustV2ApiMode()) {
         try {
           const response = await v2Api.getWardBoard({
-            query: { limit: MAX_MONITORING_PAGE_SIZE },
+            query: { limit: 1, patient_id: patientId },
             signal,
           });
           const rows = Array.isArray(response?.data)
             ? response.data.map(adaptV2WardBoardMonitoringItem)
             : [];
-          return rows.find((row) => row.patient_id === patientId) || {};
+          return rows[0] || {};
         } catch (error) {
           rethrowV2Error(error, 'Failed to load patient monitoring detail');
         }

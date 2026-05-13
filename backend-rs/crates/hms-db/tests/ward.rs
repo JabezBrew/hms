@@ -359,7 +359,7 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
 }
 
 #[tokio::test]
-async fn ward_board_can_be_filtered_by_ward() {
+async fn ward_board_can_be_filtered_by_ward_and_patient() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");
     let pool = hms_db::connect(database.database_url())
@@ -448,19 +448,31 @@ async fn ward_board_can_be_filtered_by_ward() {
             .expect("case is activated");
     }
 
-    let all_board = hms_db::ward::list_ward_board(&pool, facility_id, None, None, 25)
+    let all_board = hms_db::ward::list_ward_board(&pool, facility_id, None, None, None, 25)
         .await
         .expect("ward board list succeeds");
     assert!(all_board.iter().any(|item| item.ward_id == ward_ids[0]));
     assert!(all_board.iter().any(|item| item.ward_id == ward_ids[1]));
 
     let scoped_board =
-        hms_db::ward::list_ward_board(&pool, facility_id, Some(ward_ids[0]), None, 25)
+        hms_db::ward::list_ward_board(&pool, facility_id, Some(ward_ids[0]), None, None, 25)
             .await
             .expect("ward-scoped board list succeeds");
     assert!(!scoped_board.is_empty());
     assert!(scoped_board.iter().all(|item| item.ward_id == ward_ids[0]));
     assert!(!scoped_board.iter().any(|item| item.ward_id == ward_ids[1]));
+
+    let patient_scoped_board =
+        hms_db::ward::list_ward_board(&pool, facility_id, None, Some(patient_ids[0]), None, 25)
+            .await
+            .expect("patient-scoped board list succeeds");
+    assert!(!patient_scoped_board.is_empty());
+    assert!(patient_scoped_board
+        .iter()
+        .all(|item| item.patient_id == patient_ids[0]));
+    assert!(!patient_scoped_board
+        .iter()
+        .any(|item| item.patient_id == patient_ids[1]));
 }
 
 #[tokio::test]

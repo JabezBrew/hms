@@ -204,6 +204,7 @@ pub struct WardBoardQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub ward_id: Option<Uuid>,
+    pub patient_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

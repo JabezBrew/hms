@@ -167,7 +167,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     });
   });
 
-  it('loads patient monitoring detail from the bounded Rust ward board contract', async () => {
+  it('loads patient monitoring detail from a patient-scoped Rust ward board query', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -204,7 +204,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await waitFor(() => expect(result.current.data?.patient_id).toBe('patient-1'));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/wards/board?limit=50',
+      'http://localhost:8080/api/v2/wards/board?limit=1&patient_id=patient-1',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.current.data).toEqual(expect.objectContaining({

@@ -561,7 +561,12 @@ pub async fn ward_board(
         limit: query.limit,
     })?;
     let rows = state
-        .list_ward_board(query.ward_id, cursor, page_size as i64 + 1)
+        .list_ward_board(
+            query.ward_id,
+            query.patient_id,
+            cursor,
+            page_size as i64 + 1,
+        )
         .await
         .map_err(|_| ApiError::conflict("ward_board_failed", "Ward board could not be loaded."))?;
 

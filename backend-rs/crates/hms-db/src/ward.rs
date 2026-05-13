@@ -977,6 +977,7 @@ pub async fn list_ward_board(
     pool: &PgPool,
     facility_id: Uuid,
     ward_id: Option<Uuid>,
+    patient_id: Option<Uuid>,
     cursor: Option<WardCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<WardBoardItem>> {
@@ -988,6 +989,11 @@ pub async fn list_ward_board(
     if let Some(ward_id) = ward_id {
         query.push(" AND admission_cases.ward_id = ");
         query.push_bind(ward_id);
+    }
+
+    if let Some(patient_id) = patient_id {
+        query.push(" AND admission_cases.patient_id = ");
+        query.push_bind(patient_id);
     }
 
     if let Some(cursor) = cursor {
