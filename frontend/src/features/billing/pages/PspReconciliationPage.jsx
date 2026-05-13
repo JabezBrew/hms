@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   Dialog,
   DialogContent,
@@ -73,6 +74,7 @@ const SETTLEMENT_TEMPLATE_HEADERS = [
 
 export default function PspReconciliationPage() {
   const [tab, setTab] = useState('intents');
+  const settlementImportsAvailable = !isRustV2ApiMode();
 
   // Intents
   const [intentPage, setIntentPage] = useState(1);
@@ -371,84 +373,99 @@ export default function PspReconciliationPage() {
           </TabsContent>
 
           <TabsContent value="settlements" className="mt-6 space-y-6">
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-lg text-foreground mb-4">Import Settlement Statement</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Statement Date (Optional)</Label>
-                  <Input
-                    type="date"
-                    value={statementDate}
-                    onChange={(e) => setStatementDate(e.target.value)}
-                    className="font-mono"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">File (CSV)</Label>
-                  <Input
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) => setSettlementFile(e.target.files?.[0] || null)}
-                    className="font-mono"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Imports provider statement lines and matches them to intents/payments to flag mismatches.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 rounded-xl border border-border bg-muted/10 p-4">
-                <div className="flex items-start justify-between gap-3 flex-col sm:flex-row">
-                  <div className="min-w-0">
-                    <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
-                      Template Headers
-                    </p>
-                    <p className="font-mono text-xs text-foreground break-all">
-                      {SETTLEMENT_TEMPLATE_HEADERS.join(',')}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Minimum required: <span className="font-mono">provider_reference</span> (or <span className="font-mono">paylink_id</span>/<span className="font-mono">reference</span>) or <span className="font-mono">client_reference</span>.
-                      Aliases are supported for amounts and fees (e.g. <span className="font-mono">amount</span>, <span className="font-mono">fee</span>, <span className="font-mono">net_amount</span>).
+            {settlementImportsAvailable ? (
+              <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+                <h2 className="font-display text-lg text-foreground mb-4">Import Settlement Statement</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">Statement Date (Optional)</Label>
+                    <Input
+                      type="date"
+                      value={statementDate}
+                      onChange={(e) => setStatementDate(e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">File (CSV)</Label>
+                    <Input
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => setSettlementFile(e.target.files?.[0] || null)}
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Imports provider statement lines and matches them to intents/payments to flag mismatches.
                     </p>
                   </div>
+                </div>
+                <div className="mt-4 rounded-xl border border-border bg-muted/10 p-4">
+                  <div className="flex items-start justify-between gap-3 flex-col sm:flex-row">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+                        Template Headers
+                      </p>
+                      <p className="font-mono text-xs text-foreground break-all">
+                        {SETTLEMENT_TEMPLATE_HEADERS.join(',')}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Minimum required: <span className="font-mono">provider_reference</span> (or <span className="font-mono">paylink_id</span>/<span className="font-mono">reference</span>) or <span className="font-mono">client_reference</span>.
+                        Aliases are supported for amounts and fees (e.g. <span className="font-mono">amount</span>, <span className="font-mono">fee</span>, <span className="font-mono">net_amount</span>).
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs"
+                      onClick={downloadSettlementTemplate}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Template
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end">
                   <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
                     className="font-mono text-xs"
-                    onClick={downloadSettlementTemplate}
+                    disabled={importSettlementMutation.isPending}
+                    onClick={async () => {
+                      if (!settlementFile) {
+                        toast.error('Select a CSV file');
+                        return;
+                      }
+                      try {
+                        await importSettlementMutation.mutateAsync({
+                          provider: 'hubtel',
+                          statement_date: statementDate || null,
+                          file: settlementFile,
+                        });
+                        toast.success('Settlement import started');
+                        setSettlementFile(null);
+                      } catch (err) {
+                        toast.error(err.message || 'Failed to import settlement');
+                      }
+                    }}
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Template
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import
                   </Button>
                 </div>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button
-                  className="font-mono text-xs"
-                  disabled={importSettlementMutation.isPending}
-                  onClick={async () => {
-                    if (!settlementFile) {
-                      toast.error('Select a CSV file');
-                      return;
-                    }
-                    try {
-                      await importSettlementMutation.mutateAsync({
-                        provider: 'hubtel',
-                        statement_date: statementDate || null,
-                        file: settlementFile,
-                      });
-                      toast.success('Settlement import started');
-                      setSettlementFile(null);
-                    } catch (err) {
-                      toast.error(err.message || 'Failed to import settlement');
-                    }
-                  }}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import
-                </Button>
-              </div>
-            </section>
+              </section>
+            ) : (
+              <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-[oklch(0.72_0.17_70)] mt-0.5" />
+                  <div>
+                    <h2 className="font-display text-lg text-foreground">Settlement Imports Deferred</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Settlement imports are not available in Rust V2 mode yet. Existing settlement
+                      batches remain read-only until the PSP provider import contract is implemented.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
