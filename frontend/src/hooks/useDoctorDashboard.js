@@ -18,7 +18,7 @@ export function useDoctorDashboard(options = {}) {
   const { refetchInterval = 30000, ...queryOptions } = options;
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: doctorDashboardKeys.dashboard(),
-    queryFn: () => dashboardsApi.getMyWorkDashboard(),
+    queryFn: ({ signal }) => dashboardsApi.getMyWorkDashboard({ signal }),
     refetchInterval,
     enabled: Boolean(facilityCode) && (queryOptions.enabled ?? true),
     ...queryOptions,
@@ -52,10 +52,11 @@ export function useClinicSchedule(date, practitionerId, options = {}) {
   const { refetchInterval = 30000, ...queryOptions } = options;
   return useQuery({
     queryKey: doctorDashboardKeys.clinicSchedule(date, practitionerId),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       return dashboardsApi.getClinicSchedule({
         ...(date ? { date } : {}),
         ...(practitionerId ? { practitioner_id: practitionerId } : {}),
+        signal,
       });
     },
     refetchInterval: hasCustomRefetchInterval ? refetchInterval : (isLiveConnected ? false : refetchInterval),
