@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useDebounce } from '@/hooks/use-debounce';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -49,6 +50,7 @@ function normalizeResults(data) {
 
 export default function ServiceCatalogPage() {
   const [tab, setTab] = useState('services');
+  const catalogMutationsAvailable = !isRustV2ApiMode();
 
   // Categories query
   const [categorySearch, setCategorySearch] = useState('');
@@ -137,25 +139,27 @@ export default function ServiceCatalogPage() {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          onClick={() => {
-            setCategoryForm({
-              name: row.name || '',
-              description: row.description || '',
-              is_active: !!row.is_active,
-            });
-            setCategoryDialog({ open: true, mode: 'edit', row });
-          }}
-        >
-          <Pencil className="h-3 w-3 mr-2" />
-          Edit
-        </Button>
+        catalogMutationsAvailable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => {
+              setCategoryForm({
+                name: row.name || '',
+                description: row.description || '',
+                is_active: !!row.is_active,
+              });
+              setCategoryDialog({ open: true, mode: 'edit', row });
+            }}
+          >
+            <Pencil className="h-3 w-3 mr-2" />
+            Edit
+          </Button>
+        ) : null
       ),
     },
-  ]), []);
+  ]), [catalogMutationsAvailable]);
 
   const serviceColumns = useMemo(() => ([
     {
@@ -213,29 +217,31 @@ export default function ServiceCatalogPage() {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          onClick={() => {
-            setServiceForm({
-              name: row.name || '',
-              code: row.code || '',
-              category: row.category || '',
-              description: row.description || '',
-              base_price: row.base_price?.toString?.() || String(row.base_price ?? ''),
-              tax_rate: row.tax_rate?.toString?.() || String(row.tax_rate ?? '0.00'),
-              is_active: !!row.is_active,
-            });
-            setServiceDialog({ open: true, mode: 'edit', row });
-          }}
-        >
-          <Pencil className="h-3 w-3 mr-2" />
-          Edit
-        </Button>
+        catalogMutationsAvailable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => {
+              setServiceForm({
+                name: row.name || '',
+                code: row.code || '',
+                category: row.category || '',
+                description: row.description || '',
+                base_price: row.base_price?.toString?.() || String(row.base_price ?? ''),
+                tax_rate: row.tax_rate?.toString?.() || String(row.tax_rate ?? '0.00'),
+                is_active: !!row.is_active,
+              });
+              setServiceDialog({ open: true, mode: 'edit', row });
+            }}
+          >
+            <Pencil className="h-3 w-3 mr-2" />
+            Edit
+          </Button>
+        ) : null
       ),
     },
-  ]), []);
+  ]), [catalogMutationsAvailable]);
 
   if (isLoading && !categoriesQuery.data && !servicesQuery.data) {
     return (
@@ -277,7 +283,7 @@ export default function ServiceCatalogPage() {
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
-            {tab === 'categories' ? (
+            {catalogMutationsAvailable && tab === 'categories' ? (
               <Button
                 size="sm"
                 className="font-mono text-xs"
@@ -289,7 +295,8 @@ export default function ServiceCatalogPage() {
                 <Plus className="h-4 w-4 mr-2" />
                 New Category
               </Button>
-            ) : (
+            ) : null}
+            {catalogMutationsAvailable && tab !== 'categories' ? (
               <Button
                 size="sm"
                 className="font-mono text-xs"
@@ -309,12 +316,19 @@ export default function ServiceCatalogPage() {
                 <Plus className="h-4 w-4 mr-2" />
                 New Service
               </Button>
-            )}
+            ) : null}
           </div>
         )}
       />
 
       <main className="p-4 sm:p-6 space-y-4">
+        {!catalogMutationsAvailable && (
+          <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            Service catalog editing is not available in Rust V2 mode yet. The catalog is
+            read-only until service and category mutation contracts are implemented.
+          </section>
+        )}
+
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="services" className="font-mono text-xs">Services</TabsTrigger>
