@@ -65,7 +65,14 @@ function unwrapV2Object(response) {
   return response?.data ?? response;
 }
 
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
 function rethrowV2DashboardError(error, fallbackMessage) {
+  rethrowAbortError(error);
   throw new Error(handleV2ApiError(error, fallbackMessage));
 }
 
@@ -74,12 +81,13 @@ export function useDashboardActions() {
 
   // Administer medication
   const administerMedication = useMutation({
-    mutationFn: async ({ medicationId, administrationData }) => {
+    mutationFn: async ({ medicationId, administrationData, signal }) => {
       if (isRustV2ApiMode()) {
         try {
           const response = await v2Api.postMedicationAdministrationAdminister(
             { id: medicationId },
             normalizeV2MedicationAdministrationPayload(administrationData),
+            { signal: signal || administrationData?.signal },
           );
           return unwrapV2Object(response);
         } catch (error) {
@@ -103,10 +111,12 @@ export function useDashboardActions() {
 
   // Complete nursing task
   const completeTask = useMutation({
-    mutationFn: async ({ taskId, completionNotes }) => {
+    mutationFn: async ({ taskId, completionNotes, signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postNursingTaskComplete({ id: taskId });
+          const response = await v2Api.postNursingTaskComplete({ id: taskId }, {
+            signal,
+          });
           return unwrapV2Object(response);
         } catch (error) {
           rethrowV2DashboardError(error, 'Failed to complete task');
@@ -129,7 +139,7 @@ export function useDashboardActions() {
 
   // Check-in patient for appointment (starts outpatient visit)
   const checkInPatient = useMutation({
-    mutationFn: async ({ appointmentId, patientId, clinicId }) => {
+    mutationFn: async ({ appointmentId, patientId, clinicId, signal }) => {
       if (isRustV2ApiMode()) {
         if (!patientId) {
           throw new Error('Patient id is required to check in a patient in Rust V2');
@@ -139,6 +149,8 @@ export function useDashboardActions() {
             patient_id: patientId,
             appointment_id: appointmentId || null,
             clinic_id: clinicId || null,
+          }, {
+            signal,
           });
           return unwrapV2Object(response);
         } catch (error) {
@@ -161,10 +173,12 @@ export function useDashboardActions() {
 
   // Acknowledge alert
   const acknowledgeAlert = useMutation({
-    mutationFn: async ({ alertId, notes }) => {
+    mutationFn: async ({ alertId, notes, signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postNursingAlertAcknowledge({ id: alertId });
+          const response = await v2Api.postNursingAlertAcknowledge({ id: alertId }, {
+            signal,
+          });
           return unwrapV2Object(response);
         } catch (error) {
           rethrowV2DashboardError(error, 'Failed to acknowledge alert');
@@ -190,7 +204,10 @@ export function useDashboardActions() {
     mutationFn: async (appointmentData) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postAppointments(normalizeV2AppointmentPayload(appointmentData));
+          const response = await v2Api.postAppointments(
+            normalizeV2AppointmentPayload(appointmentData),
+            { signal: appointmentData?.signal },
+          );
           return unwrapV2Object(response);
         } catch (error) {
           rethrowV2DashboardError(error, 'Failed to schedule appointment');
@@ -231,13 +248,16 @@ export function useDashboardActions() {
 
   // Vitals recording
   const recordVitals = useMutation({
-    mutationFn: async ({ patientId, vitalsData }) => {
+    mutationFn: async ({ patientId, vitalsData, signal }) => {
       if (isRustV2ApiMode()) {
         try {
-          const response = await v2Api.postPatientVitals(normalizeV2VitalsPayload({
-            patient_id: patientId,
-            ...vitalsData,
-          }));
+          const response = await v2Api.postPatientVitals(
+            normalizeV2VitalsPayload({
+              patient_id: patientId,
+              ...vitalsData,
+            }),
+            { signal: signal || vitalsData?.signal },
+          );
           return unwrapV2Object(response);
         } catch (error) {
           rethrowV2DashboardError(error, 'Failed to record vitals');
