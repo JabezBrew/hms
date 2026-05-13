@@ -98,11 +98,12 @@ describe('Rust V2 problems bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     await problemsApi.create({
       patient: 'patient-1',
       free_text_label: 'Asthma',
       priority: 'high',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/patients/patient-1/clinical/problems',
@@ -112,6 +113,7 @@ describe('Rust V2 problems bridge', () => {
           label: 'Asthma',
           onset_date: null,
         }),
+        signal,
       }),
     );
   });
@@ -137,9 +139,10 @@ describe('Rust V2 problems bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await problemsApi.changeStatus('problem-1', {
       status: 'resolved',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/clinical/problems/problem-1/status',
@@ -149,6 +152,7 @@ describe('Rust V2 problems bridge', () => {
         body: JSON.stringify({
           status: 'resolved',
         }),
+        signal,
       }),
     );
     expect(response).toEqual(
@@ -202,12 +206,14 @@ describe('Rust V2 problems bridge', () => {
         ),
       );
 
-    const detail = await problemsApi.detail('problem-1');
+    const detailSignal = new AbortController().signal;
+    const updateSignal = new AbortController().signal;
+    const detail = await problemsApi.detail('problem-1', { signal: detailSignal });
     const updated = await problemsApi.update('problem-1', {
       label: 'Essential hypertension',
       onset_date: '2026-01-05',
       clinical_status: 'resolved',
-    });
+    }, { signal: updateSignal });
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
@@ -215,6 +221,7 @@ describe('Rust V2 problems bridge', () => {
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',
+        signal: detailSignal,
       }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
@@ -228,6 +235,7 @@ describe('Rust V2 problems bridge', () => {
           onset_date: '2026-01-05',
           status: 'resolved',
         }),
+        signal: updateSignal,
       }),
     );
     expect(detail).toEqual(expect.objectContaining({ id: 'problem-1', status: 'active' }));

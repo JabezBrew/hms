@@ -101,10 +101,13 @@ export const problemsApi = {
     }
   },
 
-  detail: async (id) => {
+  detail: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getClinicalProblemById({ id });
+        const response = await v2Api.getClinicalProblemById(
+          { id },
+          { signal: options.signal },
+        );
         return adaptV2Problem(response?.data);
       }
       return await apiClient.get(`/problems/${id}/`);
@@ -117,13 +120,14 @@ export const problemsApi = {
     }
   },
 
-  create: async (payload) => {
+  create: async (payload, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const patientId = normalizePatientId(payload);
         const response = await v2Api.postPatientProblems(
           { patient_id: patientId },
           normalizeCreatePayload(payload),
+          { signal: options.signal || payload?.signal },
         );
         return adaptV2Problem(response?.data);
       }
@@ -138,12 +142,13 @@ export const problemsApi = {
     }
   },
 
-  update: async (id, payload) => {
+  update: async (id, payload, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.patchClinicalProblemById(
           { id },
           normalizeUpdatePayload(payload),
+          { signal: options.signal || payload?.signal },
         );
         return adaptV2Problem(response?.data);
       }
@@ -157,12 +162,13 @@ export const problemsApi = {
     }
   },
 
-  changeStatus: async (id, payload) => {
+  changeStatus: async (id, payload, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postClinicalProblemStatus(
           { id },
           { status: payload?.status || payload?.clinical_status },
+          { signal: options.signal || payload?.signal },
         );
         return adaptV2Problem(response?.data);
       }
