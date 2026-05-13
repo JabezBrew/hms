@@ -1462,6 +1462,38 @@ impl AppState {
         hms_db::laboratory::get_order_context(&self.inner.pool, self.facility_id(), order_id).await
     }
 
+    pub async fn submit_lab_order(&self, order_id: Uuid) -> Result<Option<LabOrderListItem>> {
+        hms_db::laboratory::submit_order(&self.inner.pool, self.facility_id(), order_id).await
+    }
+
+    pub async fn collect_lab_order(&self, order_id: Uuid) -> Result<Option<LabOrderListItem>> {
+        hms_db::laboratory::collect_order(&self.inner.pool, self.facility_id(), order_id).await
+    }
+
+    pub async fn start_lab_order_processing(
+        &self,
+        order_id: Uuid,
+    ) -> Result<Option<LabOrderListItem>> {
+        hms_db::laboratory::start_order_processing(&self.inner.pool, self.facility_id(), order_id)
+            .await
+    }
+
+    pub async fn cancel_lab_order(
+        &self,
+        order_id: Uuid,
+        actor_user_id: Uuid,
+        cancellation_reason: Option<String>,
+    ) -> Result<Option<LabOrderListItem>> {
+        hms_db::laboratory::cancel_order(
+            &self.inner.pool,
+            self.facility_id(),
+            order_id,
+            actor_user_id,
+            cancellation_reason,
+        )
+        .await
+    }
+
     pub async fn list_lab_specimens(
         &self,
         cursor: Option<LabCursor>,
@@ -1501,6 +1533,14 @@ impl AppState {
         specimen_id: Uuid,
     ) -> Result<Option<SpecimenContext>> {
         hms_db::laboratory::get_specimen_context(&self.inner.pool, self.facility_id(), specimen_id)
+            .await
+    }
+
+    pub async fn receive_lab_specimen(
+        &self,
+        specimen_id: Uuid,
+    ) -> Result<Option<SpecimenListItem>> {
+        hms_db::laboratory::receive_specimen(&self.inner.pool, self.facility_id(), specimen_id)
             .await
     }
 

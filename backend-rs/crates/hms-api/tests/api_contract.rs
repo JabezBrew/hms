@@ -1692,6 +1692,23 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     assert_eq!(order_body["data"]["status"], "ordered");
     assert!(order_body["data"]["test_count"].as_i64().unwrap() >= 1);
 
+    let submit_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/laboratory/orders/{order_id}/submit"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("order submit succeeds");
+    assert_eq!(submit_order.status(), StatusCode::OK);
+    let submit_order_body = json_body(submit_order).await;
+    assert_eq!(submit_order_body["data"]["id"], order_id);
+    assert_eq!(submit_order_body["data"]["status"], "ordered");
+
     let order_detail = app
         .clone()
         .oneshot(
@@ -1771,6 +1788,64 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .as_str()
         .expect("specimen id exists");
     assert_eq!(specimen_body["data"]["status"], "collected");
+
+    let collect_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/laboratory/orders/{order_id}/collect"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("order collect succeeds");
+    assert_eq!(collect_order.status(), StatusCode::OK);
+    let collect_order_body = json_body(collect_order).await;
+    assert_eq!(collect_order_body["data"]["id"], order_id);
+    assert_eq!(collect_order_body["data"]["status"], "specimen_collected");
+
+    let receive_specimen = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/laboratory/specimens/{specimen_id}/receive"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("specimen receive succeeds");
+    assert_eq!(receive_specimen.status(), StatusCode::OK);
+    let receive_specimen_body = json_body(receive_specimen).await;
+    assert_eq!(receive_specimen_body["data"]["id"], specimen_id);
+    assert_eq!(receive_specimen_body["data"]["status"], "received");
+
+    let start_processing_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/laboratory/orders/{order_id}/start-processing"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("order processing start succeeds");
+    assert_eq!(start_processing_order.status(), StatusCode::OK);
+    let start_processing_order_body = json_body(start_processing_order).await;
+    assert_eq!(start_processing_order_body["data"]["id"], order_id);
+    assert_eq!(
+        start_processing_order_body["data"]["status"],
+        "result_entered"
+    );
 
     let specimen_detail = app
         .clone()
@@ -1899,6 +1974,58 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
     assert_eq!(verify_body["data"]["status"], "verified");
     assert!(verify_body["data"]["verified_at"].is_string());
 
+    let cancel_order_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/laboratory/orders")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "test_ids": [test_id],
+                        "panel_ids": [],
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancellable lab order create succeeds");
+    assert_eq!(cancel_order_response.status(), StatusCode::OK);
+    let cancel_order_body = json_body(cancel_order_response).await;
+    let cancel_order_id = cancel_order_body["data"]["id"]
+        .as_str()
+        .expect("cancel order id exists");
+
+    let cancel_order = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/laboratory/orders/{cancel_order_id}/cancel"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "cancellation_reason": "Duplicate order"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("order cancel succeeds");
+    assert_eq!(cancel_order.status(), StatusCode::OK);
+    let cancel_order_body = json_body(cancel_order).await;
+    assert_eq!(cancel_order_body["data"]["id"], cancel_order_id);
+    assert_eq!(cancel_order_body["data"]["status"], "cancelled");
+
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app
         .clone()
@@ -1927,6 +2054,38 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .await
         .expect("laboratory order detail denial succeeds");
     assert_eq!(denied_order_detail.status(), StatusCode::FORBIDDEN);
+
+    let denied_order_action = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/laboratory/orders/{order_id}/start-processing"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("laboratory order action denial succeeds");
+    assert_eq!(denied_order_action.status(), StatusCode::FORBIDDEN);
+
+    let denied_specimen_action = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/laboratory/specimens/{specimen_id}/receive"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("laboratory specimen action denial succeeds");
+    assert_eq!(denied_specimen_action.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

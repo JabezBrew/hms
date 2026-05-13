@@ -22,12 +22,32 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/laboratory/orders/:id", get(laboratory::get_order))
         .route(
+            "/api/v2/laboratory/orders/:id/submit",
+            post(laboratory::submit_order),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:id/collect",
+            post(laboratory::collect_order),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:id/start-processing",
+            post(laboratory::start_order_processing),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:id/cancel",
+            post(laboratory::cancel_order),
+        )
+        .route(
             "/api/v2/laboratory/specimens",
             get(laboratory::list_specimens).post(laboratory::create_specimen),
         )
         .route(
             "/api/v2/laboratory/specimens/:id",
             get(laboratory::get_specimen),
+        )
+        .route(
+            "/api/v2/laboratory/specimens/:id/receive",
+            post(laboratory::receive_specimen),
         )
         .route(
             "/api/v2/laboratory/results",

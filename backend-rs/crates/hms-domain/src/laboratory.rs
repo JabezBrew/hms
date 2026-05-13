@@ -11,7 +11,7 @@ pub enum LabPriority {
     Stat,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LabOrderStatus {
     Ordered,
@@ -21,7 +21,7 @@ pub enum LabOrderStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SpecimenStatus {
     Collected,
@@ -72,6 +72,11 @@ pub struct CreateLabOrderRequest {
     #[serde(default)]
     pub panel_ids: Vec<Uuid>,
     pub priority: LabPriority,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CancelLabOrderRequest {
+    pub cancellation_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

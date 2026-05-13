@@ -1610,6 +1610,26 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postLaboratoryOrderCancel": {
+    "operationId": "postLaboratoryOrderCancel",
+    "method": "POST",
+    "path": "/api/v2/laboratory/orders/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postLaboratoryOrderCollect": {
+    "operationId": "postLaboratoryOrderCollect",
+    "method": "POST",
+    "path": "/api/v2/laboratory/orders/{id}/collect",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postLaboratoryOrders": {
     "operationId": "postLaboratoryOrders",
     "method": "POST",
@@ -1617,6 +1637,26 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
+  },
+  "postLaboratoryOrderStartProcessing": {
+    "operationId": "postLaboratoryOrderStartProcessing",
+    "method": "POST",
+    "path": "/api/v2/laboratory/orders/{id}/start-processing",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postLaboratoryOrderSubmit": {
+    "operationId": "postLaboratoryOrderSubmit",
+    "method": "POST",
+    "path": "/api/v2/laboratory/orders/{id}/submit",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
   },
   "postLaboratoryResults": {
     "operationId": "postLaboratoryResults",
@@ -1630,6 +1670,16 @@ export const operations = {
     "operationId": "postLaboratoryResultVerify",
     "method": "POST",
     "path": "/api/v2/laboratory/results/{id}/verify",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postLaboratorySpecimenReceive": {
+    "operationId": "postLaboratorySpecimenReceive",
+    "method": "POST",
+    "path": "/api/v2/laboratory/specimens/{id}/receive",
     "pathParamNames": [
       "id"
     ],
@@ -2250,9 +2300,14 @@ export function createGeneratedClient(request) {
     postGoodsReceivedNotes: createOperation(request, operations.postGoodsReceivedNotes),
     postHandoffComplete: createOperation(request, operations.postHandoffComplete),
     postHandoffs: createOperation(request, operations.postHandoffs),
+    postLaboratoryOrderCancel: createOperation(request, operations.postLaboratoryOrderCancel),
+    postLaboratoryOrderCollect: createOperation(request, operations.postLaboratoryOrderCollect),
     postLaboratoryOrders: createOperation(request, operations.postLaboratoryOrders),
+    postLaboratoryOrderStartProcessing: createOperation(request, operations.postLaboratoryOrderStartProcessing),
+    postLaboratoryOrderSubmit: createOperation(request, operations.postLaboratoryOrderSubmit),
     postLaboratoryResults: createOperation(request, operations.postLaboratoryResults),
     postLaboratoryResultVerify: createOperation(request, operations.postLaboratoryResultVerify),
+    postLaboratorySpecimenReceive: createOperation(request, operations.postLaboratorySpecimenReceive),
     postLaboratorySpecimens: createOperation(request, operations.postLaboratorySpecimens),
     postMedicationAdministrationAdminister: createOperation(request, operations.postMedicationAdministrationAdminister),
     postMedicationAdministrations: createOperation(request, operations.postMedicationAdministrations),

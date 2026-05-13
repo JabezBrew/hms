@@ -84,6 +84,18 @@ function mapOrderStatusToV2(status) {
   return aliases[normalized] || undefined;
 }
 
+function mapOrderStatusFromV2(status) {
+  const normalized = String(status || '').toLowerCase();
+  const aliases = {
+    ordered: 'ordered',
+    specimen_collected: 'collected',
+    result_entered: 'processing',
+    verified: 'completed',
+    cancelled: 'cancelled',
+  };
+  return aliases[normalized] || normalized;
+}
+
 function testPlaceholders(orderId, testCount) {
   const safeCount = Math.max(0, Number.parseInt(testCount, 10) || 0);
   return Array.from({ length: safeCount }, (_, index) => ({
@@ -100,10 +112,12 @@ function adaptV2LabOrder(item = {}) {
   const patientCode = item.patient_code || '';
   const orderNumber = item.order_number || String(item.id || '').slice(0, 8).toUpperCase();
   const patientName = item.patient_display_name || item.patient_name || patientCode || 'Unknown patient';
-  const status = item.status;
+  const status = mapOrderStatusFromV2(item.status);
 
   return {
     ...item,
+    v2_status: item.status,
+    status,
     patient: item.patient_id,
     patient_id: item.patient_id,
     patient_mrn: patientCode,
@@ -629,11 +643,15 @@ export const laboratoryApi = {
   submitLabOrder: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory order status contract');
+        const response = await v2Api.postLaboratoryOrderSubmit({ id });
+        return v2Object(response, adaptV2LabOrder);
       }
 
       return await apiClient.post(`/laboratory/orders/${id}/submit/`, {});
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to submit lab order');
+      }
       throw new Error(handleApiError(error, 'Failed to submit lab order'));
     }
   },
@@ -641,11 +659,15 @@ export const laboratoryApi = {
   collectLabOrder: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory order status contract');
+        const response = await v2Api.postLaboratoryOrderCollect({ id });
+        return v2Object(response, adaptV2LabOrder);
       }
 
       return await apiClient.post(`/laboratory/orders/${id}/collect/`, {});
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to mark order as collected');
+      }
       throw new Error(handleApiError(error, 'Failed to mark order as collected'));
     }
   },
@@ -665,11 +687,15 @@ export const laboratoryApi = {
   startProcessingLabOrder: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory order status contract');
+        const response = await v2Api.postLaboratoryOrderStartProcessing({ id });
+        return v2Object(response, adaptV2LabOrder);
       }
 
       return await apiClient.post(`/laboratory/orders/${id}/start_processing/`, {});
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to start processing');
+      }
       throw new Error(handleApiError(error, 'Failed to start processing'));
     }
   },
@@ -689,13 +715,20 @@ export const laboratoryApi = {
   cancelLabOrder: async (id, cancellationReason) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory order status contract');
+        const response = await v2Api.postLaboratoryOrderCancel(
+          { id },
+          { cancellation_reason: cancellationReason || null },
+        );
+        return v2Object(response, adaptV2LabOrder);
       }
 
       return await apiClient.post(`/laboratory/orders/${id}/cancel/`, {
         cancellation_reason: cancellationReason,
       });
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to cancel order');
+      }
       throw new Error(handleApiError(error, 'Failed to cancel order'));
     }
   },
@@ -762,11 +795,15 @@ export const laboratoryApi = {
   receiveLabSpecimen: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 laboratory specimen action contract');
+        const response = await v2Api.postLaboratorySpecimenReceive({ id });
+        return v2Object(response, adaptV2LabSpecimen);
       }
 
       return await apiClient.post(`/laboratory/specimens/${id}/receive/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        rethrowV2Error(error, 'Failed to receive specimen');
+      }
       throw new Error(handleApiError(error, 'Failed to receive specimen'));
     }
   },

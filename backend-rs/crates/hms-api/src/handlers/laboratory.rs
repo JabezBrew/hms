@@ -9,8 +9,8 @@ use hms_db::laboratory::{
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
-    CreateLabOrderRequest, CreateLabResultRequest, CreateSpecimenRequest, LabOrderListItem,
-    LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery,
+    CancelLabOrderRequest, CreateLabOrderRequest, CreateLabResultRequest, CreateSpecimenRequest,
+    LabOrderListItem, LabPanelListItem, LabResultListItem, LabTestCatalogItem, LaboratoryListQuery,
     LaboratoryOrderListQuery, LaboratoryResultListQuery, SpecimenListItem,
 };
 use hms_domain::patients::PatientRecord;
@@ -294,6 +294,171 @@ pub async fn create_order(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/orders/{id}/submit",
+    operation_id = "postLaboratoryOrderSubmit",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory order id")),
+    responses(
+        (status = 200, description = "Laboratory order submitted", body = ObjectResponse<LabOrderListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory order not found", body = ApiErrorResponse),
+        (status = 409, description = "Invalid order transition", body = ApiErrorResponse)
+    )
+)]
+pub async fn submit_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let _context = load_order_for_access(&state, &user, id).await?;
+    let order = state
+        .submit_lab_order(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_submit_failed",
+                "Lab order could not be submitted.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+
+    Ok(Json(object(order)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/orders/{id}/collect",
+    operation_id = "postLaboratoryOrderCollect",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory order id")),
+    responses(
+        (status = 200, description = "Laboratory order marked as specimen collected", body = ObjectResponse<LabOrderListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory order not found", body = ApiErrorResponse),
+        (status = 409, description = "Invalid order transition", body = ApiErrorResponse)
+    )
+)]
+pub async fn collect_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let _context = load_order_for_access(&state, &user, id).await?;
+    let order = state
+        .collect_lab_order(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_collect_failed",
+                "Lab order could not be marked as collected.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+
+    Ok(Json(object(order)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/orders/{id}/start-processing",
+    operation_id = "postLaboratoryOrderStartProcessing",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory order id")),
+    responses(
+        (status = 200, description = "Laboratory order moved to result-entry worklist", body = ObjectResponse<LabOrderListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory order not found", body = ApiErrorResponse),
+        (status = 409, description = "Invalid order transition", body = ApiErrorResponse)
+    )
+)]
+pub async fn start_order_processing(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let _context = load_order_for_access(&state, &user, id).await?;
+    let order = state
+        .start_lab_order_processing(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_processing_start_failed",
+                "Lab order processing could not be started.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+
+    Ok(Json(object(order)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/orders/{id}/cancel",
+    operation_id = "postLaboratoryOrderCancel",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory order id")),
+    request_body = CancelLabOrderRequest,
+    responses(
+        (status = 200, description = "Laboratory order cancelled", body = ObjectResponse<LabOrderListItem>),
+        (status = 400, description = "Invalid cancellation request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Laboratory order not found", body = ApiErrorResponse),
+        (status = 409, description = "Invalid order transition", body = ApiErrorResponse)
+    )
+)]
+pub async fn cancel_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CancelLabOrderRequest>,
+) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let _context = load_order_for_access(&state, &user, id).await?;
+    let cancellation_reason =
+        normalize_optional_text(payload.cancellation_reason, "cancellation_reason")?;
+    let order = state
+        .cancel_lab_order(id, user.id, cancellation_reason)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_cancel_failed",
+                "Lab order could not be cancelled.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+
+    Ok(Json(object(order)))
+}
+
+#[utoipa::path(
     get,
     path = "/api/v2/laboratory/specimens",
     operation_id = "getLaboratorySpecimens",
@@ -388,6 +553,43 @@ pub async fn create_specimen(
         .map_err(|_| {
             ApiError::conflict("specimen_create_failed", "Specimen could not be saved.")
         })?;
+
+    Ok(Json(object(specimen)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/laboratory/specimens/{id}/receive",
+    operation_id = "postLaboratorySpecimenReceive",
+    tag = "laboratory",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Laboratory specimen id")),
+    responses(
+        (status = 200, description = "Laboratory specimen received", body = ObjectResponse<SpecimenListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Specimen not found", body = ApiErrorResponse),
+        (status = 409, description = "Invalid specimen transition", body = ApiErrorResponse)
+    )
+)]
+pub async fn receive_specimen(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<SpecimenListItem>>, ApiError> {
+    require_laboratory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::LaboratoryOrderManage,
+    )?;
+    let _context = load_specimen_for_access(&state, &user, id).await?;
+    let specimen = state
+        .receive_lab_specimen(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict("specimen_receive_failed", "Specimen could not be received.")
+        })?
+        .ok_or_else(|| ApiError::not_found("specimen_not_found", "Specimen was not found."))?;
 
     Ok(Json(object(specimen)))
 }

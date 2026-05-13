@@ -333,6 +333,97 @@ pub async fn get_order_context(
     }))
 }
 
+pub async fn submit_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+) -> anyhow::Result<Option<LabOrderListItem>> {
+    transition_order_status(
+        pool,
+        facility_id,
+        order_id,
+        LabOrderStatus::Ordered,
+        &[LabOrderStatus::Ordered],
+    )
+    .await
+}
+
+pub async fn collect_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+) -> anyhow::Result<Option<LabOrderListItem>> {
+    transition_order_status(
+        pool,
+        facility_id,
+        order_id,
+        LabOrderStatus::SpecimenCollected,
+        &[LabOrderStatus::Ordered, LabOrderStatus::SpecimenCollected],
+    )
+    .await
+}
+
+pub async fn start_order_processing(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+) -> anyhow::Result<Option<LabOrderListItem>> {
+    transition_order_status(
+        pool,
+        facility_id,
+        order_id,
+        LabOrderStatus::ResultEntered,
+        &[
+            LabOrderStatus::SpecimenCollected,
+            LabOrderStatus::ResultEntered,
+        ],
+    )
+    .await
+}
+
+pub async fn cancel_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+    actor_user_id: Uuid,
+    cancellation_reason: Option<String>,
+) -> anyhow::Result<Option<LabOrderListItem>> {
+    let current_status = current_order_status(pool, facility_id, order_id).await?;
+    let Some(current_status) = current_status else {
+        return Ok(None);
+    };
+    if !matches!(
+        current_status,
+        LabOrderStatus::Ordered
+            | LabOrderStatus::SpecimenCollected
+            | LabOrderStatus::ResultEntered
+            | LabOrderStatus::Cancelled
+    ) {
+        anyhow::bail!("lab order cannot be cancelled from its current status");
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE lab_orders
+        SET status = $1,
+            cancellation_reason = COALESCE($2, cancellation_reason),
+            cancelled_by_user_id = COALESCE(cancelled_by_user_id, $3),
+            cancelled_at = COALESCE(cancelled_at, now()),
+            updated_at = now()
+        WHERE facility_id = $4 AND id = $5
+        "#,
+    )
+    .bind(codec::encode(LabOrderStatus::Cancelled)?)
+    .bind(cancellation_reason)
+    .bind(actor_user_id)
+    .bind(facility_id)
+    .bind(order_id)
+    .execute(pool)
+    .await?;
+
+    fetch_order_by_id(pool, facility_id, order_id).await
+}
+
 pub async fn list_specimens(
     pool: &PgPool,
     facility_id: Uuid,
@@ -434,6 +525,48 @@ pub async fn get_specimen_context(
         order_id: row.order_id,
         patient_id: row.patient_id,
     }))
+}
+
+pub async fn receive_specimen(
+    pool: &PgPool,
+    facility_id: Uuid,
+    specimen_id: Uuid,
+) -> anyhow::Result<Option<SpecimenListItem>> {
+    let current_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM lab_specimens WHERE facility_id = $1 AND id = $2",
+    )
+    .bind(facility_id)
+    .bind(specimen_id)
+    .fetch_optional(pool)
+    .await?
+    .map(|status| codec::decode::<SpecimenStatus>(&status))
+    .transpose()?;
+
+    let Some(current_status) = current_status else {
+        return Ok(None);
+    };
+    if !matches!(
+        current_status,
+        SpecimenStatus::Collected | SpecimenStatus::Received
+    ) {
+        anyhow::bail!("specimen cannot be received from its current status");
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE lab_specimens
+        SET status = $1,
+            updated_at = now()
+        WHERE facility_id = $2 AND id = $3
+        "#,
+    )
+    .bind(codec::encode(SpecimenStatus::Received)?)
+    .bind(facility_id)
+    .bind(specimen_id)
+    .execute(pool)
+    .await?;
+
+    fetch_specimen_by_id(pool, facility_id, specimen_id).await
 }
 
 pub async fn list_results(
@@ -661,6 +794,54 @@ async fn resolve_order_test_ids(pool: &PgPool, order: &NewLabOrder) -> anyhow::R
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
+}
+
+async fn current_order_status(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+) -> anyhow::Result<Option<LabOrderStatus>> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT status FROM lab_orders WHERE facility_id = $1 AND id = $2",
+    )
+    .bind(facility_id)
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?
+    .map(|status| codec::decode::<LabOrderStatus>(&status))
+    .transpose()
+}
+
+async fn transition_order_status(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+    target_status: LabOrderStatus,
+    allowed_statuses: &[LabOrderStatus],
+) -> anyhow::Result<Option<LabOrderListItem>> {
+    let current_status = current_order_status(pool, facility_id, order_id).await?;
+    let Some(current_status) = current_status else {
+        return Ok(None);
+    };
+    if !allowed_statuses.contains(&current_status) {
+        anyhow::bail!("lab order cannot transition from its current status");
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE lab_orders
+        SET status = $1,
+            updated_at = now()
+        WHERE facility_id = $2 AND id = $3
+        "#,
+    )
+    .bind(codec::encode(target_status)?)
+    .bind(facility_id)
+    .bind(order_id)
+    .execute(pool)
+    .await?;
+
+    fetch_order_by_id(pool, facility_id, order_id).await
 }
 
 async fn fetch_order_by_id(
