@@ -88,7 +88,8 @@ use hms_domain::laboratory::{
     SpecimenListItem,
 };
 use hms_domain::patients::{
-    PatientContextListItem, PatientRecord, PatientRegistrationValidationRule, Sex,
+    PatientAdministrativeStatus, PatientContextListItem, PatientRecord,
+    PatientRegistrationValidationRule, Sex,
 };
 use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
 use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState};
@@ -1213,9 +1214,17 @@ impl AppState {
         cursor: Option<PatientCursor>,
         limit: i64,
         search: Option<&str>,
+        status: Option<PatientAdministrativeStatus>,
     ) -> Result<Vec<PatientRecord>> {
-        hms_db::patients::list_patients(&self.inner.pool, self.facility_id(), cursor, limit, search)
-            .await
+        hms_db::patients::list_patients(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            search,
+            status,
+        )
+        .await
     }
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {

@@ -46,6 +46,14 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
     .fetch_one(&pool)
     .await
     .expect("patient exists");
+    let deceased_patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 AND id <> $2 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .bind(patient_id)
+    .fetch_one(&pool)
+    .await
+    .expect("second patient exists");
 
     let updated = hms_db::patients::update_patient(
         &pool,
@@ -117,6 +125,38 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
     .expect("missing context patient id filter succeeds");
 
     assert!(missing_context.is_empty());
+
+    hms_db::patients::update_patient(
+        &pool,
+        PatientUpdate {
+            id: deceased_patient_id,
+            facility_id,
+            first_name: None,
+            last_name: None,
+            date_of_birth: None,
+            sex: None,
+            status: Some(PatientAdministrativeStatus::Deceased),
+            actor_user_id: owner_id,
+            request_id: Some("repo-patient-status-filter".to_owned()),
+        },
+    )
+    .await
+    .expect("patient status update succeeds")
+    .expect("patient exists");
+
+    let deceased_patients = hms_db::patients::list_patients(
+        &pool,
+        facility_id,
+        None,
+        10,
+        None,
+        Some(PatientAdministrativeStatus::Deceased),
+    )
+    .await
+    .expect("patient status filter succeeds");
+
+    assert_eq!(deceased_patients.len(), 1);
+    assert_eq!(deceased_patients[0].id, deceased_patient_id);
 }
 
 #[tokio::test]

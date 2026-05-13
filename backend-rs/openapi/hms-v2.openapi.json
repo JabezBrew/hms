@@ -14731,6 +14731,16 @@
               "string",
               "null"
             ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientAdministrativeStatus"
+              }
+            ]
           }
         },
         "type": "object"
@@ -31479,6 +31489,21 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -31634,6 +31659,21 @@
               "type": [
                 "string",
                 "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/PatientAdministrativeStatus"
+                }
               ]
             }
           }

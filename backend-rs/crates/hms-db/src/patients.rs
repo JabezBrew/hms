@@ -97,6 +97,7 @@ pub async fn list_patients(
     cursor: Option<PatientCursor>,
     limit: i64,
     search: Option<&str>,
+    status: Option<PatientAdministrativeStatus>,
 ) -> anyhow::Result<Vec<PatientRecord>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
@@ -133,6 +134,11 @@ pub async fn list_patients(
         query.push(" OR lower(last_name) LIKE ");
         query.push_bind(pattern);
         query.push(")");
+    }
+
+    if let Some(status) = status {
+        query.push(" AND status = ");
+        query.push_bind(codec::encode(status)?);
     }
 
     query.push(" ORDER BY created_at ASC, id ASC LIMIT ");

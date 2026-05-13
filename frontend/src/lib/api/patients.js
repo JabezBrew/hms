@@ -130,6 +130,10 @@ function getV2PatientListQuery(params = {}) {
   if (search) {
     query.search = search;
   }
+  const status = normalizePatientStatus(params.status || params.registry_scope);
+  if (status) {
+    query.status = status;
+  }
   const cursor = getCursorForParams(params);
   if (cursor) {
     query.cursor = cursor;
@@ -181,6 +185,9 @@ function normalizePatientStatus(value) {
   }
   if (normalized === 'admitted' || normalized === 'registered') {
     return 'active';
+  }
+  if (normalized === 'discharged') {
+    return 'inactive';
   }
   return undefined;
 }

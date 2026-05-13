@@ -1111,7 +1111,8 @@ export const operations = {
       "cursor",
       "limit",
       "search",
-      "patient_id"
+      "patient_id",
+      "status"
     ],
     "hasBody": false
   },
@@ -1150,7 +1151,8 @@ export const operations = {
       "cursor",
       "limit",
       "search",
-      "patient_id"
+      "patient_id",
+      "status"
     ],
     "hasBody": false
   },

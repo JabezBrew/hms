@@ -61,7 +61,7 @@ describe('Rust V2 patient bridge', () => {
     );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients?limit=25&search=Ama',
+      'http://localhost:8080/api/v2/patients?limit=25&search=Ama&status=active',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',

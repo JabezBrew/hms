@@ -65,7 +65,7 @@ pub async fn list_patients(
 
     let page_size = limit as usize;
     let patients = state
-        .list_patients(cursor, page_size as i64 + 1, search)
+        .list_patients(cursor, page_size as i64 + 1, search, query.status)
         .await
         .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
 

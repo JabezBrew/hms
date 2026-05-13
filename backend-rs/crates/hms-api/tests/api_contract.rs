@@ -370,6 +370,15 @@ async fn openapi_contains_foundation_paths() {
             .any(|parameter| parameter["name"] == "search"),
         "ward list exposes search filter for server-side ward picker search"
     );
+    let patient_parameters = paths["/api/v2/patients"]["get"]["parameters"]
+        .as_array()
+        .expect("patient list parameters exist");
+    assert!(
+        patient_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "status"),
+        "patient list exposes status filter for registry scope tabs"
+    );
     let triage_parameters = paths["/api/v2/triage"]["get"]["parameters"]
         .as_array()
         .expect("triage queue parameters exist");
