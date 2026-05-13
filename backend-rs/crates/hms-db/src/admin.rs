@@ -367,6 +367,132 @@ pub async fn list_organization_unit_children(
     rows.into_iter().map(organization_unit_from_row).collect()
 }
 
+pub async fn list_organization_unit_ancestors(
+    pool: &PgPool,
+    facility_id: Uuid,
+    unit_id: Uuid,
+    limit: i64,
+) -> anyhow::Result<Vec<OrganizationUnitListItem>> {
+    let rows = sqlx::query_as::<_, OrganizationUnitRow>(
+        "WITH RECURSIVE ancestors AS (
+             SELECT parent.id,
+                    parent.code,
+                    parent.name,
+                    parent.unit_type,
+                    parent.parent_unit_id,
+                    parent.is_active,
+                    parent.created_at,
+                    1 AS depth,
+                    ARRAY[target.id, parent.id]::uuid[] AS path
+             FROM organization_units target
+             JOIN organization_units parent ON parent.id = target.parent_unit_id
+             WHERE target.facility_id = $1
+               AND target.id = $2
+               AND parent.facility_id = $1
+             UNION ALL
+             SELECT parent.id,
+                    parent.code,
+                    parent.name,
+                    parent.unit_type,
+                    parent.parent_unit_id,
+                    parent.is_active,
+                    parent.created_at,
+                    ancestors.depth + 1 AS depth,
+                    ancestors.path || parent.id
+             FROM organization_units parent
+             JOIN ancestors ON ancestors.parent_unit_id = parent.id
+             WHERE parent.facility_id = $1
+               AND NOT parent.id = ANY(ancestors.path)
+         )
+         SELECT ancestors.id,
+                ancestors.code,
+                ancestors.name,
+                ancestors.unit_type,
+                ancestors.parent_unit_id,
+                parent.name AS parent_unit_name,
+                ancestors.is_active,
+                ancestors.created_at
+         FROM ancestors
+         LEFT JOIN organization_units parent ON parent.id = ancestors.parent_unit_id
+         ORDER BY ancestors.depth DESC
+         LIMIT $3",
+    )
+    .bind(facility_id)
+    .bind(unit_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(organization_unit_from_row).collect()
+}
+
+pub async fn list_organization_unit_descendants(
+    pool: &PgPool,
+    facility_id: Uuid,
+    unit_id: Uuid,
+    cursor: Option<AdminCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<OrganizationUnitListItem>> {
+    let mut query = QueryBuilder::new(
+        "WITH RECURSIVE descendants AS (
+             SELECT child.id,
+                    child.code,
+                    child.name,
+                    child.unit_type,
+                    child.parent_unit_id,
+                    child.is_active,
+                    child.created_at,
+                    ARRAY[child.id]::uuid[] AS path
+             FROM organization_units child
+             WHERE child.facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(" AND child.parent_unit_id = ");
+    query.push_bind(unit_id);
+    query.push(
+        " UNION ALL
+             SELECT child.id,
+                    child.code,
+                    child.name,
+                    child.unit_type,
+                    child.parent_unit_id,
+                    child.is_active,
+                    child.created_at,
+                    descendants.path || child.id
+             FROM organization_units child
+             JOIN descendants ON child.parent_unit_id = descendants.id
+             WHERE child.facility_id = ",
+    );
+    query.push_bind(facility_id);
+    query.push(
+        " AND NOT child.id = ANY(descendants.path)
+         )
+         SELECT descendants.id,
+                descendants.code,
+                descendants.name,
+                descendants.unit_type,
+                descendants.parent_unit_id,
+                parent.name AS parent_unit_name,
+                descendants.is_active,
+                descendants.created_at
+         FROM descendants
+         LEFT JOIN organization_units parent ON parent.id = descendants.parent_unit_id
+         WHERE TRUE",
+    );
+    append_cursor(
+        &mut query,
+        "descendants.created_at",
+        "descendants.id",
+        cursor,
+    );
+    query.push(" ORDER BY descendants.created_at ASC, descendants.id ASC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<OrganizationUnitRow>()
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(organization_unit_from_row).collect()
+}
+
 pub async fn list_position_templates(
     pool: &PgPool,
     facility_id: Uuid,

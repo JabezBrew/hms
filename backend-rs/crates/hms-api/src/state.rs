@@ -761,6 +761,36 @@ impl AppState {
         .await
     }
 
+    pub async fn list_organization_unit_ancestors(
+        &self,
+        unit_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<OrganizationUnitListItem>> {
+        hms_db::admin::list_organization_unit_ancestors(
+            &self.inner.pool,
+            self.facility_id(),
+            unit_id,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn list_organization_unit_descendants(
+        &self,
+        unit_id: Uuid,
+        cursor: Option<AdminCursor>,
+        limit: i64,
+    ) -> Result<Vec<OrganizationUnitListItem>> {
+        hms_db::admin::list_organization_unit_descendants(
+            &self.inner.pool,
+            self.facility_id(),
+            unit_id,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
     pub async fn list_position_templates(
         &self,
         cursor: Option<AdminCursor>,

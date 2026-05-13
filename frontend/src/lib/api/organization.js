@@ -218,44 +218,33 @@ async function getV2OrgUnitChildren(id, params = {}) {
     : [];
 }
 
-async function getV2OrgUnitAncestors(id) {
-  const units = await listV2OrgUnits({ limit: 100 });
-  const byId = new Map(units.map((unit) => [unit.id, unit]));
-  const ancestors = [];
-  let current = byId.get(id);
-
-  while (current?.parentId || current?.parent_unit_id) {
-    current = byId.get(current.parentId || current.parent_unit_id);
-    if (current) {
-      ancestors.unshift(current);
-    }
-  }
-
-  return ancestors;
+async function getV2OrgUnitAncestors(id, params = {}) {
+  const response = await v2Api.getAdminOrgUnitAncestors({
+    id,
+  }, {
+    query: {
+      limit: normalizeV2OrgLimit(params),
+    },
+    signal: params.signal,
+  });
+  return Array.isArray(response?.data)
+    ? response.data.map(adaptV2OrgUnit)
+    : [];
 }
 
 async function getV2OrgUnitDescendants(id, params = {}) {
-  const units = await listV2OrgUnits({ ...params, limit: 100 });
-  const childrenByParent = new Map();
-  for (const unit of units) {
-    const parentId = unit.parentId || unit.parent_unit_id;
-    if (!parentId) {
-      continue;
-    }
-    const children = childrenByParent.get(parentId) || [];
-    children.push(unit);
-    childrenByParent.set(parentId, children);
-  }
-
-  const descendants = [];
-  const walk = (parentId) => {
-    for (const child of childrenByParent.get(parentId) || []) {
-      descendants.push(child);
-      walk(child.id);
-    }
-  };
-  walk(id);
-  return descendants;
+  const response = await v2Api.getAdminOrgUnitDescendants({
+    id,
+  }, {
+    query: {
+      cursor: params.cursor,
+      limit: normalizeV2OrgLimit(params),
+    },
+    signal: params.signal,
+  });
+  return Array.isArray(response?.data)
+    ? response.data.map(adaptV2OrgUnit)
+    : [];
 }
 
 async function getV2OrgUnitWards(id) {
@@ -444,9 +433,9 @@ export const clinicalUnitsApi = {
     }
     return apiClient.get(`/organization/units/${id}/children/`);
   },
-  ancestors: (id) => {
+  ancestors: (id, params = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnitAncestors(id);
+      return getV2OrgUnitAncestors(id, params);
     }
     return apiClient.get(`/organization/units/${id}/ancestors/`);
   },

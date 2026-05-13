@@ -4,10 +4,10 @@ use chrono::{DateTime, Utc};
 use hms_access::require_permission;
 use hms_db::admin::AdminCursor;
 use hms_domain::admin::{
-    AdminListQuery, AuditEventListItem, AuthorityAppointmentListItem, CommitteeListItem,
-    CreateAuthorityAppointmentRequest, CreateCommitteeRequest, CreateDelegationRequest,
-    CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest, CreatePositionRequest,
-    CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
+    AdminLimitQuery, AdminListQuery, AuditEventListItem, AuthorityAppointmentListItem,
+    CommitteeListItem, CreateAuthorityAppointmentRequest, CreateCommitteeRequest,
+    CreateDelegationRequest, CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest,
+    CreatePositionRequest, CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
     FeatureEntitlementListItem, OrganizationUnitListItem, PermissionAssignmentListItem,
     PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
     StaffListItem, UpdateFeatureEntitlementRequest, UpsertPractitionerProfileRequest,
@@ -119,6 +119,81 @@ pub async fn list_org_unit_children(
             ApiError::conflict(
                 "org_unit_children_failed",
                 "Organization unit children could not be loaded.",
+            )
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
+    })))
+}
+
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/ancestors", operation_id = "getAdminOrgUnitAncestors", tag = "admin", security(("bearerAuth" = [])), params(AdminLimitQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn list_org_unit_ancestors(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<AdminLimitQuery>,
+) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    require_admin_access(&user, state.facility_id())?;
+    let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let _unit = state
+        .get_organization_unit(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_load_failed",
+                "Organization unit could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("org_unit_not_found", "Organization unit was not found.")
+        })?;
+    let rows = state
+        .list_organization_unit_ancestors(id, page_size as i64)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_ancestors_failed",
+                "Organization unit ancestors could not be loaded.",
+            )
+        })?;
+    Ok(Json(list(
+        rows,
+        PageInfo {
+            next_cursor: None,
+            has_next: false,
+            limit: page_size,
+        },
+    )))
+}
+
+#[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/descendants", operation_id = "getAdminOrgUnitDescendants", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn list_org_unit_descendants(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<AdminListQuery>,
+) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
+    require_admin_access(&user, state.facility_id())?;
+    let _unit = state
+        .get_organization_unit(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_load_failed",
+                "Organization unit could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("org_unit_not_found", "Organization unit was not found.")
+        })?;
+    let (cursor, page_size) = page_request(query)?;
+    let rows = state
+        .list_organization_unit_descendants(id, cursor, page_size as i64 + 1)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_descendants_failed",
+                "Organization unit descendants could not be loaded.",
             )
         })?;
     Ok(Json(page_response(rows, page_size, |item| {

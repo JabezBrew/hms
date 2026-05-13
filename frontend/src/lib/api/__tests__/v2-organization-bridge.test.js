@@ -360,6 +360,84 @@ describe('Rust V2 organization bridge', () => {
     ]);
   });
 
+  it('loads org-unit ancestors and descendants through dedicated Rust endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'root',
+                code: 'CLINICAL',
+                name: 'Clinical Services',
+                unit_type: 'department',
+                is_active: true,
+                parent_unit_id: null,
+                parent_unit_name: null,
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'ward-1',
+                code: 'MWA',
+                name: 'Medical Ward A',
+                unit_type: 'ward',
+                is_active: true,
+                parent_unit_id: 'root',
+                parent_unit_name: 'Clinical Services',
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const ancestors = await clinicalUnitsApi.ancestors('ward-1');
+    const descendants = await clinicalUnitsApi.descendants('root');
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/admin/org-units/ward-1/ancestors?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/admin/org-units/root/descendants?limit=100',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(ancestors).toEqual([
+      expect.objectContaining({
+        id: 'root',
+        unit_type_code: 'department',
+        parentId: null,
+      }),
+    ]);
+    expect(descendants).toEqual([
+      expect.objectContaining({
+        id: 'ward-1',
+        unit_type_code: 'ward',
+        parentId: 'root',
+      }),
+    ]);
+  });
+
   it('does not call legacy Django endpoints for unsupported Rust V2 organization lists', async () => {
     await expect(leadershipRolesApi.list()).resolves.toEqual([]);
     await expect(departmentDutyTypesApi.list()).resolves.toEqual([]);

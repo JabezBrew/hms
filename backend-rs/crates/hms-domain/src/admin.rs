@@ -11,6 +11,11 @@ pub struct AdminListQuery {
     pub limit: Option<u8>,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct AdminLimitQuery {
+    pub limit: Option<u8>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OrgUnitType {

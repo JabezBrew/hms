@@ -13,8 +13,16 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/admin/org-units/:id", get(admin::get_org_unit))
         .route(
+            "/api/v2/admin/org-units/:id/ancestors",
+            get(admin::list_org_unit_ancestors),
+        )
+        .route(
             "/api/v2/admin/org-units/:id/children",
             get(admin::list_org_unit_children),
+        )
+        .route(
+            "/api/v2/admin/org-units/:id/descendants",
+            get(admin::list_org_unit_descendants),
         )
         .route(
             "/api/v2/admin/position-templates",

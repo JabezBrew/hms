@@ -200,7 +200,9 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/system/deployment-capabilities",
         "/api/v2/admin/org-units",
         "/api/v2/admin/org-units/{id}",
+        "/api/v2/admin/org-units/{id}/ancestors",
         "/api/v2/admin/org-units/{id}/children",
+        "/api/v2/admin/org-units/{id}/descendants",
         "/api/v2/admin/position-templates",
         "/api/v2/admin/positions",
         "/api/v2/admin/authority-appointments",
@@ -3750,6 +3752,33 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .as_str()
         .expect("child org unit id");
 
+    let grandchild_org_unit = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/org-units")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "LAB_ADMIN_GRANDCHILD",
+                        "name": "Laboratory Administration Grandchild",
+                        "unit_type": "ward",
+                        "parent_unit_id": child_org_unit_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("grandchild org unit create succeeds");
+    assert_eq!(grandchild_org_unit.status(), StatusCode::OK);
+    let grandchild_org_unit_body = json_body(grandchild_org_unit).await;
+    let grandchild_org_unit_id = grandchild_org_unit_body["data"]["id"]
+        .as_str()
+        .expect("grandchild org unit id");
+
     let org_unit_children = app
         .clone()
         .oneshot(
@@ -3771,6 +3800,57 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .expect("org unit children are an array")
         .iter()
         .any(|child| child["id"] == child_org_unit_id));
+
+    let org_unit_ancestors = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/admin/org-units/{grandchild_org_unit_id}/ancestors?limit=5"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("org unit ancestors succeeds");
+    assert_eq!(org_unit_ancestors.status(), StatusCode::OK);
+    let org_unit_ancestors_body = json_body(org_unit_ancestors).await;
+    let ancestor_ids: Vec<&str> = org_unit_ancestors_body["data"]
+        .as_array()
+        .expect("org unit ancestors are an array")
+        .iter()
+        .map(|ancestor| ancestor["id"].as_str().expect("ancestor id"))
+        .collect();
+    assert_eq!(ancestor_ids, vec![org_unit_id, child_org_unit_id]);
+
+    let org_unit_descendants = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/admin/org-units/{org_unit_id}/descendants?limit=5"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("org unit descendants succeeds");
+    assert_eq!(org_unit_descendants.status(), StatusCode::OK);
+    let org_unit_descendants_body = json_body(org_unit_descendants).await;
+    let descendant_ids: Vec<&str> = org_unit_descendants_body["data"]
+        .as_array()
+        .expect("org unit descendants are an array")
+        .iter()
+        .map(|descendant| descendant["id"].as_str().expect("descendant id"))
+        .collect();
+    assert_eq!(
+        descendant_ids,
+        vec![child_org_unit_id, grandchild_org_unit_id]
+    );
 
     let org_unit_detail_denied = app
         .clone()
