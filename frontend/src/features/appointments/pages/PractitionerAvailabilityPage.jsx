@@ -14,6 +14,7 @@ import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,6 +76,7 @@ const PractitionerAvailabilityPage = () => {
   const { user } = useAuth();
   const userRole = user?.role;
   const isDoctor = userRole === 'doctor';
+  const availabilityMutationsAvailable = !isRustV2ApiMode();
   const practitionerFromState = location.state?.practitionerId
     ? String(location.state.practitionerId)
     : null;
@@ -339,7 +341,7 @@ const PractitionerAvailabilityPage = () => {
                 ? 'View your calendar and blocked time'
                 : 'Manage personal calendars and blocked time'
             }
-            actions={(
+            actions={availabilityMutationsAvailable ? (
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -357,8 +359,15 @@ const PractitionerAvailabilityPage = () => {
                   New Rule
                 </Button>
               </div>
-            )}
+            ) : null}
           />
+
+          {!availabilityMutationsAvailable && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+              Availability rule and blocked-time management is not available in Rust V2 mode yet.
+              Calendar availability remains read-only until the Rust scheduling contract is implemented.
+            </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -492,14 +501,16 @@ const PractitionerAvailabilityPage = () => {
                         <Clock className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <p className="text-xs text-muted-foreground">No personal calendar rules configured</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-3 font-mono text-xs"
-                        onClick={() => setIsCreateAvailabilityDialogOpen(true)}
-                      >
-                        Create Rule
-                      </Button>
+                      {availabilityMutationsAvailable && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 font-mono text-xs"
+                          onClick={() => setIsCreateAvailabilityDialogOpen(true)}
+                        >
+                          Create Rule
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <div className="p-2">
@@ -507,6 +518,7 @@ const PractitionerAvailabilityPage = () => {
                         <ScheduleCard
                           key={schedule.id}
                           schedule={schedule}
+                          canMutate={availabilityMutationsAvailable}
                           onEdit={() => {
                             setSelectedAvailabilityRule(schedule);
                             setIsEditAvailabilityDialogOpen(true);
@@ -548,14 +560,16 @@ const PractitionerAvailabilityPage = () => {
                         <Ban className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <p className="text-xs text-muted-foreground">No blocked times</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-3 font-mono text-xs"
-                        onClick={() => setIsCreateBlockedTimeDialogOpen(true)}
-                      >
-                        Block Time
-                      </Button>
+                      {availabilityMutationsAvailable && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 font-mono text-xs"
+                          onClick={() => setIsCreateBlockedTimeDialogOpen(true)}
+                        >
+                          Block Time
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <div className="p-2">
@@ -563,6 +577,7 @@ const PractitionerAvailabilityPage = () => {
                         <BlockedTimeCard
                           key={blocked.id}
                           blocked={blocked}
+                          canMutate={availabilityMutationsAvailable}
                           onEdit={() => {
                             setSelectedBlockedTime(blocked);
                             setIsEditBlockedTimeDialogOpen(true);
@@ -799,7 +814,7 @@ function StatCard({ icon: Icon, label, value, sublabel, color = 'amber' }) {
 /**
  * ScheduleCard - Chronicle-style personal calendar rule display
  */
-function ScheduleCard({ schedule, onEdit, onDelete }) {
+function ScheduleCard({ schedule, canMutate = true, onEdit, onDelete }) {
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
@@ -833,23 +848,25 @@ function ScheduleCard({ schedule, onEdit, onDelete }) {
             {schedule.start_time} – {schedule.end_time} • {schedule.slot_duration}min slots
           </p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-              <MoreVertical className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="z-[200]">
-            <DropdownMenuItem onClick={onEdit} className="text-xs">
-              <Edit className="h-3.5 w-3.5 mr-2" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-xs text-destructive">
-              <Trash2 className="h-3.5 w-3.5 mr-2" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canMutate && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="z-[200]">
+              <DropdownMenuItem onClick={onEdit} className="text-xs">
+                <Edit className="h-3.5 w-3.5 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDelete} className="text-xs text-destructive">
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   );
@@ -858,7 +875,7 @@ function ScheduleCard({ schedule, onEdit, onDelete }) {
 /**
  * BlockedTimeCard - Chronicle-style blocked time display
  */
-function BlockedTimeCard({ blocked, onEdit, onDelete }) {
+function BlockedTimeCard({ blocked, canMutate = true, onEdit, onDelete }) {
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
     return new Date(dateStr).toLocaleDateString('en-US', {
@@ -897,23 +914,25 @@ function BlockedTimeCard({ blocked, onEdit, onDelete }) {
             }
           </p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-              <MoreVertical className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="z-[200]">
-            <DropdownMenuItem onClick={onEdit} className="text-xs">
-              <Edit className="h-3.5 w-3.5 mr-2" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-xs text-destructive">
-              <Trash2 className="h-3.5 w-3.5 mr-2" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canMutate && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="z-[200]">
+              <DropdownMenuItem onClick={onEdit} className="text-xs">
+                <Edit className="h-3.5 w-3.5 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDelete} className="text-xs text-destructive">
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   );
