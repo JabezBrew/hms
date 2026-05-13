@@ -22,6 +22,12 @@ pub struct PatientContextCursor {
     pub patient_id: Uuid,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PatientContextFilters {
+    pub patient_id: Option<Uuid>,
+    pub search: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewPatient {
     pub id: Uuid,
@@ -363,6 +369,7 @@ pub async fn list_context_patients(
     user_id: Uuid,
     cursor: Option<PatientContextCursor>,
     limit: i64,
+    filters: PatientContextFilters,
 ) -> anyhow::Result<Vec<PatientContextListItem>> {
     let mut query = QueryBuilder::<Postgres>::new(
         r#"
@@ -385,6 +392,27 @@ pub async fn list_context_patients(
     query.push_bind(user_id);
     query.push(" AND patients.facility_id = ");
     query.push_bind(facility_id);
+
+    if let Some(patient_id) = filters.patient_id {
+        query.push(" AND patients.id = ");
+        query.push_bind(patient_id);
+    }
+
+    if let Some(search) = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let pattern = format!("%{}%", search.to_lowercase());
+        query.push(" AND (lower(patients.patient_code) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" OR lower(patients.first_name) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" OR lower(patients.last_name) LIKE ");
+        query.push_bind(pattern);
+        query.push(")");
+    }
 
     if let Some(cursor) = cursor {
         query.push(" AND (patient_contexts.updated_at, patient_contexts.patient_id) < (");

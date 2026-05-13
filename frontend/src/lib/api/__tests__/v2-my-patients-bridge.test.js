@@ -129,7 +129,7 @@ describe('Rust V2 my-patients bridge', () => {
       in_list: true,
     });
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients/context?limit=25&search=patient-2',
+      'http://localhost:8080/api/v2/patients/context?limit=25&patient_id=patient-2',
       expect.objectContaining({
         method: 'GET',
       }),

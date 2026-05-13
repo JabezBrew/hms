@@ -1091,7 +1091,8 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "search"
+      "search",
+      "patient_id"
     ],
     "hasBody": false
   },
@@ -1129,7 +1130,8 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "search"
+      "search",
+      "patient_id"
     ],
     "hasBody": false
   },

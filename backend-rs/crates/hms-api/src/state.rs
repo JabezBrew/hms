@@ -1225,6 +1225,7 @@ impl AppState {
         user_id: Uuid,
         cursor: Option<PatientContextCursor>,
         limit: i64,
+        filters: hms_db::patients::PatientContextFilters,
     ) -> Result<Vec<PatientContextListItem>> {
         hms_db::patients::list_context_patients(
             &self.inner.pool,
@@ -1232,6 +1233,7 @@ impl AppState {
             user_id,
             cursor,
             limit,
+            filters,
         )
         .await
     }

@@ -3,7 +3,7 @@ use hms_db::clinical::{
     NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
     NewProblem, UpdateClinicalNoteTemplate,
 };
-use hms_db::patients::{PatientContextCursor, PatientUpdate};
+use hms_db::patients::{PatientContextCursor, PatientContextFilters, PatientUpdate};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{
     AllergySeverity, AllergyStatus, ChartEntryType, PrescriptionStatus, ProblemStatus,
@@ -74,6 +74,7 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
         owner_id,
         None::<PatientContextCursor>,
         5,
+        PatientContextFilters::default(),
     )
     .await
     .expect("context patients list succeeds");
@@ -81,6 +82,41 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
     assert!(!context.is_empty());
     assert_eq!(context[0].id, patient_id);
     assert_eq!(context[0].display_name, "Akua Mensah");
+
+    let filtered_context = hms_db::patients::list_context_patients(
+        &pool,
+        facility_id,
+        owner_id,
+        None::<PatientContextCursor>,
+        5,
+        PatientContextFilters {
+            patient_id: Some(patient_id),
+            search: None,
+        },
+    )
+    .await
+    .expect("context patient id filter succeeds");
+
+    assert!(!filtered_context.is_empty());
+    assert!(filtered_context
+        .iter()
+        .all(|patient| patient.id == patient_id));
+
+    let missing_context = hms_db::patients::list_context_patients(
+        &pool,
+        facility_id,
+        owner_id,
+        None::<PatientContextCursor>,
+        5,
+        PatientContextFilters {
+            patient_id: Some(uuid::Uuid::new_v4()),
+            search: None,
+        },
+    )
+    .await
+    .expect("missing context patient id filter succeeds");
+
+    assert!(missing_context.is_empty());
 }
 
 #[tokio::test]

@@ -14623,6 +14623,13 @@
               "null"
             ]
           },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "search": {
             "type": [
               "string",
@@ -31167,6 +31174,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -31307,6 +31326,18 @@
             "name": "search",
             "required": false,
             "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
               "type": [
                 "string",
                 "null"

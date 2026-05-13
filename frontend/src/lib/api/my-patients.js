@@ -198,7 +198,7 @@ export const myPatientsApi = {
         const response = await v2Api.getPatientContextList({
           query: {
             limit: 25,
-            search: String(patientId),
+            patient_id: String(patientId),
           },
           signal: options.signal,
         });

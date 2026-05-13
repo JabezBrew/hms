@@ -141,7 +141,15 @@ pub async fn list_context_patients(
     let cursor = cursor_value.map(decode_context_cursor).transpose()?;
     let page_size = limit as usize;
     let patients = state
-        .list_context_patients(user.id, cursor, page_size as i64 + 1)
+        .list_context_patients(
+            user.id,
+            cursor,
+            page_size as i64 + 1,
+            hms_db::patients::PatientContextFilters {
+                patient_id: query.patient_id,
+                search: query.search.clone(),
+            },
+        )
         .await
         .map_err(|_| {
             ApiError::conflict(

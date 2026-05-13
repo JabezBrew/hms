@@ -137,6 +137,7 @@ pub struct PatientListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub search: Option<String>,
+    pub patient_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

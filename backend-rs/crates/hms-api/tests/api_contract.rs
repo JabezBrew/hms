@@ -1381,7 +1381,7 @@ async fn patient_update_and_context_list_are_patient_access_scoped() {
             Request::builder()
                 .method(Method::GET)
                 .uri("/api/v2/patients/context?limit=5")
-                .header(AUTHORIZATION, auth_header)
+                .header(AUTHORIZATION, auth_header.clone())
                 .body(Body::empty())
                 .expect("request builds"),
         )
@@ -1392,6 +1392,35 @@ async fn patient_update_and_context_list_are_patient_access_scoped() {
     assert_eq!(context_status, StatusCode::OK, "{context_body}");
     assert_eq!(context_body["data"][0]["id"], patient_id);
     assert!(context_body["data"][0]["context_kind"].is_string());
+
+    let filtered_context_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/context?limit=5&patient_id={patient_id}"
+                ))
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("filtered patient context list succeeds");
+    let filtered_context_status = filtered_context_response.status();
+    let filtered_context_body = json_body(filtered_context_response).await;
+    assert_eq!(
+        filtered_context_status,
+        StatusCode::OK,
+        "{filtered_context_body}"
+    );
+    let filtered_context_data = filtered_context_body["data"]
+        .as_array()
+        .expect("filtered context data array");
+    assert!(!filtered_context_data.is_empty());
+    assert!(filtered_context_data
+        .iter()
+        .all(|entry| entry["id"] == patient_id));
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app
