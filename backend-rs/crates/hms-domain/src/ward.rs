@@ -30,7 +30,7 @@ pub enum AdmissionStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DischargeStatus {
     Requested,
@@ -216,6 +216,11 @@ pub struct ReserveAdmissionBedRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateDischargeRequest {
     pub admission_case_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CancelDischargeRequest {
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

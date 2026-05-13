@@ -9,15 +9,15 @@ use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use hms_domain::ward::{
     AdministerMedicationRequest, AdmissionCaseListItem, AdmitPatientRequest, BedListItem,
-    CreateAdmissionCaseRequest, CreateBedRequest, CreateDischargeRequest,
+    CancelDischargeRequest, CreateAdmissionCaseRequest, CreateBedRequest, CreateDischargeRequest,
     CreateFluidBalanceEntryRequest, CreateHandoffRequest, CreateMonitoringEventRequest,
     CreateNursingAlertRequest, CreateNursingTaskRequest, CreatePatientVitalsRequest,
     CreateTreatmentSheetRequest, CreateWardSectionRequest, CreateWardStockRequestRequest,
-    DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
-    MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, PatientVitalsListItem,
-    PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
-    TreatmentSheetListItem, WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem,
-    WardStockRequestListItem,
+    DischargeCaseListItem, DischargeStatus, FluidBalanceListItem, HandoffListItem,
+    MedicationAdministrationListItem, MonitoringEventListItem, NursingAlertListItem,
+    NursingTaskListItem, PatientVitalsListItem, PatientVitalsListQuery, ReserveAdmissionBedRequest,
+    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, WardBoardItem, WardBoardQuery,
+    WardListItem, WardSectionListItem, WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -29,6 +29,7 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
+const MAX_DISCHARGE_REASON_LEN: usize = 240;
 
 #[utoipa::path(
     get,
@@ -725,6 +726,62 @@ pub async fn request_discharge(
             ApiError::conflict(
                 "discharge_create_failed",
                 "Discharge could not be requested.",
+            )
+        })?;
+
+    Ok(Json(object(discharge)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/discharges/{id}/cancel",
+    operation_id = "postDischargeCancel",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Discharge case id")),
+    request_body = CancelDischargeRequest,
+    responses(
+        (status = 200, description = "Discharge cancelled", body = ObjectResponse<DischargeCaseListItem>),
+        (status = 400, description = "Invalid cancellation", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Discharge not found", body = ApiErrorResponse),
+        (status = 409, description = "Discharge cannot be cancelled", body = ApiErrorResponse)
+    )
+)]
+pub async fn cancel_discharge(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CancelDischargeRequest>,
+) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
+    validate_optional_text(payload.reason.as_deref(), MAX_DISCHARGE_REASON_LEN)?;
+    let existing = state
+        .get_discharge_case(id)
+        .await
+        .map_err(|_| ApiError::conflict("discharge_load_failed", "Discharge could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
+    if existing.status == DischargeStatus::Completed {
+        return Err(ApiError::conflict(
+            "discharge_cancel_invalid_status",
+            "Completed discharges cannot be cancelled.",
+        ));
+    }
+    let discharge = state
+        .cancel_discharge(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "discharge_cancel_failed",
+                "Discharge could not be cancelled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "discharge_cancel_invalid_status",
+                "Discharge could not be cancelled in its current state.",
             )
         })?;
 
@@ -2002,6 +2059,18 @@ fn validate_vitals_payload(payload: &CreatePatientVitalsRequest) -> Result<(), A
     validate_optional_range(payload.pulse, 20, 250)?;
     validate_optional_range(payload.respiratory_rate, 4, 80)?;
     validate_optional_range(payload.oxygen_saturation, 0, 100)?;
+    Ok(())
+}
+
+fn validate_optional_text(value: Option<&str>, max_len: usize) -> Result<(), ApiError> {
+    if let Some(value) = value {
+        if value.chars().count() > max_len {
+            return Err(ApiError::bad_request(
+                "invalid_text",
+                "Text value is too long.",
+            ));
+        }
+    }
     Ok(())
 }
 

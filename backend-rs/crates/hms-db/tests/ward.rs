@@ -1,12 +1,12 @@
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
-    NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert,
-    NewPatientVitals, NewWardSection, NewWardStockRequest,
+    AdmissionContext, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewMonitoringEvent,
+    NewNursingAlert, NewPatientVitals, NewWardSection, NewWardStockRequest,
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
-    AdmissionStatus, BedStatus, MonitoringEventKind, NursingAlertSeverity, NursingAlertStatus,
-    WardStatus, WardStockRequestStatus,
+    AdmissionStatus, BedStatus, DischargeStatus, MonitoringEventKind, NursingAlertSeverity,
+    NursingAlertStatus, WardStatus, WardStockRequestStatus,
 };
 
 #[tokio::test]
@@ -184,6 +184,42 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
         .await
         .expect("bed status loads");
     assert_eq!(occupied_status, "occupied");
+
+    let discharge = hms_db::ward::request_discharge(
+        &pool,
+        uuid::Uuid::new_v4(),
+        facility_id,
+        &AdmissionContext {
+            id: activated.id,
+            patient_id: activated.patient_id,
+            ward_id: activated.ward_id,
+            bed_id: activated.bed_id,
+        },
+        owner_id,
+    )
+    .await
+    .expect("discharge request succeeds");
+    assert_eq!(discharge.status, DischargeStatus::Requested);
+
+    let cancelled_discharge = hms_db::ward::cancel_discharge(&pool, facility_id, discharge.id)
+        .await
+        .expect("discharge cancel query succeeds")
+        .expect("discharge is cancelled");
+    assert_eq!(cancelled_discharge.status, DischargeStatus::Cancelled);
+    let admission_status_after_cancel =
+        sqlx::query_scalar::<_, String>("SELECT status FROM admission_cases WHERE id = $1")
+            .bind(activated.id)
+            .fetch_one(&pool)
+            .await
+            .expect("admission status loads");
+    assert_eq!(admission_status_after_cancel, "admitted");
+    let bed_status_after_cancel =
+        sqlx::query_scalar::<_, String>("SELECT status FROM beds WHERE id = $1")
+            .bind(activated.bed_id.expect("activated case has bed"))
+            .fetch_one(&pool)
+            .await
+            .expect("bed status after discharge cancel loads");
+    assert_eq!(bed_status_after_cancel, "occupied");
 
     let cancellable = hms_db::ward::create_admission_case(
         &pool,

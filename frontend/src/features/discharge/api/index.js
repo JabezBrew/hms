@@ -134,11 +134,17 @@ export const dischargeApi = {
     }
     return apiClient.post(`/discharges/cases/${id}/finalize/`, data, options)
   },
-  cancelCase: (id, reason = '') => (
-    isRustV2ApiMode()
-      ? unsupportedInRustV2('Rust V2 does not expose discharge cancellation yet')
-      : apiClient.post(`/discharges/cases/${id}/cancel/`, { reason })
-  ),
+  cancelCase: async (id, reason = '', options = {}) => {
+    if (isRustV2ApiMode()) {
+      const response = await v2Api.postDischargeCancel(
+        { id },
+        { reason },
+        { signal: options.signal },
+      )
+      return adaptV2Discharge(response?.data)
+    }
+    return apiClient.post(`/discharges/cases/${id}/cancel/`, { reason }, options)
+  },
   reopenCase: (id) => (
     isRustV2ApiMode()
       ? unsupportedInRustV2('Rust V2 does not expose discharge reopening yet')

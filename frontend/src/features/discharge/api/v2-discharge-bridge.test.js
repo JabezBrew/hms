@@ -162,15 +162,58 @@ describe('Rust V2 discharge bridge', () => {
     }));
   });
 
+  it('cancels a discharge case through Rust /api/v2 and preserves the reason body', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'discharge-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            status: 'cancelled',
+            requested_at: '2026-05-12T09:00:00Z',
+            discharged_at: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const result = await dischargeApi.cancelCase(
+      'discharge-1',
+      'Patient discharge plan changed',
+      { signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/discharges/discharge-1/cancel',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        signal,
+        body: JSON.stringify({ reason: 'Patient discharge plan changed' }),
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({
+      id: 'discharge-1',
+      status: 'cancelled',
+      blockers: [],
+    }));
+  });
+
   it('fails closed for discharge workflow operations Rust V2 does not expose', async () => {
     await expect(dischargeApi.clearBilling('discharge-1')).rejects.toThrow(
       'Rust V2 does not expose discharge billing clearance yet',
     );
     await expect(dischargeApi.completeTask('task-1')).rejects.toThrow(
       'Rust V2 does not expose discharge task operations yet',
-    );
-    await expect(dischargeApi.cancelCase('discharge-1')).rejects.toThrow(
-      'Rust V2 does not expose discharge cancellation yet',
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });

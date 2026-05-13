@@ -1611,6 +1611,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postDischargeCancel": {
+    "operationId": "postDischargeCancel",
+    "method": "POST",
+    "path": "/api/v2/discharges/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postDischargeComplete": {
     "operationId": "postDischargeComplete",
     "method": "POST",
@@ -2425,6 +2435,7 @@ export function createGeneratedClient(request) {
     postConsents: createOperation(request, operations.postConsents),
     postControlledSubstanceRegister: createOperation(request, operations.postControlledSubstanceRegister),
     postControlledSubstanceRegisterCounts: createOperation(request, operations.postControlledSubstanceRegisterCounts),
+    postDischargeCancel: createOperation(request, operations.postDischargeCancel),
     postDischargeComplete: createOperation(request, operations.postDischargeComplete),
     postDischarges: createOperation(request, operations.postDischarges),
     postEncounterCancel: createOperation(request, operations.postEncounterCancel),

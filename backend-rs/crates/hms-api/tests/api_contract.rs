@@ -313,6 +313,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/admissions/cases/{id}/cancel",
         "/api/v2/discharges",
         "/api/v2/discharges/{id}",
+        "/api/v2/discharges/{id}/cancel",
         "/api/v2/discharges/{id}/complete",
         "/api/v2/nursing/tasks",
         "/api/v2/nursing/tasks/{id}/complete",
@@ -4757,6 +4758,70 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         discharge_detail_body["data"]["admission_case_id"],
         admission_id
     );
+
+    let cancel_discharge = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/discharges/{discharge_id}/cancel"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "reason": "Patient discharge plan changed"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("discharge cancel succeeds");
+    assert_eq!(cancel_discharge.status(), StatusCode::OK);
+    let cancel_discharge_body = json_body(cancel_discharge).await;
+    assert_eq!(cancel_discharge_body["data"]["status"], "cancelled");
+
+    let admission_after_cancel = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admissions/{admission_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("active admission after discharge cancellation succeeds");
+    assert_eq!(admission_after_cancel.status(), StatusCode::OK);
+    let admission_after_cancel_body = json_body(admission_after_cancel).await;
+    assert_eq!(
+        admission_after_cancel_body["data"]["admission_status"],
+        "admitted"
+    );
+
+    let discharge_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/discharges")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "admission_case_id": admission_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("discharge recreate succeeds");
+    assert_eq!(discharge_response.status(), StatusCode::OK);
+    let discharge_body = json_body(discharge_response).await;
+    assert_eq!(discharge_body["data"]["id"], discharge_id);
+    assert_eq!(discharge_body["data"]["status"], "requested");
 
     let complete_discharge = app
         .clone()

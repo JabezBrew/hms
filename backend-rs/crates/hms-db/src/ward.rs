@@ -1407,6 +1407,59 @@ pub async fn complete_discharge(
     ))
 }
 
+pub async fn cancel_discharge(
+    pool: &PgPool,
+    facility_id: Uuid,
+    discharge_case_id: Uuid,
+) -> anyhow::Result<Option<DischargeCaseListItem>> {
+    let mut transaction = pool.begin().await?;
+    let row = sqlx::query_as::<_, DischargeContextRow>(
+        r#"
+        UPDATE discharge_cases
+        SET status = $1,
+            discharged_at = NULL,
+            updated_at = now()
+        WHERE facility_id = $2
+          AND id = $3
+          AND status <> $4
+        RETURNING admission_case_id
+        "#,
+    )
+    .bind(codec::encode(DischargeStatus::Cancelled)?)
+    .bind(facility_id)
+    .bind(discharge_case_id)
+    .bind(codec::encode(DischargeStatus::Completed)?)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    sqlx::query(
+        r#"
+        UPDATE admission_cases
+        SET status = $1,
+            discharged_at = NULL,
+            updated_at = now()
+        WHERE facility_id = $2
+          AND id = $3
+          AND status <> $4
+        "#,
+    )
+    .bind(codec::encode(AdmissionStatus::Admitted)?)
+    .bind(facility_id)
+    .bind(row.admission_case_id)
+    .bind(codec::encode(AdmissionStatus::Discharged)?)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+    Ok(Some(
+        discharge_item_by_admission(pool, facility_id, row.admission_case_id).await?,
+    ))
+}
+
 pub async fn list_nursing_tasks(
     pool: &PgPool,
     facility_id: Uuid,

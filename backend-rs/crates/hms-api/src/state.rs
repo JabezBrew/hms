@@ -2979,6 +2979,14 @@ impl AppState {
             .await
     }
 
+    pub async fn cancel_discharge(
+        &self,
+        discharge_case_id: Uuid,
+    ) -> Result<Option<DischargeCaseListItem>> {
+        hms_db::ward::cancel_discharge(&self.inner.pool, self.facility_id(), discharge_case_id)
+            .await
+    }
+
     pub async fn get_discharge_case(
         &self,
         discharge_case_id: Uuid,
