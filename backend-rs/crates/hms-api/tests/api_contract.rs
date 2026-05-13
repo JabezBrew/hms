@@ -4305,6 +4305,32 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
     let auth_header = format!("Bearer {access_token}");
     let owner_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
 
+    let created_ward_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/wards")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "code": "TEST-WARD",
+                        "name": "Test Ward"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward create succeeds");
+    assert_eq!(created_ward_response.status(), StatusCode::OK);
+    let created_ward_body = json_body(created_ward_response).await;
+    assert_eq!(created_ward_body["data"]["code"], "TEST-WARD");
+    assert_eq!(created_ward_body["data"]["name"], "Test Ward");
+    assert_eq!(created_ward_body["data"]["status"], "active");
+    assert_eq!(created_ward_body["data"]["active_bed_count"], 0);
+
     let ward_response = app
         .clone()
         .oneshot(

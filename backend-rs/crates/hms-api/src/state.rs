@@ -38,7 +38,7 @@ use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
 use hms_db::ward::{
     AdmissionContext, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewHandoff,
     NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
-    NewPatientVitals, NewTreatmentSheet, NewWardSection, NewWardStockRequest, WardCursor,
+    NewPatientVitals, NewTreatmentSheet, NewWard, NewWardSection, NewWardStockRequest, WardCursor,
 };
 use hms_domain::admin::{
     AuditEventListItem, AuthorityAppointmentListItem, CommitteeListItem,
@@ -2798,6 +2798,19 @@ impl AppState {
 
     pub async fn get_ward(&self, ward_id: Uuid) -> Result<Option<WardListItem>> {
         hms_db::ward::get_ward(&self.inner.pool, self.facility_id(), ward_id).await
+    }
+
+    pub async fn create_ward(&self, code: String, name: String) -> Result<WardListItem> {
+        hms_db::ward::create_ward(
+            &self.inner.pool,
+            NewWard {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                code,
+                name,
+            },
+        )
+        .await
     }
 
     pub async fn list_ward_sections(

@@ -12,12 +12,13 @@ use hms_domain::ward::{
     CancelDischargeRequest, CreateAdmissionCaseRequest, CreateBedRequest, CreateDischargeRequest,
     CreateFluidBalanceEntryRequest, CreateHandoffRequest, CreateMonitoringEventRequest,
     CreateNursingAlertRequest, CreateNursingTaskRequest, CreatePatientVitalsRequest,
-    CreateTreatmentSheetRequest, CreateWardSectionRequest, CreateWardStockRequestRequest,
-    DischargeCaseListItem, DischargeStatus, FluidBalanceListItem, HandoffListItem,
-    MedicationAdministrationListItem, MonitoringEventListItem, NursingAlertListItem,
-    NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem, PatientVitalsListQuery,
-    ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest, TreatmentSheetListItem,
-    WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem, WardStockRequestListItem,
+    CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
+    CreateWardStockRequestRequest, DischargeCaseListItem, DischargeStatus, FluidBalanceListItem,
+    HandoffListItem, MedicationAdministrationListItem, MonitoringEventListItem,
+    NursingAlertListItem, NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem,
+    PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
+    TreatmentSheetListItem, WardBoardItem, WardBoardQuery, WardListItem, WardSectionListItem,
+    WardStockRequestListItem,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -30,6 +31,8 @@ use crate::state::AppState;
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_DISCHARGE_REASON_LEN: usize = 240;
+const MAX_WARD_CODE_LEN: usize = 64;
+const MAX_WARD_NAME_LEN: usize = 160;
 
 #[utoipa::path(
     get,
@@ -59,6 +62,51 @@ pub async fn list_wards(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.created_at, item.id)
     })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/wards",
+    operation_id = "postWard",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    request_body = CreateWardRequest,
+    responses(
+        (status = 200, description = "Ward created", body = ObjectResponse<WardListItem>),
+        (status = 400, description = "Invalid ward", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Ward could not be created", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_ward(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<CreateWardRequest>,
+) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
+    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
+
+    let code = payload.code.trim();
+    let name = payload.name.trim();
+    if code.is_empty() || name.is_empty() {
+        return Err(ApiError::bad_request(
+            "invalid_ward",
+            "Ward code and name are required.",
+        ));
+    }
+    if code.len() > MAX_WARD_CODE_LEN || name.len() > MAX_WARD_NAME_LEN {
+        return Err(ApiError::bad_request(
+            "invalid_ward",
+            "Ward code or name is too long.",
+        ));
+    }
+
+    let ward = state
+        .create_ward(code.to_owned(), name.to_owned())
+        .await
+        .map_err(|_| ApiError::conflict("ward_create_failed", "Ward could not be created."))?;
+
+    Ok(Json(object(ward)))
 }
 
 #[utoipa::path(

@@ -29,6 +29,14 @@ pub struct AdmissionContext {
 }
 
 #[derive(Clone, Debug)]
+pub struct NewWard {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewWardSection {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -447,6 +455,37 @@ pub async fn get_ward(
     .await?;
 
     row.map(ward_from_row).transpose()
+}
+
+pub async fn create_ward(pool: &PgPool, ward: NewWard) -> anyhow::Result<WardListItem> {
+    let row = sqlx::query_as::<_, WardRow>(
+        r#"
+        INSERT INTO wards (
+            id,
+            facility_id,
+            code,
+            name,
+            status
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id,
+                  code,
+                  name,
+                  status,
+                  0::bigint AS active_bed_count,
+                  0::bigint AS occupied_bed_count,
+                  created_at
+        "#,
+    )
+    .bind(ward.id)
+    .bind(ward.facility_id)
+    .bind(ward.code)
+    .bind(ward.name)
+    .bind(codec::encode(WardStatus::Active)?)
+    .fetch_one(pool)
+    .await?;
+
+    ward_from_row(row)
 }
 
 pub async fn list_ward_sections(

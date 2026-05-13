@@ -1,7 +1,8 @@
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_db::ward::{
     AdmissionContext, NewAdmissionCase, NewBed, NewFluidBalanceEntry, NewMonitoringEvent,
-    NewNursingAlert, NewNursingTask, NewPatientVitals, NewWardSection, NewWardStockRequest,
+    NewNursingAlert, NewNursingTask, NewPatientVitals, NewWard, NewWardSection,
+    NewWardStockRequest,
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
@@ -36,6 +37,29 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
     .fetch_one(&pool)
     .await
     .expect("owner exists");
+    let created_ward = hms_db::ward::create_ward(
+        &pool,
+        NewWard {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            code: "TEST-WARD".to_owned(),
+            name: "Test Ward".to_owned(),
+        },
+    )
+    .await
+    .expect("ward create succeeds");
+    assert_eq!(created_ward.code, "TEST-WARD");
+    assert_eq!(created_ward.name, "Test Ward");
+    assert_eq!(created_ward.status, WardStatus::Active);
+    assert_eq!(created_ward.active_bed_count, 0);
+    assert_eq!(created_ward.occupied_bed_count, 0);
+    assert!(
+        hms_db::ward::get_ward(&pool, uuid::Uuid::new_v4(), created_ward.id)
+            .await
+            .expect("cross-facility created ward lookup succeeds")
+            .is_none()
+    );
+
     let ward_id = sqlx::query_scalar::<_, uuid::Uuid>(
         "SELECT id FROM wards WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
     )

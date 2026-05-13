@@ -2333,6 +2333,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postWard": {
+    "operationId": "postWard",
+    "method": "POST",
+    "path": "/api/v2/wards",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postWardBed": {
     "operationId": "postWardBed",
     "method": "POST",
@@ -2631,6 +2639,7 @@ export function createGeneratedClient(request) {
     postVisitNoShow: createOperation(request, operations.postVisitNoShow),
     postVisitReadyCheckout: createOperation(request, operations.postVisitReadyCheckout),
     postVisitStartConsultation: createOperation(request, operations.postVisitStartConsultation),
+    postWard: createOperation(request, operations.postWard),
     postWardBed: createOperation(request, operations.postWardBed),
     postWardSection: createOperation(request, operations.postWardSection),
     postWardStockRequestApprove: createOperation(request, operations.postWardStockRequestApprove),

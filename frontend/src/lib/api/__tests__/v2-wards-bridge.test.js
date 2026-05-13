@@ -149,6 +149,53 @@ describe('Rust V2 wards bridge', () => {
     ]);
   });
 
+  it('creates wards through the Rust V2 ward setup contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'ward-2',
+            code: 'TEST-WARD',
+            name: 'Test Ward',
+            status: 'active',
+            active_bed_count: 0,
+            occupied_bed_count: 0,
+            created_at: '2026-05-12T10:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const ward = await wardsApi.createWard({
+      code: 'TEST-WARD',
+      name: 'Test Ward',
+      ward_type: 'general',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'TEST-WARD',
+          name: 'Test Ward',
+        }),
+      }),
+    );
+    expect(ward).toEqual(expect.objectContaining({
+      id: 'ward-2',
+      code: 'TEST-WARD',
+      name: 'Test Ward',
+      total_beds: 0,
+      is_active: true,
+    }));
+  });
+
   it('uses Rust V2 for root metadata, scoped sections, and supported ward setup mutations', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -395,7 +442,6 @@ describe('Rust V2 wards bridge', () => {
   });
 
   it('fails closed or returns safe empty lists for unsupported Rust V2 ward calls', async () => {
-    await expect(wardsApi.createWard({ name: 'New Ward' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.updateWard('ward-1', { name: 'Renamed' })).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.deleteWard('ward-1')).rejects.toThrow(/Rust V2 .* ward mutations/i);
     await expect(wardsApi.updateBed('bed-1', { status: 'closed' })).rejects.toThrow(/Rust V2 .* bed mutations/i);

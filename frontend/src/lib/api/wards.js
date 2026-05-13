@@ -141,6 +141,12 @@ function bedCodeFrom(data = {}) {
   return data.bed_code || data.bed_number || data.name || '';
 }
 
+function wardPayloadFrom(data = {}) {
+  const name = String(data.name || data.label || data.code || '').trim();
+  const code = String(data.code || data.ward_code || data.ward_type || name).trim();
+  return { code, name };
+}
+
 function admissionPayloadFrom(data = {}) {
   return {
     patient_id: data.patient_id || data.patient,
@@ -277,7 +283,10 @@ export const wardsApi = {
   createWard: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return await rustV2Unsupported('ward mutations');
+        const response = await v2Api.postWard(wardPayloadFrom(data), {
+          signal: data?.signal,
+        });
+        return adaptV2Ward(response?.data || {});
       }
       return await apiClient.post('/wards/wards/', data);
     } catch (error) {

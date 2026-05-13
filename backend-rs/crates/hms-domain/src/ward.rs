@@ -123,6 +123,12 @@ pub struct WardListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateWardRequest {
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct WardSectionListItem {
     pub id: Uuid,
     pub ward_id: Uuid,
