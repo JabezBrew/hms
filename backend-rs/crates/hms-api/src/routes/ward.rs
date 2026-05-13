@@ -42,6 +42,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/discharges",
             get(ward::list_discharges).post(ward::request_discharge),
         )
+        .route("/api/v2/discharges/:id", get(ward::get_discharge))
         .route(
             "/api/v2/discharges/:id/complete",
             post(ward::complete_discharge),

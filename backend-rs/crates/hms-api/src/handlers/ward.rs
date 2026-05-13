@@ -553,6 +553,35 @@ pub async fn list_discharges(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/discharges/{id}",
+    operation_id = "getDischargeById",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Discharge case id")),
+    responses(
+        (status = 200, description = "Discharge case", body = ObjectResponse<DischargeCaseListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Discharge not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_discharge(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
+    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
+    let discharge = state
+        .get_discharge_case(id)
+        .await
+        .map_err(|_| ApiError::conflict("discharge_load_failed", "Discharge could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, discharge.patient_id).await?;
+    Ok(Json(object(discharge)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/discharges",
     operation_id = "postDischarges",

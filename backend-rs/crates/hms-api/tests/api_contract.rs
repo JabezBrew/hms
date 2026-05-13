@@ -307,6 +307,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/admissions/cases/{id}/activate",
         "/api/v2/admissions/cases/{id}/cancel",
         "/api/v2/discharges",
+        "/api/v2/discharges/{id}",
         "/api/v2/discharges/{id}/complete",
         "/api/v2/nursing/tasks",
         "/api/v2/nursing/tasks/{id}/complete",
@@ -4479,6 +4480,26 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .expect("discharge id exists");
     assert_eq!(discharge_body["data"]["status"], "requested");
 
+    let discharge_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/discharges/{discharge_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("discharge detail succeeds");
+    assert_eq!(discharge_detail.status(), StatusCode::OK);
+    let discharge_detail_body = json_body(discharge_detail).await;
+    assert_eq!(discharge_detail_body["data"]["id"], discharge_id);
+    assert_eq!(
+        discharge_detail_body["data"]["admission_case_id"],
+        admission_id
+    );
+
     let complete_discharge = app
         .clone()
         .oneshot(
@@ -4523,6 +4544,20 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .await
         .expect("admission case detail denial succeeds");
     assert_eq!(admission_case_denied.status(), StatusCode::FORBIDDEN);
+
+    let discharge_denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/discharges/{discharge_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("discharge detail denial succeeds");
+    assert_eq!(discharge_denied.status(), StatusCode::FORBIDDEN);
 
     let denied = app
         .clone()

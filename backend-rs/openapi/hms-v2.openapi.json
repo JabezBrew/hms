@@ -20104,6 +20104,73 @@
         ]
       }
     },
+    "/api/v2/discharges/{id}": {
+      "get": {
+        "operationId": "getDischargeById",
+        "parameters": [
+          {
+            "description": "Discharge case id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_DischargeCaseListItem"
+                }
+              }
+            },
+            "description": "Discharge case"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Discharge not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
     "/api/v2/discharges/{id}/complete": {
       "post": {
         "operationId": "postDischargeComplete",

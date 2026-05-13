@@ -124,6 +124,44 @@ describe('Rust V2 discharge bridge', () => {
     );
   });
 
+  it('loads discharge case detail through the Rust /api/v2 detail endpoint', async () => {
+    const signal = new AbortController().signal;
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'discharge-1',
+            admission_case_id: 'admission-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-001',
+            patient_display_name: 'Ama Mensah',
+            status: 'requested',
+            requested_at: '2026-05-12T09:00:00Z',
+            discharged_at: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const result = await dischargeApi.getCase('discharge-1', { signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/discharges/discharge-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include', signal }),
+    );
+    expect(result).toEqual(expect.objectContaining({
+      id: 'discharge-1',
+      admission: 'admission-1',
+      patient_name: 'Ama Mensah',
+      status: 'awaiting_clearance',
+    }));
+  });
+
   it('fails closed for discharge workflow operations Rust V2 does not expose', async () => {
     await expect(dischargeApi.clearBilling('discharge-1')).rejects.toThrow(
       'Rust V2 does not expose discharge billing clearance yet',

@@ -99,8 +99,8 @@ export const dischargeApi = {
   },
   getCase: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      const cases = await getV2DischargeCases({ limit: 100 }, options)
-      return cases.find((item) => item.id === id) || null
+      const response = await v2Api.getDischargeById({ id }, { signal: options.signal })
+      return adaptV2Discharge(response?.data)
     }
     return apiClient.get(`/discharges/cases/${id}/`, options)
   },

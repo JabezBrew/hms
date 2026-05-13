@@ -359,6 +359,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getDischargeById": {
+    "operationId": "getDischargeById",
+    "method": "GET",
+    "path": "/api/v2/discharges/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getDischarges": {
     "operationId": "getDischarges",
     "method": "GET",
@@ -2201,6 +2211,7 @@ export function createGeneratedClient(request) {
     getControlledSubstanceRegisterById: createOperation(request, operations.getControlledSubstanceRegisterById),
     getControlledSubstanceRegisterEntries: createOperation(request, operations.getControlledSubstanceRegisterEntries),
     getDashboardSnapshot: createOperation(request, operations.getDashboardSnapshot),
+    getDischargeById: createOperation(request, operations.getDischargeById),
     getDischarges: createOperation(request, operations.getDischarges),
     getEncounterById: createOperation(request, operations.getEncounterById),
     getEncounterCareTeam: createOperation(request, operations.getEncounterCareTeam),
