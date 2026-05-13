@@ -132,6 +132,8 @@ pub async fn list_patients(
         query.push(" OR lower(first_name) LIKE ");
         query.push_bind(pattern.clone());
         query.push(" OR lower(last_name) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" OR lower(first_name || ' ' || last_name) LIKE ");
         query.push_bind(pattern);
         query.push(")");
     }
@@ -416,6 +418,8 @@ pub async fn list_context_patients(
         query.push(" OR lower(patients.first_name) LIKE ");
         query.push_bind(pattern.clone());
         query.push(" OR lower(patients.last_name) LIKE ");
+        query.push_bind(pattern.clone());
+        query.push(" OR lower(patients.first_name || ' ' || patients.last_name) LIKE ");
         query.push_bind(pattern);
         query.push(")");
     }

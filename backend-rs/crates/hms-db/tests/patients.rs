@@ -55,6 +55,20 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
     .await
     .expect("second patient exists");
 
+    let full_name_matches = hms_db::patients::list_patients(
+        &pool,
+        facility_id,
+        None,
+        10,
+        Some("Ama Mensah"),
+        Some(PatientAdministrativeStatus::Active),
+    )
+    .await
+    .expect("full-name patient search succeeds");
+
+    assert_eq!(full_name_matches.len(), 1);
+    assert_eq!(full_name_matches[0].id, patient_id);
+
     let updated = hms_db::patients::update_patient(
         &pool,
         PatientUpdate {
@@ -90,6 +104,25 @@ async fn patient_update_and_context_repository_keep_facility_scope() {
     assert!(!context.is_empty());
     assert_eq!(context[0].id, patient_id);
     assert_eq!(context[0].display_name, "Akua Mensah");
+
+    let full_name_context = hms_db::patients::list_context_patients(
+        &pool,
+        facility_id,
+        owner_id,
+        None::<PatientContextCursor>,
+        5,
+        PatientContextFilters {
+            patient_id: None,
+            search: Some("Akua Mensah".to_owned()),
+        },
+    )
+    .await
+    .expect("full-name context patient search succeeds");
+
+    assert!(!full_name_context.is_empty());
+    assert!(full_name_context
+        .iter()
+        .all(|patient| patient.id == patient_id && patient.display_name == "Akua Mensah"));
 
     let filtered_context = hms_db::patients::list_context_patients(
         &pool,
