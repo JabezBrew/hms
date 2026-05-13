@@ -7,7 +7,7 @@ use hms_domain::admin::{
     FeatureEntitlementListItem, OrgUnitType, OrganizationUnitListItem,
     PermissionAssignmentListItem, PermissionAssignmentStatus, PositionListItem, PositionStatus,
     PositionTemplateListItem, PractitionerListItem, PractitionerProfileSummary, StaffDirectoryItem,
-    StaffListItem,
+    StaffListItem, UpdateStaffRequest,
 };
 use hms_domain::capabilities::{feature_flags_for_profile, ALL_FEATURES};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
@@ -984,6 +984,66 @@ pub async fn create_staff_account(
     get_staff_account(pool, staff.facility_id, staff_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("staff account was not found after write"))
+}
+
+pub async fn update_staff_account(
+    pool: &PgPool,
+    facility_id: Uuid,
+    staff_id: Uuid,
+    update: UpdateStaffRequest,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<StaffListItem>> {
+    let Some(staff) = get_staff_account(pool, facility_id, staff_id).await? else {
+        return Ok(None);
+    };
+
+    let display_name = update.display_name.map(|value| value.trim().to_owned());
+    let department = update.department.map(|value| value.trim().to_owned());
+    let position = update.position.map(|value| value.trim().to_owned());
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE users
+         SET display_name = COALESCE($1, display_name),
+             updated_at = now()
+         WHERE id = $2 AND facility_id = $3",
+    )
+    .bind(display_name)
+    .bind(staff.user_id)
+    .bind(facility_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE staff_profiles
+         SET department = COALESCE($1, department),
+             position = COALESCE($2, position),
+             updated_by_user_id = $3,
+             updated_at = now()
+         WHERE id = $4 AND facility_id = $5",
+    )
+    .bind(department)
+    .bind(position)
+    .bind(actor_user_id)
+    .bind(staff_id)
+    .bind(facility_id)
+    .execute(&mut *tx)
+    .await?;
+    insert_audit_event_tx(
+        &mut tx,
+        NewAuditEvent {
+            facility_id,
+            actor_user_id: Some(actor_user_id),
+            request_id,
+            event_type: "admin.staff.updated".to_owned(),
+            resource_type: "staff".to_owned(),
+            resource_id: Some(staff_id),
+            metadata: json!({}),
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    get_staff_account(pool, facility_id, staff_id).await
 }
 
 pub async fn upsert_practitioner_profile(

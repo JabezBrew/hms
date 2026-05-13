@@ -47,7 +47,7 @@ use hms_domain::admin::{
     CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
     FeatureEntitlementListItem, OrganizationUnitListItem, PermissionAssignmentListItem,
     PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
-    StaffListItem, UpsertPractitionerProfileRequest,
+    StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::AuthUser;
 use hms_domain::billing::{
@@ -981,6 +981,24 @@ impl AppState {
                 created_by_user_id: actor_user_id,
                 practitioner_profile: payload.practitioner_profile.map(practitioner_profile),
             },
+            request_id,
+        )
+        .await
+    }
+
+    pub async fn update_staff_account(
+        &self,
+        staff_id: Uuid,
+        payload: UpdateStaffRequest,
+        actor_user_id: Uuid,
+        request_id: Option<String>,
+    ) -> Result<Option<StaffListItem>> {
+        hms_db::admin::update_staff_account(
+            &self.inner.pool,
+            self.facility_id(),
+            staff_id,
+            payload,
+            actor_user_id,
             request_id,
         )
         .await

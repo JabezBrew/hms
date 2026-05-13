@@ -1297,6 +1297,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "patchAdminStaff": {
+    "operationId": "patchAdminStaff",
+    "method": "PATCH",
+    "path": "/api/v2/admin/staff/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "patchAppointmentById": {
     "operationId": "patchAppointmentById",
     "method": "PATCH",
@@ -2459,6 +2469,7 @@ export function createGeneratedClient(request) {
     getWardSections: createOperation(request, operations.getWardSections),
     getWardStockRequests: createOperation(request, operations.getWardStockRequests),
     patchAdminFeature: createOperation(request, operations.patchAdminFeature),
+    patchAdminStaff: createOperation(request, operations.patchAdminStaff),
     patchAppointmentById: createOperation(request, operations.patchAppointmentById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
     patchPatientById: createOperation(request, operations.patchPatientById),

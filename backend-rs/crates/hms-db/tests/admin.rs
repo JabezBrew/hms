@@ -135,17 +135,53 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
         "MDC/RN/0001"
     );
 
+    let updated_staff = hms_db::admin::update_staff_account(
+        &pool,
+        facility_id,
+        staff.id,
+        hms_domain::admin::UpdateStaffRequest {
+            display_name: Some("Akosua Updated".to_owned()),
+            department: Some("Emergency".to_owned()),
+            position: Some("Emergency Physician".to_owned()),
+        },
+        owner_id,
+        Some("staff-update-test".to_owned()),
+    )
+    .await
+    .expect("staff account updates")
+    .expect("staff account exists");
+    assert_eq!(updated_staff.display_name, "Akosua Updated");
+    assert_eq!(updated_staff.department, "Emergency");
+    assert_eq!(updated_staff.position, "Emergency Physician");
+    assert!(hms_db::admin::update_staff_account(
+        &pool,
+        Uuid::new_v4(),
+        staff.id,
+        hms_domain::admin::UpdateStaffRequest {
+            display_name: Some("Cross Facility".to_owned()),
+            department: None,
+            position: None,
+        },
+        owner_id,
+        Some("staff-update-cross-facility-test".to_owned()),
+    )
+    .await
+    .expect("cross-facility update succeeds")
+    .is_none());
+
     let listed = hms_db::admin::list_staff_accounts(&pool, facility_id, None, 10)
         .await
         .expect("staff list succeeds");
-    assert!(listed.iter().any(|item| item.id == staff.id));
+    assert!(listed
+        .iter()
+        .any(|item| item.id == staff.id && item.display_name == "Akosua Updated"));
 
     let directory = hms_db::admin::list_staff_directory(&pool, facility_id, None, 10)
         .await
         .expect("staff directory succeeds");
     assert!(directory
         .iter()
-        .any(|item| item.user_id == staff.user_id && item.display_name == "Akosua Clinician"));
+        .any(|item| item.user_id == staff.user_id && item.display_name == "Akosua Updated"));
     assert!(
         hms_db::admin::list_staff_accounts(&pool, Uuid::new_v4(), None, 10)
             .await

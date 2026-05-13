@@ -52,7 +52,10 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/admin/staff",
             get(admin::list_staff).post(admin::create_staff),
         )
-        .route("/api/v2/admin/staff/:id", get(admin::get_staff))
+        .route(
+            "/api/v2/admin/staff/:id",
+            get(admin::get_staff).patch(admin::update_staff),
+        )
         .route(
             "/api/v2/admin/staff/:id/force-password-reset",
             post(admin::force_staff_password_reset),

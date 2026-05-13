@@ -10,7 +10,8 @@ use hms_domain::admin::{
     CreatePositionRequest, CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
     FeatureEntitlementListItem, OrganizationUnitListItem, PermissionAssignmentListItem,
     PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
-    StaffListItem, UpdateFeatureEntitlementRequest, UpsertPractitionerProfileRequest,
+    StaffListItem, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
+    UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::AuthUser;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
@@ -479,6 +480,25 @@ pub async fn get_staff(
     Ok(Json(object(staff)))
 }
 
+#[utoipa::path(patch, path = "/api/v2/admin/staff/{id}", operation_id = "patchAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), request_body = UpdateStaffRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn update_staff(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateStaffRequest>,
+) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
+    require_staff_access(&user, state.facility_id())?;
+    validate_staff_update_payload(&payload)?;
+    let staff = state
+        .update_staff_account(id, payload, user.id, Some(current_request_id()))
+        .await
+        .map_err(|_| {
+            ApiError::conflict("staff_update_failed", "Staff account could not be updated.")
+        })?
+        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
+    Ok(Json(object(staff)))
+}
+
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/force-password-reset", operation_id = "postAdminStaffForcePasswordReset", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn force_staff_password_reset(
     State(state): State<AppState>,
@@ -796,6 +816,19 @@ fn validate_staff_payload(payload: &CreateStaffRequest) -> Result<(), ApiError> 
     validate_password_policy(&payload.temporary_password)?;
     if let Some(profile) = payload.practitioner_profile.as_ref() {
         validate_practitioner_profile(profile)?;
+    }
+    Ok(())
+}
+
+fn validate_staff_update_payload(payload: &UpdateStaffRequest) -> Result<(), ApiError> {
+    if let Some(value) = payload.display_name.as_ref() {
+        validate_text(value, MAX_NAME_LEN, "display_name")?;
+    }
+    if let Some(value) = payload.department.as_ref() {
+        validate_text(value, MAX_NAME_LEN, "department")?;
+    }
+    if let Some(value) = payload.position.as_ref() {
+        validate_text(value, MAX_NAME_LEN, "position")?;
     }
     Ok(())
 }

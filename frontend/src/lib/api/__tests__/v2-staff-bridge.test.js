@@ -354,6 +354,60 @@ describe('Rust V2 staff bridge', () => {
     });
   });
 
+  it('updates staff through the Rust V2 staff contract without legacy fallback', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'staff-1',
+            user_id: 'user-1',
+            display_name: 'Ama Updated',
+            email: 'ama@example.test',
+            employee_id: 'EMP-001',
+            department: 'Emergency',
+            position: 'Charge Nurse',
+            hire_date: '2026-01-01',
+            is_active: true,
+            password_change_required: false,
+            session_version: 1,
+            permission_version: 1,
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await staffApi.updateStaff('staff-1', {
+      first_name: 'Ama',
+      last_name: 'Updated',
+      department: 'Emergency',
+      position: 'Charge Nurse',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/staff/staff-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          display_name: 'Ama Updated',
+          department: 'Emergency',
+          position: 'Charge Nurse',
+        }),
+      }),
+    );
+    expect(response).toMatchObject({
+      id: 'staff-1',
+      name: 'Ama Updated',
+      department: 'Emergency',
+      position: 'Charge Nurse',
+    });
+  });
+
   it('deactivates staff through the Rust V2 lifecycle endpoint instead of deleting through legacy', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

@@ -103,6 +103,18 @@ function normalizeV2StaffCreatePayload(data = {}) {
   });
 }
 
+function normalizeV2StaffUpdatePayload(data = {}) {
+  const displayName = data.display_name
+    ?? data.name
+    ?? ([data.first_name, data.last_name].filter(Boolean).join(' ').trim() || undefined);
+
+  return compactObject({
+    display_name: displayName,
+    department: data.department,
+    position: data.position,
+  });
+}
+
 function adaptV2StaffLifecycleResponse(response, mode, detail) {
   return {
     mode,
@@ -282,9 +294,21 @@ export const staffApi = {
    * @param {Object} data - Staff data to update
    * @returns {Promise<Object>} Updated staff data
    */
-  updateStaff: async (id, data) => {
+  updateStaff: async (id, data, options = {}) => {
     if (isRustV2ApiMode()) {
-      throw new Error('Rust V2 does not expose general staff profile updates yet.');
+      try {
+        const response = await v2Api.patchAdminStaff(
+          { id },
+          normalizeV2StaffUpdatePayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2StaffListItem(response?.data);
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw error;
+        }
+        throw new Error(handleV2ApiError(error, 'Failed to update staff member'));
+      }
     }
 
     try {

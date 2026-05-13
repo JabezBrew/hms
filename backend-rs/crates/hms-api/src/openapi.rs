@@ -41,6 +41,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::admin::list_staff_directory,
         crate::handlers::admin::reactivate_staff,
         crate::handlers::admin::update_feature_entitlement,
+        crate::handlers::admin::update_staff,
         crate::handlers::admin::upsert_staff_practitioner_profile,
         crate::handlers::billing::close_cash_session,
         crate::handlers::billing::create_batch,

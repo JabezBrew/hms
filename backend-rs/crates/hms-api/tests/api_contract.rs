@@ -951,6 +951,33 @@ async fn staff_management_is_admin_scoped_and_practitioner_ready() {
         .expect("staff detail succeeds");
     assert_eq!(detail_response.status(), StatusCode::OK);
 
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/admin/staff/{staff_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .header("x-request-id", "staff-update-test")
+                .body(Body::from(
+                    json!({
+                        "display_name": "Akosua Updated",
+                        "department": "Emergency",
+                        "position": "Emergency Physician"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("staff update succeeds");
+    assert_eq!(update_response.status(), StatusCode::OK);
+    let update_body = json_body(update_response).await;
+    assert_eq!(update_body["data"]["display_name"], "Akosua Updated");
+    assert_eq!(update_body["data"]["department"], "Emergency");
+    assert_eq!(update_body["data"]["position"], "Emergency Physician");
+
     let profile_response = app
         .clone()
         .oneshot(
