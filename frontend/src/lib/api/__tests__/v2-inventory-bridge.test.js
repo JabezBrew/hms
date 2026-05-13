@@ -389,6 +389,36 @@ describe('Rust V2 inventory bridge', () => {
     );
   });
 
+  it('threads AbortSignal into Rust V2 inventory metadata reads', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'cat-1', name: 'Medication' }],
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          { id: 'loc-1', name: 'Main Pharmacy', location_type: 'pharmacy' },
+          { id: 'loc-2', name: 'Main Store', location_type: 'store' },
+        ],
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getCategories({ signal: controller.signal })).resolves.toEqual([
+      expect.objectContaining({ id: 'cat-1' }),
+    ]);
+    await expect(inventoryApi.getLocationsByType('pharmacy', {
+      signal: controller.signal,
+    })).resolves.toEqual([
+      expect.objectContaining({ id: 'loc-1' }),
+    ]);
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/inventory/categories', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/storage-locations', 'GET', controller.signal],
+    ]);
+  });
+
   it('routes inventory list pages through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'cat-1', name: 'Medication' }], meta: {} }))

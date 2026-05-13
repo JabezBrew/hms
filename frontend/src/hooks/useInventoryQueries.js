@@ -166,7 +166,7 @@ export function useInventoryCategories(params = {}) {
   const shouldUseImmutableCache = !hasMeaningfulQueryParams(params);
   return useQuery({
     queryKey: inventoryKeys.categoryList(params),
-    queryFn: () => inventoryApi.getCategories(params),
+    queryFn: ({ signal }) => inventoryApi.getCategories({ ...params, signal }),
     ...(shouldUseImmutableCache ? immutableMetadataQueryOptions() : {}),
   });
 }
@@ -328,7 +328,7 @@ export function useLocationStock(id) {
 export function useLocationsByType(type) {
   return useQuery({
     queryKey: inventoryKeys.locationsByType(type),
-    queryFn: () => inventoryApi.getLocationsByType(type),
+    queryFn: ({ signal }) => inventoryApi.getLocationsByType(type, { signal }),
     enabled: !!type,
     staleTime: 5 * 60 * 1000,
   });

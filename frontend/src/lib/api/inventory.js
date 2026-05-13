@@ -498,7 +498,9 @@ export const inventoryApi = {
   getCategories: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getInventoryCategories();
+        const response = await v2Api.getInventoryCategories({
+          signal: params.signal,
+        });
         return unwrapV2List(response);
       }
 
@@ -506,6 +508,9 @@ export const inventoryApi = {
       const endpoint = `/inventory/categories/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch categories'));
       }
@@ -747,10 +752,12 @@ export const inventoryApi = {
    * @param {string} type - Location type
    * @returns {Promise<Array>} Locations of specified type
    */
-  getLocationsByType: async (type) => {
+  getLocationsByType: async (type, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getStorageLocations();
+        const response = await v2Api.getStorageLocations({
+          signal: options.signal,
+        });
         return unwrapV2List(response).filter((location) => (
           location.location_type === type || location.type === type
         ));
@@ -758,6 +765,9 @@ export const inventoryApi = {
 
       return await apiClient.get(`/inventory/locations/by_type/?type=${type}`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch locations by type'));
       }

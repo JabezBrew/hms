@@ -10,10 +10,12 @@ import {
   useExpiringSoonBatches,
   useGRN,
   useGRNs,
+  useInventoryCategories,
   useInventoryItem,
   useItemExpiryTrackers,
   useItemMovements,
   useItemStockByLocation,
+  useLocationsByType,
   usePurchaseOrder,
   usePurchaseOrders,
   useRequisition,
@@ -30,6 +32,7 @@ vi.mock('@/features/inventory/api', () => ({
     getControlledRegister: vi.fn(),
     getControlledRegisterEntries: vi.fn(),
     getControlledRegisters: vi.fn(),
+    getCategories: vi.fn(),
     getExpiredBatches: vi.fn(),
     getExpiringSoonBatches: vi.fn(),
     getGRN: vi.fn(),
@@ -38,6 +41,7 @@ vi.mock('@/features/inventory/api', () => ({
     getItemExpiryTrackers: vi.fn(),
     getItemMovements: vi.fn(),
     getItemStockByLocation: vi.fn(),
+    getLocationsByType: vi.fn(),
     getPurchaseOrder: vi.fn(),
     getPurchaseOrders: vi.fn(),
     getRequisition: vi.fn(),
@@ -70,6 +74,7 @@ describe('useInventoryQueries Rust V2 behavior', () => {
     inventoryApi.getControlledRegister.mockResolvedValue({});
     inventoryApi.getControlledRegisterEntries.mockResolvedValue({ results: [] });
     inventoryApi.getControlledRegisters.mockResolvedValue({ results: [] });
+    inventoryApi.getCategories.mockResolvedValue([]);
     inventoryApi.getExpiredBatches.mockResolvedValue([]);
     inventoryApi.getExpiringSoonBatches.mockResolvedValue([]);
     inventoryApi.getGRN.mockResolvedValue({});
@@ -78,6 +83,7 @@ describe('useInventoryQueries Rust V2 behavior', () => {
     inventoryApi.getItemExpiryTrackers.mockResolvedValue([]);
     inventoryApi.getItemMovements.mockResolvedValue({ results: [] });
     inventoryApi.getItemStockByLocation.mockResolvedValue([]);
+    inventoryApi.getLocationsByType.mockResolvedValue([]);
     inventoryApi.getPurchaseOrder.mockResolvedValue({});
     inventoryApi.getPurchaseOrders.mockResolvedValue({ results: [] });
     inventoryApi.getRequisition.mockResolvedValue({});
@@ -108,6 +114,23 @@ describe('useInventoryQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
       expect(inventoryApi.getItemStockByLocation).toHaveBeenCalledWith('item-1', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
+  it('threads React Query AbortSignal into inventory metadata reads', async () => {
+    const wrapper = createWrapper();
+
+    renderHook(() => useInventoryCategories({ search: 'med' }), { wrapper });
+    renderHook(() => useLocationsByType('pharmacy'), { wrapper });
+
+    await waitFor(() => {
+      expect(inventoryApi.getCategories).toHaveBeenCalledWith({
+        search: 'med',
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getLocationsByType).toHaveBeenCalledWith('pharmacy', {
         signal: expect.any(AbortSignal),
       });
     });
