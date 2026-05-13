@@ -249,6 +249,93 @@ describe('Rust V2 inventory bridge', () => {
     ]);
   });
 
+  it('loads expired and expiring stock batches through Rust V2 server filters', async () => {
+    const controller = new AbortController();
+    const expiredDate = dateDaysFromNow(-1);
+    const expiresSoon = dateDaysFromNow(7);
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'batch-expired',
+            item_id: 'item-1',
+            item_name: 'Paracetamol 500mg',
+            location_id: 'location-1',
+            location_name: 'Main Pharmacy',
+            batch_number: 'EXP-001',
+            expires_on: expiredDate,
+            quantity_on_hand: 20,
+            received_at: '2026-05-12T08:00:00Z',
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'batch-soon',
+            item_id: 'item-2',
+            item_name: 'Amoxicillin 250mg',
+            location_id: 'location-1',
+            location_name: 'Main Pharmacy',
+            batch_number: 'SOON-001',
+            expires_on: expiresSoon,
+            quantity_on_hand: 12,
+            received_at: '2026-05-12T08:00:00Z',
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: 'batch-soon',
+            item_id: 'item-2',
+            item_name: 'Amoxicillin 250mg',
+            location_id: 'location-1',
+            location_name: 'Main Pharmacy',
+            batch_number: 'SOON-001',
+            expires_on: expiresSoon,
+            quantity_on_hand: 12,
+            received_at: '2026-05-12T08:00:00Z',
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getExpiredBatches({ signal: controller.signal })).resolves.toEqual([
+      expect.objectContaining({ batch_id: 'batch-expired', batch_number: 'EXP-001' }),
+    ]);
+    await expect(inventoryApi.getExpiringSoonBatches(30, { signal: controller.signal })).resolves.toEqual([
+      expect.objectContaining({ batch_id: 'batch-soon', batch_number: 'SOON-001' }),
+    ]);
+    await expect(inventoryApi.getExpiryForecast({ days: 30, signal: controller.signal })).resolves.toMatchObject({
+      days: 30,
+      results: [expect.objectContaining({ batch_id: 'batch-soon', batch_number: 'SOON-001' })],
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      [
+        'http://localhost:8080/api/v2/inventory/stock-batches?expired=true&limit=20',
+        'GET',
+        controller.signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/stock-batches?expiring_within_days=30&limit=20',
+        'GET',
+        controller.signal,
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/stock-batches?expiring_within_days=30&limit=20',
+        'GET',
+        controller.signal,
+      ],
+    ]);
+  });
+
   it('preserves AbortError from Rust dashboard calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);

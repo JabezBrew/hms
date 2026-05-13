@@ -3,6 +3,7 @@ use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
 use axum::http::HeaderMap;
 use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
+use chrono::{Duration, Utc};
 use cookie::Cookie;
 use hms_api::app::build_app;
 use hms_api::config::Config;
@@ -2878,6 +2879,89 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let batch_body = json_body(batch_response).await;
     assert_eq!(batch_body["data"]["quantity_on_hand"], 100);
 
+    let today = Utc::now().date_naive();
+    for (batch_number, expires_on) in [
+        ("EXP-API-001", today - Duration::days(1)),
+        ("SOON-API-001", today + Duration::days(7)),
+        ("LATER-API-001", today + Duration::days(60)),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v2/inventory/stock-batches")
+                    .header(AUTHORIZATION, auth_header.clone())
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "item_id": paracetamol_id,
+                            "location_id": pharmacy_location_id,
+                            "batch_number": batch_number,
+                            "expires_on": expires_on,
+                            "quantity_received": 5
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("stock batch create succeeds");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let expired_batches = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/stock-batches?expired=true&limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("expired stock batches list succeeds");
+    assert_eq!(expired_batches.status(), StatusCode::OK);
+    let expired_batches_body = json_body(expired_batches).await;
+    let expired_rows = expired_batches_body["data"]
+        .as_array()
+        .expect("expired batches are an array");
+    assert!(expired_rows
+        .iter()
+        .any(|row| row["batch_number"] == "EXP-API-001"));
+    assert!(
+        !expired_rows
+            .iter()
+            .any(|row| row["batch_number"] == "SOON-API-001"
+                || row["batch_number"] == "LATER-API-001")
+    );
+
+    let expiring_batches = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/stock-batches?expiring_within_days=30&limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("expiring stock batches list succeeds");
+    assert_eq!(expiring_batches.status(), StatusCode::OK);
+    let expiring_batches_body = json_body(expiring_batches).await;
+    assert!(expiring_batches_body["data"]
+        .as_array()
+        .expect("expiring batches are an array")
+        .iter()
+        .any(|row| row["batch_number"] == "SOON-API-001"));
+    assert!(!expiring_batches_body["data"]
+        .as_array()
+        .expect("expiring batches are an array")
+        .iter()
+        .any(|row| row["batch_number"] == "EXP-API-001" || row["batch_number"] == "LATER-API-001"));
+
     let item_batches = app
         .clone()
         .oneshot(
@@ -2894,8 +2978,11 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .expect("item stock batches list succeeds");
     assert_eq!(item_batches.status(), StatusCode::OK);
     let item_batches_body = json_body(item_batches).await;
-    assert_eq!(item_batches_body["data"][0]["item_id"], paracetamol_id);
-    assert_eq!(item_batches_body["data"][0]["batch_number"], "B-001");
+    assert!(item_batches_body["data"]
+        .as_array()
+        .expect("item batches are an array")
+        .iter()
+        .any(|row| row["item_id"] == paracetamol_id && row["batch_number"] == "B-001"));
 
     let movements = app
         .clone()
@@ -2954,7 +3041,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .iter()
         .any(|row| row["item_id"] == paracetamol_id
             && row["location_id"] == pharmacy_location_id
-            && row["quantity_on_hand"] == 100));
+            && row["quantity_on_hand"] == 115));
 
     let location_filtered_items = app
         .clone()
@@ -2977,7 +3064,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .as_array()
         .expect("location-filtered inventory items are an array");
     assert!(location_filtered_rows.iter().any(|row| {
-        row["id"] == paracetamol_id && row["total_stock"] == 100 && row["sku"] == "PARA500"
+        row["id"] == paracetamol_id && row["total_stock"] == 115 && row["sku"] == "PARA500"
     }));
 
     let location_stock = app
@@ -3003,8 +3090,8 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .iter()
         .any(|row| row["item_id"] == paracetamol_id
             && row["location_id"] == pharmacy_location_id
-            && row["quantity_on_hand"] == 100
-            && row["batch_count"] == 1));
+            && row["quantity_on_hand"] == 115
+            && row["batch_count"] == 4));
 
     let transfer_response = app
         .clone()

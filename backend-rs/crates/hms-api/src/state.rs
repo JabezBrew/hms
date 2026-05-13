@@ -2227,8 +2227,16 @@ impl AppState {
         &self,
         cursor: Option<InventoryCursor>,
         limit: i64,
+        filters: hms_db::inventory::StockBatchFilters,
     ) -> Result<Vec<StockBatchListItem>> {
-        hms_db::inventory::list_batches(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::inventory::list_batches(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
     }
 
     pub async fn list_inventory_item_stock_batches(

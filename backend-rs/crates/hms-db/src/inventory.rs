@@ -28,6 +28,12 @@ pub struct InventoryItemFilters {
     pub stock_status: Option<String>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct StockBatchFilters {
+    pub expired: Option<bool>,
+    pub expiring_within_days: Option<i32>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewStockBatch {
     pub id: Uuid,
@@ -520,10 +526,12 @@ pub async fn list_batches(
     facility_id: Uuid,
     cursor: Option<InventoryCursor>,
     limit: i64,
+    filters: StockBatchFilters,
 ) -> anyhow::Result<Vec<StockBatchListItem>> {
     let mut query = batch_query();
     query.push(" WHERE stock_batches.facility_id = ");
     query.push_bind(facility_id);
+    apply_batch_filters(&mut query, &filters);
     apply_cursor(
         &mut query,
         "stock_batches.received_at",
@@ -534,6 +542,26 @@ pub async fn list_batches(
     query.push_bind(limit);
     let rows = query.build_query_as::<BatchRow>().fetch_all(pool).await?;
     Ok(rows.into_iter().map(batch_from_row).collect())
+}
+
+fn apply_batch_filters(query: &mut QueryBuilder<Postgres>, filters: &StockBatchFilters) {
+    if filters.expired == Some(true) {
+        query.push(
+            " AND stock_batches.expires_on IS NOT NULL \
+             AND stock_batches.expires_on < CURRENT_DATE",
+        );
+        return;
+    }
+
+    if let Some(days) = filters.expiring_within_days.filter(|days| *days >= 0) {
+        query.push(
+            " AND stock_batches.expires_on IS NOT NULL \
+             AND stock_batches.expires_on >= CURRENT_DATE \
+             AND stock_batches.expires_on <= CURRENT_DATE + (",
+        );
+        query.push_bind(days);
+        query.push(" * INTERVAL '1 day')");
+    }
 }
 
 pub async fn list_item_batches(

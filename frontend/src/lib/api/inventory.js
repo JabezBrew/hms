@@ -1164,13 +1164,14 @@ export const inventoryApi = {
    * Get expired batches
    * @returns {Promise<Array>} Expired batches
    */
-  getExpiredBatches: async () => {
+  getExpiredBatches: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getStockBatches({ query: { limit: 100 } });
-        return unwrapV2List(response)
-          .filter((batch) => daysUntilDate(batch?.expires_on) !== null && daysUntilDate(batch.expires_on) < 0)
-          .map(adaptV2StockBatch);
+        const response = await v2Api.getStockBatches({
+          query: { expired: true, limit: boundedLimit(options.limit || options.page_size, 20) },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2StockBatch);
       }
 
       return await apiClient.get('/inventory/expiry-trackers/expired/');
@@ -1187,13 +1188,18 @@ export const inventoryApi = {
    * @param {number} days - Days threshold (default: 30)
    * @returns {Promise<Array>} Expiring batches
    */
-  getExpiringSoonBatches: async (days = 30) => {
+  getExpiringSoonBatches: async (days = 30, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getStockBatches({ query: { limit: 100 } });
-        return unwrapV2List(response)
-          .filter((batch) => isExpiringWithin(batch, days))
-          .map(adaptV2StockBatch);
+        const thresholdDays = boundedLimit(days, 30);
+        const response = await v2Api.getStockBatches({
+          query: {
+            expiring_within_days: thresholdDays,
+            limit: boundedLimit(options.limit || options.page_size, 20),
+          },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2StockBatch);
       }
 
       return await apiClient.get(`/inventory/expiry-trackers/expiring_soon/?days=${days}`);
@@ -2560,12 +2566,16 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const days = boundedLimit(params.days, 30);
-        const response = await v2Api.getStockBatches({ query: { limit: 100 } });
+        const response = await v2Api.getStockBatches({
+          query: {
+            expiring_within_days: days,
+            limit: boundedLimit(params.limit || params.page_size, 20),
+          },
+          signal: params.signal,
+        });
         return {
           days,
-          results: unwrapV2List(response)
-            .filter((batch) => isExpiringWithin(batch, days))
-            .map(adaptV2StockBatch),
+          results: unwrapV2List(response).map(adaptV2StockBatch),
         };
       }
 

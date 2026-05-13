@@ -1185,7 +1185,9 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "expired",
+      "expiring_within_days"
     ],
     "hasBody": false
   },

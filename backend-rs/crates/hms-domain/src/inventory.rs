@@ -318,6 +318,14 @@ pub struct InventoryListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct StockBatchListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub expired: Option<bool>,
+    pub expiring_within_days: Option<u16>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
 pub struct InventoryItemsQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,

@@ -2,7 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::inventory::InventoryCursor;
+use hms_db::inventory::{InventoryCursor, StockBatchFilters};
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
@@ -13,7 +13,7 @@ use hms_domain::inventory::{
     CreateStockRequisitionRequest, CreateStockTransferRequest, GoodsReceivedNoteListItem,
     InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
     InventoryItemsQuery, InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem,
-    RejectStockRequisitionRequest, StockBatchListItem, StockMovementListItem,
+    RejectStockRequisitionRequest, StockBatchListItem, StockBatchListQuery, StockMovementListItem,
     StockRequisitionListItem, StockTransferListItem, StorageLocationListItem,
     StorageLocationStockItem,
 };
@@ -218,16 +218,16 @@ pub async fn list_location_stock(
     })))
 }
 
-#[utoipa::path(get, path = "/api/v2/inventory/stock-batches", operation_id = "getStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/inventory/stock-batches", operation_id = "getStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(StockBatchListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_batches(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<InventoryListQuery>,
+    Query(query): Query<StockBatchListQuery>,
 ) -> Result<Json<ListResponse<StockBatchListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size, filters) = stock_batch_page_request(query)?;
     let rows = state
-        .list_stock_batches(cursor, page_size as i64 + 1)
+        .list_stock_batches(cursor, page_size as i64 + 1, filters)
         .await
         .map_err(|_| {
             ApiError::conflict(
@@ -1103,10 +1103,26 @@ fn has_permission(user: &AuthUser, permission: PermissionCode) -> bool {
 }
 
 fn page_request(query: InventoryListQuery) -> Result<(Option<InventoryCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
+    decode_page(query.cursor.as_deref(), query.limit)
+}
+
+fn stock_batch_page_request(
+    query: StockBatchListQuery,
+) -> Result<(Option<InventoryCursor>, u8, StockBatchFilters), ApiError> {
+    let (cursor, limit) = decode_page(query.cursor.as_deref(), query.limit)?;
+    let filters = StockBatchFilters {
+        expired: query.expired,
+        expiring_within_days: query.expiring_within_days.map(i32::from),
+    };
+    Ok((cursor, limit, filters))
+}
+
+fn decode_page(
+    cursor: Option<&str>,
+    limit: Option<u8>,
+) -> Result<(Option<InventoryCursor>, u8), ApiError> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let cursor = cursor
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(decode_cursor)
