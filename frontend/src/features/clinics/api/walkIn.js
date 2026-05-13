@@ -9,13 +9,16 @@ export const clinicWalkInApi = {
    * Front-desk "Arrived now" check-in for pool clinics.
    * Creates a walk-in appointment aligned to the next roster slot and checks in the patient.
    */
-  checkIn: async ({ patientId, clinicId, reason }) => {
+  checkIn: async ({ patientId, clinicId, reason, signal } = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitCheckIn({
-          patient_id: patientId,
-          clinic_id: clinicId,
-        });
+        const response = await v2Api.postVisitCheckIn(
+          {
+            patient_id: patientId,
+            clinic_id: clinicId,
+          },
+          { signal: options.signal || signal },
+        );
         return adaptV2VisitForBridge(response?.data);
       }
 
@@ -25,6 +28,9 @@ export const clinicWalkInApi = {
         reason: reason || '',
       });
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to check in walk-in patient'));
       }

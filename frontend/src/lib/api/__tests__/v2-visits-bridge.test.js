@@ -118,11 +118,12 @@ describe('Rust V2 visits and triage bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await clinicWalkInApi.checkIn({
       patientId: 'patient-2',
       clinicId: 'clinic-1',
       reason: 'Review',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/visits/check-in',
@@ -132,6 +133,7 @@ describe('Rust V2 visits and triage bridge', () => {
           patient_id: 'patient-2',
           clinic_id: 'clinic-1',
         }),
+        signal,
       }),
     );
     expect(response).toMatchObject({
@@ -188,42 +190,43 @@ describe('Rust V2 visits and triage bridge', () => {
         }),
       );
 
-    await visitsApi.call('visit-1');
-    await visitsApi.startConsultation('visit-1');
-    await visitsApi.hold('visit-1');
-    await visitsApi.endConsultation('visit-1');
-    await visitsApi.checkout('visit-1');
-    await visitsApi.noShow('visit-2');
+    const signal = new AbortController().signal;
+    await visitsApi.call('visit-1', { signal });
+    await visitsApi.startConsultation('visit-1', { signal });
+    await visitsApi.hold('visit-1', { signal });
+    await visitsApi.endConsultation('visit-1', { signal });
+    await visitsApi.checkout('visit-1', false, { signal });
+    await visitsApi.noShow('visit-2', { signal });
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
       'http://localhost:8080/api/v2/visits/visit-1/call',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
       'http://localhost:8080/api/v2/visits/visit-1/start-consultation',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
       'http://localhost:8080/api/v2/visits/visit-1/hold',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       4,
       'http://localhost:8080/api/v2/visits/visit-1/ready-checkout',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       5,
       'http://localhost:8080/api/v2/visits/visit-1/checkout',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       6,
       'http://localhost:8080/api/v2/visits/visit-2/no-show',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
   });
 
@@ -276,7 +279,11 @@ describe('Rust V2 visits and triage bridge', () => {
       );
 
     const list = await triageApi.list();
-    const created = await triageApi.create({ visit_id: 'visit-2', priority: 'emergency' });
+    const signal = new AbortController().signal;
+    const created = await triageApi.create(
+      { visit_id: 'visit-2', priority: 'emergency' },
+      { signal },
+    );
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
@@ -313,6 +320,7 @@ describe('Rust V2 visits and triage bridge', () => {
           visit_id: 'visit-2',
           acuity: 'emergency',
         }),
+        signal,
       }),
     );
     expect(created).toMatchObject({
@@ -437,10 +445,11 @@ describe('Rust V2 visits and triage bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const assessed = await triageApi.triage('triage-1', {
       priority: 'emergency',
       notes: 'Chest pain and diaphoresis.',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/triage/triage-1/assessment',
@@ -450,6 +459,7 @@ describe('Rust V2 visits and triage bridge', () => {
           acuity: 'emergency',
           notes: 'Chest pain and diaphoresis.',
         }),
+        signal,
       }),
     );
     expect(assessed).toMatchObject({
@@ -483,11 +493,12 @@ describe('Rust V2 visits and triage bridge', () => {
       ),
     );
 
-    const cancelled = await triageApi.cancel('triage-1');
+    const signal = new AbortController().signal;
+    const cancelled = await triageApi.cancel('triage-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/triage/triage-1/cancel',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(cancelled).toMatchObject({
       id: 'triage-1',
@@ -502,6 +513,21 @@ describe('Rust V2 visits and triage bridge', () => {
 
     await expect(
       visitsApi.waitingRoom('clinic-1', { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+  });
+
+  it('preserves AbortError from Rust visit and triage mutations', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError).mockRejectedValueOnce(abortError);
+
+    await expect(
+      visitsApi.call('visit-1', { signal: new AbortController().signal }),
+    ).rejects.toBe(abortError);
+    await expect(
+      triageApi.create(
+        { visit_id: 'visit-1', priority: 'urgent' },
+        { signal: new AbortController().signal },
+      ),
     ).rejects.toBe(abortError);
   });
 });

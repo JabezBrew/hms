@@ -203,14 +203,18 @@ export const visitsApi = {
   /**
    * Call a waiting patient (waiting -> called)
    */
-  call: async (encounterId) => {
+  call: async (encounterId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitCall({ id: encounterId });
+        const response = await v2Api.postVisitCall(
+          { id: encounterId },
+          { signal: options.signal },
+        );
         return adaptV2Visit(response?.data);
       }
       return await apiClient.post(`/encounters/visits/${encounterId}/call/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to call patient'));
       }
@@ -221,14 +225,18 @@ export const visitsApi = {
   /**
    * Start consultation (called/checked_in/on_hold -> in_progress)
    */
-  startConsultation: async (encounterId) => {
+  startConsultation: async (encounterId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitStartConsultation({ id: encounterId });
+        const response = await v2Api.postVisitStartConsultation(
+          { id: encounterId },
+          { signal: options.signal },
+        );
         return adaptV2Visit(response?.data);
       }
       return await apiClient.post(`/encounters/visits/${encounterId}/start_consultation/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to start consultation'));
       }
@@ -239,14 +247,18 @@ export const visitsApi = {
   /**
    * Put consultation on hold (in_progress -> on_hold)
    */
-  hold: async (encounterId) => {
+  hold: async (encounterId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitHold({ id: encounterId });
+        const response = await v2Api.postVisitHold(
+          { id: encounterId },
+          { signal: options.signal },
+        );
         return adaptV2Visit(response?.data);
       }
       return apiClient.post(`/encounters/visits/${encounterId}/hold/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to put visit on hold'));
       }
@@ -257,14 +269,18 @@ export const visitsApi = {
   /**
    * End consultation (in_progress -> ready_checkout)
    */
-  endConsultation: async (encounterId) => {
+  endConsultation: async (encounterId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitReadyCheckout({ id: encounterId });
+        const response = await v2Api.postVisitReadyCheckout(
+          { id: encounterId },
+          { signal: options.signal },
+        );
         return adaptV2Visit(response?.data);
       }
       return apiClient.post(`/encounters/visits/${encounterId}/end_consultation/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to mark visit ready for checkout'));
       }
@@ -277,14 +293,21 @@ export const visitsApi = {
    * @param {string} encounterId - The encounter UUID
    * @param {boolean} force - Force checkout even if requirements not met (admin only)
    */
-  checkout: async (encounterId, force = false) => {
+  checkout: async (encounterId, force = false, options = {}) => {
+    const normalizedOptions = typeof force === 'object' && force !== null ? force : options;
+    const shouldForce = typeof force === 'object' && force !== null ? Boolean(force.force) : force;
+
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitCheckout({ id: encounterId });
+        const response = await v2Api.postVisitCheckout(
+          { id: encounterId },
+          { signal: normalizedOptions.signal },
+        );
         return adaptV2Visit(response?.data);
       }
-      return await apiClient.post(`/encounters/visits/${encounterId}/checkout/`, { force });
+      return await apiClient.post(`/encounters/visits/${encounterId}/checkout/`, { force: shouldForce });
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to checkout patient'));
       }
@@ -295,14 +318,18 @@ export const visitsApi = {
   /**
    * Mark patient as no-show (waiting/checked_in -> no_show)
    */
-  noShow: async (encounterId) => {
+  noShow: async (encounterId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postVisitNoShow({ id: encounterId });
+        const response = await v2Api.postVisitNoShow(
+          { id: encounterId },
+          { signal: options.signal },
+        );
         return adaptV2Visit(response?.data);
       }
       return apiClient.post(`/encounters/visits/${encounterId}/no_show/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to mark patient as no-show'));
       }
@@ -399,14 +426,18 @@ export const triageApi = {
    * Add patient to triage queue
    * @param {Object} data - { patient: uuid, priority: string, chief_complaint: string }
    */
-  create: async (data) => {
+  create: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postTriage(normalizeTriagePayload(data));
+        const response = await v2Api.postTriage(
+          normalizeTriagePayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2TriageEntry(response?.data);
       }
       return await apiClient.post('/encounters/triage/', data);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to add patient to triage queue'));
       }
@@ -419,7 +450,7 @@ export const triageApi = {
    * @param {string} id - Triage entry UUID
    * @param {Object} data - { priority: string, notes: string }
    */
-  triage: async (id, data) => {
+  triage: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postTriageAssessment(
@@ -428,11 +459,13 @@ export const triageApi = {
             acuity: data?.acuity || data?.priority || null,
             notes: data?.notes || data?.triage_notes || null,
           },
+          { signal: options.signal || data?.signal },
         );
         return adaptV2TriageEntry(response?.data);
       }
       return apiClient.post(`/encounters/triage/${id}/triage/`, data);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to save triage assessment'));
       }
@@ -445,18 +478,23 @@ export const triageApi = {
    * @param {string} id - Triage entry UUID
    * @param {Object} data - { clinic_id, appointment_type_id, start_time, practitioner_id? }
    */
-  assign: async (id, data) => {
+  assign: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const assignedTo = data.assigned_to_user_id || data.practitioner_id;
         if (!assignedTo) {
           throw unsupportedInRustV2('Rust V2 triage assignment requires a practitioner.');
         }
-        const response = await v2Api.postTriageAssign({ id }, { assigned_to_user_id: assignedTo });
+        const response = await v2Api.postTriageAssign(
+          { id },
+          { assigned_to_user_id: assignedTo },
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2TriageEntry(response?.data);
       }
       return await apiClient.post(`/encounters/triage/${id}/assign/`, data);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to assign triage entry'));
       }
@@ -467,14 +505,15 @@ export const triageApi = {
   /**
    * Cancel triage entry (only if not yet assigned)
    */
-  cancel: async (id) => {
+  cancel: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postTriageCancel({ id });
+        const response = await v2Api.postTriageCancel({ id }, { signal: options.signal });
         return adaptV2TriageEntry(response?.data);
       }
       return apiClient.post(`/encounters/triage/${id}/cancel/`);
     } catch (error) {
+      rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to cancel triage entry'));
       }
