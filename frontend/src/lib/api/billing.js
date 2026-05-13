@@ -841,12 +841,10 @@ export const billingApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getCashSessions({
-          query: { limit: 10 },
+          query: { status: 'open', limit: 1 },
           signal: options.signal,
         });
-        const session = v2List(response)
-          .map(adaptV2CashSession)
-          .find((candidate) => candidate.status === 'open') || null;
+        const session = v2List(response).map(adaptV2CashSession)[0] || null;
         return { session };
       }
 
@@ -862,13 +860,11 @@ export const billingApi = {
   getCashSessionTotals: async (sessionId, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getCashSessions({
-          query: { limit: 100 },
-          signal: options.signal,
-        });
-        const session = v2List(response)
-          .map(adaptV2CashSession)
-          .find((candidate) => candidate.id === sessionId);
+        const response = await v2Api.getCashSessionById(
+          { id: sessionId },
+          { signal: options.signal },
+        );
+        const session = adaptV2CashSession(response?.data);
         return {
           expected_cash_amount: session?.expected_cash_amount || 0,
           opening_float_amount: session?.opening_float_amount || 0,

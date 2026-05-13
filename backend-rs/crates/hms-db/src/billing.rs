@@ -55,6 +55,11 @@ pub struct NewPayment {
     pub actor_user_id: Uuid,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CashSessionFilters {
+    pub status: Option<CashSessionStatus>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewClaim {
     pub id: Uuid,
@@ -971,10 +976,12 @@ pub async fn list_cash_sessions(
     facility_id: Uuid,
     cursor: Option<BillingCursor>,
     limit: i64,
+    filters: CashSessionFilters,
 ) -> anyhow::Result<Vec<CashSessionListItem>> {
     let mut query = cash_session_query();
     query.push(" WHERE cash_sessions.facility_id = ");
     query.push_bind(facility_id);
+    apply_cash_session_filters(&mut query, &filters)?;
     apply_cursor(
         &mut query,
         "cash_sessions.opened_at",
@@ -988,6 +995,25 @@ pub async fn list_cash_sessions(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(cash_session_from_row).collect()
+}
+
+fn apply_cash_session_filters(
+    query: &mut QueryBuilder<Postgres>,
+    filters: &CashSessionFilters,
+) -> anyhow::Result<()> {
+    if let Some(status) = filters.status {
+        query.push(" AND cash_sessions.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
+    Ok(())
+}
+
+pub async fn get_cash_session(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<CashSessionListItem>> {
+    fetch_cash_session_by_id(pool, facility_id, id).await
 }
 
 pub async fn open_cash_session(

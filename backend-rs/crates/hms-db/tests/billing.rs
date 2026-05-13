@@ -1,6 +1,6 @@
-use hms_db::billing::{NewClaim, NewInvoice, NewPayment};
+use hms_db::billing::{CashSessionFilters, NewCashSession, NewClaim, NewInvoice, NewPayment};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::billing::PaymentMethod;
+use hms_domain::billing::{CashSessionStatus, PaymentMethod};
 use hms_domain::deployment::DeploymentProfile;
 
 #[tokio::test]
@@ -171,4 +171,96 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
     assert_eq!(patient_invoices.len(), 1);
     assert_eq!(patient_invoices[0].id, invoice.id);
     assert_ne!(patient_invoices[0].id, other_invoice.id);
+}
+
+#[tokio::test]
+async fn cash_session_repository_filters_open_sessions_and_loads_details() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let drawer_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM cash_drawers WHERE facility_id = $1 ORDER BY code LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("cash drawer exists");
+
+    let closed = hms_db::billing::open_cash_session(
+        &pool,
+        NewCashSession {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            drawer_id,
+            opening_float_minor: 1_000,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("closed fixture session opens");
+    hms_db::billing::close_cash_session(&pool, facility_id, closed.id, 1_000, owner_id)
+        .await
+        .expect("session closes")
+        .expect("closed session exists");
+    let open = hms_db::billing::open_cash_session(
+        &pool,
+        NewCashSession {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            drawer_id,
+            opening_float_minor: 2_500,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("open fixture session opens");
+
+    let open_rows = hms_db::billing::list_cash_sessions(
+        &pool,
+        facility_id,
+        None,
+        10,
+        CashSessionFilters {
+            status: Some(CashSessionStatus::Open),
+        },
+    )
+    .await
+    .expect("open cash sessions list");
+    assert!(open_rows.iter().any(|row| row.id == open.id));
+    assert!(!open_rows.iter().any(|row| row.id == closed.id));
+
+    let detail = hms_db::billing::get_cash_session(&pool, facility_id, open.id)
+        .await
+        .expect("cash session detail lookup succeeds")
+        .expect("cash session exists");
+    assert_eq!(detail.id, open.id);
+    assert_eq!(detail.status, CashSessionStatus::Open);
+    assert!(
+        hms_db::billing::get_cash_session(&pool, uuid::Uuid::new_v4(), open.id)
+            .await
+            .expect("cross-facility cash session detail lookup succeeds")
+            .is_none()
+    );
 }

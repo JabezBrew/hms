@@ -11,8 +11,8 @@ use hms_db::admin::{
 };
 use hms_db::auth::{NewRefreshSession, UserAccount};
 use hms_db::billing::{
-    BillingCursor, ClaimContext, InvoiceContext, NewCashSession, NewClaim, NewInvoice,
-    NewNhisBatch, NewPayment, NewRemittanceImport,
+    BillingCursor, CashSessionFilters, ClaimContext, InvoiceContext, NewCashSession, NewClaim,
+    NewInvoice, NewNhisBatch, NewPayment, NewRemittanceImport,
 };
 use hms_db::care::{
     AppointmentUpdate, CareCursor, EncounterUpdate, NewAppointment, NewCareTeamAssignment,
@@ -2040,9 +2040,20 @@ impl AppState {
         &self,
         cursor: Option<BillingCursor>,
         limit: i64,
+        filters: CashSessionFilters,
     ) -> Result<Vec<CashSessionListItem>> {
-        hms_db::billing::list_cash_sessions(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
+        hms_db::billing::list_cash_sessions(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
+    }
+
+    pub async fn get_cash_session(&self, session_id: Uuid) -> Result<Option<CashSessionListItem>> {
+        hms_db::billing::get_cash_session(&self.inner.pool, self.facility_id(), session_id).await
     }
 
     pub async fn open_cash_session(

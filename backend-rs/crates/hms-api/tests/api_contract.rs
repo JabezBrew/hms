@@ -3966,6 +3966,43 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .expect("cash session id exists")
         .to_owned();
 
+    let open_sessions_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/billing/cash-sessions?status=open&limit=5")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("open cash sessions list succeeds");
+    assert_eq!(open_sessions_response.status(), StatusCode::OK);
+    let open_sessions = json_body(open_sessions_response).await;
+    assert!(open_sessions["data"]
+        .as_array()
+        .expect("open cash sessions are an array")
+        .iter()
+        .any(|row| row["id"] == session_id && row["status"] == "open"));
+
+    let session_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/billing/cash-sessions/{session_id}"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("cash session detail succeeds");
+    assert_eq!(session_detail_response.status(), StatusCode::OK);
+    let session_detail = json_body(session_detail_response).await;
+    assert_eq!(session_detail["data"]["id"], session_id);
+    assert_eq!(session_detail["data"]["status"], "open");
+
     let patients_response = app
         .clone()
         .oneshot(

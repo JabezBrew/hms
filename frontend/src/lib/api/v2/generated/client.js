@@ -382,6 +382,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getCashSessionById": {
+    "operationId": "getCashSessionById",
+    "method": "GET",
+    "path": "/api/v2/billing/cash-sessions/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getCashSessions": {
     "operationId": "getCashSessions",
     "method": "GET",
@@ -390,7 +400,7 @@ export const operations = {
     "queryParamNames": [
       "cursor",
       "limit",
-      "patient_id"
+      "status"
     ],
     "hasBody": false
   },
@@ -2646,6 +2656,7 @@ export function createGeneratedClient(request) {
     getBillingServiceCatalog: createOperation(request, operations.getBillingServiceCatalog),
     getBillingServicePrices: createOperation(request, operations.getBillingServicePrices),
     getCashDrawers: createOperation(request, operations.getCashDrawers),
+    getCashSessionById: createOperation(request, operations.getCashSessionById),
     getCashSessions: createOperation(request, operations.getCashSessions),
     getClinicalAllergyById: createOperation(request, operations.getClinicalAllergyById),
     getClinicalNoteById: createOperation(request, operations.getClinicalNoteById),

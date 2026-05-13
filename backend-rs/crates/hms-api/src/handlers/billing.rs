@@ -4,14 +4,15 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::billing::BillingCursor;
+use hms_db::billing::{BillingCursor, CashSessionFilters};
 use hms_domain::auth::AuthUser;
 use hms_domain::billing::{
-    BillingListQuery, BillingRuleListItem, CashDrawerListItem, CashSessionListItem, ClaimListItem,
-    CloseCashSessionRequest, CreateClaimRequest, CreateInvoiceRequest, CreateNhisBatchRequest,
-    CreatePaymentRequest, CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport,
-    NhisBatchListItem, OpenCashSessionRequest, PaymentListItem, ReceiptListItem,
-    RemittanceImportListItem, ServiceCatalogItem, ServicePriceListItem,
+    BillingListQuery, BillingRuleListItem, CashDrawerListItem, CashSessionListItem,
+    CashSessionListQuery, ClaimListItem, CloseCashSessionRequest, CreateClaimRequest,
+    CreateInvoiceRequest, CreateNhisBatchRequest, CreatePaymentRequest,
+    CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
+    OpenCashSessionRequest, PaymentListItem, ReceiptListItem, RemittanceImportListItem,
+    ServiceCatalogItem, ServicePriceListItem,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -259,16 +260,16 @@ pub async fn list_cash_drawers(
     )?)))
 }
 
-#[utoipa::path(get, path = "/api/v2/billing/cash-sessions", operation_id = "getCashSessions", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<CashSessionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/billing/cash-sessions", operation_id = "getCashSessions", tag = "billing", security(("bearerAuth" = [])), params(CashSessionListQuery), responses((status = 200, body = ListResponse<CashSessionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_cash_sessions(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<BillingListQuery>,
+    Query(query): Query<CashSessionListQuery>,
 ) -> Result<Json<ListResponse<CashSessionListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let (cursor, page_size) = page_request(query)?;
+    let (cursor, page_size, filters) = cash_session_page_request(query)?;
     let rows = state
-        .list_cash_sessions(cursor, page_size as i64 + 1)
+        .list_cash_sessions(cursor, page_size as i64 + 1, filters)
         .await
         .map_err(|_| {
             ApiError::conflict(
@@ -279,6 +280,28 @@ pub async fn list_cash_sessions(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.opened_at, item.id)
     })))
+}
+
+#[utoipa::path(get, path = "/api/v2/billing/cash-sessions/{id}", operation_id = "getCashSessionById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Cash session id")), responses((status = 200, body = ObjectResponse<CashSessionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_cash_session(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<CashSessionListItem>>, ApiError> {
+    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
+    let session = state
+        .get_cash_session(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "cash_session_detail_failed",
+                "Cash session could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("cash_session_not_found", "Cash session was not found.")
+        })?;
+    Ok(Json(object(session)))
 }
 
 #[utoipa::path(post, path = "/api/v2/billing/cash-sessions", operation_id = "postCashSessions", tag = "billing", security(("bearerAuth" = [])), request_body = OpenCashSessionRequest, responses((status = 200, body = ObjectResponse<CashSessionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -560,10 +583,28 @@ async fn require_receipt_patient_access(
 }
 
 fn page_request(query: BillingListQuery) -> Result<(Option<BillingCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
+    decode_page(query.cursor.as_deref(), query.limit)
+}
+
+fn cash_session_page_request(
+    query: CashSessionListQuery,
+) -> Result<(Option<BillingCursor>, u8, CashSessionFilters), ApiError> {
+    let (cursor, limit) = decode_page(query.cursor.as_deref(), query.limit)?;
+    Ok((
+        cursor,
+        limit,
+        CashSessionFilters {
+            status: query.status,
+        },
+    ))
+}
+
+fn decode_page(
+    cursor: Option<&str>,
+    limit: Option<u8>,
+) -> Result<(Option<BillingCursor>, u8), ApiError> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let cursor = cursor
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(decode_cursor)

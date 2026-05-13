@@ -730,7 +730,7 @@ describe('Rust V2 billing bridge', () => {
               closed_at: null,
             },
           ],
-          page: { limit: 10, has_next: false, next_cursor: null },
+          page: { limit: 1, has_next: false, next_cursor: null },
           meta: {},
         }),
       );
@@ -745,7 +745,7 @@ describe('Rust V2 billing bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:8080/api/v2/billing/cash-sessions?limit=10',
+      'http://localhost:8080/api/v2/billing/cash-sessions?status=open&limit=1',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(settings).toEqual([
@@ -760,6 +760,41 @@ describe('Rust V2 billing bridge', () => {
         expected_cash_amount: 65,
       }),
     });
+  });
+
+  it('loads cash session totals from the Rust V2 cash-session detail endpoint', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          id: 'session-1',
+          drawer_id: 'drawer-1',
+          drawer_code: 'MAIN',
+          opened_by_user_id: 'user-1',
+          status: 'open',
+          opening_float_minor: 2500,
+          expected_cash_minor: 6500,
+          counted_cash_minor: null,
+          variance_minor: null,
+          currency: 'GHS',
+          opened_at: '2026-05-12T08:00:00Z',
+          closed_at: null,
+        },
+        meta: {},
+      }),
+    );
+
+    await expect(billingApi.getCashSessionTotals('session-1', { signal: controller.signal })).resolves.toEqual({
+      expected_cash_amount: 65,
+      opening_float_amount: 25,
+      counted_cash_amount: null,
+      variance_amount: null,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/billing/cash-sessions/session-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include', signal: controller.signal }),
+    );
   });
 });
 

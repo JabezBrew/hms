@@ -43,6 +43,10 @@ pub fn routes() -> Router<AppState> {
             get(billing::list_cash_sessions).post(billing::open_cash_session),
         )
         .route(
+            "/api/v2/billing/cash-sessions/:id",
+            get(billing::get_cash_session),
+        )
+        .route(
             "/api/v2/billing/cash-sessions/:id/close",
             axum::routing::post(billing::close_cash_session),
         )
