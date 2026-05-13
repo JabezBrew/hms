@@ -1952,8 +1952,13 @@ impl AppState {
         hms_db::billing::list_service_prices(&self.inner.pool, self.facility_id()).await
     }
 
-    pub async fn list_billing_rules(&self) -> Result<Vec<BillingRuleListItem>> {
-        hms_db::billing::list_billing_rules(&self.inner.pool, self.facility_id()).await
+    pub async fn list_billing_rules(
+        &self,
+        filters: hms_db::billing::BillingRuleFilters,
+        limit: i64,
+    ) -> Result<Vec<BillingRuleListItem>> {
+        hms_db::billing::list_billing_rules(&self.inner.pool, self.facility_id(), filters, limit)
+            .await
     }
 
     pub async fn get_billing_rule(&self, rule_id: Uuid) -> Result<Option<BillingRuleListItem>> {

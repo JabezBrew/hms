@@ -389,7 +389,11 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/billing/rules",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "limit",
+      "rule_type",
+      "is_active"
+    ],
     "hasBody": false
   },
   "getBillingServiceCatalog": {

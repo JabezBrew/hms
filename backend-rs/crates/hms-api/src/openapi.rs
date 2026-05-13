@@ -338,6 +338,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::dashboard::RealtimeSubscription,
         hms_domain::billing::BillingListQuery,
         hms_domain::billing::BillingRuleListItem,
+        hms_domain::billing::BillingRuleListQuery,
         hms_domain::billing::BillingRuleType,
         hms_domain::billing::CashDrawerListItem,
         hms_domain::billing::CashSessionListItem,

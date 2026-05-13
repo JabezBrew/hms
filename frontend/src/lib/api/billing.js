@@ -1596,7 +1596,14 @@ export const billingApi = {
   getBillingRules: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getBillingRules({ signal: options.signal });
+        const response = await v2Api.getBillingRules({
+          query: {
+            limit: normalizeLimit(params),
+            rule_type: params.rule_type,
+            is_active: params.is_active,
+          },
+          signal: options.signal,
+        });
         return v2Page(response, (rule) => ({
           ...rule,
           rule_type: rule.rule_type,

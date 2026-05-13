@@ -1,8 +1,9 @@
 use hms_db::billing::{
-    CashSessionFilters, NewCashSession, NewClaim, NewInvoice, NewPayment, ServiceCatalogFilters,
+    BillingRuleFilters, CashSessionFilters, NewCashSession, NewClaim, NewInvoice, NewPayment,
+    ServiceCatalogFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::billing::{CashSessionStatus, PaymentMethod};
+use hms_domain::billing::{BillingRuleType, CashSessionStatus, PaymentMethod};
 use hms_domain::deployment::DeploymentProfile;
 
 #[tokio::test]
@@ -367,6 +368,44 @@ async fn billing_dashboard_summary_uses_facility_scoped_aggregates() {
         summary.average_invoice_amount_minor,
         invoice.gross_amount_minor
     );
+}
+
+#[tokio::test]
+async fn billing_rules_can_be_filtered_and_bounded() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let rules = hms_db::billing::list_billing_rules(
+        &pool,
+        facility_id,
+        BillingRuleFilters {
+            rule_type: Some(BillingRuleType::CashRequired),
+            is_active: Some(true),
+        },
+        1,
+    )
+    .await
+    .expect("billing rules list succeeds");
+
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0].rule_type, BillingRuleType::CashRequired);
+    assert!(rules[0].active);
 }
 
 #[tokio::test]

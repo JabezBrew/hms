@@ -4040,7 +4040,7 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/api/v2/billing/rules")
+                .uri("/api/v2/billing/rules?limit=1&rule_type=cash_required&is_active=true")
                 .header(AUTHORIZATION, format!("Bearer {owner_token}"))
                 .body(Body::empty())
                 .expect("request builds"),
@@ -4049,6 +4049,8 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .expect("billing rules request succeeds");
     assert_eq!(rules_response.status(), StatusCode::OK);
     let rules = json_body(rules_response).await;
+    assert_eq!(rules["page"]["limit"], 1);
+    assert_eq!(rules["data"][0]["rule_type"], "cash_required");
     let billing_rule_id = rules["data"][0]["id"]
         .as_str()
         .expect("seed billing rule exists")

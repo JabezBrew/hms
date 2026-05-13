@@ -520,6 +520,41 @@ describe('Rust V2 billing bridge', () => {
     }));
   });
 
+  it('loads billing rules through bounded Rust V2 filters', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: [
+          {
+            id: 'rule-1',
+            code: 'cash-required',
+            name: 'Cash required',
+            rule_type: 'cash_required',
+            active: true,
+          },
+        ],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }),
+    );
+
+    const response = await billingApi.getBillingRules(
+      { page_size: 20, rule_type: 'cash_required', is_active: true },
+      { signal: new AbortController().signal },
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/billing/rules?limit=20&rule_type=cash_required&is_active=true',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response.results).toEqual([
+      expect.objectContaining({
+        id: 'rule-1',
+        rule_type: 'cash_required',
+        is_active: true,
+      }),
+    ]);
+  });
+
   it('fails closed for unsupported Rust V2 billing mutations and downloads instead of calling Django', async () => {
     await expect(billingApi.updateInvoice('invoice-1', { status: 'void' })).rejects.toThrow(
       /Rust V2 .* invoice updates/i,

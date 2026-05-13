@@ -14,7 +14,7 @@ pub enum ServiceKind {
     Other,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BillingRuleType {
     CashRequired,
@@ -84,6 +84,13 @@ pub struct BillingListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
     pub patient_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct BillingRuleListQuery {
+    pub limit: Option<u8>,
+    pub rule_type: Option<BillingRuleType>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]

@@ -4,15 +4,15 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use hms_access::{require_patient_demographics_access, require_permission};
-use hms_db::billing::{BillingCursor, CashSessionFilters};
+use hms_db::billing::{BillingCursor, BillingRuleFilters, CashSessionFilters};
 use hms_domain::auth::AuthUser;
 use hms_domain::billing::{
-    BillingDashboardSummary, BillingListQuery, BillingRuleListItem, CashDrawerListItem,
-    CashSessionListItem, CashSessionListQuery, ClaimListItem, CloseCashSessionRequest,
-    CreateClaimRequest, CreateInvoiceRequest, CreateNhisBatchRequest, CreatePaymentRequest,
-    CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
-    OpenCashSessionRequest, PaymentListItem, ReceiptListItem, RemittanceImportListItem,
-    ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
+    BillingDashboardSummary, BillingListQuery, BillingRuleListItem, BillingRuleListQuery,
+    CashDrawerListItem, CashSessionListItem, CashSessionListQuery, ClaimListItem,
+    CloseCashSessionRequest, CreateClaimRequest, CreateInvoiceRequest, CreateNhisBatchRequest,
+    CreatePaymentRequest, CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport,
+    NhisBatchListItem, OpenCashSessionRequest, PaymentListItem, ReceiptListItem,
+    RemittanceImportListItem, ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -70,16 +70,33 @@ pub async fn list_service_prices(
     )))
 }
 
-#[utoipa::path(get, path = "/api/v2/billing/rules", operation_id = "getBillingRules", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<BillingRuleListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/billing/rules", operation_id = "getBillingRules", tag = "billing", security(("bearerAuth" = [])), params(BillingRuleListQuery), responses((status = 200, body = ListResponse<BillingRuleListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_billing_rules(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<BillingRuleListQuery>,
 ) -> Result<Json<ListResponse<BillingRuleListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    Ok(Json(static_list(
-        state.list_billing_rules().await.map_err(|_| {
+    let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let rules = state
+        .list_billing_rules(
+            BillingRuleFilters {
+                rule_type: query.rule_type,
+                is_active: query.is_active,
+            },
+            page_size as i64,
+        )
+        .await
+        .map_err(|_| {
             ApiError::conflict("billing_rule_failed", "Billing rules could not be loaded.")
-        })?,
+        })?;
+    Ok(Json(list(
+        rules,
+        PageInfo {
+            next_cursor: None,
+            has_next: false,
+            limit: page_size,
+        },
     )))
 }
 

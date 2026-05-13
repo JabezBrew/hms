@@ -37,6 +37,12 @@ pub struct ServiceCatalogFilters {
     pub is_active: Option<bool>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct BillingRuleFilters {
+    pub rule_type: Option<BillingRuleType>,
+    pub is_active: Option<bool>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewInvoice {
     pub id: Uuid,
@@ -361,19 +367,29 @@ pub async fn list_service_prices(
 pub async fn list_billing_rules(
     pool: &PgPool,
     facility_id: Uuid,
+    filters: BillingRuleFilters,
+    limit: i64,
 ) -> anyhow::Result<Vec<BillingRuleListItem>> {
-    let rows = sqlx::query_as::<_, BillingRuleRow>(
-        r#"
-        SELECT id, code, name, rule_type, active
-        FROM billing_rules
-        WHERE facility_id = $1
-        ORDER BY code ASC
-        LIMIT 100
-        "#,
-    )
-    .bind(facility_id)
-    .fetch_all(pool)
-    .await?;
+    let mut query = QueryBuilder::new(
+        "SELECT id, code, name, rule_type, active
+         FROM billing_rules
+         WHERE facility_id = ",
+    );
+    query.push_bind(facility_id);
+    if let Some(rule_type) = filters.rule_type {
+        query.push(" AND rule_type = ");
+        query.push_bind(codec::encode(rule_type)?);
+    }
+    if let Some(is_active) = filters.is_active {
+        query.push(" AND active = ");
+        query.push_bind(is_active);
+    }
+    query.push(" ORDER BY code ASC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<BillingRuleRow>()
+        .fetch_all(pool)
+        .await?;
     rows.into_iter().map(rule_from_row).collect()
 }
 
