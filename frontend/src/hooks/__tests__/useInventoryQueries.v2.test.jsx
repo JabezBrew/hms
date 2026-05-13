@@ -3,6 +3,9 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  useControlledRegister,
+  useControlledRegisterEntries,
+  useControlledRegisters,
   useExpiredBatches,
   useExpiringSoonBatches,
   useGRN,
@@ -16,11 +19,15 @@ import {
   useRequisition,
   useRequisitions,
   useStockMovements,
+  useValidateRegisterBalance,
 } from '../useInventoryQueries';
 import { inventoryApi } from '@/features/inventory/api';
 
 vi.mock('@/features/inventory/api', () => ({
   inventoryApi: {
+    getControlledRegister: vi.fn(),
+    getControlledRegisterEntries: vi.fn(),
+    getControlledRegisters: vi.fn(),
     getExpiredBatches: vi.fn(),
     getExpiringSoonBatches: vi.fn(),
     getGRN: vi.fn(),
@@ -34,6 +41,7 @@ vi.mock('@/features/inventory/api', () => ({
     getRequisition: vi.fn(),
     getRequisitions: vi.fn(),
     getStockMovements: vi.fn(),
+    validateRegisterBalance: vi.fn(),
   },
 }));
 
@@ -55,6 +63,9 @@ function createWrapper() {
 describe('useInventoryQueries Rust V2 behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    inventoryApi.getControlledRegister.mockResolvedValue({});
+    inventoryApi.getControlledRegisterEntries.mockResolvedValue({ results: [] });
+    inventoryApi.getControlledRegisters.mockResolvedValue({ results: [] });
     inventoryApi.getExpiredBatches.mockResolvedValue([]);
     inventoryApi.getExpiringSoonBatches.mockResolvedValue([]);
     inventoryApi.getGRN.mockResolvedValue({});
@@ -68,6 +79,7 @@ describe('useInventoryQueries Rust V2 behavior', () => {
     inventoryApi.getRequisition.mockResolvedValue({});
     inventoryApi.getRequisitions.mockResolvedValue({ results: [] });
     inventoryApi.getStockMovements.mockResolvedValue({ results: [] });
+    inventoryApi.validateRegisterBalance.mockResolvedValue({});
   });
 
   it('threads React Query AbortSignal into inventory item stock reads', async () => {
@@ -146,6 +158,32 @@ describe('useInventoryQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
       expect(inventoryApi.getGRN).toHaveBeenCalledWith('grn-1', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
+  it('threads React Query AbortSignal into controlled substance register reads', async () => {
+    const wrapper = createWrapper();
+
+    renderHook(() => useControlledRegisters({ location: 'loc-1' }), { wrapper });
+    renderHook(() => useControlledRegister('register-1'), { wrapper });
+    renderHook(() => useControlledRegisterEntries('register-1', { page_size: 25 }), { wrapper });
+    renderHook(() => useValidateRegisterBalance('register-1'), { wrapper });
+
+    await waitFor(() => {
+      expect(inventoryApi.getControlledRegisters).toHaveBeenCalledWith({
+        location: 'loc-1',
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getControlledRegister).toHaveBeenCalledWith('register-1', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getControlledRegisterEntries).toHaveBeenCalledWith('register-1', {
+        page_size: 25,
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.validateRegisterBalance).toHaveBeenCalledWith('register-1', {
         signal: expect.any(AbortSignal),
       });
     });

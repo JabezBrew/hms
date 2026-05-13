@@ -341,6 +341,30 @@ describe('Rust V2 inventory bridge', () => {
     ]);
   });
 
+  it('threads AbortSignal into Rust V2 controlled register list reads', async () => {
+    const controller = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({
+      data: [{ id: 'register-1', item_id: 'item-1', location_id: 'loc-1' }],
+      page: { limit: 20, has_next: false, next_cursor: null },
+      meta: {},
+    }));
+
+    await expect(inventoryApi.getControlledRegisters({
+      location: 'loc-1',
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'register-1' })],
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/pharmacy/controlled-substances/register?limit=20',
+      expect.objectContaining({
+        method: 'GET',
+        signal: controller.signal,
+      }),
+    );
+  });
+
   it('routes inventory list pages through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'cat-1', name: 'Medication' }], meta: {} }))

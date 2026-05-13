@@ -2320,6 +2320,7 @@ export const inventoryApi = {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getControlledSubstanceRegister({
           query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
         });
         return adaptV2PaginatedList(response, params, adaptV2ControlledRegister);
       }
@@ -2328,6 +2329,9 @@ export const inventoryApi = {
       const endpoint = `/inventory/controlled-registers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch controlled registers'));
       }

@@ -1424,7 +1424,7 @@ export function useCancelTransferRequest() {
 export function useControlledRegisters(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.controlledRegisterList(filters),
-    queryFn: () => inventoryApi.getControlledRegisters(filters),
+    queryFn: ({ signal }) => inventoryApi.getControlledRegisters({ ...filters, signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1437,7 +1437,7 @@ export function useControlledRegisters(filters = {}) {
 export function useControlledRegister(id) {
   return useQuery({
     queryKey: inventoryKeys.controlledRegisterDetail(id),
-    queryFn: () => inventoryApi.getControlledRegister(id),
+    queryFn: ({ signal }) => inventoryApi.getControlledRegister(id, { signal }),
     enabled: !!id,
     staleTime: 30 * 1000,
   });
@@ -1452,7 +1452,7 @@ export function useControlledRegister(id) {
 export function useControlledRegisterEntries(id, params = {}) {
   return useQuery({
     queryKey: inventoryKeys.controlledRegisterEntries(id, params),
-    queryFn: () => inventoryApi.getControlledRegisterEntries(id, params),
+    queryFn: ({ signal }) => inventoryApi.getControlledRegisterEntries(id, { ...params, signal }),
     enabled: !!id,
     staleTime: 30 * 1000,
   });
@@ -1466,7 +1466,7 @@ export function useControlledRegisterEntries(id, params = {}) {
 export function useValidateRegisterBalance(id, options = {}) {
   return useQuery({
     queryKey: [...inventoryKeys.controlledRegisterDetail(id), 'validation'],
-    queryFn: () => inventoryApi.validateRegisterBalance(id),
+    queryFn: ({ signal }) => inventoryApi.validateRegisterBalance(id, { signal }),
     enabled: !!id && options.enabled !== false,
     staleTime: 0, // Always fresh for validation
   });
