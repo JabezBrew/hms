@@ -179,7 +179,7 @@ export function useInventoryCategories(params = {}) {
 export function useInventoryCategory(id) {
   return useQuery({
     queryKey: inventoryKeys.categoryDetail(id),
-    queryFn: () => inventoryApi.getCategory(id),
+    queryFn: ({ signal }) => inventoryApi.getCategory(id, { signal }),
     enabled: !!id,
   });
 }
@@ -240,7 +240,7 @@ export function useSuppliers(filters = {}) {
 export function useSupplier(id) {
   return useQuery({
     queryKey: inventoryKeys.supplierDetail(id),
-    queryFn: () => inventoryApi.getSupplier(id),
+    queryFn: ({ signal }) => inventoryApi.getSupplier(id, { signal }),
     enabled: !!id,
   });
 }
@@ -585,7 +585,7 @@ export function useBulkCreateStockMovements() {
 export function useBatchRecommendations(itemId, params = {}) {
   return useQuery({
     queryKey: inventoryKeys.batchRecommendations(itemId, params),
-    queryFn: () => inventoryApi.getBatchRecommendations(itemId, params),
+    queryFn: ({ signal }) => inventoryApi.getBatchRecommendations(itemId, { ...params, signal }),
     enabled: !!itemId,
     staleTime: 30 * 1000,
   });
@@ -603,7 +603,7 @@ export function useBatchRecommendations(itemId, params = {}) {
 export function useExpiryTrackers(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.expiryTrackerList(filters),
-    queryFn: () => inventoryApi.getExpiryTrackers(filters),
+    queryFn: ({ signal }) => inventoryApi.getExpiryTrackers({ ...filters, signal }),
     staleTime: 60 * 1000,
   });
 }
@@ -1200,7 +1200,7 @@ export function useCancelInternalRequisition() {
 export function useStandingOrders(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.standingOrderList(filters),
-    queryFn: () => inventoryApi.getStandingOrders(filters),
+    queryFn: ({ signal }) => inventoryApi.getStandingOrders({ ...filters, signal }),
     staleTime: 60 * 1000,
   });
 }
@@ -1213,7 +1213,7 @@ export function useStandingOrders(filters = {}) {
 export function useStandingOrder(id) {
   return useQuery({
     queryKey: inventoryKeys.standingOrderDetail(id),
-    queryFn: () => inventoryApi.getStandingOrder(id),
+    queryFn: ({ signal }) => inventoryApi.getStandingOrder(id, { signal }),
     enabled: !!id,
     staleTime: 5 * 60 * 1000,
   });
@@ -1226,7 +1226,7 @@ export function useStandingOrder(id) {
 export function useDueStandingOrders() {
   return useQuery({
     queryKey: inventoryKeys.dueStandingOrders(),
-    queryFn: () => inventoryApi.getDueStandingOrders(),
+    queryFn: ({ signal }) => inventoryApi.getDueStandingOrders({ signal }),
     staleTime: 60 * 1000,
   });
 }
@@ -1550,7 +1550,7 @@ export function useControlledDiscrepancies(filters = {}) {
 export function usePendingDiscrepancies() {
   return useQuery({
     queryKey: inventoryKeys.pendingDiscrepancies(),
-    queryFn: () => inventoryApi.getPendingDiscrepancies(),
+    queryFn: ({ signal }) => inventoryApi.getPendingDiscrepancies({ signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1598,7 +1598,7 @@ export function useEscalateDiscrepancy() {
 export function useConsumptionAnalytics(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.consumptionAnalytics(params),
-    queryFn: () => inventoryApi.getConsumptionAnalytics(params),
+    queryFn: ({ signal }) => inventoryApi.getConsumptionAnalytics({ ...params, signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -1611,7 +1611,7 @@ export function useConsumptionAnalytics(params = {}) {
 export function useABCAnalysis(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.abcAnalysis(params),
-    queryFn: () => inventoryApi.getABCAnalysis(params),
+    queryFn: ({ signal }) => inventoryApi.getABCAnalysis({ ...params, signal }),
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
 }
@@ -1624,7 +1624,7 @@ export function useABCAnalysis(params = {}) {
 export function useSupplierPerformance(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.supplierPerformance(params),
-    queryFn: () => inventoryApi.getSupplierPerformance(params),
+    queryFn: ({ signal }) => inventoryApi.getSupplierPerformance({ ...params, signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -1637,7 +1637,7 @@ export function useSupplierPerformance(params = {}) {
 export function useExpiryForecast(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.expiryForecast(params),
-    queryFn: () => inventoryApi.getExpiryForecast(params),
+    queryFn: ({ signal }) => inventoryApi.getExpiryForecast({ ...params, signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -1650,7 +1650,7 @@ export function useExpiryForecast(params = {}) {
 export function useStockValuation(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.stockValuation(params),
-    queryFn: () => inventoryApi.getStockValuation(params),
+    queryFn: ({ signal }) => inventoryApi.getStockValuation({ ...params, signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -1663,7 +1663,7 @@ export function useStockValuation(params = {}) {
 export function useControlledSubstanceReport(params = {}) {
   return useQuery({
     queryKey: inventoryKeys.controlledSubstanceReport(params),
-    queryFn: () => inventoryApi.getControlledSubstanceReport(params),
+    queryFn: ({ signal }) => inventoryApi.getControlledSubstanceReport({ ...params, signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -1680,7 +1680,7 @@ export function useControlledSubstanceReport(params = {}) {
 export function useInventoryAudits(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.auditList(filters),
-    queryFn: () => inventoryApi.getInventoryAudits(filters),
+    queryFn: ({ signal }) => inventoryApi.getInventoryAudits({ ...filters, signal }),
     staleTime: 60 * 1000,
   });
 }
@@ -1693,7 +1693,7 @@ export function useInventoryAudits(filters = {}) {
 export function useInventoryAudit(id) {
   return useQuery({
     queryKey: inventoryKeys.auditDetail(id),
-    queryFn: () => inventoryApi.getInventoryAudit(id),
+    queryFn: ({ signal }) => inventoryApi.getInventoryAudit(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });
