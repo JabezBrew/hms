@@ -15,7 +15,8 @@ use hms_domain::inventory::{
     InventoryItemListItem, InventoryItemStockLocationItem, InventoryItemsQuery, InventoryListQuery,
     PharmacyDispenseListItem, PurchaseOrderListItem, RejectStockRequisitionRequest,
     StockBatchListItem, StockBatchListQuery, StockMovementListItem, StockRequisitionListItem,
-    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem,
+    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
+    SupplierListQuery,
 };
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -192,6 +193,32 @@ pub async fn list_locations(
                 "storage_location_list_failed",
                 "Locations could not be loaded.",
             )
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
+    })))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/suppliers", operation_id = "getInventorySuppliers", tag = "inventory", security(("bearerAuth" = [])), params(SupplierListQuery), responses((status = 200, body = ListResponse<SupplierListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_suppliers(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<SupplierListQuery>,
+) -> Result<Json<ListResponse<SupplierListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
+    let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
+    let rows = state
+        .list_suppliers(
+            cursor,
+            page_size as i64 + 1,
+            hms_db::inventory::SupplierFilters {
+                search: query.search.clone(),
+                is_active: query.is_active,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("supplier_list_failed", "Suppliers could not be loaded.")
         })?;
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.created_at, item.id)

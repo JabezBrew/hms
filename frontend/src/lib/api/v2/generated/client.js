@@ -789,6 +789,19 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getInventorySuppliers": {
+    "operationId": "getInventorySuppliers",
+    "method": "GET",
+    "path": "/api/v2/inventory/suppliers",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "search",
+      "is_active"
+    ],
+    "hasBody": false
+  },
   "getLaboratoryOrderById": {
     "operationId": "getLaboratoryOrderById",
     "method": "GET",
@@ -2742,6 +2755,7 @@ export function createGeneratedClient(request) {
     getInventoryItemStockBatches: createOperation(request, operations.getInventoryItemStockBatches),
     getInventoryItemStockByLocation: createOperation(request, operations.getInventoryItemStockByLocation),
     getInventoryItemStockMovements: createOperation(request, operations.getInventoryItemStockMovements),
+    getInventorySuppliers: createOperation(request, operations.getInventorySuppliers),
     getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
     getLaboratoryOrders: createOperation(request, operations.getLaboratoryOrders),
     getLaboratoryPanelById: createOperation(request, operations.getLaboratoryPanelById),

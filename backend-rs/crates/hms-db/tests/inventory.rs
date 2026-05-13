@@ -7,6 +7,45 @@ use hms_domain::deployment::DeploymentProfile;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn supplier_list_is_bounded_and_searchable() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let rows = hms_db::inventory::list_suppliers(
+        &pool,
+        facility_id,
+        None,
+        1,
+        hms_db::inventory::SupplierFilters {
+            search: Some("medical".to_owned()),
+            is_active: Some(true),
+        },
+    )
+    .await
+    .expect("suppliers list");
+
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].name.to_lowercase().contains("medical"));
+    assert!(rows[0].is_active);
+}
+
+#[tokio::test]
 async fn storage_location_list_respects_requested_limit() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

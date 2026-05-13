@@ -33,6 +33,10 @@ pub fn routes() -> Router<AppState> {
             get(inventory::list_locations),
         )
         .route(
+            "/api/v2/inventory/suppliers",
+            get(inventory::list_suppliers),
+        )
+        .route(
             "/api/v2/inventory/storage-locations/:id",
             get(inventory::get_location),
         )

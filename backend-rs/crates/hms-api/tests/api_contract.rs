@@ -2864,6 +2864,33 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .as_bool()
         .unwrap());
 
+    let suppliers_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/suppliers?search=medical&limit=1&is_active=true")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("supplier list succeeds");
+    let suppliers_status = suppliers_response.status();
+    let suppliers_body = json_body(suppliers_response).await;
+    assert_eq!(suppliers_status, StatusCode::OK, "{suppliers_body}");
+    let suppliers = suppliers_body["data"]
+        .as_array()
+        .expect("suppliers array exists");
+    assert_eq!(suppliers.len(), 1);
+    assert_eq!(suppliers_body["page"]["limit"], 1);
+    assert!(suppliers_body["page"]["has_next"].as_bool().unwrap());
+    assert!(suppliers[0]["name"]
+        .as_str()
+        .expect("supplier name exists")
+        .to_lowercase()
+        .contains("medical"));
+
     let location_detail_response = app
         .clone()
         .oneshot(

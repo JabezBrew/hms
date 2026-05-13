@@ -305,6 +305,18 @@ function buildV2InventoryItemsQuery(params = {}) {
   return query;
 }
 
+function buildV2SuppliersQuery(params = {}) {
+  const query = {};
+  if (params.search) {
+    query.search = String(params.search).trim();
+  }
+  if (params.is_active !== undefined) {
+    query.is_active = params.is_active;
+  }
+  Object.assign(query, buildV2CursorQuery(params, 25));
+  return query;
+}
+
 function buildV2StockRequisitionPayload(data = {}) {
   return {
     requesting_location_id: pickEntityId(data.requesting_location_id ?? data.requesting_location ?? data.location),
@@ -562,16 +574,26 @@ export const inventoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated suppliers
    */
-  getSuppliers: async (params = {}) => {
+  getSuppliers: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return emptyPaginatedList(params);
+        const response = await v2Api.getInventorySuppliers({
+          query: buildV2SuppliersQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
       }
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/suppliers/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch suppliers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch suppliers'));
     }
   },

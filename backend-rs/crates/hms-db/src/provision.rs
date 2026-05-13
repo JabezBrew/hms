@@ -44,6 +44,8 @@ pub const DEFAULT_INVENTORY_ITEM_PARACETAMOL_ID: u128 = 0x8000000000000000000000
 pub const DEFAULT_INVENTORY_ITEM_MORPHINE_ID: u128 = 0x80000000000000000000000000000003;
 pub const DEFAULT_MAIN_STORE_ID: u128 = 0x80000000000000000000000000000010;
 pub const DEFAULT_PHARMACY_STORE_ID: u128 = 0x80000000000000000000000000000011;
+pub const DEFAULT_SUPPLIER_ACME_ID: u128 = 0x80000000000000000000000000000020;
+pub const DEFAULT_SUPPLIER_CITY_ID: u128 = 0x80000000000000000000000000000021;
 pub const DEFAULT_SERVICE_CONSULTATION_ID: u128 = 0x90000000000000000000000000000001;
 pub const DEFAULT_SERVICE_LAB_FBC_ID: u128 = 0x90000000000000000000000000000002;
 pub const DEFAULT_SERVICE_MEDICATION_ID: u128 = 0x90000000000000000000000000000003;
@@ -456,6 +458,49 @@ async fn seed_inventory_baseline(
         .bind(baseline.facility_id)
         .bind(code)
         .bind(name)
+        .execute(pool)
+        .await?;
+    }
+
+    for (id, code, name, contact_name, phone, email) in [
+        (
+            Uuid::from_u128(DEFAULT_SUPPLIER_ACME_ID),
+            "ACME",
+            "Acme Medical Supplies",
+            "Procurement Desk",
+            "+233 30 000 1000",
+            "orders@acme-med.local",
+        ),
+        (
+            Uuid::from_u128(DEFAULT_SUPPLIER_CITY_ID),
+            "CITY",
+            "City Medical Depot",
+            "Sales Desk",
+            "+233 30 000 2000",
+            "orders@city-med.local",
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO inventory_suppliers (id, facility_id, code, name, contact_name, phone, email)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (facility_id, code) DO UPDATE
+            SET id = EXCLUDED.id,
+                name = EXCLUDED.name,
+                contact_name = EXCLUDED.contact_name,
+                phone = EXCLUDED.phone,
+                email = EXCLUDED.email,
+                is_active = TRUE,
+                updated_at = now()
+            "#,
+        )
+        .bind(id)
+        .bind(baseline.facility_id)
+        .bind(code)
+        .bind(name)
+        .bind(contact_name)
+        .bind(phone)
+        .bind(email)
         .execute(pool)
         .await?;
     }

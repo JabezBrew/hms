@@ -109,6 +109,18 @@ pub struct StorageLocationListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct SupplierListItem {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub contact_name: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct InventoryDashboardSummary {
     pub total_items: i64,
     pub low_stock_count: i64,
@@ -329,6 +341,14 @@ pub struct CreatePharmacyDispenseRequest {
 pub struct InventoryListQuery {
     pub cursor: Option<String>,
     pub limit: Option<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct SupplierListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub search: Option<String>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]

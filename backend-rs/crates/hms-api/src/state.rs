@@ -80,7 +80,7 @@ use hms_domain::inventory::{
     GoodsReceivedNoteListItem, InventoryCategoryListItem, InventoryDashboardSummary,
     InventoryItemListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
     PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
-    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem,
+    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
 };
 use hms_domain::laboratory::{
     LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
@@ -2239,6 +2239,22 @@ impl AppState {
         limit: i64,
     ) -> Result<Vec<StorageLocationListItem>> {
         hms_db::inventory::list_locations(&self.inner.pool, self.facility_id(), cursor, limit).await
+    }
+
+    pub async fn list_suppliers(
+        &self,
+        cursor: Option<InventoryCursor>,
+        limit: i64,
+        filters: hms_db::inventory::SupplierFilters,
+    ) -> Result<Vec<SupplierListItem>> {
+        hms_db::inventory::list_suppliers(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            filters,
+        )
+        .await
     }
 
     pub async fn get_storage_location(

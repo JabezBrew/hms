@@ -271,6 +271,11 @@ describe('Rust V2 inventory bridge', () => {
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'item-1', name: 'Paracetamol' }], meta: {} }))
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'loc-1', name: 'Main Store' }], meta: {} }))
       .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'supplier-1', code: 'ACME', name: 'Acme Medical' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
         data: [{ id: 'req-1', status: 'requested' }],
         page: { limit: 20, has_next: false, next_cursor: null },
         meta: {},
@@ -310,6 +315,9 @@ describe('Rust V2 inventory bridge', () => {
     await expect(inventoryApi.getStorageLocations({ page_size: 24 })).resolves.toMatchObject({
       results: [expect.objectContaining({ id: 'loc-1' })],
     });
+    await expect(inventoryApi.getSuppliers({ page_size: 20, search: 'acme' })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'supplier-1', name: 'Acme Medical' })],
+    });
     await expect(inventoryApi.getRequisitions({ page_size: 20 })).resolves.toMatchObject({
       results: [expect.objectContaining({ id: 'req-1' })],
     });
@@ -333,6 +341,7 @@ describe('Rust V2 inventory bridge', () => {
       'http://localhost:8080/api/v2/inventory/categories',
       'http://localhost:8080/api/v2/inventory/items?limit=24',
       'http://localhost:8080/api/v2/inventory/storage-locations?limit=24',
+      'http://localhost:8080/api/v2/inventory/suppliers?search=acme&limit=20',
       'http://localhost:8080/api/v2/inventory/requisitions?limit=20',
       'http://localhost:8080/api/v2/inventory/purchase-orders?limit=20',
       'http://localhost:8080/api/v2/inventory/goods-received-notes?limit=20',
@@ -829,7 +838,6 @@ describe('Rust V2 inventory bridge', () => {
   });
 
   it('returns safe local fallbacks for inventory screens without a Rust V2 contract', async () => {
-    await expect(inventoryApi.getSuppliers()).resolves.toMatchObject({ results: [], count: 0 });
     await expect(inventoryApi.getStandingOrders()).resolves.toMatchObject({ results: [], count: 0 });
     await expect(inventoryApi.getConsumptionAnalytics()).resolves.toMatchObject({
       period: '30d',

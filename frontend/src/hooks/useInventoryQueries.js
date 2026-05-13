@@ -227,7 +227,7 @@ export function useUpdateInventoryCategory() {
 export function useSuppliers(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.supplierList(filters),
-    queryFn: () => inventoryApi.getSuppliers(filters),
+    queryFn: ({ signal }) => inventoryApi.getSuppliers(filters, { signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
