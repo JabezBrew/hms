@@ -12476,6 +12476,73 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_PractitionerListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "employee_id": {
+                "type": "string"
+              },
+              "fhir_practitioner_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "license_number": {
+                "type": "string"
+              },
+              "qualification": {
+                "type": "string"
+              },
+              "specialization": {
+                "type": "string"
+              },
+              "staff_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "user_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "staff_id",
+              "user_id",
+              "display_name",
+              "employee_id",
+              "license_number",
+              "specialization",
+              "qualification",
+              "is_active",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_PrescriptionListItem": {
         "properties": {
           "data": {
@@ -17909,6 +17976,73 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v2/admin/practitioners/{id}": {
+      "get": {
+        "operationId": "getAdminPractitionerById",
+        "parameters": [
+          {
+            "description": "Practitioner profile or staff id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PractitionerListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

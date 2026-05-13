@@ -562,20 +562,16 @@ export const staffApi = {
    * @param {string} id - Practitioner ID
    * @returns {Promise<Object>} Practitioner data
    */
-  getPractitioner: async (id) => {
+  getPractitioner: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const practitioners = await staffApi.getPractitioners({ limit: 100 });
-        const practitioner = practitioners.find((item) => item.id === id || item.staff_id === id);
-        if (!practitioner) {
-          throw new Error('Practitioner not found in Rust V2 practitioner directory.');
-        }
-        return practitioner;
+        const response = await v2Api.getAdminPractitionerById(
+          { id },
+          { signal: options.signal },
+        );
+        return adaptV2PractitionerListItem(response?.data || {});
       } catch (error) {
         if (error?.name === 'AbortError') {
-          throw error;
-        }
-        if (error?.message === 'Practitioner not found in Rust V2 practitioner directory.') {
           throw error;
         }
         throw new Error(handleV2ApiError(error, 'Failed to fetch practitioner'));

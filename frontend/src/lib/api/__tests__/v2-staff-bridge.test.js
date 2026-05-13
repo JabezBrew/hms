@@ -537,25 +537,22 @@ describe('Rust V2 staff bridge', () => {
     });
   });
 
-  it('loads a practitioner detail from the bounded Rust V2 practitioner directory without legacy detail fallback', async () => {
+  it('loads a practitioner detail through the Rust V2 practitioner detail contract without list-and-find fetching', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          data: [
-            {
-              id: 'practitioner-1',
-              staff_id: 'staff-1',
-              user_id: 'user-1',
-              display_name: 'Ama Mensah',
-              employee_id: 'EMP-001',
-              license_number: 'MDC-001',
-              specialization: 'General Medicine',
-              qualification: 'MBChB',
-              is_active: true,
-              created_at: '2026-05-12T08:00:00Z',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          data: {
+            id: 'practitioner-1',
+            staff_id: 'staff-1',
+            user_id: 'user-1',
+            display_name: 'Ama Mensah',
+            employee_id: 'EMP-001',
+            license_number: 'MDC-001',
+            specialization: 'General Medicine',
+            qualification: 'MBChB',
+            is_active: true,
+            created_at: '2026-05-12T08:00:00Z',
+          },
           meta: {},
         }),
         {
@@ -568,7 +565,7 @@ describe('Rust V2 staff bridge', () => {
     const response = await staffApi.getPractitioner('practitioner-1');
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/practitioners?limit=100',
+      'http://localhost:8080/api/v2/admin/practitioners/practitioner-1',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(response).toMatchObject({

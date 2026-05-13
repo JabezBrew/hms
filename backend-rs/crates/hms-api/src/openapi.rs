@@ -24,6 +24,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::admin::deactivate_staff,
         crate::handlers::admin::force_staff_password_reset,
         crate::handlers::admin::get_org_unit,
+        crate::handlers::admin::get_practitioner,
         crate::handlers::admin::get_staff,
         crate::handlers::admin::list_feature_entitlements,
         crate::handlers::admin::list_audit_events,

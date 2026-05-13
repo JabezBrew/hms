@@ -165,6 +165,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAdminPractitionerById": {
+    "operationId": "getAdminPractitionerById",
+    "method": "GET",
+    "path": "/api/v2/admin/practitioners/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getAdminPractitioners": {
     "operationId": "getAdminPractitioners",
     "method": "GET",
@@ -2606,6 +2616,7 @@ export function createGeneratedClient(request) {
     getAdminPermissionAssignments: createOperation(request, operations.getAdminPermissionAssignments),
     getAdminPositions: createOperation(request, operations.getAdminPositions),
     getAdminPositionTemplates: createOperation(request, operations.getAdminPositionTemplates),
+    getAdminPractitionerById: createOperation(request, operations.getAdminPractitionerById),
     getAdminPractitioners: createOperation(request, operations.getAdminPractitioners),
     getAdminStaff: createOperation(request, operations.getAdminStaff),
     getAdminStaffById: createOperation(request, operations.getAdminStaffById),

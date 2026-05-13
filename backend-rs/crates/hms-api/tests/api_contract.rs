@@ -1047,11 +1047,51 @@ async fn staff_management_is_admin_scoped_and_practitioner_ready() {
         .expect("practitioner list succeeds");
     assert_eq!(practitioners_response.status(), StatusCode::OK);
     let practitioners_body = json_body(practitioners_response).await;
-    assert!(practitioners_body["data"]
+    let practitioner = practitioners_body["data"]
         .as_array()
         .expect("practitioners listed")
         .iter()
-        .any(|item| item["staff_id"] == staff_id && item["license_number"] == "MDC/RN/0002"));
+        .find(|item| item["staff_id"] == staff_id && item["license_number"] == "MDC/RN/0002")
+        .expect("created practitioner is listed");
+    let practitioner_id = practitioner["id"]
+        .as_str()
+        .expect("practitioner id exists")
+        .to_owned();
+
+    let practitioner_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admin/practitioners/{practitioner_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner detail succeeds");
+    assert_eq!(practitioner_detail_response.status(), StatusCode::OK);
+    let practitioner_detail = json_body(practitioner_detail_response).await;
+    assert_eq!(practitioner_detail["data"]["id"], practitioner_id);
+    assert_eq!(practitioner_detail["data"]["staff_id"], staff_id);
+    assert_eq!(practitioner_detail["data"]["license_number"], "MDC/RN/0002");
+
+    let practitioner_by_staff_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/admin/practitioners/{staff_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner by staff detail succeeds");
+    assert_eq!(practitioner_by_staff_response.status(), StatusCode::OK);
+    let practitioner_by_staff = json_body(practitioner_by_staff_response).await;
+    assert_eq!(practitioner_by_staff["data"]["id"], practitioner_id);
+    assert_eq!(practitioner_by_staff["data"]["staff_id"], staff_id);
 
     let reset_response = app
         .clone()

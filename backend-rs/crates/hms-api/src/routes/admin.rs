@@ -77,6 +77,10 @@ pub fn routes() -> Router<AppState> {
             get(admin::list_practitioners),
         )
         .route(
+            "/api/v2/admin/practitioners/:id",
+            get(admin::get_practitioner),
+        )
+        .route(
             "/api/v2/admin/committees",
             get(admin::list_committees).post(admin::create_committee),
         )

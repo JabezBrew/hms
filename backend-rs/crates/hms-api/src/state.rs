@@ -1094,6 +1094,10 @@ impl AppState {
         hms_db::admin::list_practitioners(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
+    pub async fn get_practitioner(&self, id: Uuid) -> Result<Option<PractitionerListItem>> {
+        hms_db::admin::get_practitioner(&self.inner.pool, self.facility_id(), id).await
+    }
+
     pub async fn list_committees(
         &self,
         cursor: Option<AdminCursor>,

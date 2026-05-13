@@ -218,12 +218,29 @@ async fn staff_accounts_and_practitioner_profiles_are_facility_scoped() {
     .await
     .expect("practitioner profile upsert succeeds")
     .expect("staff account exists");
-    assert_eq!(
-        updated_profile
-            .practitioner_profile
-            .expect("practitioner profile exists")
-            .specialization,
-        "Emergency Medicine"
+    let practitioner_profile = updated_profile
+        .practitioner_profile
+        .as_ref()
+        .expect("practitioner profile exists");
+    assert_eq!(practitioner_profile.specialization, "Emergency Medicine");
+    let practitioner_by_id =
+        hms_db::admin::get_practitioner(&pool, facility_id, practitioner_profile.id)
+            .await
+            .expect("practitioner detail lookup succeeds")
+            .expect("practitioner exists");
+    assert_eq!(practitioner_by_id.id, practitioner_profile.id);
+    assert_eq!(practitioner_by_id.staff_id, staff.id);
+    assert_eq!(practitioner_by_id.license_number, "MDC/RN/0002");
+    let practitioner_by_staff = hms_db::admin::get_practitioner(&pool, facility_id, staff.id)
+        .await
+        .expect("practitioner by staff lookup succeeds")
+        .expect("practitioner exists by staff id");
+    assert_eq!(practitioner_by_staff.id, practitioner_profile.id);
+    assert!(
+        hms_db::admin::get_practitioner(&pool, Uuid::new_v4(), practitioner_profile.id)
+            .await
+            .expect("cross-facility practitioner lookup succeeds")
+            .is_none()
     );
 
     let deactivated = hms_db::admin::deactivate_staff_account(

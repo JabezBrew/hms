@@ -1174,25 +1174,8 @@ pub async fn list_practitioners(
     cursor: Option<AdminCursor>,
     limit: i64,
 ) -> anyhow::Result<Vec<PractitionerListItem>> {
-    let mut query = QueryBuilder::new(
-        r#"
-        SELECT practitioner_profiles.id,
-               practitioner_profiles.staff_id,
-               staff_profiles.user_id,
-               users.display_name,
-               staff_profiles.employee_id,
-               practitioner_profiles.license_number,
-               practitioner_profiles.specialization,
-               practitioner_profiles.qualification,
-               practitioner_profiles.fhir_practitioner_id,
-               users.is_active,
-               practitioner_profiles.created_at
-        FROM practitioner_profiles
-        JOIN staff_profiles ON staff_profiles.id = practitioner_profiles.staff_id
-        JOIN users ON users.id = staff_profiles.user_id
-        WHERE practitioner_profiles.facility_id =
-        "#,
-    );
+    let mut query = QueryBuilder::new(practitioner_query());
+    query.push(" WHERE practitioner_profiles.facility_id = ");
     query.push_bind(facility_id);
     append_cursor(
         &mut query,
@@ -1209,6 +1192,26 @@ pub async fn list_practitioners(
         .fetch_all(pool)
         .await?;
     Ok(rows.into_iter().map(practitioner_from_row).collect())
+}
+
+pub async fn get_practitioner(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<PractitionerListItem>> {
+    let mut query = QueryBuilder::new(practitioner_query());
+    query.push(" WHERE practitioner_profiles.facility_id = ");
+    query.push_bind(facility_id);
+    query.push(" AND (practitioner_profiles.id = ");
+    query.push_bind(id);
+    query.push(" OR practitioner_profiles.staff_id = ");
+    query.push_bind(id);
+    query.push(")");
+    let row = query
+        .build_query_as::<PractitionerRow>()
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.map(practitioner_from_row))
 }
 
 pub async fn list_committees(
@@ -1747,6 +1750,23 @@ fn staff_query() -> &'static str {
      FROM staff_profiles
      JOIN users ON users.id = staff_profiles.user_id
      LEFT JOIN practitioner_profiles ON practitioner_profiles.staff_id = staff_profiles.id"
+}
+
+fn practitioner_query() -> &'static str {
+    "SELECT practitioner_profiles.id,
+            practitioner_profiles.staff_id,
+            staff_profiles.user_id,
+            users.display_name,
+            staff_profiles.employee_id,
+            practitioner_profiles.license_number,
+            practitioner_profiles.specialization,
+            practitioner_profiles.qualification,
+            practitioner_profiles.fhir_practitioner_id,
+            users.is_active,
+            practitioner_profiles.created_at
+     FROM practitioner_profiles
+     JOIN staff_profiles ON staff_profiles.id = practitioner_profiles.staff_id
+     JOIN users ON users.id = staff_profiles.user_id"
 }
 
 fn position_query() -> &'static str {

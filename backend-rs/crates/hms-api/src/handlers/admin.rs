@@ -603,6 +603,28 @@ pub async fn list_practitioners(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v2/admin/practitioners/{id}", operation_id = "getAdminPractitionerById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Practitioner profile or staff id")), responses((status = 200, body = ObjectResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_practitioner(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PractitionerListItem>>, ApiError> {
+    require_staff_access(&user, state.facility_id())?;
+    let practitioner = state
+        .get_practitioner(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "practitioner_load_failed",
+                "Practitioner could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("practitioner_not_found", "Practitioner was not found.")
+        })?;
+    Ok(Json(object(practitioner)))
+}
+
 #[utoipa::path(get, path = "/api/v2/admin/committees", operation_id = "getAdminCommittees", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<CommitteeListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_committees(
     State(state): State<AppState>,
