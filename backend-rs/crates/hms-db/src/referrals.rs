@@ -85,10 +85,15 @@ pub async fn list_referrals(
     facility_id: Uuid,
     cursor: Option<ReferralCursor>,
     limit: i64,
+    status: Option<ReferralStatus>,
 ) -> anyhow::Result<Vec<ReferralListItem>> {
     let mut query = referral_query();
     query.push(" WHERE referrals.facility_id = ");
     query.push_bind(facility_id);
+    if let Some(status) = status {
+        query.push(" AND referrals.status = ");
+        query.push_bind(codec::encode(status)?);
+    }
     append_cursor(&mut query, "referrals.created_at", "referrals.id", cursor);
     query.push(" ORDER BY referrals.created_at ASC, referrals.id ASC LIMIT ");
     query.push_bind(limit);

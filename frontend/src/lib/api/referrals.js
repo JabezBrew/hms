@@ -48,6 +48,17 @@ function mapV2ReferralStatus(status) {
   }
 }
 
+function mapUiReferralStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'pending') {
+    return 'sent';
+  }
+  if (['sent', 'accepted', 'declined', 'completed', 'cancelled'].includes(normalized)) {
+    return normalized;
+  }
+  return undefined;
+}
+
 function referralNumber(referral) {
   return `V2-REF-${String(referral?.id || '').slice(0, 8).toUpperCase()}`;
 }
@@ -359,7 +370,7 @@ export const referralsApi = {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getReferrals({
           ...options,
-          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE, status: 'sent' },
         });
         return adaptV2ReferralList(response).filter((referral) => referral.status === 'pending').length;
       }
@@ -393,9 +404,9 @@ export const referralsApi = {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getReferrals({
           ...options,
-          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE },
+          query: { limit: DEFAULT_REFERRAL_PAGE_SIZE, status: mapUiReferralStatus('pending') },
         });
-        return adaptV2ReferralList(response).filter((referral) => referral.status === 'pending');
+        return adaptV2ReferralList(response);
       }
       return await apiClient.get('/referrals/pending/', options);
     } catch (error) {

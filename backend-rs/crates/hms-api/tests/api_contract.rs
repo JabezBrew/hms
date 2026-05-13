@@ -399,6 +399,15 @@ async fn openapi_contains_foundation_paths() {
             "triage queue exposes {filter_name} filter for server-side queue filtering"
         );
     }
+    let referral_parameters = paths["/api/v2/referrals"]["get"]["parameters"]
+        .as_array()
+        .expect("referral list parameters exist");
+    assert!(
+        referral_parameters
+            .iter()
+            .any(|parameter| parameter["name"] == "status"),
+        "referral list exposes status filter for pending referral views"
+    );
 }
 
 #[tokio::test]

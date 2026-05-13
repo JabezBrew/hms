@@ -107,6 +107,50 @@ describe('Rust V2 referrals bridge', () => {
     expect(sent).toEqual({ referrals: [] });
   });
 
+  it('loads pending referrals through a Rust status filter instead of filtering a broad page', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'referral-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-1',
+              patient_display_name: 'Ama Mensah',
+              to_service: 'Medicine',
+              priority: 'urgent',
+              status: 'sent',
+              reason: 'Review',
+              sla_due_at: '2026-05-13T08:00:00Z',
+              created_at: '2026-05-12T08:00:00Z',
+              updated_at: '2026-05-12T08:00:00Z',
+            },
+          ],
+          page: { limit: 50, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const pending = await referralsApi.getPendingReferrals();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/referrals?limit=50&status=sent',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(pending).toEqual([
+      expect.objectContaining({
+        id: 'referral-1',
+        status: 'pending',
+        v2_status: 'sent',
+      }),
+    ]);
+  });
+
   it('creates, accepts, declines, and completes referrals through Rust /api/v2', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(

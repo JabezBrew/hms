@@ -15586,6 +15586,35 @@
         ],
         "type": "object"
       },
+      "ReferralListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferralStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ReferralPriority": {
         "enum": [
           "routine",
@@ -33610,6 +33639,21 @@
               "type": [
                 "integer",
                 "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/ReferralStatus"
+                }
               ]
             }
           }

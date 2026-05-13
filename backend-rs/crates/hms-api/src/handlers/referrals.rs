@@ -10,7 +10,8 @@ use hms_domain::patients::PatientRecord;
 use hms_domain::referrals::{
     AcceptReferralRequest, ClinicWaitlistEntryListItem, CompleteReferralRequest,
     CreateClinicWaitlistEntryRequest, CreateReferralRequest, DeclineReferralRequest,
-    OfferNextClinicWaitlistEntryRequest, ReferralListItem, ReferralSlaDashboard, ReferralSlaState,
+    OfferNextClinicWaitlistEntryRequest, ReferralListItem, ReferralListQuery, ReferralSlaDashboard,
+    ReferralSlaState,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -29,7 +30,7 @@ const MAX_LIMIT: u8 = 100;
     operation_id = "getReferrals",
     tag = "referrals",
     security(("bearerAuth" = [])),
-    params(CursorListQuery),
+    params(ReferralListQuery),
     responses(
         (status = 200, description = "Referral list", body = ListResponse<ReferralListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -39,12 +40,16 @@ const MAX_LIMIT: u8 = 100;
 pub async fn list_referrals(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<CursorListQuery>,
+    Query(query): Query<ReferralListQuery>,
 ) -> Result<Json<ListResponse<ReferralListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let status = query.status;
+    let (cursor, page_size) = page_request(CursorListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_referrals(cursor, page_size as i64 + 1)
+        .list_referrals(cursor, page_size as i64 + 1, status)
         .await
         .map_err(|_| {
             ApiError::conflict("referral_list_failed", "Referrals could not be loaded.")

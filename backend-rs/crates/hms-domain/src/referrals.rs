@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -28,6 +28,13 @@ pub enum ClinicWaitlistStatus {
     Offered,
     Promoted,
     Cancelled,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ReferralListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub status: Option<ReferralStatus>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

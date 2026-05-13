@@ -511,6 +511,7 @@ use utoipa::{Modify, OpenApi};
         hms_domain::referrals::DeclineReferralRequest,
         hms_domain::referrals::OfferNextClinicWaitlistEntryRequest,
         hms_domain::referrals::ReferralListItem,
+        hms_domain::referrals::ReferralListQuery,
         hms_domain::referrals::ReferralPriority,
         hms_domain::referrals::ReferralSlaDashboard,
         hms_domain::referrals::ReferralSlaRiskSummary,

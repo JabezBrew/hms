@@ -125,6 +125,22 @@ async fn referrals_sla_and_waitlist_are_facility_scoped() {
         Some("Needs orthopedics instead")
     );
 
+    let completed_referrals = hms_db::referrals::list_referrals(
+        &pool,
+        facility_id,
+        None,
+        25,
+        Some(ReferralStatus::Completed),
+    )
+    .await
+    .expect("status-filtered referrals list succeeds");
+    assert!(completed_referrals
+        .iter()
+        .any(|listed| listed.id == referral.id && listed.status == ReferralStatus::Completed));
+    assert!(!completed_referrals
+        .iter()
+        .any(|listed| listed.id == declined.id));
+
     let waitlist_entry = hms_db::referrals::create_clinic_waitlist_entry(
         &pool,
         NewClinicWaitlistEntry {
@@ -154,7 +170,7 @@ async fn referrals_sla_and_waitlist_are_facility_scoped() {
 
     let other_facility = uuid::Uuid::new_v4();
     assert!(
-        hms_db::referrals::list_referrals(&pool, other_facility, None, 25)
+        hms_db::referrals::list_referrals(&pool, other_facility, None, 25, None)
             .await
             .expect("cross-facility referrals list succeeds")
             .is_empty()

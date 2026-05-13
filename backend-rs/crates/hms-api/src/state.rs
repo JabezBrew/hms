@@ -92,7 +92,7 @@ use hms_domain::patients::{
     PatientRegistrationValidationRule, Sex,
 };
 use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
-use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState};
+use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState, ReferralStatus};
 use hms_domain::ward::{
     AdmissionCaseListItem, BedListItem, DischargeCaseListItem, FluidBalanceListItem,
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
@@ -570,8 +570,16 @@ impl AppState {
         &self,
         cursor: Option<ReferralCursor>,
         limit: i64,
+        status: Option<ReferralStatus>,
     ) -> Result<Vec<ReferralListItem>> {
-        hms_db::referrals::list_referrals(&self.inner.pool, self.facility_id(), cursor, limit).await
+        hms_db::referrals::list_referrals(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            status,
+        )
+        .await
     }
 
     pub async fn create_referral(
