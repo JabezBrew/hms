@@ -6,8 +6,8 @@ use hms_db::clinical::{
 use hms_db::patients::{PatientContextCursor, PatientUpdate};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{
-    AllergySeverity, AllergyStatus, ChartEntryType, ProblemStatus, UpdateAllergyRequest,
-    UpdateProblemRequest,
+    AllergySeverity, AllergyStatus, ChartEntryType, PrescriptionStatus, ProblemStatus,
+    UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::patients::{PatientAdministrativeStatus, Sex};
@@ -551,6 +551,103 @@ async fn allergy_detail_updates_are_facility_scoped_and_soft_deleted() {
         hms_db::clinical::get_allergy(&pool, uuid::Uuid::new_v4(), allergy.id)
             .await
             .expect("cross-facility allergy detail query succeeds")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn prescription_detail_updates_are_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+    let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("patient exists");
+
+    let prescription = hms_db::clinical::create_prescription(
+        &pool,
+        NewPrescription {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            medication_name: "Amlodipine".to_owned(),
+            dose: "5 mg".to_owned(),
+            frequency: "daily".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("prescription is created");
+
+    let detail = hms_db::clinical::get_prescription(&pool, facility_id, prescription.id)
+        .await
+        .expect("prescription detail query succeeds")
+        .expect("prescription exists");
+    assert_eq!(detail.medication_name, "Amlodipine");
+
+    let updated = hms_db::clinical::update_prescription(
+        &pool,
+        facility_id,
+        prescription.id,
+        UpdatePrescriptionRequest {
+            medication_name: None,
+            dose: Some("10 mg".to_owned()),
+            frequency: Some("twice daily".to_owned()),
+            status: Some(PrescriptionStatus::Stopped),
+        },
+    )
+    .await
+    .expect("prescription update succeeds")
+    .expect("prescription exists");
+    assert_eq!(updated.dose, "10 mg");
+    assert_eq!(updated.frequency, "twice daily");
+    assert!(matches!(updated.status, PrescriptionStatus::Stopped));
+
+    assert!(hms_db::clinical::update_prescription(
+        &pool,
+        uuid::Uuid::new_v4(),
+        prescription.id,
+        UpdatePrescriptionRequest {
+            medication_name: Some("Cross facility".to_owned()),
+            dose: None,
+            frequency: None,
+            status: None,
+        },
+    )
+    .await
+    .expect("cross-facility prescription update succeeds")
+    .is_none());
+
+    assert!(
+        hms_db::clinical::get_prescription(&pool, uuid::Uuid::new_v4(), prescription.id)
+            .await
+            .expect("cross-facility prescription detail query succeeds")
             .is_none()
     );
 }

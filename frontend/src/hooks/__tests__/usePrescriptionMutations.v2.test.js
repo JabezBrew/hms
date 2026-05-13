@@ -88,10 +88,51 @@ describe('Rust V2 prescription mutations bridge', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
-  it('fails closed for unsupported Rust V2 prescription lifecycle updates', async () => {
+  it('updates prescription dose, frequency, and status through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'rx-1',
+            patient_id: 'patient-1',
+            medication_name: 'Amlodipine',
+            dose: '10 mg',
+            frequency: 'twice daily',
+            status: 'stopped',
+            prescribed_at: '2026-05-12T08:30:00Z',
+          },
+          meta: {},
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
     await expect(
-      updatePrescription('rx-1', { dosage: '10 mg' }),
-    ).rejects.toThrow('Prescription updates are not supported by Rust V2');
+      updatePrescription(
+        'rx-1',
+        { dosage: '10 mg', frequency: 'twice daily', status: 'stopped' },
+        { signal: new AbortController().signal },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'rx-1',
+        patient: 'patient-1',
+        dosage: '10 mg',
+        status: 'stopped',
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/prescriptions/rx-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({
+          dose: '10 mg',
+          frequency: 'twice daily',
+          status: 'stopped',
+        }),
+      }),
+    );
     expect(apiClient.patch).not.toHaveBeenCalled();
   });
 });

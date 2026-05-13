@@ -3,7 +3,8 @@ use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
     ClinicalNoteDetail, ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate,
     ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem, PrescriptionStatus,
-    ProblemListItem, ProblemStatus, UpdateAllergyRequest, UpdateProblemRequest,
+    ProblemListItem, ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest,
+    UpdateProblemRequest,
 };
 use hms_domain::patients::PatientDetail;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -746,6 +747,55 @@ pub async fn create_prescription(
     .fetch_one(pool)
     .await?;
     prescription_from_row(row)
+}
+
+pub async fn get_prescription(
+    pool: &PgPool,
+    facility_id: Uuid,
+    prescription_id: Uuid,
+) -> anyhow::Result<Option<PrescriptionListItem>> {
+    let row = sqlx::query_as::<_, PrescriptionRow>(
+        r#"
+        SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        FROM prescriptions
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(prescription_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(prescription_from_row).transpose()
+}
+
+pub async fn update_prescription(
+    pool: &PgPool,
+    facility_id: Uuid,
+    prescription_id: Uuid,
+    update: UpdatePrescriptionRequest,
+) -> anyhow::Result<Option<PrescriptionListItem>> {
+    let status = update.status.map(codec::encode).transpose()?;
+    let row = sqlx::query_as::<_, PrescriptionRow>(
+        r#"
+        UPDATE prescriptions
+        SET medication_name = COALESCE($3, medication_name),
+            dose = COALESCE($4, dose),
+            frequency = COALESCE($5, frequency),
+            status = COALESCE($6, status),
+            updated_at = now()
+        WHERE facility_id = $1 AND id = $2
+        RETURNING id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        "#,
+    )
+    .bind(facility_id)
+    .bind(prescription_id)
+    .bind(update.medication_name)
+    .bind(update.dose)
+    .bind(update.frequency)
+    .bind(status)
+    .fetch_optional(pool)
+    .await?;
+    row.map(prescription_from_row).transpose()
 }
 
 pub async fn list_chart_entries(

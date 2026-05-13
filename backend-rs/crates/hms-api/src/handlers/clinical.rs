@@ -11,7 +11,7 @@ use hms_domain::clinical::{
     CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
     CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
     PrescriptionListItem, ProblemListItem, UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest,
-    UpdateProblemRequest,
+    UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -864,6 +864,116 @@ pub async fn create_prescription(
                 "prescription_create_failed",
                 "Prescription could not be saved.",
             )
+        })?;
+
+    Ok(Json(object(prescription)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/clinical/prescriptions/{id}",
+    operation_id = "getClinicalPrescriptionById",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Prescription id")),
+    responses(
+        (status = 200, description = "Prescription detail", body = ObjectResponse<PrescriptionListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Prescription not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_prescription(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::ClinicalDocumentationView,
+    )?;
+    let prescription = state
+        .get_prescription(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "prescription_load_failed",
+                "Prescription could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("prescription_not_found", "Prescription was not found.")
+        })?;
+    let _patient = load_patient_for_access(&state, &user, prescription.patient_id).await?;
+
+    Ok(Json(object(prescription)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/clinical/prescriptions/{id}",
+    operation_id = "patchClinicalPrescription",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Prescription id")),
+    request_body = UpdatePrescriptionRequest,
+    responses(
+        (status = 200, description = "Prescription updated", body = ObjectResponse<PrescriptionListItem>),
+        (status = 400, description = "Invalid prescription update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Prescription not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_prescription(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<UpdatePrescriptionRequest>,
+) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    let current = state
+        .get_prescription(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "prescription_load_failed",
+                "Prescription could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("prescription_not_found", "Prescription was not found.")
+        })?;
+    let _patient = load_patient_for_access(&state, &user, current.patient_id).await?;
+
+    payload.medication_name =
+        normalize_optional_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
+    payload.dose = normalize_optional_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
+    payload.frequency =
+        normalize_optional_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
+    if payload.medication_name.is_none()
+        && payload.dose.is_none()
+        && payload.frequency.is_none()
+        && payload.status.is_none()
+    {
+        return Err(validation_error(
+            "prescription",
+            "At least one field is required.",
+        ));
+    }
+
+    let prescription = state
+        .update_prescription(id, payload)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "prescription_update_failed",
+                "Prescription could not be updated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("prescription_not_found", "Prescription was not found.")
         })?;
 
     Ok(Json(object(prescription)))

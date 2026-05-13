@@ -15824,6 +15824,39 @@
         },
         "type": "object"
       },
+      "UpdatePrescriptionRequest": {
+        "properties": {
+          "dose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "frequency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "medication_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrescriptionStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpdateProblemRequest": {
         "properties": {
           "label": {
@@ -21099,6 +21132,158 @@
               }
             },
             "description": "Clinical note not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/prescriptions/{id}": {
+      "get": {
+        "operationId": "getClinicalPrescriptionById",
+        "parameters": [
+          {
+            "description": "Prescription id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionListItem"
+                }
+              }
+            },
+            "description": "Prescription detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Prescription not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      },
+      "patch": {
+        "operationId": "patchClinicalPrescription",
+        "parameters": [
+          {
+            "description": "Prescription id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePrescriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PrescriptionListItem"
+                }
+              }
+            },
+            "description": "Prescription updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid prescription update"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Prescription not found"
           }
         },
         "security": [

@@ -196,6 +196,14 @@ pub struct CreatePrescriptionRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdatePrescriptionRequest {
+    pub medication_name: Option<String>,
+    pub dose: Option<String>,
+    pub frequency: Option<String>,
+    pub status: Option<PrescriptionStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct ChartEntryListItem {
     pub id: Uuid,
     pub patient_id: Uuid,

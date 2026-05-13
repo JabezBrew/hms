@@ -1714,7 +1714,29 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("prescription create succeeds");
     assert_eq!(prescription.status(), StatusCode::OK);
     let prescription_body = json_body(prescription).await;
+    let prescription_id = prescription_body["data"]["id"]
+        .as_str()
+        .expect("prescription id");
     assert_eq!(prescription_body["data"]["status"], "active");
+
+    let prescription_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/clinical/prescriptions/{prescription_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("prescription detail succeeds");
+    assert_eq!(prescription_detail.status(), StatusCode::OK);
+    let prescription_detail_body = json_body(prescription_detail).await;
+    assert_eq!(
+        prescription_detail_body["data"]["medication_name"],
+        "Amlodipine"
+    );
 
     let chart_entry = app
         .clone()
@@ -1839,6 +1861,32 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(allergy_deactivate.status(), StatusCode::OK);
     let allergy_deactivate_body = json_body(allergy_deactivate).await;
     assert_eq!(allergy_deactivate_body["data"]["status"], "inactive");
+
+    let prescription_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/prescriptions/{prescription_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "dose": "10 mg",
+                        "frequency": "twice daily",
+                        "status": "stopped"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("prescription update succeeds");
+    assert_eq!(prescription_update.status(), StatusCode::OK);
+    let prescription_update_body = json_body(prescription_update).await;
+    assert_eq!(prescription_update_body["data"]["dose"], "10 mg");
+    assert_eq!(prescription_update_body["data"]["frequency"], "twice daily");
+    assert_eq!(prescription_update_body["data"]["status"], "stopped");
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app

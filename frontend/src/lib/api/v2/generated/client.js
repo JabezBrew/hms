@@ -375,6 +375,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalPrescriptionById": {
+    "operationId": "getClinicalPrescriptionById",
+    "method": "GET",
+    "path": "/api/v2/clinical/prescriptions/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinicalProblemById": {
     "operationId": "getClinicalProblemById",
     "method": "GET",
@@ -1389,6 +1399,16 @@ export const operations = {
     "operationId": "patchClinicalNoteTemplate",
     "method": "PATCH",
     "path": "/api/v2/clinical/note-templates/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "patchClinicalPrescription": {
+    "operationId": "patchClinicalPrescription",
+    "method": "PATCH",
+    "path": "/api/v2/clinical/prescriptions/{id}",
     "pathParamNames": [
       "id"
     ],
@@ -2537,6 +2557,7 @@ export function createGeneratedClient(request) {
     getClinicalNoteById: createOperation(request, operations.getClinicalNoteById),
     getClinicalNoteTemplates: createOperation(request, operations.getClinicalNoteTemplates),
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
+    getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),
     getClinicalProblemById: createOperation(request, operations.getClinicalProblemById),
     getClinics: createOperation(request, operations.getClinics),
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
@@ -2633,6 +2654,7 @@ export function createGeneratedClient(request) {
     patchAuthMe: createOperation(request, operations.patchAuthMe),
     patchClinicalAllergy: createOperation(request, operations.patchClinicalAllergy),
     patchClinicalNoteTemplate: createOperation(request, operations.patchClinicalNoteTemplate),
+    patchClinicalPrescription: createOperation(request, operations.patchClinicalPrescription),
     patchClinicalProblemById: createOperation(request, operations.patchClinicalProblemById),
     patchEncounterById: createOperation(request, operations.patchEncounterById),
     patchPatientById: createOperation(request, operations.patchPatientById),

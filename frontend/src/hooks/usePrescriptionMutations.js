@@ -58,6 +58,23 @@ function normalizeCreatePrescriptionPayload(data = {}) {
   };
 }
 
+function normalizeUpdatePrescriptionPayload(data = {}) {
+  const payload = {};
+  if (data.medication_name !== undefined || data.name !== undefined) {
+    payload.medication_name = data.medication_name ?? data.name;
+  }
+  if (data.dose !== undefined || data.dosage !== undefined) {
+    payload.dose = data.dose ?? data.dosage;
+  }
+  if (data.frequency !== undefined) {
+    payload.frequency = data.frequency;
+  }
+  if (data.status !== undefined) {
+    payload.status = data.status;
+  }
+  return payload;
+}
+
 function unsupportedRustV2PrescriptionAction(message) {
   if (isRustV2ApiMode()) {
     throw new Error(message);
@@ -86,7 +103,19 @@ export async function createPrescription(data, options = {}) {
 }
 
 export async function updatePrescription(prescriptionId, data, options = {}) {
-  unsupportedRustV2PrescriptionAction('Prescription updates are not supported by Rust V2');
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.patchClinicalPrescription(
+        { id: prescriptionId },
+        normalizeUpdatePrescriptionPayload(data),
+        { signal: options.signal },
+      );
+      return normalizePrescriptionResponse(response?.data);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to update prescription'));
+    }
+  }
   return apiClient.patch(`/clinical-notes/prescriptions/${prescriptionId}/`, data, options);
 }
 

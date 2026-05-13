@@ -67,7 +67,7 @@ use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
     ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary,
     PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
-    UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
+    UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
@@ -1524,6 +1524,28 @@ impl AppState {
                 frequency,
                 actor_user_id,
             },
+        )
+        .await
+    }
+
+    pub async fn get_prescription(
+        &self,
+        prescription_id: Uuid,
+    ) -> Result<Option<PrescriptionListItem>> {
+        hms_db::clinical::get_prescription(&self.inner.pool, self.facility_id(), prescription_id)
+            .await
+    }
+
+    pub async fn update_prescription(
+        &self,
+        prescription_id: Uuid,
+        update: UpdatePrescriptionRequest,
+    ) -> Result<Option<PrescriptionListItem>> {
+        hms_db::clinical::update_prescription(
+            &self.inner.pool,
+            self.facility_id(),
+            prescription_id,
+            update,
         )
         .await
     }
