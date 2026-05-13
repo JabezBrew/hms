@@ -364,12 +364,19 @@ describe('Rust V2 clinical notes bridge', () => {
       ),
     );
 
-    const version = await clinicalNotesApi.updateNoteEntry('note-1', { assessment: 'Updated assessment' });
+    const signal = new AbortController().signal;
+    const version = await clinicalNotesApi.updateNoteEntry(
+      'note-1',
+      { assessment: 'Updated assessment' },
+      '',
+      { signal },
+    );
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/clinical/notes/note-1/versions',
       expect.objectContaining({
         method: 'POST',
+        signal,
         body: JSON.stringify({
           body: JSON.stringify({ assessment: 'Updated assessment' }),
         }),
@@ -408,13 +415,15 @@ describe('Rust V2 clinical notes bridge', () => {
       ),
     );
 
-    const history = await clinicalNotesApi.getNoteEntryHistory('note-1');
+    const signal = new AbortController().signal;
+    const history = await clinicalNotesApi.getNoteEntryHistory('note-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/clinical/notes/note-1/versions',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',
+        signal,
       }),
     );
     expect(history).toEqual(
@@ -429,6 +438,43 @@ describe('Rust V2 clinical notes bridge', () => {
         ],
       }),
     );
+  });
+
+  it('threads signals through derived note version lookups', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'version-2',
+              note_id: 'note-1',
+              version: 2,
+              body: JSON.stringify({ assessment: 'Updated' }),
+              created_at: '2026-05-12T10:00:00Z',
+            },
+          ],
+          page: { limit: 100, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const signal = new AbortController().signal;
+    const version = await clinicalNotesApi.getNoteEntryVersion('note-1', 2, { signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/notes/note-1/versions',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        signal,
+      }),
+    );
+    expect(version).toEqual(expect.objectContaining({ version_number: 2 }));
   });
 
   it('clones note entries through Rust detail and patient-scoped create contracts', async () => {

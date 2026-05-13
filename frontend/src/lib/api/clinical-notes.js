@@ -586,18 +586,25 @@ export const clinicalNotesApi = {
    * @param {string} editReason - Optional reason for the edit
    * @returns {Promise<Object>} Updated note entry data
    */
-  updateNoteEntry: async (id, data, editReason = '') => {
+  updateNoteEntry: async (id, data, editReason = '', options = {}) => {
+    const requestOptions = typeof editReason === 'object' && editReason !== null
+      ? editReason
+      : options;
+    const resolvedEditReason = typeof editReason === 'object' && editReason !== null
+      ? ''
+      : editReason;
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postClinicalNoteVersions(
           { note_id: id },
           { body: serializeNoteBody({ data }) },
+          { signal: requestOptions.signal },
         );
         return adaptV2Version(response?.data);
       }
       return await apiClient.patch(`/clinical-notes/entries/${id}/`, {
         data,
-        edit_reason: editReason
+        edit_reason: resolvedEditReason
       });
     } catch (error) {
       rethrowAbortError(error);
@@ -613,10 +620,13 @@ export const clinicalNotesApi = {
    * @param {string} id - Note entry ID
    * @returns {Promise<Object>} Version history with all versions
    */
-  getNoteEntryHistory: async (id) => {
+  getNoteEntryHistory: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getClinicalNoteVersions({ note_id: id });
+        const response = await v2Api.getClinicalNoteVersions(
+          { note_id: id },
+          { signal: options.signal },
+        );
         return adaptV2VersionHistory(response);
       }
       return await apiClient.get(`/clinical-notes/entries/${id}/history/`);
@@ -635,10 +645,10 @@ export const clinicalNotesApi = {
    * @param {number} versionNumber - Version number to retrieve
    * @returns {Promise<Object>} Version data
    */
-  getNoteEntryVersion: async (id, versionNumber) => {
+  getNoteEntryVersion: async (id, versionNumber, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const history = await clinicalNotesApi.getNoteEntryHistory(id);
+        const history = await clinicalNotesApi.getNoteEntryHistory(id, options);
         if (Number(versionNumber) === 0) {
           return { version_number: 0, data: history.current_data, created_at: history.updated_at };
         }
@@ -646,6 +656,10 @@ export const clinicalNotesApi = {
       }
       return await apiClient.get(`/clinical-notes/entries/${id}/history/${versionNumber}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch note version'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch note version'));
     }
   },
@@ -657,10 +671,10 @@ export const clinicalNotesApi = {
    * @param {number} versionB - Second version number (0 for current)
    * @returns {Promise<Object>} Comparison data with both versions
    */
-  compareNoteVersions: async (id, versionA, versionB) => {
+  compareNoteVersions: async (id, versionA, versionB, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const history = await clinicalNotesApi.getNoteEntryHistory(id);
+        const history = await clinicalNotesApi.getNoteEntryHistory(id, options);
         const resolveVersion = (versionNumber) => {
           if (Number(versionNumber) === 0) {
             return { version_number: 'current', data: history.current_data };
@@ -675,6 +689,10 @@ export const clinicalNotesApi = {
       }
       return await apiClient.get(`/clinical-notes/entries/${id}/compare/${versionA}/${versionB}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to compare versions'));
+      }
       throw new Error(handleApiError(error, 'Failed to compare versions'));
     }
   }
