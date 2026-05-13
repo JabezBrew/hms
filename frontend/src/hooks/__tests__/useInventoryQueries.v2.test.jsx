@@ -19,6 +19,8 @@ import {
   useRequisition,
   useRequisitions,
   useStockMovements,
+  useTransferRequest,
+  useTransferRequests,
   useValidateRegisterBalance,
 } from '../useInventoryQueries';
 import { inventoryApi } from '@/features/inventory/api';
@@ -41,6 +43,8 @@ vi.mock('@/features/inventory/api', () => ({
     getRequisition: vi.fn(),
     getRequisitions: vi.fn(),
     getStockMovements: vi.fn(),
+    getTransferRequest: vi.fn(),
+    getTransferRequests: vi.fn(),
     validateRegisterBalance: vi.fn(),
   },
 }));
@@ -79,6 +83,8 @@ describe('useInventoryQueries Rust V2 behavior', () => {
     inventoryApi.getRequisition.mockResolvedValue({});
     inventoryApi.getRequisitions.mockResolvedValue({ results: [] });
     inventoryApi.getStockMovements.mockResolvedValue({ results: [] });
+    inventoryApi.getTransferRequest.mockResolvedValue({});
+    inventoryApi.getTransferRequests.mockResolvedValue({ results: [] });
     inventoryApi.validateRegisterBalance.mockResolvedValue({});
   });
 
@@ -184,6 +190,23 @@ describe('useInventoryQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
       expect(inventoryApi.validateRegisterBalance).toHaveBeenCalledWith('register-1', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
+  it('threads React Query AbortSignal into inventory transfer request reads', async () => {
+    const wrapper = createWrapper();
+
+    renderHook(() => useTransferRequests({ status: 'requested' }), { wrapper });
+    renderHook(() => useTransferRequest('transfer-1'), { wrapper });
+
+    await waitFor(() => {
+      expect(inventoryApi.getTransferRequests).toHaveBeenCalledWith({
+        status: 'requested',
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getTransferRequest).toHaveBeenCalledWith('transfer-1', {
         signal: expect.any(AbortSignal),
       });
     });

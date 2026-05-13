@@ -1307,7 +1307,7 @@ export function useProcessDueStandingOrders() {
 export function useTransferRequests(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.transferRequestList(filters),
-    queryFn: () => inventoryApi.getTransferRequests(filters),
+    queryFn: ({ signal }) => inventoryApi.getTransferRequests({ ...filters, signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1320,7 +1320,7 @@ export function useTransferRequests(filters = {}) {
 export function useTransferRequest(id) {
   return useQuery({
     queryKey: inventoryKeys.transferRequestDetail(id),
-    queryFn: () => inventoryApi.getTransferRequest(id),
+    queryFn: ({ signal }) => inventoryApi.getTransferRequest(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });
