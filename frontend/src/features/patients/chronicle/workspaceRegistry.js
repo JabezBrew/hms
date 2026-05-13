@@ -80,12 +80,12 @@ export function prefetchChronicleWorkspaceResources(
   if (workspaceId === 'labs') {
     void queryClient.prefetchQuery({
       queryKey: labKeys.testsList({}),
-      queryFn: () => laboratoryApi.getLabTests({}),
+      queryFn: ({ signal }) => laboratoryApi.getLabTests({}, { signal }),
       ...immutableMetadataQueryOptions(),
     });
     void queryClient.prefetchQuery({
       queryKey: labKeys.panelsList({}),
-      queryFn: () => laboratoryApi.getLabPanels({}),
+      queryFn: ({ signal }) => laboratoryApi.getLabPanels({}, { signal }),
       ...immutableMetadataQueryOptions(),
     });
     return;
