@@ -3,10 +3,10 @@ use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceBalanceValidation,
     ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem, DispenseStatus,
     GoodsReceivedNoteListItem, GoodsReceivedStatus, InventoryCategoryListItem,
-    InventoryItemListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
-    PurchaseOrderListItem, PurchaseOrderStatus, RequisitionStatus, StockBatchListItem,
-    StockMovementListItem, StockMovementType, StockRequisitionListItem, StockTransferListItem,
-    StorageLocationListItem, StorageLocationStockItem, TransferStatus,
+    InventoryDashboardSummary, InventoryItemListItem, InventoryItemStockLocationItem,
+    PharmacyDispenseListItem, PurchaseOrderListItem, PurchaseOrderStatus, RequisitionStatus,
+    StockBatchListItem, StockMovementListItem, StockMovementType, StockRequisitionListItem,
+    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, TransferStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -141,6 +141,19 @@ struct LocationRow {
     id: Uuid,
     code: String,
     name: String,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct InventoryDashboardSummaryRow {
+    total_items: i64,
+    low_stock_count: i64,
+    expiring_soon_count: i64,
+    expiring_count: i64,
+    total_stock_value_minor: i64,
+    total_value_minor: i64,
+    pending_requisitions: i64,
+    pending_grns: i64,
+    discrepancies: i64,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -462,6 +475,85 @@ pub async fn get_location(
     .await?;
 
     Ok(row.map(location_from_row))
+}
+
+pub async fn inventory_dashboard_summary(
+    pool: &PgPool,
+    facility_id: Uuid,
+    expiring_within_days: i32,
+) -> anyhow::Result<InventoryDashboardSummary> {
+    let requested = codec::encode(RequisitionStatus::Requested)?;
+    let pending = codec::encode(RequisitionStatus::Pending)?;
+    let received = codec::encode(GoodsReceivedStatus::Received)?;
+    let pending_inspection = codec::encode(GoodsReceivedStatus::PendingInspection)?;
+    let inspecting = codec::encode(GoodsReceivedStatus::Inspecting)?;
+
+    let row = sqlx::query_as::<_, InventoryDashboardSummaryRow>(
+        r#"
+        WITH item_metrics AS (
+            SELECT COUNT(*)::BIGINT AS total_items
+            FROM inventory_items
+            WHERE facility_id = $1
+              AND is_active = TRUE
+        ),
+        batch_metrics AS (
+            SELECT (COUNT(*) FILTER (WHERE quantity_on_hand <= 0))::BIGINT AS low_stock_count,
+                   (COUNT(*) FILTER (
+                       WHERE expires_on IS NOT NULL
+                         AND expires_on >= CURRENT_DATE
+                         AND expires_on <= CURRENT_DATE + ($2 * INTERVAL '1 day')
+                   ))::BIGINT AS expiring_soon_count
+            FROM stock_batches
+            WHERE facility_id = $1
+        ),
+        requisition_metrics AS (
+            SELECT COUNT(*)::BIGINT AS pending_requisitions
+            FROM stock_requisitions
+            WHERE facility_id = $1
+              AND status IN ($3, $4)
+        ),
+        grn_metrics AS (
+            SELECT COUNT(*)::BIGINT AS pending_grns
+            FROM goods_received_notes
+            WHERE facility_id = $1
+              AND status IN ($5, $6, $7)
+        )
+        SELECT item_metrics.total_items,
+               batch_metrics.low_stock_count,
+               batch_metrics.expiring_soon_count,
+               batch_metrics.expiring_soon_count AS expiring_count,
+               0::BIGINT AS total_stock_value_minor,
+               0::BIGINT AS total_value_minor,
+               requisition_metrics.pending_requisitions,
+               grn_metrics.pending_grns,
+               0::BIGINT AS discrepancies
+        FROM item_metrics
+        CROSS JOIN batch_metrics
+        CROSS JOIN requisition_metrics
+        CROSS JOIN grn_metrics
+        "#,
+    )
+    .bind(facility_id)
+    .bind(expiring_within_days)
+    .bind(requested)
+    .bind(pending)
+    .bind(received)
+    .bind(pending_inspection)
+    .bind(inspecting)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(InventoryDashboardSummary {
+        total_items: row.total_items,
+        low_stock_count: row.low_stock_count,
+        expiring_soon_count: row.expiring_soon_count,
+        expiring_count: row.expiring_count,
+        total_stock_value_minor: row.total_stock_value_minor,
+        total_value_minor: row.total_value_minor,
+        pending_requisitions: row.pending_requisitions,
+        pending_grns: row.pending_grns,
+        discrepancies: row.discrepancies,
+    })
 }
 
 pub async fn list_storage_location_stock(

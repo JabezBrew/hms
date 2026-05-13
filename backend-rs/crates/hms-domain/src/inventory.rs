@@ -108,6 +108,19 @@ pub struct StorageLocationListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InventoryDashboardSummary {
+    pub total_items: i64,
+    pub low_stock_count: i64,
+    pub expiring_soon_count: i64,
+    pub expiring_count: i64,
+    pub total_stock_value_minor: i64,
+    pub total_value_minor: i64,
+    pub pending_requisitions: i64,
+    pub pending_grns: i64,
+    pub discrepancies: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct StockBatchListItem {
     pub id: Uuid,
     pub item_id: Uuid,
@@ -333,4 +346,9 @@ pub struct InventoryItemsQuery {
     pub category: Option<Uuid>,
     pub location: Option<Uuid>,
     pub status: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+pub struct InventoryDashboardSummaryQuery {
+    pub expiring_within_days: Option<u16>,
 }

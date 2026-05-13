@@ -10,6 +10,10 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/inventory/categories",
             get(inventory::list_categories),
         )
+        .route(
+            "/api/v2/inventory/dashboard-summary",
+            get(inventory::dashboard_summary),
+        )
         .route("/api/v2/inventory/items", get(inventory::list_items))
         .route("/api/v2/inventory/items/:id", get(inventory::get_item))
         .route(

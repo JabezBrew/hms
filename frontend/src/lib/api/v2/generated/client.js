@@ -692,6 +692,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getInventoryDashboardSummary": {
+    "operationId": "getInventoryDashboardSummary",
+    "method": "GET",
+    "path": "/api/v2/inventory/dashboard-summary",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "expiring_within_days"
+    ],
+    "hasBody": false
+  },
   "getInventoryItemById": {
     "operationId": "getInventoryItemById",
     "method": "GET",
@@ -2695,6 +2705,7 @@ export function createGeneratedClient(request) {
     getHealthAlive: createOperation(request, operations.getHealthAlive),
     getHealthReady: createOperation(request, operations.getHealthReady),
     getInventoryCategories: createOperation(request, operations.getInventoryCategories),
+    getInventoryDashboardSummary: createOperation(request, operations.getInventoryDashboardSummary),
     getInventoryItemById: createOperation(request, operations.getInventoryItemById),
     getInventoryItems: createOperation(request, operations.getInventoryItems),
     getInventoryItemStockBatches: createOperation(request, operations.getInventoryItemStockBatches),

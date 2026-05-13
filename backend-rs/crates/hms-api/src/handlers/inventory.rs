@@ -11,11 +11,11 @@ use hms_domain::inventory::{
     CreateControlledSubstanceMovementRequest, CreateGoodsReceivedNoteRequest,
     CreatePharmacyDispenseRequest, CreatePurchaseOrderRequest, CreateStockBatchRequest,
     CreateStockRequisitionRequest, CreateStockTransferRequest, GoodsReceivedNoteListItem,
-    InventoryCategoryListItem, InventoryItemListItem, InventoryItemStockLocationItem,
-    InventoryItemsQuery, InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem,
-    RejectStockRequisitionRequest, StockBatchListItem, StockBatchListQuery, StockMovementListItem,
-    StockRequisitionListItem, StockTransferListItem, StorageLocationListItem,
-    StorageLocationStockItem,
+    InventoryCategoryListItem, InventoryDashboardSummary, InventoryDashboardSummaryQuery,
+    InventoryItemListItem, InventoryItemStockLocationItem, InventoryItemsQuery, InventoryListQuery,
+    PharmacyDispenseListItem, PurchaseOrderListItem, RejectStockRequisitionRequest,
+    StockBatchListItem, StockBatchListQuery, StockMovementListItem, StockRequisitionListItem,
+    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem,
 };
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
@@ -69,6 +69,26 @@ pub async fn list_items(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.updated_at, item.id)
     })))
+}
+
+#[utoipa::path(get, path = "/api/v2/inventory/dashboard-summary", operation_id = "getInventoryDashboardSummary", tag = "inventory", security(("bearerAuth" = [])), params(InventoryDashboardSummaryQuery), responses((status = 200, body = ObjectResponse<InventoryDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn dashboard_summary(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<InventoryDashboardSummaryQuery>,
+) -> Result<Json<ObjectResponse<InventoryDashboardSummary>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
+    let expiring_within_days = query.expiring_within_days.unwrap_or(30).clamp(1, 365) as i32;
+    let summary = state
+        .inventory_dashboard_summary(expiring_within_days)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "inventory_dashboard_summary_failed",
+                "Inventory dashboard summary could not be loaded.",
+            )
+        })?;
+    Ok(Json(object(summary)))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}", operation_id = "getInventoryItemById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ObjectResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]

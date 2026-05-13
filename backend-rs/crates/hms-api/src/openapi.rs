@@ -145,6 +145,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::inventory::create_purchase_order,
         crate::handlers::inventory::create_requisition,
         crate::handlers::inventory::create_transfer,
+        crate::handlers::inventory::dashboard_summary,
         crate::handlers::inventory::accept_grn,
         crate::handlers::inventory::approve_purchase_order,
         crate::handlers::inventory::approve_requisition,

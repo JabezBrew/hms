@@ -26,117 +26,37 @@ describe('Rust V2 inventory bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('builds dashboard metrics from Rust V2 inventory lists', async () => {
-    const expiresSoon = dateDaysFromNow(10);
-    globalThis.fetch
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'item-1',
-              category_id: 'category-1',
-              code: 'PARA500',
-              name: 'Paracetamol 500mg',
-              item_type: 'medication',
-              unit: 'tablet',
-              controlled: false,
-            },
-            {
-              id: 'item-2',
-              category_id: 'category-1',
-              code: 'MOR10',
-              name: 'Morphine 10mg ampoule',
-              item_type: 'controlled_substance',
-              unit: 'ampoule',
-              controlled: true,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'batch-1',
-              item_id: 'item-1',
-              item_name: 'Paracetamol 500mg',
-              location_id: 'location-1',
-              location_name: 'Main Pharmacy',
-              batch_number: 'B001',
-              expires_on: expiresSoon,
-              quantity_on_hand: 24,
-              received_at: '2026-05-12T08:00:00Z',
-            },
-            {
-              id: 'batch-2',
-              item_id: 'item-2',
-              item_name: 'Morphine 10mg ampoule',
-              location_id: 'location-1',
-              location_name: 'Main Pharmacy',
-              batch_number: 'B002',
-              expires_on: null,
-              quantity_on_hand: 0,
-              received_at: '2026-05-12T08:00:00Z',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'req-1',
-              requesting_location_id: 'location-1',
-              requesting_location_name: 'Main Pharmacy',
-              status: 'requested',
-              created_at: '2026-05-12T08:00:00Z',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: [
-            {
-              id: 'grn-1',
-              purchase_order_id: 'po-1',
-              supplier_name: 'Medical Supplier',
-              status: 'received',
-              received_at: '2026-05-12T08:00:00Z',
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
-          meta: {},
-        }),
-      );
+  it('builds dashboard metrics from the Rust V2 inventory dashboard summary endpoint', async () => {
+    const abortController = new AbortController();
+    globalThis.fetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          total_items: 2,
+          low_stock_count: 1,
+          expiring_soon_count: 1,
+          expiring_count: 1,
+          total_stock_value_minor: 0,
+          total_value_minor: 0,
+          pending_requisitions: 1,
+          pending_grns: 1,
+          discrepancies: 0,
+        },
+        meta: {},
+      }),
+    );
 
-    const metrics = await inventoryApi.getDashboardMetrics();
+    const metrics = await inventoryApi.getDashboardMetrics(
+      { days: 14 },
+      { signal: abortController.signal },
+    );
 
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      1,
-      'http://localhost:8080/api/v2/inventory/items',
-      expect.objectContaining({ method: 'GET' }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:8080/api/v2/inventory/stock-batches?limit=100',
-      expect.objectContaining({ method: 'GET' }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      3,
-      'http://localhost:8080/api/v2/inventory/requisitions?limit=100',
-      expect.objectContaining({ method: 'GET' }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      4,
-      'http://localhost:8080/api/v2/inventory/goods-received-notes?limit=100',
-      expect.objectContaining({ method: 'GET' }),
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/inventory/dashboard-summary?expiring_within_days=14',
+      expect.objectContaining({
+        method: 'GET',
+        signal: abortController.signal,
+      }),
     );
     expect(metrics).toMatchObject({
       total_items: 2,

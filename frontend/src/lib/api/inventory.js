@@ -22,6 +22,10 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function minorToMajor(value) {
+  return toNumber(value) / 100;
+}
+
 function isAbortError(error) {
   return error?.name === 'AbortError';
 }
@@ -231,20 +235,18 @@ function adaptV2GoodsReceivedNote(grn) {
   };
 }
 
-function calculateV2DashboardMetrics({ items, batches, requisitions, grns }, params = {}) {
-  const expiringDays = boundedLimit(params.days, 30);
-  const lowStockCount = batches.filter((batch) => toNumber(batch?.quantity_on_hand) <= 0).length;
-
+function adaptV2DashboardSummary(response) {
+  const summary = v2Object(response);
   return {
-    total_items: items.length,
-    low_stock_count: lowStockCount,
-    expiring_soon_count: batches.filter((batch) => isExpiringWithin(batch, expiringDays)).length,
-    expiring_count: batches.filter((batch) => isExpiringWithin(batch, expiringDays)).length,
-    total_stock_value: 0,
-    total_value: 0,
-    pending_requisitions: requisitions.filter((item) => item?.status === 'pending' || item?.status === 'requested').length,
-    pending_grns: grns.filter((item) => ['received', 'pending_inspection', 'inspecting'].includes(item?.status)).length,
-    discrepancies: 0,
+    total_items: toNumber(summary.total_items),
+    low_stock_count: toNumber(summary.low_stock_count),
+    expiring_soon_count: toNumber(summary.expiring_soon_count),
+    expiring_count: toNumber(summary.expiring_count),
+    total_stock_value: minorToMajor(summary.total_stock_value_minor),
+    total_value: minorToMajor(summary.total_value_minor),
+    pending_requisitions: toNumber(summary.pending_requisitions),
+    pending_grns: toNumber(summary.pending_grns),
+    discrepancies: toNumber(summary.discrepancies),
   };
 }
 
@@ -381,28 +383,11 @@ export const inventoryApi = {
   getDashboardMetrics: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const [itemsResponse, batchesResponse, requisitionsResponse, grnsResponse] = await Promise.all([
-          v2Api.getInventoryItems({ signal: options.signal }),
-          v2Api.getStockBatches({
-            query: { limit: boundedLimit(params.limit, 100) },
-            signal: options.signal,
-          }),
-          v2Api.getStockRequisitions({
-            query: { limit: boundedLimit(params.limit, 100) },
-            signal: options.signal,
-          }),
-          v2Api.getGoodsReceivedNotes({
-            query: { limit: boundedLimit(params.limit, 100) },
-            signal: options.signal,
-          }),
-        ]);
-
-        return calculateV2DashboardMetrics({
-          items: unwrapV2List(itemsResponse),
-          batches: unwrapV2List(batchesResponse),
-          requisitions: unwrapV2List(requisitionsResponse),
-          grns: unwrapV2List(grnsResponse),
-        }, params);
+        const response = await v2Api.getInventoryDashboardSummary({
+          query: { expiring_within_days: boundedLimit(params.days, 30) },
+          signal: options.signal,
+        });
+        return adaptV2DashboardSummary(response);
       }
 
       const queryString = new URLSearchParams(params).toString();

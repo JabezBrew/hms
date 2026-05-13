@@ -75,10 +75,10 @@ use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceBalanceValidation,
     ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
-    GoodsReceivedNoteListItem, InventoryCategoryListItem, InventoryItemListItem,
-    InventoryItemStockLocationItem, PharmacyDispenseListItem, PurchaseOrderListItem,
-    StockBatchListItem, StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
-    StorageLocationListItem, StorageLocationStockItem,
+    GoodsReceivedNoteListItem, InventoryCategoryListItem, InventoryDashboardSummary,
+    InventoryItemListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
+    PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
+    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem,
 };
 use hms_domain::laboratory::{
     LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
@@ -2220,6 +2220,18 @@ impl AppState {
         location_id: Uuid,
     ) -> Result<Option<StorageLocationListItem>> {
         hms_db::inventory::get_location(&self.inner.pool, self.facility_id(), location_id).await
+    }
+
+    pub async fn inventory_dashboard_summary(
+        &self,
+        expiring_within_days: i32,
+    ) -> Result<InventoryDashboardSummary> {
+        hms_db::inventory::inventory_dashboard_summary(
+            &self.inner.pool,
+            self.facility_id(),
+            expiring_within_days,
+        )
+        .await
     }
 
     pub async fn list_storage_location_stock(

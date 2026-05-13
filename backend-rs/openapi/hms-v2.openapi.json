@@ -3495,6 +3495,58 @@
         ],
         "type": "object"
       },
+      "InventoryDashboardSummary": {
+        "properties": {
+          "discrepancies": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expiring_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expiring_soon_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "low_stock_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending_grns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending_requisitions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_items": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_stock_value_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_value_minor": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_items",
+          "low_stock_count",
+          "expiring_soon_count",
+          "expiring_count",
+          "total_stock_value_minor",
+          "total_value_minor",
+          "pending_requisitions",
+          "pending_grns",
+          "discrepancies"
+        ],
+        "type": "object"
+      },
       "InventoryItemListItem": {
         "properties": {
           "category_id": {
@@ -11245,6 +11297,68 @@
               "status",
               "version",
               "started_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_InventoryDashboardSummary": {
+        "properties": {
+          "data": {
+            "properties": {
+              "discrepancies": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "expiring_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "expiring_soon_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "low_stock_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "pending_grns": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "pending_requisitions": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total_items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total_stock_value_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total_value_minor": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total_items",
+              "low_stock_count",
+              "expiring_soon_count",
+              "expiring_count",
+              "total_stock_value_minor",
+              "total_value_minor",
+              "pending_requisitions",
+              "pending_grns",
+              "discrepancies"
             ],
             "type": "object"
           },
@@ -23805,6 +23919,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListResponse_InventoryCategoryListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/dashboard-summary": {
+      "get": {
+        "operationId": "getInventoryDashboardSummary",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "expiring_within_days",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryDashboardSummary"
                 }
               }
             },

@@ -3429,6 +3429,39 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(grn_detail_body["data"]["id"], grn_id);
     assert_eq!(grn_detail_body["data"]["status"], "pending_inspection");
 
+    let inventory_dashboard_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/dashboard-summary?expiring_within_days=30")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("inventory dashboard summary succeeds");
+    assert_eq!(inventory_dashboard_response.status(), StatusCode::OK);
+    let inventory_dashboard = json_body(inventory_dashboard_response).await;
+    assert!(
+        inventory_dashboard["data"]["total_items"]
+            .as_i64()
+            .expect("inventory item count exists")
+            >= items.len() as i64
+    );
+    assert!(
+        inventory_dashboard["data"]["expiring_soon_count"]
+            .as_i64()
+            .expect("expiring count exists")
+            >= 1
+    );
+    assert!(
+        inventory_dashboard["data"]["pending_grns"]
+            .as_i64()
+            .expect("pending GRN count exists")
+            >= 1
+    );
+
     let grn_inspect_response = app
         .clone()
         .oneshot(
