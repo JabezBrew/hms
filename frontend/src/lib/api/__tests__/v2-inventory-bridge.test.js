@@ -636,7 +636,7 @@ describe('Rust V2 inventory bridge', () => {
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
       ['http://localhost:8080/api/v2/inventory/items/item-1/stock-movements?limit=50', 'GET', controller.signal],
-      ['http://localhost:8080/api/v2/inventory/items/item-1/stock-batches?limit=100', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/items/item-1/stock-batches?limit=25', 'GET', controller.signal],
       ['http://localhost:8080/api/v2/inventory/items/item-1/stock-by-location', 'GET', controller.signal],
     ]);
   });

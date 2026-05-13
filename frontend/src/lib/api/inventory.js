@@ -913,7 +913,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getInventoryItemStockBatches({ id }, {
-          query: { limit: boundedLimit(options.limit || options.page_size, 100) },
+          query: { limit: boundedLimit(options.limit || options.page_size, 25) },
           signal: options.signal,
         });
         return unwrapV2List(response).map((batch) => ({
