@@ -127,6 +127,7 @@ function adaptV2AppointmentForDashboard(item = {}) {
     patient_display_name: patientName,
     patient_mrn: item.patient_code || '',
     patient_code: item.patient_code || '',
+    practitioner_name: item.practitioner_display_name || item.practitioner_name || '',
     start_time: item.starts_at,
     end_time: item.ends_at,
   };
@@ -168,6 +169,138 @@ function emptyV2ComplianceDetails() {
   };
 }
 
+function unwrapV2List(response) {
+  return Array.isArray(response?.data) ? response.data : [];
+}
+
+function humanizeSnake(value) {
+  return String(value || '')
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function lengthOfStayDays(dateValue) {
+  const date = dateValue ? new Date(dateValue) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil((Date.now() - date.getTime()) / 86_400_000));
+}
+
+function adaptV2WardBoardPatient(item = {}) {
+  return {
+    id: item.admission_id,
+    admission_id: item.admission_id,
+    patient_id: item.patient_id,
+    patient_name: item.patient_display_name || 'Unknown Patient',
+    mrn: item.patient_code || '',
+    diagnosis: '',
+    ward_id: item.ward_id,
+    ward_name: item.ward_name || '',
+    bed_id: item.bed_id || null,
+    bed_number: item.bed_code || 'Unassigned',
+    admission_date: item.admitted_at,
+    length_of_stay: lengthOfStayDays(item.admitted_at),
+    alerts_count: 0,
+    tasks_count: Number(item.open_nursing_task_count || 0),
+    has_critical_alerts: false,
+    latest_vitals: null,
+    last_round_date: null,
+    estimated_discharge: null,
+  };
+}
+
+function adaptV2NursingAlert(alert = {}) {
+  return {
+    id: alert.id,
+    patient_id: alert.patient_id,
+    patient_name: alert.patient_display_name || 'Unknown Patient',
+    message: alert.title || 'Clinical alert',
+    severity: alert.severity || 'normal',
+    status: alert.status,
+    created_at: alert.created_at,
+  };
+}
+
+function adaptV2MedicationAdministration(item = {}) {
+  return {
+    id: item.id,
+    patient_id: item.patient_id,
+    patient_name: item.patient_display_name || 'Unknown Patient',
+    medication_name: item.medication_name || 'Medication',
+    dosage: item.dosage || '',
+    route: item.route || '',
+    frequency: item.frequency || 'Scheduled',
+    scheduled_time: item.scheduled_at,
+    status: item.status,
+    ward_name: item.ward_name || '',
+    bed_number: item.bed_code || '',
+  };
+}
+
+function adaptV2NursingTask(item = {}) {
+  return {
+    id: item.id,
+    patient_id: item.patient_id,
+    patient_name: item.patient_display_name || 'Unknown Patient',
+    title: humanizeSnake(item.task_type) || 'Nursing Task',
+    description: humanizeSnake(item.status) || 'Pending',
+    priority: item.priority || 'normal',
+    due_at: item.due_at,
+    status: item.status,
+  };
+}
+
+function attachAlertCounts(patients, alerts) {
+  const byPatient = new Map();
+  for (const alert of alerts) {
+    const current = byPatient.get(alert.patient_id) || { count: 0, critical: false };
+    current.count += 1;
+    current.critical = current.critical || alert.severity === 'critical';
+    byPatient.set(alert.patient_id, current);
+  }
+  return patients.map((patient) => {
+    const stats = byPatient.get(patient.patient_id);
+    if (!stats) {
+      return patient;
+    }
+    return {
+      ...patient,
+      alerts_count: stats.count,
+      has_critical_alerts: stats.critical,
+    };
+  });
+}
+
+function adaptV2Discharge(item = {}, wardBoardByAdmission = new Map()) {
+  const wardPatient = wardBoardByAdmission.get(item.admission_case_id) || {};
+  return {
+    id: item.id,
+    admission_id: item.admission_case_id,
+    patient_id: item.patient_id,
+    patient_name: item.patient_display_name || wardPatient.patient_name || 'Unknown Patient',
+    mrn: item.patient_code || wardPatient.mrn || '',
+    ward_name: wardPatient.ward_name || '',
+    bed_number: wardPatient.bed_number || 'Unassigned',
+    estimated_discharge: item.discharged_at || item.requested_at,
+    length_of_stay: wardPatient.length_of_stay || 0,
+    status: item.status,
+  };
+}
+
+function adaptV2RecentPatient(item = {}) {
+  return {
+    id: item.id,
+    full_name: item.display_name || 'Unknown Patient',
+    mrn: item.patient_code || '',
+    created_at: item.created_at,
+    phone: item.phone || '',
+    email: item.email || '',
+  };
+}
+
 /**
  * Dashboards API service
  */
@@ -179,9 +312,42 @@ export const dashboardsApi = {
    */
   getNurseDashboard: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const signal = params.signal;
+        const wardId = params.ward && params.ward !== 'all' ? params.ward : null;
+        const [wardBoard, alertsResponse, medicationsResponse, tasksResponse] = await Promise.all([
+          v2Api.getWardBoard({
+            query: {
+              ...(wardId ? { ward_id: wardId } : {}),
+              limit: 20,
+            },
+            signal,
+          }),
+          v2Api.getNursingAlerts({ query: { limit: 20 }, signal }),
+          v2Api.getMedicationAdministrations({ query: { limit: 20 }, signal }),
+          v2Api.getNursingTasks({ query: { limit: 20 }, signal }),
+        ]);
+        const alerts = unwrapV2List(alertsResponse).map(adaptV2NursingAlert);
+        return {
+          urgent: {
+            critical_alerts: alerts.filter((alert) => alert.severity === 'critical'),
+            overdue_medications: [],
+            count: alerts.length,
+          },
+          shift_patients: attachAlertCounts(
+            unwrapV2List(wardBoard).map(adaptV2WardBoardPatient),
+            alerts,
+          ),
+          medications_schedule: unwrapV2List(medicationsResponse).map(adaptV2MedicationAdministration),
+          tasks: unwrapV2List(tasksResponse).map(adaptV2NursingTask),
+        };
+      }
       const endpoint = `/dashboards/nurse/${buildQueryString(params)}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch nurse dashboard'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch nurse dashboard'));
     }
   },
@@ -190,10 +356,34 @@ export const dashboardsApi = {
    * Get inpatient doctor dashboard data
    * @returns {Promise<Object>} Inpatient doctor dashboard data
    */
-  getInpatientDashboard: async () => {
+  getInpatientDashboard: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const signal = params.signal;
+        const [wardBoardResponse, dischargesResponse, tasksResponse] = await Promise.all([
+          v2Api.getWardBoard({ query: { limit: 20 }, signal }),
+          v2Api.getDischarges({ query: { limit: 20 }, signal }),
+          v2Api.getNursingTasks({ query: { limit: 20 }, signal }),
+        ]);
+        const wardPatients = unwrapV2List(wardBoardResponse).map(adaptV2WardBoardPatient);
+        const wardBoardByAdmission = new Map(wardPatients.map((patient) => [patient.admission_id, patient]));
+        return {
+          new_admissions: wardPatients,
+          my_patients: wardPatients,
+          planned_discharges: unwrapV2List(dischargesResponse).map((discharge) => (
+            adaptV2Discharge(discharge, wardBoardByAdmission)
+          )),
+          pending: {
+            results_to_review: 0,
+            orders_to_sign: unwrapV2List(tasksResponse).length,
+          },
+        };
+      }
       return await apiClient.get('/dashboards/inpatient/');
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch inpatient dashboard'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inpatient dashboard'));
     }
   },
@@ -202,10 +392,36 @@ export const dashboardsApi = {
    * Get receptionist dashboard data
    * @returns {Promise<Object>} Receptionist dashboard data
    */
-  getReceptionistDashboard: async () => {
+  getReceptionistDashboard: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const date = params.date || new Date().toISOString().slice(0, 10);
+        const signal = params.signal;
+        const [appointmentsResponse, patientsResponse, billingResponse] = await Promise.all([
+          v2Api.getAppointments({ query: { date, limit: 50 }, signal }),
+          v2Api.getPatients({ query: { limit: 10, status: 'active' }, signal }),
+          v2Api.getBillingDashboardSummary({ signal }),
+        ]);
+        const appointments = unwrapV2List(appointmentsResponse).map(adaptV2AppointmentForDashboard);
+        const checkedInCount = appointments.filter((appointment) => (
+          appointment.status === 'checked_in' || appointment.status === 'checked-in'
+        )).length;
+        return {
+          check_in_queue: appointments.filter((appointment) => appointment.status === 'scheduled'),
+          recent_registrations: unwrapV2List(patientsResponse).map(adaptV2RecentPatient),
+          todays_appointments: appointments,
+          stats: {
+            todays_appointments_count: appointments.length,
+            checked_in_count: checkedInCount,
+            pending_payments_count: Number(billingResponse?.data?.open_invoices || 0),
+          },
+        };
+      }
       return await apiClient.get('/dashboards/reception/');
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch receptionist dashboard'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch receptionist dashboard'));
     }
   },

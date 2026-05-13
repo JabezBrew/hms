@@ -259,4 +259,326 @@ describe('Rust V2 dashboard bridge', () => {
       ],
     }));
   });
+
+  it('builds the nurse dashboard from bounded Rust ward, alert, medication, and task lists', async () => {
+    const abortController = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                admission_id: 'admission-1',
+                patient_id: 'patient-1',
+                patient_code: 'MRN-001',
+                patient_display_name: 'Ama Mensah',
+                ward_id: 'ward-1',
+                ward_name: 'Medical Ward',
+                bed_code: 'B-12',
+                admitted_at: '2026-05-12T07:00:00Z',
+                open_nursing_task_count: 2,
+                due_medication_count: 1,
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'alert-1',
+                patient_id: 'patient-1',
+                patient_display_name: 'Ama Mensah',
+                severity: 'critical',
+                title: 'Fall risk',
+                status: 'open',
+                created_at: '2026-05-12T08:00:00Z',
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'med-1',
+                patient_id: 'patient-1',
+                patient_display_name: 'Ama Mensah',
+                medication_name: 'Paracetamol',
+                scheduled_at: '2026-05-12T09:00:00Z',
+                status: 'pending',
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'task-1',
+                patient_id: 'patient-1',
+                patient_display_name: 'Ama Mensah',
+                task_type: 'vitals',
+                status: 'pending',
+                due_at: '2026-05-12T10:00:00Z',
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    const response = await dashboardsApi.getNurseDashboard({
+      ward: 'ward-1',
+      signal: abortController.signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/wards/board?ward_id=ward-1&limit=20',
+      expect.objectContaining({ method: 'GET', signal: abortController.signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/nursing/alerts?limit=20',
+      expect.objectContaining({ method: 'GET', signal: abortController.signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/nursing/medication-administrations?limit=20',
+      expect.objectContaining({ method: 'GET', signal: abortController.signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/nursing/tasks?limit=20',
+      expect.objectContaining({ method: 'GET', signal: abortController.signal }),
+    );
+    expect(response).toEqual(expect.objectContaining({
+      shift_patients: [
+        expect.objectContaining({
+          patient_id: 'patient-1',
+          patient_name: 'Ama Mensah',
+          mrn: 'MRN-001',
+          ward_name: 'Medical Ward',
+          bed_number: 'B-12',
+          tasks_count: 2,
+        }),
+      ],
+      urgent: expect.objectContaining({
+        critical_alerts: [
+          expect.objectContaining({
+            id: 'alert-1',
+            patient_name: 'Ama Mensah',
+            message: 'Fall risk',
+          }),
+        ],
+      }),
+      medications_schedule: [expect.objectContaining({ id: 'med-1', scheduled_time: '2026-05-12T09:00:00Z' })],
+      tasks: [expect.objectContaining({ id: 'task-1', title: 'Vitals' })],
+    }));
+  });
+
+  it('builds the inpatient dashboard from bounded Rust ward, discharge, and task lists', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                admission_id: 'admission-1',
+                patient_id: 'patient-1',
+                patient_code: 'MRN-001',
+                patient_display_name: 'Ama Mensah',
+                ward_id: 'ward-1',
+                ward_name: 'Medical Ward',
+                bed_code: 'B-12',
+                admitted_at: '2026-05-12T07:00:00Z',
+                open_nursing_task_count: 2,
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'discharge-1',
+                admission_case_id: 'admission-1',
+                patient_id: 'patient-1',
+                patient_code: 'MRN-001',
+                patient_display_name: 'Ama Mensah',
+                status: 'planned',
+                requested_at: '2026-05-12T08:00:00Z',
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'task-1',
+                patient_id: 'patient-1',
+                patient_display_name: 'Ama Mensah',
+                task_type: 'care_plan_review',
+                status: 'pending',
+                due_at: '2026-05-12T10:00:00Z',
+              },
+            ],
+            page: { limit: 20, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    const response = await dashboardsApi.getInpatientDashboard({ signal: new AbortController().signal });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/wards/board?limit=20',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/discharges?limit=20',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/nursing/tasks?limit=20',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual(expect.objectContaining({
+      new_admissions: [expect.objectContaining({ id: 'admission-1', patient_name: 'Ama Mensah' })],
+      my_patients: [expect.objectContaining({ id: 'admission-1', patient_id: 'patient-1' })],
+      planned_discharges: [expect.objectContaining({ id: 'discharge-1', patient_name: 'Ama Mensah' })],
+      pending: {
+        results_to_review: 0,
+        orders_to_sign: 1,
+      },
+    }));
+  });
+
+  it('builds the receptionist dashboard from bounded Rust appointments, patients, and billing summary', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'appointment-1',
+                patient_id: 'patient-1',
+                patient_code: 'MRN-001',
+                patient_display_name: 'Ama Mensah',
+                practitioner_display_name: 'Dr Mensah',
+                starts_at: '2026-05-12T09:00:00Z',
+                ends_at: '2026-05-12T09:30:00Z',
+                status: 'scheduled',
+              },
+              {
+                id: 'appointment-2',
+                patient_id: 'patient-2',
+                patient_code: 'MRN-002',
+                patient_display_name: 'Kojo Mensah',
+                practitioner_display_name: 'Dr Mensah',
+                starts_at: '2026-05-12T10:00:00Z',
+                ends_at: '2026-05-12T10:30:00Z',
+                status: 'checked_in',
+              },
+            ],
+            page: { limit: 50, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'patient-1',
+                patient_code: 'MRN-001',
+                display_name: 'Ama Mensah',
+                status: 'active',
+                created_at: '2026-05-12T06:00:00Z',
+              },
+            ],
+            page: { limit: 10, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              open_invoices: 4,
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+
+    const response = await dashboardsApi.getReceptionistDashboard({ date: '2026-05-12' });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/appointments?date=2026-05-12&limit=50',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/patients?limit=10&status=active',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/billing/dashboard-summary',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual(expect.objectContaining({
+      check_in_queue: [expect.objectContaining({ id: 'appointment-1', patient_name: 'Ama Mensah' })],
+      recent_registrations: [expect.objectContaining({ id: 'patient-1', full_name: 'Ama Mensah' })],
+      todays_appointments: [
+        expect.objectContaining({ id: 'appointment-1' }),
+        expect.objectContaining({ id: 'appointment-2' }),
+      ],
+      stats: {
+        todays_appointments_count: 2,
+        checked_in_count: 1,
+        pending_payments_count: 4,
+      },
+    }));
+  });
 });
