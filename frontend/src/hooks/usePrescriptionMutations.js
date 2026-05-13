@@ -14,6 +14,7 @@ import { invalidatePatientTimelineQueries } from './useTimelineQueries';
 
 // Query keys for prescriptions
 const prescriptionKeyFactory = createKeyFactory('prescriptions');
+const ACTIVE_PRESCRIPTION_LIST_LIMIT = 50;
 
 export const prescriptionKeys = {
   all: prescriptionKeyFactory.all,
@@ -360,13 +361,42 @@ export function useRenewPrescription() {
 /**
  * Fetch a single prescription by ID
  */
-export async function fetchPrescription(prescriptionId) {
+export async function fetchPrescription(prescriptionId, options = {}) {
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.getClinicalPrescriptionById(
+        { id: prescriptionId },
+        { signal: options.signal },
+      );
+      return normalizePrescriptionResponse(response?.data);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to fetch prescription'));
+    }
+  }
   return apiClient.get(`/clinical-notes/prescriptions/${prescriptionId}/`);
 }
 
 /**
  * Fetch active prescriptions for a patient
  */
-export async function fetchPatientActivePrescriptions(patientId) {
+export async function fetchPatientActivePrescriptions(patientId, options = {}) {
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.getPatientPrescriptions(
+        { patient_id: patientId },
+        {
+          query: { limit: ACTIVE_PRESCRIPTION_LIST_LIMIT },
+          signal: options.signal,
+        },
+      );
+      return (response?.data || [])
+        .filter((prescription) => prescription.status === 'active')
+        .map(normalizePrescriptionResponse);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to fetch active prescriptions'));
+    }
+  }
   return apiClient.get(`/clinical-notes/prescriptions/patient_active/?patient=${patientId}`);
 }

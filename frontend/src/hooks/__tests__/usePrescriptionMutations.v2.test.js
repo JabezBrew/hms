@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createPrescription,
   discontinuePrescription,
+  fetchPatientActivePrescriptions,
+  fetchPrescription,
   holdPrescription,
   resumePrescription,
   updatePrescription,
@@ -12,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 
 vi.mock('@/lib/api-client', () => ({
   apiClient: {
+    get: vi.fn(),
     patch: vi.fn(),
     post: vi.fn(),
   },
@@ -140,6 +143,92 @@ describe('Rust V2 prescription mutations bridge', () => {
       }),
     );
     expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+
+  it('fetches prescription detail through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'rx-1',
+            patient_id: 'patient-1',
+            medication_name: 'Amlodipine',
+            dose: '10 mg',
+            frequency: 'twice daily',
+            status: 'active',
+            prescribed_at: '2026-05-12T08:30:00Z',
+          },
+          meta: {},
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await expect(fetchPrescription('rx-1', { signal: new AbortController().signal })).resolves.toEqual(
+      expect.objectContaining({
+        id: 'rx-1',
+        patient: 'patient-1',
+        dosage: '10 mg',
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/prescriptions/rx-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(apiClient.get).not.toHaveBeenCalled();
+  });
+
+  it('fetches active patient prescriptions through the bounded Rust patient list contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'rx-active',
+              patient_id: 'patient-1',
+              medication_name: 'Amlodipine',
+              dose: '10 mg',
+              frequency: 'daily',
+              status: 'active',
+              prescribed_at: '2026-05-12T08:30:00Z',
+            },
+            {
+              id: 'rx-stopped',
+              patient_id: 'patient-1',
+              medication_name: 'Lisinopril',
+              dose: '5 mg',
+              frequency: 'daily',
+              status: 'stopped',
+              prescribed_at: '2026-05-11T08:30:00Z',
+            },
+          ],
+          page: { limit: 50, next_cursor: null },
+          meta: {},
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await expect(
+      fetchPatientActivePrescriptions('patient-1', { signal: new AbortController().signal }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'rx-active',
+        patient: 'patient-1',
+        status: 'active',
+      }),
+    ]);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/patients/patient-1/clinical/prescriptions?limit=50',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(apiClient.get).not.toHaveBeenCalled();
   });
 
   it.each([
