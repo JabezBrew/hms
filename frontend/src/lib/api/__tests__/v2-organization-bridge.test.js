@@ -72,15 +72,16 @@ describe('Rust V2 organization bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await clinicalUnitsApi.list({
       unit_type_code: 'department',
       unit_category: 'clinical',
       is_active: true,
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/org-units?unit_type=department&is_active=true&limit=100',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal }),
     );
     expect(response).toEqual([
       {
@@ -123,11 +124,12 @@ describe('Rust V2 organization bridge', () => {
       ),
     );
 
-    const response = await clinicsApi.list({ is_active: true, page_size: 50 });
+    const signal = new AbortController().signal;
+    const response = await clinicsApi.list({ is_active: true, page_size: 50 }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/clinics?limit=50',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal }),
     );
     expect(response).toEqual([
       {
@@ -162,12 +164,13 @@ describe('Rust V2 organization bridge', () => {
       ),
     );
 
-    const response = await clinicsApi.get('clinic-1', { signal: new AbortController().signal });
+    const signal = new AbortController().signal;
+    const response = await clinicsApi.get('clinic-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/clinics/clinic-1',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal }),
     );
     expect(response).toEqual({
       id: 'clinic-1',
@@ -372,18 +375,20 @@ describe('Rust V2 organization bridge', () => {
         ),
       );
 
-    const detail = await clinicalUnitsApi.get('root');
-    const children = await clinicalUnitsApi.children('root');
+    const detailSignal = new AbortController().signal;
+    const childrenSignal = new AbortController().signal;
+    const detail = await clinicalUnitsApi.get('root', { signal: detailSignal });
+    const children = await clinicalUnitsApi.children('root', {}, { signal: childrenSignal });
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
       'http://localhost:8080/api/v2/admin/org-units/root',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal: detailSignal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
       'http://localhost:8080/api/v2/admin/org-units/root/children?limit=100',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET', signal: childrenSignal }),
     );
     expect(detail).toEqual(expect.objectContaining({
       id: 'root',

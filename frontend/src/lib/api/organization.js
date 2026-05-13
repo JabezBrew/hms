@@ -22,6 +22,15 @@ function titleCase(value) {
 
 const CLINICAL_V2_UNIT_TYPES = new Set(['department', 'clinic', 'ward', 'service']);
 
+function splitRequestParams(params = {}, options = {}) {
+  const { signal: paramSignal, ...queryParams } = params || {};
+  const requestOptions = { ...options };
+  if (requestOptions.signal === undefined && paramSignal !== undefined) {
+    requestOptions.signal = paramSignal;
+  }
+  return { queryParams, requestOptions };
+}
+
 function adaptV2OrgUnit(unit) {
   const unitType = unit.unit_type || unit.unit_type_code || 'department';
   return {
@@ -120,54 +129,56 @@ function unitTypeFromCode(code) {
   };
 }
 
-async function listV2OrgUnits(params = {}) {
+async function listV2OrgUnits(params = {}, options = {}) {
+  const { queryParams, requestOptions } = splitRequestParams(params, options);
   const query = {};
-  const unitType = params.unit_type || params.unit_type_code;
+  const unitType = queryParams.unit_type || queryParams.unit_type_code;
   if (unitType) {
     query.unit_type = unitType;
   }
-  if (params.is_active !== undefined && params.is_active !== null && params.is_active !== '') {
-    query.is_active = params.is_active === true || params.is_active === 'true';
+  if (queryParams.is_active !== undefined && queryParams.is_active !== null && queryParams.is_active !== '') {
+    query.is_active = queryParams.is_active === true || queryParams.is_active === 'true';
   }
-  if (params.cursor) {
-    query.cursor = params.cursor;
+  if (queryParams.cursor) {
+    query.cursor = queryParams.cursor;
   }
-  query.limit = normalizeV2OrgLimit(params);
+  query.limit = normalizeV2OrgLimit(queryParams);
 
   const response = await v2Api.getAdminOrgUnits({
     query,
-    signal: params.signal,
+    signal: requestOptions.signal,
   });
   const units = Array.isArray(response?.data)
     ? response.data.map(adaptV2OrgUnit)
     : [];
-  return filterV2OrgUnits(units, params);
+  return filterV2OrgUnits(units, queryParams);
 }
 
-async function listV2Clinics(params = {}) {
+async function listV2Clinics(params = {}, options = {}) {
+  const { queryParams, requestOptions } = splitRequestParams(params, options);
   const response = await v2Api.getClinics({
     query: {
-      cursor: params.cursor,
-      limit: normalizeV2OrgLimit(params, 50),
+      cursor: queryParams.cursor,
+      limit: normalizeV2OrgLimit(queryParams, 50),
     },
-    signal: params.signal,
+    signal: requestOptions.signal,
   });
   const clinics = Array.isArray(response?.data)
     ? response.data.map(adaptV2Clinic)
     : [];
-  return filterV2Clinics(clinics, params);
+  return filterV2Clinics(clinics, queryParams);
 }
 
-async function getV2Clinic(id, params = {}) {
+async function getV2Clinic(id, options = {}) {
   const response = await v2Api.getClinicById(
     { id },
-    { signal: params.signal },
+    { signal: options.signal },
   );
   return adaptV2Clinic(response?.data || response || {});
 }
 
-async function listV2UnitTypes(params = {}) {
-  const units = await listV2OrgUnits(params);
+async function listV2UnitTypes(params = {}, options = {}) {
+  const units = await listV2OrgUnits(params, options);
   const seen = new Set(DEFAULT_V2_UNIT_TYPES.map((unitType) => unitType.code));
   const unitTypes = [...DEFAULT_V2_UNIT_TYPES];
   for (const unit of units) {
@@ -216,57 +227,60 @@ function buildV2OrgTree(units) {
   return roots;
 }
 
-async function getV2OrgUnit(id) {
-  const response = await v2Api.getAdminOrgUnitById({ id });
+async function getV2OrgUnit(id, options = {}) {
+  const response = await v2Api.getAdminOrgUnitById({ id }, options);
   return adaptV2OrgUnit(response?.data || response || {});
 }
 
-async function getV2OrgUnitChildren(id, params = {}) {
+async function getV2OrgUnitChildren(id, params = {}, options = {}) {
+  const { queryParams, requestOptions } = splitRequestParams(params, options);
   const response = await v2Api.getAdminOrgUnitChildren({
     id,
   }, {
     query: {
-      cursor: params.cursor,
-      limit: normalizeV2OrgLimit(params),
+      cursor: queryParams.cursor,
+      limit: normalizeV2OrgLimit(queryParams),
     },
-    signal: params.signal,
+    signal: requestOptions.signal,
   });
   return Array.isArray(response?.data)
     ? response.data.map(adaptV2OrgUnit)
     : [];
 }
 
-async function getV2OrgUnitAncestors(id, params = {}) {
+async function getV2OrgUnitAncestors(id, params = {}, options = {}) {
+  const { queryParams, requestOptions } = splitRequestParams(params, options);
   const response = await v2Api.getAdminOrgUnitAncestors({
     id,
   }, {
     query: {
-      limit: normalizeV2OrgLimit(params),
+      limit: normalizeV2OrgLimit(queryParams),
     },
-    signal: params.signal,
+    signal: requestOptions.signal,
   });
   return Array.isArray(response?.data)
     ? response.data.map(adaptV2OrgUnit)
     : [];
 }
 
-async function getV2OrgUnitDescendants(id, params = {}) {
+async function getV2OrgUnitDescendants(id, params = {}, options = {}) {
+  const { queryParams, requestOptions } = splitRequestParams(params, options);
   const response = await v2Api.getAdminOrgUnitDescendants({
     id,
   }, {
     query: {
-      cursor: params.cursor,
-      limit: normalizeV2OrgLimit(params),
+      cursor: queryParams.cursor,
+      limit: normalizeV2OrgLimit(queryParams),
     },
-    signal: params.signal,
+    signal: requestOptions.signal,
   });
   return Array.isArray(response?.data)
     ? response.data.map(adaptV2OrgUnit)
     : [];
 }
 
-async function getV2OrgUnitWards(id) {
-  const descendants = await getV2OrgUnitDescendants(id);
+async function getV2OrgUnitWards(id, options = {}) {
+  const descendants = await getV2OrgUnitDescendants(id, {}, options);
   return descendants.filter((unit) => unit.unit_type_code === 'ward' || unit.unit_type === 'ward');
 }
 
@@ -344,18 +358,19 @@ function legacyCrudApi(resourceName, basePath, { rustList = emptyRustV2List } = 
  * Unit Types API
  */
 export const unitTypesApi = {
-  list: (params = {}) => {
+  list: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return listV2UnitTypes(params);
+      return listV2UnitTypes(params, options);
     }
-    return apiClient.get('/organization/unit-types/', { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get('/organization/unit-types/', { params: queryParams, ...requestOptions });
   },
-  get: async (id) => {
+  get: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      const unitTypes = await listV2UnitTypes();
+      const unitTypes = await listV2UnitTypes({}, options);
       return unitTypes.find((unitType) => unitType.id === id || unitType.code === id) || null;
     }
-    return apiClient.get(`/organization/unit-types/${id}/`);
+    return apiClient.get(`/organization/unit-types/${id}/`, options);
   },
   create: (data) => {
     if (isRustV2ApiMode()) {
@@ -401,17 +416,18 @@ export const assignmentTypesApi = legacyCrudApi('assignment types', '/organizati
  * Clinical Units API
  */
 export const clinicalUnitsApi = {
-  list: (params = {}) => {
+  list: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return listV2OrgUnits(params);
+      return listV2OrgUnits(params, options);
     }
-    return apiClient.get('/organization/units/', { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get('/organization/units/', { params: queryParams, ...requestOptions });
   },
-  get: (id) => {
+  get: (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnit(id);
+      return getV2OrgUnit(id, options);
     }
-    return apiClient.get(`/organization/units/${id}/`);
+    return apiClient.get(`/organization/units/${id}/`, options);
   },
   create: (data) => {
     if (isRustV2ApiMode()) {
@@ -439,29 +455,32 @@ export const clinicalUnitsApi = {
   },
 
   // Tree and hierarchy
-  tree: () => {
+  tree: (options = {}) => {
     if (isRustV2ApiMode()) {
-      return listV2OrgUnits().then(buildV2OrgTree);
+      return listV2OrgUnits({}, options).then(buildV2OrgTree);
     }
-    return apiClient.get('/organization/units/tree/');
+    return apiClient.get('/organization/units/tree/', options);
   },
-  children: (id, params = {}) => {
+  children: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnitChildren(id, params);
+      return getV2OrgUnitChildren(id, params, options);
     }
-    return apiClient.get(`/organization/units/${id}/children/`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/children/`, { params: queryParams, ...requestOptions });
   },
-  ancestors: (id, params = {}) => {
+  ancestors: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnitAncestors(id, params);
+      return getV2OrgUnitAncestors(id, params, options);
     }
-    return apiClient.get(`/organization/units/${id}/ancestors/`);
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/ancestors/`, { params: queryParams, ...requestOptions });
   },
-  descendants: (id, params = {}) => {
+  descendants: (id, params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnitDescendants(id, params);
+      return getV2OrgUnitDescendants(id, params, options);
     }
-    return apiClient.get(`/organization/units/${id}/descendants/`, { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get(`/organization/units/${id}/descendants/`, { params: queryParams, ...requestOptions });
   },
 
   // Related data
@@ -513,11 +532,11 @@ export const clinicalUnitsApi = {
     const queryString = new URLSearchParams(params).toString();
     return apiClient.getWithPagination(`/organization/units/${id}/members/${queryString ? `?${queryString}` : ''}`);
   },
-  wards: (id) => {
+  wards: (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2OrgUnitWards(id);
+      return getV2OrgUnitWards(id, options);
     }
-    return apiClient.get(`/organization/units/${id}/wards/`);
+    return apiClient.get(`/organization/units/${id}/wards/`, options);
   },
   coverage: (id) => {
     if (isRustV2ApiMode()) {
@@ -844,17 +863,18 @@ export const validationRulesApi = {
  * Clinics API
  */
 export const clinicsApi = {
-  list: (params = {}) => {
+  list: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {
-      return listV2Clinics(params);
+      return listV2Clinics(params, options);
     }
-    return apiClient.get('/organization/clinics/', { params });
+    const { queryParams, requestOptions } = splitRequestParams(params, options);
+    return apiClient.get('/organization/clinics/', { params: queryParams, ...requestOptions });
   },
-  get: async (id, params = {}) => {
+  get: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
-      return getV2Clinic(id, params);
+      return getV2Clinic(id, options);
     }
-    return apiClient.get(`/organization/clinics/${id}/`);
+    return apiClient.get(`/organization/clinics/${id}/`, options);
   },
   create: (data) => {
     if (isRustV2ApiMode()) {

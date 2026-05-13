@@ -270,7 +270,7 @@ function aggregateCountsByUnit(countsPayload, ancestorsById) {
 export function useUnitTypes(params = {}) {
   return useQuery({
     queryKey: organizationKeys.unitTypesList(params),
-    queryFn: () => unitTypesApi.list(params),
+    queryFn: ({ signal }) => unitTypesApi.list(params, { signal }),
     staleTime: 5 * 60 * 1000, // Config data is relatively stable
   });
 }
@@ -278,7 +278,7 @@ export function useUnitTypes(params = {}) {
 export function useUnitType(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitType(id),
-    queryFn: () => unitTypesApi.get(id),
+    queryFn: ({ signal }) => unitTypesApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -324,7 +324,7 @@ export function useAssignmentTypes(params = {}) {
 export function useClinicalUnits(params = {}) {
   return useQuery({
     queryKey: organizationKeys.unitsList(params),
-    queryFn: () => clinicalUnitsApi.list(params),
+    queryFn: ({ signal }) => clinicalUnitsApi.list(params, { signal }),
     staleTime: 30 * 1000, // 30 seconds
   });
 }
@@ -332,7 +332,7 @@ export function useClinicalUnits(params = {}) {
 export function useClinicalUnitsTree(options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitsTree(),
-    queryFn: () => clinicalUnitsApi.tree(),
+    queryFn: ({ signal }) => clinicalUnitsApi.tree({ signal }),
     staleTime: 60 * 1000, // 1 minute - tree changes infrequently
     ...options,
   });
@@ -341,7 +341,7 @@ export function useClinicalUnitsTree(options = {}) {
 export function useClinicalUnit(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unit(id),
-    queryFn: () => clinicalUnitsApi.get(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -350,7 +350,7 @@ export function useClinicalUnit(id, options = {}) {
 export function useUnitChildren(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitChildren(id),
-    queryFn: () => clinicalUnitsApi.children(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.children(id, {}, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -359,7 +359,7 @@ export function useUnitChildren(id, options = {}) {
 export function useUnitAncestors(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitAncestors(id),
-    queryFn: () => clinicalUnitsApi.ancestors(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.ancestors(id, {}, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -629,7 +629,7 @@ export function useUnitMembersCounts(id, params = {}, options = {}) {
 export function useUnitWards(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitWards(id),
-    queryFn: () => clinicalUnitsApi.wards(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.wards(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -1501,7 +1501,7 @@ export function useDeleteDutyRosterEntry() {
 export function useClinics(params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.clinicsList(params),
-    queryFn: () => clinicsApi.list(params),
+    queryFn: ({ signal }) => clinicsApi.list(params, { signal }),
     staleTime: 30 * 1000,
     ...options,
   });
@@ -1510,7 +1510,7 @@ export function useClinics(params = {}, options = {}) {
 export function useClinic(id, options = {}) {
   return useQuery({
     queryKey: [...organizationKeys.clinics(), id],
-    queryFn: () => clinicsApi.get(id),
+    queryFn: ({ signal }) => clinicsApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
