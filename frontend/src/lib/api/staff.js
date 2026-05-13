@@ -246,10 +246,13 @@ export const staffApi = {
    * @param {Object} data - Staff data
    * @returns {Promise<Object>} Created staff data
    */
-  createStaff: async (data) => {
+  createStaff: async (data, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const response = await v2Api.postAdminStaff(normalizeV2StaffCreatePayload(data));
+        const response = await v2Api.postAdminStaff(
+          normalizeV2StaffCreatePayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2StaffListItem(response?.data);
       } catch (error) {
         if (error?.name === 'AbortError') {
@@ -301,10 +304,13 @@ export const staffApi = {
    * @param {string} id - Staff ID
    * @returns {Promise<void>}
    */
-  deleteStaff: async (id) => {
+  deleteStaff: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const response = await v2Api.postAdminStaffDeactivate({ id });
+        const response = await v2Api.postAdminStaffDeactivate(
+          { id },
+          { signal: options.signal },
+        );
         return adaptV2StaffListItem(response?.data);
       } catch (error) {
         if (error?.name === 'AbortError') {
@@ -326,9 +332,9 @@ export const staffApi = {
    * @param {Object} data - Staff registration data
    * @returns {Promise<Object>} Registered staff data
    */
-  registerStaff: async (data) => {
+  registerStaff: async (data, options = {}) => {
     if (isRustV2ApiMode()) {
-      return staffApi.createStaff(data);
+      return staffApi.createStaff(data, options);
     }
 
     try {
@@ -343,10 +349,13 @@ export const staffApi = {
    * @param {string} staffId - Staff ID
    * @returns {Promise<Object>} API response with mode, detail, and staff
    */
-  reactivateStaff: async (staffId) => {
+  reactivateStaff: async (staffId, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const response = await v2Api.postAdminStaffReactivate({ id: staffId });
+        const response = await v2Api.postAdminStaffReactivate(
+          { id: staffId },
+          { signal: options.signal },
+        );
         return adaptV2StaffLifecycleResponse(
           response,
           'password_reset',
@@ -372,10 +381,13 @@ export const staffApi = {
    * @param {string} staffId - Staff ID
    * @returns {Promise<Object>} API response with mode and detail
    */
-  resendSetupLink: async (staffId) => {
+  resendSetupLink: async (staffId, options = {}) => {
     if (isRustV2ApiMode()) {
       try {
-        const response = await v2Api.postAdminStaffForcePasswordReset({ id: staffId });
+        const response = await v2Api.postAdminStaffForcePasswordReset(
+          { id: staffId },
+          { signal: options.signal },
+        );
         return adaptV2StaffLifecycleResponse(
           response,
           'password_reset',

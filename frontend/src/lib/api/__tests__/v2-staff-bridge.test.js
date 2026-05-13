@@ -321,6 +321,7 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
+    const signal = new AbortController().signal;
     const response = await staffApi.createStaff({
       email: 'akosua@example.test',
       first_name: 'Akosua',
@@ -330,7 +331,7 @@ describe('Rust V2 staff bridge', () => {
       department: 'Laboratory',
       position: 'Lab Technician',
       hire_date: '2026-05-01',
-    });
+    }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/staff',
@@ -345,6 +346,7 @@ describe('Rust V2 staff bridge', () => {
           position: 'Lab Technician',
           hire_date: '2026-05-01',
         }),
+        signal,
       }),
     );
     expect(response).toMatchObject({
@@ -435,13 +437,15 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.deleteStaff('staff-1');
+    const signal = new AbortController().signal;
+    const response = await staffApi.deleteStaff('staff-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/staff/staff-1/deactivate',
       expect.objectContaining({
         method: 'POST',
         body: undefined,
+        signal,
       }),
     );
     expect(response).toMatchObject({
@@ -478,11 +482,12 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.reactivateStaff('staff-1');
+    const signal = new AbortController().signal;
+    const response = await staffApi.reactivateStaff('staff-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/staff/staff-1/reactivate',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(response).toMatchObject({
       mode: 'password_reset',
@@ -521,11 +526,12 @@ describe('Rust V2 staff bridge', () => {
       ),
     );
 
-    const response = await staffApi.resendSetupLink('staff-1');
+    const signal = new AbortController().signal;
+    const response = await staffApi.resendSetupLink('staff-1', { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'http://localhost:8080/api/v2/admin/staff/staff-1/force-password-reset',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST', signal }),
     );
     expect(response).toMatchObject({
       mode: 'password_reset',
