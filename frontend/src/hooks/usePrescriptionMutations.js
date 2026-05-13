@@ -75,12 +75,6 @@ function normalizeUpdatePrescriptionPayload(data = {}) {
   return payload;
 }
 
-function unsupportedRustV2PrescriptionAction(message) {
-  if (isRustV2ApiMode()) {
-    throw new Error(message);
-  }
-}
-
 export async function createPrescription(data, options = {}) {
   if (isRustV2ApiMode()) {
     const patientId = getPrescriptionPatientId(data);
@@ -117,6 +111,31 @@ export async function updatePrescription(prescriptionId, data, options = {}) {
     }
   }
   return apiClient.patch(`/clinical-notes/prescriptions/${prescriptionId}/`, data, options);
+}
+
+export async function discontinuePrescription(prescriptionId, data = {}, options = {}) {
+  if (isRustV2ApiMode()) {
+    return updatePrescription(prescriptionId, { status: 'stopped' }, options);
+  }
+  return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/discontinue/`, {
+    reason: data.reason,
+  }, options);
+}
+
+export async function holdPrescription(prescriptionId, data = {}, options = {}) {
+  if (isRustV2ApiMode()) {
+    return updatePrescription(prescriptionId, { status: 'on_hold' }, options);
+  }
+  return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/hold/`, {
+    reason: data.reason,
+  }, options);
+}
+
+export async function resumePrescription(prescriptionId, _data = {}, options = {}) {
+  if (isRustV2ApiMode()) {
+    return updatePrescription(prescriptionId, { status: 'active' }, options);
+  }
+  return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/resume/`, {}, options);
 }
 
 function getCachedPrescription(queryClient, prescriptionId) {
@@ -223,10 +242,7 @@ export function useDiscontinuePrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, reason }) => {
-      unsupportedRustV2PrescriptionAction('Prescription discontinuation is not supported by Rust V2');
-      return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/discontinue/`, {
-        reason,
-      });
+      return discontinuePrescription(prescriptionId, { reason });
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
@@ -256,10 +272,7 @@ export function useHoldPrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, reason }) => {
-      unsupportedRustV2PrescriptionAction('Prescription holds are not supported by Rust V2');
-      return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/hold/`, {
-        reason,
-      });
+      return holdPrescription(prescriptionId, { reason });
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
@@ -289,8 +302,7 @@ export function useResumePrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId }) => {
-      unsupportedRustV2PrescriptionAction('Prescription resume is not supported by Rust V2');
-      return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/resume/`, {});
+      return resumePrescription(prescriptionId);
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);

@@ -629,6 +629,22 @@ async fn prescription_detail_updates_are_facility_scoped() {
     assert_eq!(updated.frequency, "twice daily");
     assert!(matches!(updated.status, PrescriptionStatus::Stopped));
 
+    let held = hms_db::clinical::update_prescription(
+        &pool,
+        facility_id,
+        prescription.id,
+        UpdatePrescriptionRequest {
+            medication_name: None,
+            dose: None,
+            frequency: None,
+            status: Some(PrescriptionStatus::OnHold),
+        },
+    )
+    .await
+    .expect("prescription hold succeeds")
+    .expect("prescription exists");
+    assert!(matches!(held.status, PrescriptionStatus::OnHold));
+
     assert!(hms_db::clinical::update_prescription(
         &pool,
         uuid::Uuid::new_v4(),

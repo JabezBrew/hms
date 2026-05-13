@@ -1888,6 +1888,23 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     assert_eq!(prescription_update_body["data"]["frequency"], "twice daily");
     assert_eq!(prescription_update_body["data"]["status"], "stopped");
 
+    let prescription_hold = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/prescriptions/{prescription_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "status": "on_hold" }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("prescription hold succeeds");
+    assert_eq!(prescription_hold.status(), StatusCode::OK);
+    let prescription_hold_body = json_body(prescription_hold).await;
+    assert_eq!(prescription_hold_body["data"]["status"], "on_hold");
+
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app
         .clone()

@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createPrescription, updatePrescription } from '../usePrescriptionMutations';
+import {
+  createPrescription,
+  discontinuePrescription,
+  holdPrescription,
+  resumePrescription,
+  updatePrescription,
+} from '../usePrescriptionMutations';
 import { configureV2ApiClient, __resetV2ApiClientForTests } from '@/lib/api/v2/client';
 import { apiClient } from '@/lib/api-client';
 
@@ -134,5 +140,51 @@ describe('Rust V2 prescription mutations bridge', () => {
       }),
     );
     expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['discontinues', discontinuePrescription, { reason: 'Changed therapy' }, 'stopped'],
+    ['holds', holdPrescription, { reason: 'NPO' }, 'on_hold'],
+    ['resumes', resumePrescription, {}, 'active'],
+  ])('%s prescriptions through Rust /api/v2 status updates', async (
+    _label,
+    action,
+    variables,
+    status,
+  ) => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'rx-1',
+            patient_id: 'patient-1',
+            medication_name: 'Amlodipine',
+            dose: '10 mg',
+            frequency: 'twice daily',
+            status,
+            prescribed_at: '2026-05-12T08:30:00Z',
+          },
+          meta: {},
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await expect(action('rx-1', variables)).resolves.toEqual(
+      expect.objectContaining({
+        id: 'rx-1',
+        patient: 'patient-1',
+        status,
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/prescriptions/rx-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({ status }),
+      }),
+    );
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 });

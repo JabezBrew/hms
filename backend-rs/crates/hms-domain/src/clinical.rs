@@ -40,6 +40,7 @@ pub enum AllergyStatus {
 #[serde(rename_all = "snake_case")]
 pub enum PrescriptionStatus {
     Active,
+    OnHold,
     Stopped,
     Completed,
 }

@@ -14484,6 +14484,7 @@
       "PrescriptionStatus": {
         "enum": [
           "active",
+          "on_hold",
           "stopped",
           "completed"
         ],
