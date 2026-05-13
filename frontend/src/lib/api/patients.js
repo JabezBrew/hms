@@ -405,13 +405,14 @@ export const patientsApi = {
    * @param {string} id - Patient ID
    * @returns {Promise<Array>} Medical history data
    */
-  getPatientHistory: async (id) => {
+  getPatientHistory: async (id, _options = {}) => {
     if (isRustV2ApiMode()) {
       return [];
     }
     try {
       return await apiClient.get(`/patients/${id}/history/`);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch patient history'));
     }
   },

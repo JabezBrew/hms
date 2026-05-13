@@ -145,7 +145,7 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
 
   void queryClient.prefetchQuery({
     queryKey: patientKeys.detail(patientId),
-    queryFn: () => patientsApi.getPatient(patientId),
+    queryFn: ({ signal }) => patientsApi.getPatient(patientId, { signal }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -153,7 +153,7 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
 
   void queryClient.prefetchQuery({
     queryKey: encounterKeys.forPatient(patientId),
-    queryFn: () => encountersApi.getEncountersForPatient(patientId),
+    queryFn: ({ signal }) => encountersApi.getEncountersForPatient(patientId, { signal }),
     staleTime: 60 * 1000,
   })
 }

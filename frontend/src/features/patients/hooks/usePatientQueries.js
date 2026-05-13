@@ -186,7 +186,7 @@ export function useDeletePatient() {
 export function usePatientHistory(id) {
   return useQuery({
     queryKey: patientKeys.history(id),
-    queryFn: () => patientsApi.getPatientHistory(id),
+    queryFn: ({ signal }) => patientsApi.getPatientHistory(id, { signal }),
     enabled: !!id,
   });
 }
