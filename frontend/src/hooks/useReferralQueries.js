@@ -300,7 +300,7 @@ export function useReferralNotificationCount(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: referralKeys.notificationCount(),
-    queryFn: () => referralsApi.getUnreadNotificationCount(),
+    queryFn: ({ signal }) => referralsApi.getUnreadNotificationCount({ signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes - WebSocket handles real-time updates
     enabled,
   });
