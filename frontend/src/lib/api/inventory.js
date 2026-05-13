@@ -644,6 +644,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStorageLocations({
+          query: buildV2CursorQuery(params),
           signal: options.signal,
         });
         return adaptV2PaginatedList(response, params);

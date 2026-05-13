@@ -105,6 +105,7 @@ pub struct StorageLocationListItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

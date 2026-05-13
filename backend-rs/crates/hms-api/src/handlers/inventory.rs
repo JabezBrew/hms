@@ -176,20 +176,26 @@ pub async fn list_item_stock_by_location(
     Ok(Json(static_list(rows)))
 }
 
-#[utoipa::path(get, path = "/api/v2/inventory/storage-locations", operation_id = "getStorageLocations", tag = "inventory", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/inventory/storage-locations", operation_id = "getStorageLocations", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_locations(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
+    Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StorageLocationListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    Ok(Json(static_list(
-        state.list_storage_locations().await.map_err(|_| {
+    let (cursor, page_size) = page_request(query)?;
+    let rows = state
+        .list_storage_locations(cursor, page_size as i64 + 1)
+        .await
+        .map_err(|_| {
             ApiError::conflict(
                 "storage_location_list_failed",
                 "Locations could not be loaded.",
             )
-        })?,
-    )))
+        })?;
+    Ok(Json(page_response(rows, page_size, |item| {
+        encode_cursor(item.created_at, item.id)
+    })))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}", operation_id = "getStorageLocationById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID")), responses((status = 200, body = ObjectResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]

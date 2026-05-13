@@ -332,7 +332,7 @@ describe('Rust V2 inventory bridge', () => {
     expect(globalThis.fetch.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:8080/api/v2/inventory/categories',
       'http://localhost:8080/api/v2/inventory/items?limit=24',
-      'http://localhost:8080/api/v2/inventory/storage-locations',
+      'http://localhost:8080/api/v2/inventory/storage-locations?limit=24',
       'http://localhost:8080/api/v2/inventory/requisitions?limit=20',
       'http://localhost:8080/api/v2/inventory/purchase-orders?limit=20',
       'http://localhost:8080/api/v2/inventory/goods-received-notes?limit=20',

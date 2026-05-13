@@ -7,6 +7,34 @@ use hms_domain::deployment::DeploymentProfile;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn storage_location_list_respects_requested_limit() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let rows = hms_db::inventory::list_locations(&pool, facility_id, None, 1)
+        .await
+        .expect("storage locations list");
+
+    assert_eq!(rows.len(), 1);
+}
+
+#[tokio::test]
 async fn stock_batch_lists_can_filter_expired_and_expiring_ranges() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

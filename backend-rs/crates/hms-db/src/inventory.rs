@@ -141,6 +141,7 @@ struct LocationRow {
     id: Uuid,
     code: String,
     name: String,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -440,19 +441,25 @@ pub async fn get_item(
 pub async fn list_locations(
     pool: &PgPool,
     facility_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
 ) -> anyhow::Result<Vec<StorageLocationListItem>> {
-    let rows = sqlx::query_as::<_, LocationRow>(
+    let mut query = QueryBuilder::new(
         r#"
-        SELECT id, code, name
+        SELECT id, code, name, created_at
         FROM storage_locations
-        WHERE facility_id = $1 AND is_active = TRUE
-        ORDER BY code ASC
-        LIMIT 100
+        WHERE facility_id =
         "#,
-    )
-    .bind(facility_id)
-    .fetch_all(pool)
-    .await?;
+    );
+    query.push_bind(facility_id);
+    query.push(" AND is_active = TRUE");
+    apply_forward_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<LocationRow>()
+        .fetch_all(pool)
+        .await?;
     Ok(rows.into_iter().map(location_from_row).collect())
 }
 
@@ -463,7 +470,7 @@ pub async fn get_location(
 ) -> anyhow::Result<Option<StorageLocationListItem>> {
     let row = sqlx::query_as::<_, LocationRow>(
         r#"
-        SELECT id, code, name
+        SELECT id, code, name, created_at
         FROM storage_locations
         WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
         LIMIT 1
@@ -2143,6 +2150,7 @@ fn location_from_row(row: LocationRow) -> StorageLocationListItem {
         id: row.id,
         code: row.code,
         name: row.name,
+        created_at: row.created_at,
     }
 }
 

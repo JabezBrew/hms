@@ -8532,6 +8532,10 @@
                 "code": {
                   "type": "string"
                 },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -8543,7 +8547,8 @@
               "required": [
                 "id",
                 "code",
-                "name"
+                "name",
+                "created_at"
               ],
               "type": "object"
             },
@@ -13661,6 +13666,10 @@
               "code": {
                 "type": "string"
               },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -13672,7 +13681,8 @@
             "required": [
               "id",
               "code",
-              "name"
+              "name",
+              "created_at"
             ],
             "type": "object"
           },
@@ -15974,6 +15984,10 @@
           "code": {
             "type": "string"
           },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -15985,7 +15999,8 @@
         "required": [
           "id",
           "code",
-          "name"
+          "name",
+          "created_at"
         ],
         "type": "object"
       },
@@ -26121,6 +26136,32 @@
     "/api/v2/inventory/storage-locations": {
       "get": {
         "operationId": "getStorageLocations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

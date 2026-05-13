@@ -2833,6 +2833,37 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
         .and_then(|location| location["id"].as_str())
         .expect("pharmacy location exists");
 
+    let limited_locations_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/inventory/storage-locations?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("limited location list succeeds");
+    let limited_locations_status = limited_locations_response.status();
+    let limited_locations_body = json_body(limited_locations_response).await;
+    assert_eq!(
+        limited_locations_status,
+        StatusCode::OK,
+        "{limited_locations_body}"
+    );
+    assert_eq!(
+        limited_locations_body["data"]
+            .as_array()
+            .expect("limited locations array exists")
+            .len(),
+        1
+    );
+    assert_eq!(limited_locations_body["page"]["limit"], 1);
+    assert!(limited_locations_body["page"]["has_next"]
+        .as_bool()
+        .unwrap());
+
     let location_detail_response = app
         .clone()
         .oneshot(

@@ -1298,7 +1298,10 @@ export const operations = {
     "method": "GET",
     "path": "/api/v2/inventory/storage-locations",
     "pathParamNames": [],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
     "hasBody": false
   },
   "getStorageLocationStock": {
