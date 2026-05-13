@@ -84,6 +84,13 @@ pub struct NotificationListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct NotificationCounts {
+    pub unread: i64,
+    pub action_required: i64,
+    pub total: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct MarkNotificationReadRequest {
     pub read: bool,
 }

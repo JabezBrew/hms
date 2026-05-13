@@ -1,6 +1,7 @@
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::BedStatus;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn admin_capacity_summary_uses_facility_scoped_aggregates() {
@@ -179,4 +180,71 @@ async fn admin_capacity_summary_uses_facility_scoped_aggregates() {
     assert_eq!(bounded_summary.summary.ward_count, 2);
     assert_eq!(bounded_summary.summary.high_occupancy_wards, 1);
     assert_eq!(bounded_summary.wards.len(), 1);
+}
+
+#[tokio::test]
+async fn notification_counts_are_user_and_facility_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_user_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+    let limited_user_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+    let other_facility_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO facilities (id, code, name, deployment_profile, is_active)
+         VALUES ($1, 'NOTIFY-OTHER', 'Notify Other Facility', 'hospital', true)",
+    )
+    .bind(other_facility_id)
+    .execute(&pool)
+    .await
+    .expect("other facility inserts");
+
+    for (recipient_user_id, scoped_facility_id, title, read) in [
+        (owner_user_id, facility_id, "Owner unread", false),
+        (owner_user_id, facility_id, "Owner read", true),
+        (limited_user_id, facility_id, "Limited unread", false),
+        (
+            owner_user_id,
+            other_facility_id,
+            "Other facility unread",
+            false,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO notifications (
+                id, facility_id, recipient_user_id, notification_type, title, body, priority, read_at
+             ) VALUES ($1, $2, $3, 'system', $4, 'Body', 'normal', CASE WHEN $5 THEN now() ELSE NULL END)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(scoped_facility_id)
+        .bind(recipient_user_id)
+        .bind(title)
+        .bind(read)
+        .execute(&pool)
+        .await
+        .expect("notification inserts");
+    }
+
+    let counts = hms_db::dashboard::notification_counts(&pool, facility_id, owner_user_id)
+        .await
+        .expect("notification counts aggregate");
+
+    assert_eq!(counts.total, 3);
+    assert_eq!(counts.unread, 2);
+    assert_eq!(counts.action_required, 0);
 }

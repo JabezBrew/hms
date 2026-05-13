@@ -985,6 +985,14 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getNotificationCounts": {
+    "operationId": "getNotificationCounts",
+    "method": "GET",
+    "path": "/api/v2/notifications/counts",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getNotifications": {
     "operationId": "getNotifications",
     "method": "GET",
@@ -2788,6 +2796,7 @@ export function createGeneratedClient(request) {
     getNhisClaimById: createOperation(request, operations.getNhisClaimById),
     getNhisClaims: createOperation(request, operations.getNhisClaims),
     getNhisRemittanceImports: createOperation(request, operations.getNhisRemittanceImports),
+    getNotificationCounts: createOperation(request, operations.getNotificationCounts),
     getNotifications: createOperation(request, operations.getNotifications),
     getNursingAlerts: createOperation(request, operations.getNursingAlerts),
     getNursingTasks: createOperation(request, operations.getNursingTasks),

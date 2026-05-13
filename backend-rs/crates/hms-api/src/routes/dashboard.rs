@@ -16,6 +16,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/notifications", get(dashboard::list_notifications))
         .route(
+            "/api/v2/notifications/counts",
+            get(dashboard::notification_counts),
+        )
+        .route(
             "/api/v2/notifications/:id/read",
             axum::routing::post(dashboard::mark_notification_read),
         )

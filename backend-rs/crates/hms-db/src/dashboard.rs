@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_domain::dashboard::{
     AdminCapacityCounts, AdminCapacitySummary, AdminCapacityWaitTime, AdminCapacityWard,
-    DashboardMetric, DashboardSnapshot, NotificationListItem, NotificationPriority,
+    DashboardMetric, DashboardSnapshot, NotificationCounts, NotificationListItem,
+    NotificationPriority,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, NavigationManifest, PermissionCode};
 use sqlx::{FromRow, QueryBuilder};
@@ -41,6 +42,12 @@ struct NotificationRow {
     priority: String,
     read_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct NotificationCountsRow {
+    unread: i64,
+    total: i64,
 }
 
 #[derive(FromRow)]
@@ -197,6 +204,32 @@ pub async fn list_notifications(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(notification_from_row).collect()
+}
+
+pub async fn notification_counts(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<NotificationCounts> {
+    let row = sqlx::query_as::<_, NotificationCountsRow>(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE read_at IS NULL) AS unread,
+            COUNT(*) AS total
+        FROM notifications
+        WHERE facility_id = $1 AND recipient_user_id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(NotificationCounts {
+        unread: row.unread,
+        action_required: 0,
+        total: row.total,
+    })
 }
 
 pub async fn mark_notification_read(

@@ -71,7 +71,8 @@ use hms_domain::clinical::{
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{
-    AdminCapacitySummary, DashboardSnapshot, NotificationListItem, RealtimeChannelKind,
+    AdminCapacitySummary, DashboardSnapshot, NotificationCounts, NotificationListItem,
+    RealtimeChannelKind,
 };
 use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
@@ -492,6 +493,10 @@ impl AppState {
             limit,
         )
         .await
+    }
+
+    pub async fn notification_counts(&self, user_id: Uuid) -> Result<NotificationCounts> {
+        hms_db::dashboard::notification_counts(&self.inner.pool, self.facility_id(), user_id).await
     }
 
     pub async fn mark_notification_read(

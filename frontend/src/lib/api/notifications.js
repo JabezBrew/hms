@@ -61,18 +61,13 @@ export const notificationsApi = {
   getInboxCounts: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.getNotifications({
-          query: {
-            limit: 50,
-            unread_only: true,
-          },
+        const response = await v2Api.getNotificationCounts({
           signal: options.signal,
         });
-        const unread = Array.isArray(response?.data) ? response.data.length : 0;
         return {
-          unread,
-          action_required: 0,
-          total: unread,
+          unread: Number(response?.data?.unread || 0),
+          action_required: Number(response?.data?.action_required || 0),
+          total: Number(response?.data?.total || 0),
         };
       }
       return await apiClient.get('/notifications/inbox/counts/', options);

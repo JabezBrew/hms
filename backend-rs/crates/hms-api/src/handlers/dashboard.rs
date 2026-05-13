@@ -8,8 +8,8 @@ use hms_db::dashboard::NotificationCursor;
 use hms_domain::auth::AuthUser;
 use hms_domain::dashboard::{
     AdminCapacityQuery, AdminCapacitySummary, DashboardSnapshot, MarkNotificationReadRequest,
-    NotificationListItem, NotificationListQuery, RealtimeChannelKind, RealtimeMessage,
-    RealtimeSubscribeQuery, RealtimeSubscription,
+    NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeChannelKind,
+    RealtimeMessage, RealtimeSubscribeQuery, RealtimeSubscription,
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use serde_json::json;
@@ -80,6 +80,21 @@ pub async fn list_notifications(
     Ok(Json(page_response(rows, page_size, |item| {
         encode_cursor(item.created_at, item.id)
     })))
+}
+
+#[utoipa::path(get, path = "/api/v2/notifications/counts", operation_id = "getNotificationCounts", tag = "notifications", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<NotificationCounts>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn notification_counts(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+) -> Result<Json<ObjectResponse<NotificationCounts>>, ApiError> {
+    require_notification_access(&user, state.facility_id())?;
+    let counts = state.notification_counts(user.id).await.map_err(|_| {
+        ApiError::conflict(
+            "notification_counts_failed",
+            "Notification counts could not be loaded.",
+        )
+    })?;
+    Ok(Json(object(counts)))
 }
 
 #[utoipa::path(post, path = "/api/v2/notifications/{id}/read", operation_id = "postNotificationRead", tag = "notifications", security(("bearerAuth" = [])), request_body = MarkNotificationReadRequest, responses((status = 200, body = ObjectResponse<NotificationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]

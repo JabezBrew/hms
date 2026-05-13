@@ -26,22 +26,15 @@ describe('Rust V2 notification bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('loads inbox counts from the Rust notification list without calling the old Django endpoint', async () => {
+  it('loads inbox counts from the Rust counts endpoint without paging through notifications', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          data: [
-            {
-              id: 'notification-1',
-              notification_type: 'dashboard',
-              title: 'HMS V2 foundation ready',
-              body: 'Production cutover baseline is available.',
-              priority: 'normal',
-              created_at: '2026-05-12T03:26:23Z',
-              read_at: null,
-            },
-          ],
-          page: { limit: 50, has_next: false, next_cursor: null },
+          data: {
+            unread: 73,
+            action_required: 0,
+            total: 91,
+          },
           meta: {},
         }),
         {
@@ -54,13 +47,13 @@ describe('Rust V2 notification bridge', () => {
     const response = await notificationsApi.getInboxCounts();
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/notifications?limit=50&unread_only=true',
+      'http://localhost:8080/api/v2/notifications/counts',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(response).toEqual({
-      unread: 1,
+      unread: 73,
       action_required: 0,
-      total: 1,
+      total: 91,
     });
   });
 });

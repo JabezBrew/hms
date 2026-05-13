@@ -222,6 +222,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/admin/audit-events",
         "/api/v2/dashboards/snapshot",
         "/api/v2/notifications",
+        "/api/v2/notifications/counts",
         "/api/v2/notifications/{id}/read",
         "/api/v2/realtime/subscriptions",
         "/api/v2/patients",
@@ -5148,6 +5149,24 @@ async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() 
             && ward["available_beds"].is_i64()
             && ward["occupancy_pct"].is_number()));
     assert!(!capacity_body.to_string().contains("P-10001"));
+
+    let notification_counts = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/notifications/counts")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("notification counts succeeds");
+    assert_eq!(notification_counts.status(), StatusCode::OK);
+    let notification_counts_body = json_body(notification_counts).await;
+    assert_eq!(notification_counts_body["data"]["unread"], 1);
+    assert_eq!(notification_counts_body["data"]["action_required"], 0);
+    assert_eq!(notification_counts_body["data"]["total"], 1);
 
     let notifications = app
         .clone()
