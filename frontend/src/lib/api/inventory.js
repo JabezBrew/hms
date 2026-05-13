@@ -1849,15 +1849,21 @@ export const inventoryApi = {
    * @param {Object} data - Internal requisition data
    * @returns {Promise<Object>} Created internal requisition
    */
-  createInternalRequisition: async (data) => {
+  createInternalRequisition: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitions(buildV2StockRequisitionPayload(data));
+        const response = await v2Api.postStockRequisitions(
+          buildV2StockRequisitionPayload(data),
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post('/inventory/internal-requisitions/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to create internal requisition'));
       }
@@ -1870,15 +1876,21 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  submitInternalRequisition: async (id) => {
+  submitInternalRequisition: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitionSubmit({ id });
+        const response = await v2Api.postStockRequisitionSubmit(
+          { id },
+          { signal: options.signal },
+        );
         return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/submit/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to submit internal requisition'));
       }
@@ -1891,15 +1903,21 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  approveInternalRequisition: async (id, data) => {
+  approveInternalRequisition: async (id, data = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitionApprove({ id });
+        const response = await v2Api.postStockRequisitionApprove(
+          { id },
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/approve/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to approve internal requisition'));
       }
@@ -1913,18 +1931,22 @@ export const inventoryApi = {
    * @param {Object} data - Rejection data with reason
    * @returns {Promise<Object>} Updated internal requisition
    */
-  rejectInternalRequisition: async (id, data) => {
+  rejectInternalRequisition: async (id, data = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postStockRequisitionReject(
           { id },
-          { reason: data?.reason || data?.rejection_reason || '' }
+          { reason: data?.reason || data?.rejection_reason || '' },
+          { signal: options.signal || data?.signal },
         );
         return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/reject/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to reject internal requisition'));
       }
@@ -1937,15 +1959,21 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  fulfillInternalRequisition: async (id, data) => {
+  fulfillInternalRequisition: async (id, data = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitionFulfill({ id });
+        const response = await v2Api.postStockRequisitionFulfill(
+          { id },
+          { signal: options.signal || data?.signal },
+        );
         return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/fulfill/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fulfill internal requisition'));
       }
@@ -1958,15 +1986,21 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  cancelInternalRequisition: async (id) => {
+  cancelInternalRequisition: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postStockRequisitionCancel({ id });
+        const response = await v2Api.postStockRequisitionCancel(
+          { id },
+          { signal: options.signal },
+        );
         return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/cancel/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to cancel internal requisition'));
       }

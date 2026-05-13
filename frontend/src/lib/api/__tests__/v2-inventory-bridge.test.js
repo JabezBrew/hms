@@ -1157,45 +1157,50 @@ describe('Rust V2 inventory bridge', () => {
         meta: {},
       }));
 
+    const signal = new AbortController().signal;
     await expect(inventoryApi.createInternalRequisition({
       requesting_location: 'location-1',
-    })).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({
       id: 'internal-req-1',
       status: 'pending_approval',
     });
-    await expect(inventoryApi.submitInternalRequisition('internal-req-1')).resolves.toMatchObject({
+    await expect(inventoryApi.submitInternalRequisition('internal-req-1', { signal })).resolves.toMatchObject({
       id: 'internal-req-1',
       status: 'pending_approval',
     });
-    await expect(inventoryApi.approveInternalRequisition('internal-req-1')).resolves.toMatchObject({
+    await expect(inventoryApi.approveInternalRequisition('internal-req-1', {}, { signal })).resolves.toMatchObject({
       id: 'internal-req-1',
       status: 'approved',
     });
-    await expect(inventoryApi.fulfillInternalRequisition('internal-req-1')).resolves.toMatchObject({
+    await expect(inventoryApi.fulfillInternalRequisition('internal-req-1', {}, { signal })).resolves.toMatchObject({
       id: 'internal-req-1',
       status: 'fulfilled',
     });
 
-    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
       [
         'http://localhost:8080/api/v2/inventory/requisitions',
         'POST',
         JSON.stringify({ requesting_location_id: 'location-1' }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/submit',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/approve',
         'POST',
         undefined,
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/fulfill',
         'POST',
         undefined,
+        signal,
       ],
     ]);
   });
@@ -1245,35 +1250,51 @@ describe('Rust V2 inventory bridge', () => {
       status: 'rejected',
       rejection_reason: 'Duplicate request',
     });
+    const signal = new AbortController().signal;
     await expect(inventoryApi.rejectInternalRequisition('internal-req-1', {
       reason: 'No stock available',
-    })).resolves.toMatchObject({
+    }, { signal })).resolves.toMatchObject({
       id: 'internal-req-1',
       status: 'rejected',
       rejection_reason: 'No stock available',
     });
-    await expect(inventoryApi.cancelInternalRequisition('internal-req-2')).resolves.toMatchObject({
+    await expect(inventoryApi.cancelInternalRequisition('internal-req-2', { signal })).resolves.toMatchObject({
       id: 'internal-req-2',
       status: 'cancelled',
     });
 
-    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
       [
         'http://localhost:8080/api/v2/inventory/requisitions/req-1/reject',
         'POST',
         JSON.stringify({ reason: 'Duplicate request' }),
+        undefined,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/reject',
         'POST',
         JSON.stringify({ reason: 'No stock available' }),
+        signal,
       ],
       [
         'http://localhost:8080/api/v2/inventory/requisitions/internal-req-2/cancel',
         'POST',
         undefined,
+        signal,
       ],
     ]);
+  });
+
+  it('preserves AbortError from internal requisition Rust V2 actions', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    globalThis.fetch.mockRejectedValueOnce(abortError);
+
+    await expect(
+      inventoryApi.createInternalRequisition(
+        { requesting_location: 'location-1' },
+        { signal: new AbortController().signal },
+      ),
+    ).rejects.toBe(abortError);
   });
 
   it('fails closed for inventory actions without generated Rust V2 contracts', async () => {
