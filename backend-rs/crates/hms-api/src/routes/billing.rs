@@ -41,6 +41,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/nhis/claims",
             get(billing::list_claims).post(billing::create_claim),
         )
+        .route("/api/v2/nhis/claims/:id", get(billing::get_claim))
         .route(
             "/api/v2/nhis/batches",
             get(billing::list_batches).post(billing::create_batch),

@@ -291,6 +291,23 @@ pub async fn list_claims(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v2/nhis/claims/{id}", operation_id = "getNhisClaimById", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS claim id")), responses((status = 200, body = ObjectResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn get_claim(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ClaimListItem>>, ApiError> {
+    require_nhis_access(&user, state.facility_id())?;
+    let claim = state
+        .get_nhis_claim(id)
+        .await
+        .map_err(|_| ApiError::conflict("claim_load_failed", "Claim could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("claim_not_found", "Claim was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, claim.patient_id).await?;
+
+    Ok(Json(object(claim)))
+}
+
 #[utoipa::path(post, path = "/api/v2/nhis/claims", operation_id = "postNhisClaims", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateClaimRequest, responses((status = 200, body = ObjectResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_claim(
     State(state): State<AppState>,

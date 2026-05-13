@@ -1,4 +1,4 @@
-use hms_db::billing::NewInvoice;
+use hms_db::billing::{NewClaim, NewInvoice};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::deployment::DeploymentProfile;
 
@@ -91,6 +91,32 @@ async fn invoice_repository_filters_patient_invoices_inside_facility() {
         hms_db::billing::get_invoice(&pool, uuid::Uuid::new_v4(), invoice.id)
             .await
             .expect("cross-facility invoice detail lookup succeeds")
+            .is_none()
+    );
+
+    let claim = hms_db::billing::create_claim(
+        &pool,
+        NewClaim {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            invoice_id: invoice.id,
+            claim_number: "CLM-TEST-1".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("claim is created");
+    let claim_detail = hms_db::billing::get_claim(&pool, facility_id, claim.id)
+        .await
+        .expect("claim detail lookup succeeds")
+        .expect("claim exists");
+    assert_eq!(claim_detail.id, claim.id);
+    assert_eq!(claim_detail.patient_id, patient_id);
+    assert_eq!(claim_detail.invoice_id, invoice.id);
+    assert!(
+        hms_db::billing::get_claim(&pool, uuid::Uuid::new_v4(), claim.id)
+            .await
+            .expect("cross-facility claim detail lookup succeeds")
             .is_none()
     );
 

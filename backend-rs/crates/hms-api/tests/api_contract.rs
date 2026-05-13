@@ -3965,6 +3965,25 @@ async fn billing_and_nhis_workflows_are_patient_scoped_and_cash_controlled() {
         .to_owned();
     assert_eq!(claim["data"]["amount_minor"], gross_amount);
 
+    let claim_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/nhis/claims/{claim_id}"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("claim detail succeeds");
+    assert_eq!(claim_detail_response.status(), StatusCode::OK);
+    let claim_detail = json_body(claim_detail_response).await;
+    assert_eq!(claim_detail["data"]["id"], claim_id);
+    assert_eq!(claim_detail["data"]["invoice_id"], invoice_id);
+    assert_eq!(claim_detail["data"]["patient_id"], patient_id);
+    assert_eq!(claim_detail["data"]["amount_minor"], gross_amount);
+
     let batch_response = app
         .clone()
         .oneshot(

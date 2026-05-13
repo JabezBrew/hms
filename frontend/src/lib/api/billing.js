@@ -351,15 +351,11 @@ async function findV2Receipt(predicate, options = {}) {
 }
 
 async function findV2Claim(id, options = {}) {
-  const response = await v2Api.getNhisClaims({
-    query: { limit: 100 },
-    signal: options.signal,
-  });
-  const claim = v2List(response).find((candidate) => candidate.id === id || candidate.claim_number === id);
-  if (!claim) {
-    throw new Error('Rust V2 claim was not found in the bounded claim list.');
-  }
-  return adaptV2Claim(claim);
+  const response = await v2Api.getNhisClaimById(
+    { id },
+    { signal: options.signal },
+  );
+  return adaptV2Claim(response?.data || response || {});
 }
 
 async function findV2BillingRule(id, options = {}) {

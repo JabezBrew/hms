@@ -458,20 +458,17 @@ describe('Rust V2 billing bridge', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          data: [
-            {
-              id: 'claim-1',
-              invoice_id: 'invoice-1',
-              patient_id: 'patient-1',
-              patient_code: 'P-0001',
-              claim_number: 'CLM-1',
-              status: 'ready',
-              amount_minor: 3000,
-              currency: 'GHS',
-              created_at: issuedAt,
-            },
-          ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          data: {
+            id: 'claim-1',
+            invoice_id: 'invoice-1',
+            patient_id: 'patient-1',
+            patient_code: 'P-0001',
+            claim_number: 'CLM-1',
+            status: 'ready',
+            amount_minor: 3000,
+            currency: 'GHS',
+            created_at: issuedAt,
+          },
           meta: {},
         }),
       )
@@ -507,7 +504,7 @@ describe('Rust V2 billing bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
-      'http://localhost:8080/api/v2/nhis/claims?limit=100',
+      'http://localhost:8080/api/v2/nhis/claims/claim-1',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(

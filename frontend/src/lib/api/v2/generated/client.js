@@ -832,6 +832,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getNhisClaimById": {
+    "operationId": "getNhisClaimById",
+    "method": "GET",
+    "path": "/api/v2/nhis/claims/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getNhisClaims": {
     "operationId": "getNhisClaims",
     "method": "GET",
@@ -2631,6 +2641,7 @@ export function createGeneratedClient(request) {
     getMetrics: createOperation(request, operations.getMetrics),
     getMonitoringEvents: createOperation(request, operations.getMonitoringEvents),
     getNhisBatches: createOperation(request, operations.getNhisBatches),
+    getNhisClaimById: createOperation(request, operations.getNhisClaimById),
     getNhisClaims: createOperation(request, operations.getNhisClaims),
     getNhisRemittanceImports: createOperation(request, operations.getNhisRemittanceImports),
     getNotifications: createOperation(request, operations.getNotifications),

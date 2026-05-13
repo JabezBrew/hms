@@ -2034,6 +2034,10 @@ impl AppState {
         hms_db::billing::list_claims(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
+    pub async fn get_nhis_claim(&self, claim_id: Uuid) -> Result<Option<ClaimListItem>> {
+        hms_db::billing::get_claim(&self.inner.pool, self.facility_id(), claim_id).await
+    }
+
     pub async fn create_nhis_claim(
         &self,
         invoice_id: Uuid,

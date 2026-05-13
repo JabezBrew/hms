@@ -580,6 +580,14 @@ pub async fn list_claims(
     rows.into_iter().map(claim_from_row).collect()
 }
 
+pub async fn get_claim(
+    pool: &PgPool,
+    facility_id: Uuid,
+    claim_id: Uuid,
+) -> anyhow::Result<Option<ClaimListItem>> {
+    fetch_claim_by_id(pool, facility_id, claim_id).await
+}
+
 pub async fn create_claim(pool: &PgPool, claim: NewClaim) -> anyhow::Result<ClaimListItem> {
     let invoice = sqlx::query_as::<_, InvoiceContextRow>(
         r#"
