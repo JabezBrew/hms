@@ -802,7 +802,7 @@ export function usePatientInsurances(filters = {}) {
 export function usePatientInsuranceById(id) {
   return useQuery({
     queryKey: billingKeys.patientInsuranceDetail(id),
-    queryFn: () => billingApi.getPatientInsuranceById(id),
+    queryFn: ({ signal }) => billingApi.getPatientInsuranceById(id, { signal }),
     enabled: !!id,
   });
 }
@@ -1020,7 +1020,7 @@ export function useNhisMappingImportJob(id, options = {}) {
   const { enabled = true, refetchInterval = false } = options;
   return useQuery({
     queryKey: billingKeys.nhisMappingImportJobDetail(id),
-    queryFn: () => billingApi.getNhisMappingImportJob(id),
+    queryFn: ({ signal }) => billingApi.getNhisMappingImportJob(id, { signal }),
     enabled: !!id && enabled,
     refetchInterval,
   });

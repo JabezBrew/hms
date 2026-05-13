@@ -1536,7 +1536,7 @@ export const billingApi = {
     }
   },
 
-  getNhisMappingImportJob: async (id) => {
+  getNhisMappingImportJob: async (id, _options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return await rustV2Unsupported('NHIS mapping import detail');
@@ -1840,7 +1840,7 @@ export const billingApi = {
    * @param {string} id - Patient insurance ID
    * @returns {Promise<Object>} Patient insurance record
    */
-  getPatientInsuranceById: async (id) => {
+  getPatientInsuranceById: async (id, _options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return await rustV2Unsupported('patient insurance detail');

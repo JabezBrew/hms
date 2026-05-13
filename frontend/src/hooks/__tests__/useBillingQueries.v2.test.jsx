@@ -2,7 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useBillingRule, useClaim, useInvoice } from '../useBillingQueries';
+import {
+  useBillingRule,
+  useClaim,
+  useInvoice,
+  useNhisMappingImportJob,
+  usePatientInsuranceById,
+} from '../useBillingQueries';
 import { billingApi } from '@/features/billing/api';
 
 vi.mock('@/features/billing/api', () => ({
@@ -10,6 +16,8 @@ vi.mock('@/features/billing/api', () => ({
     getBillingRule: vi.fn(),
     getClaim: vi.fn(),
     getInvoice: vi.fn(),
+    getNhisMappingImportJob: vi.fn(),
+    getPatientInsuranceById: vi.fn(),
   },
 }));
 
@@ -34,6 +42,8 @@ describe('useBillingQueries Rust V2 behavior', () => {
     billingApi.getBillingRule.mockResolvedValue({});
     billingApi.getClaim.mockResolvedValue({});
     billingApi.getInvoice.mockResolvedValue({});
+    billingApi.getNhisMappingImportJob.mockResolvedValue({});
+    billingApi.getPatientInsuranceById.mockResolvedValue({});
   });
 
   it('threads React Query AbortSignal into billing detail reads', async () => {
@@ -51,6 +61,22 @@ describe('useBillingQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
       expect(billingApi.getBillingRule).toHaveBeenCalledWith('rule-1', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
+  it('threads React Query AbortSignal into billing ancillary detail reads', async () => {
+    const wrapper = createWrapper();
+
+    renderHook(() => usePatientInsuranceById('insurance-1'), { wrapper });
+    renderHook(() => useNhisMappingImportJob('mapping-job-1'), { wrapper });
+
+    await waitFor(() => {
+      expect(billingApi.getPatientInsuranceById).toHaveBeenCalledWith('insurance-1', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(billingApi.getNhisMappingImportJob).toHaveBeenCalledWith('mapping-job-1', {
         signal: expect.any(AbortSignal),
       });
     });
