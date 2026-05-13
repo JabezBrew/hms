@@ -6233,6 +6233,24 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .as_str()
         .expect("clinic id exists");
 
+    let clinic_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/clinics/{clinic_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinic detail succeeds");
+    assert_eq!(clinic_detail.status(), StatusCode::OK);
+    let clinic_detail_body = json_body(clinic_detail).await;
+    assert_eq!(clinic_detail_body["data"]["id"], clinic_id);
+    assert_eq!(clinic_detail_body["data"]["code"], "general");
+    assert_eq!(clinic_detail_body["data"]["name"], "General Clinic");
+
     let patient_response = app
         .clone()
         .oneshot(

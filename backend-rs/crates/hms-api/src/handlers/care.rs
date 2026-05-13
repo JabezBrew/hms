@@ -90,6 +90,35 @@ pub async fn list_clinics(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/clinics/{id}",
+    operation_id = "getClinicById",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinic id")),
+    responses(
+        (status = 200, description = "Clinic detail", body = ObjectResponse<ClinicListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinic not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_clinic(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
+    require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
+    let clinic = state
+        .get_clinic(id)
+        .await
+        .map_err(|_| ApiError::conflict("clinic_load_failed", "Clinic could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
+
+    Ok(Json(object(clinic)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/appointments",
     operation_id = "postAppointments",

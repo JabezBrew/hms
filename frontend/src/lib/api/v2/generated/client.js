@@ -405,6 +405,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicById": {
+    "operationId": "getClinicById",
+    "method": "GET",
+    "path": "/api/v2/clinics/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getClinics": {
     "operationId": "getClinics",
     "method": "GET",
@@ -2570,6 +2580,7 @@ export function createGeneratedClient(request) {
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
     getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),
     getClinicalProblemById: createOperation(request, operations.getClinicalProblemById),
+    getClinicById: createOperation(request, operations.getClinicById),
     getClinics: createOperation(request, operations.getClinics),
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
     getConsents: createOperation(request, operations.getConsents),

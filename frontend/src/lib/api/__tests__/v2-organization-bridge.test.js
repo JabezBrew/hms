@@ -142,6 +142,44 @@ describe('Rust V2 organization bridge', () => {
     ]);
   });
 
+  it('loads clinic detail through Rust /api/v2 without list-and-find fetching', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'clinic-1',
+            code: 'general',
+            name: 'General Clinic',
+            is_active: true,
+            created_at: '2026-05-12T04:02:42Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await clinicsApi.get('clinic-1', { signal: new AbortController().signal });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinics/clinic-1',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(response).toEqual({
+      id: 'clinic-1',
+      code: 'general',
+      name: 'General Clinic',
+      is_active: true,
+      created_at: '2026-05-12T04:02:42Z',
+      booking_mode: 'clinic_pool',
+      waitlist_enabled: false,
+    });
+  });
+
   it('derives unit types from Rust org units without calling Django unit-type endpoints', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

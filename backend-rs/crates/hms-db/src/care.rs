@@ -226,16 +226,31 @@ pub async fn list_clinics(
     query.push_bind(limit);
 
     let rows = query.build_query_as::<ClinicRow>().fetch_all(pool).await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| ClinicListItem {
-            id: row.id,
-            code: row.code,
-            name: row.name,
-            is_active: row.is_active,
-            created_at: row.created_at,
-        })
-        .collect())
+    Ok(rows.into_iter().map(clinic_from_row).collect())
+}
+
+pub async fn get_clinic(
+    pool: &PgPool,
+    facility_id: Uuid,
+    clinic_id: Uuid,
+) -> anyhow::Result<Option<ClinicListItem>> {
+    let row = sqlx::query_as::<_, ClinicRow>(
+        r#"
+        SELECT id,
+               code,
+               name,
+               is_active,
+               created_at
+        FROM clinics
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(clinic_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(clinic_from_row))
 }
 
 pub async fn create_appointment(
@@ -1297,6 +1312,16 @@ fn appointment_from_row(row: AppointmentRow) -> anyhow::Result<AppointmentListIt
         status: codec::decode(&row.status)?,
         created_at: row.created_at,
     })
+}
+
+fn clinic_from_row(row: ClinicRow) -> ClinicListItem {
+    ClinicListItem {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        is_active: row.is_active,
+        created_at: row.created_at,
+    }
 }
 
 fn visit_from_row(row: VisitRow) -> anyhow::Result<VisitListItem> {

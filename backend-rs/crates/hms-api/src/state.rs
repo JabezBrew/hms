@@ -2619,6 +2619,10 @@ impl AppState {
         hms_db::care::list_clinics(&self.inner.pool, self.facility_id(), cursor, limit).await
     }
 
+    pub async fn get_clinic(&self, clinic_id: Uuid) -> Result<Option<ClinicListItem>> {
+        hms_db::care::get_clinic(&self.inner.pool, self.facility_id(), clinic_id).await
+    }
+
     pub async fn create_appointment(
         &self,
         patient_id: Uuid,

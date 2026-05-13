@@ -289,6 +289,18 @@ async fn visit_repository_filters_waiting_room_by_clinic() {
     .fetch_one(&pool)
     .await
     .expect("general clinic exists");
+    let general_clinic = hms_db::care::get_clinic(&pool, facility_id, general_clinic_id)
+        .await
+        .expect("clinic detail lookup succeeds")
+        .expect("clinic exists");
+    assert_eq!(general_clinic.code, "general");
+    assert_eq!(general_clinic.name, "General Clinic");
+    assert!(
+        hms_db::care::get_clinic(&pool, uuid::Uuid::new_v4(), general_clinic_id)
+            .await
+            .expect("cross-facility clinic detail lookup succeeds")
+            .is_none()
+    );
     let overflow_clinic_id = uuid::Uuid::new_v4();
     sqlx::query(
         "INSERT INTO clinics (id, facility_id, code, name) VALUES ($1, $2, 'overflow', 'Overflow Clinic')",

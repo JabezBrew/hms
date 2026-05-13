@@ -148,6 +148,14 @@ async function listV2Clinics(params = {}) {
   return filterV2Clinics(clinics, params);
 }
 
+async function getV2Clinic(id, params = {}) {
+  const response = await v2Api.getClinicById(
+    { id },
+    { signal: params.signal },
+  );
+  return adaptV2Clinic(response?.data || response || {});
+}
+
 async function listV2UnitTypes(params = {}) {
   const units = await listV2OrgUnits(params);
   const seen = new Set(DEFAULT_V2_UNIT_TYPES.map((unitType) => unitType.code));
@@ -832,10 +840,9 @@ export const clinicsApi = {
     }
     return apiClient.get('/organization/clinics/', { params });
   },
-  get: async (id) => {
+  get: async (id, params = {}) => {
     if (isRustV2ApiMode()) {
-      const clinics = await listV2Clinics({ limit: 100 });
-      return clinics.find((clinic) => clinic.id === id) || null;
+      return getV2Clinic(id, params);
     }
     return apiClient.get(`/organization/clinics/${id}/`);
   },
