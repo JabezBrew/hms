@@ -23,6 +23,7 @@ import {
 import NoteTypeSelector from "./NoteTypeSelector";
 import DynamicWorkflowStep from "./DynamicWorkflowStep";
 import { useNoteWorkflow } from "@/hooks/useNoteWorkflow";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 import {
   applyDraftToWorkflowData,
   buildStepDiff,
@@ -76,6 +77,7 @@ const AddNoteSlideOver = ({
 
   // Determine if we're in edit mode
   const isEditMode = !!editNoteId;
+  const aiAssistantAvailable = !isRustV2ApiMode();
 
   // Use the template-driven workflow hook
   const {
@@ -112,7 +114,7 @@ const AddNoteSlideOver = ({
 
   const noteDraftMutation = useAINoteDraft();
   const noteLintMutation = useAINoteLint();
-  const isAiBusy = noteDraftMutation.isPending || noteLintMutation.isPending;
+  const isAiBusy = aiAssistantAvailable && (noteDraftMutation.isPending || noteLintMutation.isPending);
 
   const encounterId = encounter?.id || null;
 
@@ -183,6 +185,12 @@ const AddNoteSlideOver = ({
   }, [formData, updateStepData]);
 
   const runQualityCheck = useCallback(async ({ silent = false } = {}) => {
+    if (!aiAssistantAvailable) {
+      if (!silent) {
+        toast.error('AI note quality checks are not available in Rust V2 mode yet.');
+      }
+      return null;
+    }
     if (!patientId || !template?.id || !templateRevisionId) {
       if (!silent) {
         toast.error('Select a template revision before running quality check.');
@@ -235,6 +243,7 @@ const AddNoteSlideOver = ({
       return null;
     }
   }, [
+    aiAssistantAvailable,
     encounterId,
     finalDataHash,
     finalNoteData,
@@ -245,6 +254,10 @@ const AddNoteSlideOver = ({
   ]);
 
   const handleGenerateDraft = useCallback(async () => {
+    if (!aiAssistantAvailable) {
+      toast.error('AI note drafting is not available in Rust V2 mode yet.');
+      return;
+    }
     if (!patientId || !template?.id || !templateRevisionId) {
       toast.error('Select a template revision before generating draft.');
       return;
@@ -293,6 +306,7 @@ const AddNoteSlideOver = ({
     }
   }, [
     applyMergedFormData,
+    aiAssistantAvailable,
     draftPrompt,
     encounterId,
     formData,
@@ -507,6 +521,7 @@ const AddNoteSlideOver = ({
           <NoteTypeSelector onSelect={handleSelectTemplate} enabled={open} />
         ) : currentStepConfig ? (
           <div className="space-y-4">
+            {aiAssistantAvailable && (
             <div className="rounded-xl border border-border bg-card p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -567,6 +582,7 @@ const AddNoteSlideOver = ({
                 </Button>
               </div>
             </div>
+            )}
 
             <DynamicWorkflowStep
               stepConfig={currentStepConfig}
@@ -576,7 +592,7 @@ const AddNoteSlideOver = ({
               template={template}
             />
 
-            {currentStepDraftText && (
+            {aiAssistantAvailable && currentStepDraftText && (
               <div className="rounded-xl border border-border bg-card p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -635,7 +651,7 @@ const AddNoteSlideOver = ({
               </div>
             )}
 
-            {lintResult && (
+            {aiAssistantAvailable && lintResult && (
               <div className={cn(
                 "rounded-xl border p-4 space-y-3",
                 hasLintForCurrentData ? "border-border bg-card" : "border-amber-200 bg-amber-50/70"
@@ -735,16 +751,18 @@ const AddNoteSlideOver = ({
                 <Save className="h-3.5 w-3.5 mr-1.5" />
                 Save Draft
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => runQualityCheck()}
-                disabled={isSaving || isLoading || isAiBusy}
-                className="font-mono text-xs"
-              >
-                <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
-                Run Quality Check
-              </Button>
+              {aiAssistantAvailable && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => runQualityCheck()}
+                  disabled={isSaving || isLoading || isAiBusy}
+                  className="font-mono text-xs"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                  Run Quality Check
+                </Button>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

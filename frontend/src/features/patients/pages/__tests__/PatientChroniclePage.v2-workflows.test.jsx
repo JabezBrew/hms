@@ -93,8 +93,9 @@ vi.mock('@/hooks/useSystemQueries', () => ({
 }))
 
 vi.mock('@/components/chronicle/PatientIdentityHero', () => ({
-  default: ({ onStartWardRound, onStartDischarge }) => (
+  default: ({ onAskChronicle, onStartWardRound, onStartDischarge }) => (
     <div>
+      <span data-testid="ask-chronicle-action">{String(Boolean(onAskChronicle))}</span>
       <span data-testid="ward-round-action">{String(Boolean(onStartWardRound))}</span>
       <span data-testid="discharge-action">{String(Boolean(onStartDischarge))}</span>
     </div>
@@ -187,6 +188,14 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(screen.getByTestId('discharge-action')).toHaveTextContent('false')
   })
 
+  it('does not expose the intentionally deferred Chronicle copilot action in Rust V2 mode', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+
+    renderPage()
+
+    expect(screen.getByTestId('ask-chronicle-action')).toHaveTextContent('false')
+  })
+
   it('does not auto-open the unsupported ward-round workflow from URL actions in Rust V2 mode', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
@@ -202,6 +211,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     renderPage('/patients/patient-1?action=ward_round')
 
+    expect(screen.getByTestId('ask-chronicle-action')).toHaveTextContent('true')
     expect(screen.getByTestId('ward-round-action')).toHaveTextContent('true')
     expect(screen.getByTestId('discharge-action')).toHaveTextContent('true')
     await waitFor(() => {

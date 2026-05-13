@@ -178,6 +178,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
   const rustV2Mode = isRustV2ApiMode();
   const canUseStandaloneClinicalWorkflows = !rustV2Mode;
+  const canUseAiAssistant = !rustV2Mode;
 
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
@@ -917,8 +918,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Slide-over handlers - using the centralized hook
   const handleAskChronicle = useCallback(() => {
+    if (!canUseAiAssistant) {
+      toast.error('Chronicle copilot is not available in Rust V2 mode yet.');
+      return;
+    }
     openChronicleWorkspace('copilot');
-  }, [openChronicleWorkspace]);
+  }, [canUseAiAssistant, openChronicleWorkspace]);
   const handleAddNote = useCallback(() => {
     openChronicleWorkspace('note');
   }, [openChronicleWorkspace]);
@@ -1393,7 +1398,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         <PatientIdentityHero
           patient={patient}
           onActionIntent={prefetchActionResources}
-          onAskChronicle={handleAskChronicle}
+          onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
           onAddNote={handleAddNote}
           onRecordVitals={handleRecordVitals}
           onPrescribe={handlePrescribe}
