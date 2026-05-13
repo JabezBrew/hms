@@ -191,6 +191,16 @@ function adaptV2Requisition(requisition) {
   };
 }
 
+function adaptV2InternalRequisition(requisition) {
+  const adapted = adaptV2Requisition(requisition);
+  return {
+    ...adapted,
+    status: ['requested', 'pending'].includes(requisition?.status)
+      ? 'pending_approval'
+      : adapted.status,
+  };
+}
+
 function adaptV2PurchaseOrder(order) {
   return {
     ...order,
@@ -1718,7 +1728,7 @@ export const inventoryApi = {
           query: buildV2CursorQuery(params, 20),
           signal: options.signal,
         });
-        return adaptV2PaginatedList(response, params);
+        return adaptV2PaginatedList(response, params, adaptV2InternalRequisition);
       }
 
       const queryString = new URLSearchParams(params).toString();
@@ -1746,7 +1756,7 @@ export const inventoryApi = {
         const response = await v2Api.getStockRequisitionById({ id }, {
           signal: options.signal,
         });
-        return v2Object(response);
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.get(`/inventory/internal-requisitions/${id}/`, options);
@@ -1770,7 +1780,7 @@ export const inventoryApi = {
     try {
       if (isRustV2ApiMode()) {
         const response = await v2Api.postStockRequisitions(buildV2StockRequisitionPayload(data));
-        return v2Object(response);
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post('/inventory/internal-requisitions/', data);
@@ -1790,11 +1800,15 @@ export const inventoryApi = {
   submitInternalRequisition: async (id) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionSubmit({ id });
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/submit/`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to submit internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to submit internal requisition'));
     }
   },
@@ -1807,11 +1821,15 @@ export const inventoryApi = {
   approveInternalRequisition: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionApprove({ id });
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/approve/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to approve internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to approve internal requisition'));
     }
   },
@@ -1842,11 +1860,15 @@ export const inventoryApi = {
   fulfillInternalRequisition: async (id, data) => {
     try {
       if (isRustV2ApiMode()) {
-        return rustV2Unsupported('/api/v2 stock requisition action contract');
+        const response = await v2Api.postStockRequisitionFulfill({ id });
+        return adaptV2InternalRequisition(v2Object(response));
       }
 
       return await apiClient.post(`/inventory/internal-requisitions/${id}/fulfill/`, data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fulfill internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to fulfill internal requisition'));
     }
   },

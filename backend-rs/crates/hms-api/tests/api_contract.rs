@@ -2316,6 +2316,25 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(requisition_approve_body["data"]["id"], requisition_id);
     assert_eq!(requisition_approve_body["data"]["status"], "approved");
 
+    let requisition_fulfill_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/inventory/requisitions/{requisition_id}/fulfill"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stock requisition fulfill succeeds");
+    assert_eq!(requisition_fulfill_response.status(), StatusCode::OK);
+    let requisition_fulfill_body = json_body(requisition_fulfill_response).await;
+    assert_eq!(requisition_fulfill_body["data"]["id"], requisition_id);
+    assert_eq!(requisition_fulfill_body["data"]["status"], "fulfilled");
+
     let po_response = app
         .clone()
         .oneshot(
@@ -2793,6 +2812,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
 
     for denied_path in [
         format!("/api/v2/inventory/requisitions/{requisition_id}/approve"),
+        format!("/api/v2/inventory/requisitions/{requisition_id}/fulfill"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/approve"),
         format!("/api/v2/inventory/purchase-orders/{purchase_order_id}/send"),
         format!("/api/v2/inventory/goods-received-notes/{grn_id}/inspect"),

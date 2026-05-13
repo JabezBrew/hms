@@ -1066,6 +1066,92 @@ describe('Rust V2 inventory bridge', () => {
     ]);
   });
 
+  it('routes internal requisition actions through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'requested',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'pending',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'approved',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: 'internal-req-1',
+          requesting_location_id: 'location-1',
+          requesting_location_name: 'Main Store',
+          status: 'fulfilled',
+          created_at: '2026-05-12T08:00:00Z',
+        },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.createInternalRequisition({
+      requesting_location: 'location-1',
+    })).resolves.toMatchObject({
+      id: 'internal-req-1',
+      status: 'pending_approval',
+    });
+    await expect(inventoryApi.submitInternalRequisition('internal-req-1')).resolves.toMatchObject({
+      id: 'internal-req-1',
+      status: 'pending_approval',
+    });
+    await expect(inventoryApi.approveInternalRequisition('internal-req-1')).resolves.toMatchObject({
+      id: 'internal-req-1',
+      status: 'approved',
+    });
+    await expect(inventoryApi.fulfillInternalRequisition('internal-req-1')).resolves.toMatchObject({
+      id: 'internal-req-1',
+      status: 'fulfilled',
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions',
+        'POST',
+        JSON.stringify({ requesting_location_id: 'location-1' }),
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/submit',
+        'POST',
+        undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/approve',
+        'POST',
+        undefined,
+      ],
+      [
+        'http://localhost:8080/api/v2/inventory/requisitions/internal-req-1/fulfill',
+        'POST',
+        undefined,
+      ],
+    ]);
+  });
+
   it('fails closed for inventory actions without generated Rust V2 contracts', async () => {
     await expect(inventoryApi.createCategory({ name: 'Medication' })).rejects.toThrow('/api/v2 inventory category mutation contract');
     await expect(inventoryApi.createSupplier({ name: 'Acme Medical' })).rejects.toThrow('/api/v2 supplier contract');

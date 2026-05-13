@@ -114,6 +114,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::inventory::accept_grn,
         crate::handlers::inventory::approve_purchase_order,
         crate::handlers::inventory::approve_requisition,
+        crate::handlers::inventory::fulfill_requisition,
         crate::handlers::inventory::get_controlled_register_entry,
         crate::handlers::inventory::get_grn,
         crate::handlers::inventory::get_location,

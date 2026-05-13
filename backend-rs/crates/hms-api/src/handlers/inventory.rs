@@ -475,6 +475,31 @@ pub async fn approve_requisition(
     Ok(Json(object(requisition)))
 }
 
+#[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/fulfill", operation_id = "postStockRequisitionFulfill", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
+pub async fn fulfill_requisition(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
+    let requisition = state
+        .fulfill_stock_requisition(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_fulfill_failed",
+                "Requisition could not be fulfilled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "stock_requisition_not_found",
+                "Requisition could not be found.",
+            )
+        })?;
+    Ok(Json(object(requisition)))
+}
+
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders", operation_id = "getPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_purchase_orders(
     State(state): State<AppState>,

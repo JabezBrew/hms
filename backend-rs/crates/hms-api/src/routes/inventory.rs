@@ -69,6 +69,10 @@ pub fn routes() -> Router<AppState> {
             post(inventory::approve_requisition),
         )
         .route(
+            "/api/v2/inventory/requisitions/:id/fulfill",
+            post(inventory::fulfill_requisition),
+        )
+        .route(
             "/api/v2/inventory/purchase-orders",
             get(inventory::list_purchase_orders).post(inventory::create_purchase_order),
         )

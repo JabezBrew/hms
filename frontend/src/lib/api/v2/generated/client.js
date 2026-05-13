@@ -1908,6 +1908,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postStockRequisitionFulfill": {
+    "operationId": "postStockRequisitionFulfill",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/fulfill",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "postStockRequisitions": {
     "operationId": "postStockRequisitions",
     "method": "POST",
@@ -2253,6 +2263,7 @@ export function createGeneratedClient(request) {
     postReferrals: createOperation(request, operations.postReferrals),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),
+    postStockRequisitionFulfill: createOperation(request, operations.postStockRequisitionFulfill),
     postStockRequisitions: createOperation(request, operations.postStockRequisitions),
     postStockRequisitionSubmit: createOperation(request, operations.postStockRequisitionSubmit),
     postStockTransfers: createOperation(request, operations.postStockTransfers),

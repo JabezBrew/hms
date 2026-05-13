@@ -827,6 +827,21 @@ pub async fn approve_requisition(
     .await
 }
 
+pub async fn fulfill_requisition(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+) -> anyhow::Result<Option<StockRequisitionListItem>> {
+    transition_requisition_status(
+        pool,
+        facility_id,
+        requisition_id,
+        &[RequisitionStatus::Approved, RequisitionStatus::Fulfilled],
+        RequisitionStatus::Fulfilled,
+    )
+    .await
+}
+
 pub async fn list_purchase_orders(
     pool: &PgPool,
     facility_id: Uuid,
