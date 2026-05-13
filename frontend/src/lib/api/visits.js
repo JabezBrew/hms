@@ -342,11 +342,20 @@ export const triageApi = {
   /**
    * Get single triage entry
    */
-  get: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose triage detail yet.');
+  get: async (id, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getTriage({ id }, { signal: options.signal });
+        return adaptV2TriageEntry(response?.data);
+      }
+      return apiClient.get(`/encounters/triage/${id}/`);
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch triage entry'));
+      }
+      throw error;
     }
-    return apiClient.get(`/encounters/triage/${id}/`);
   },
 
   /**

@@ -5988,6 +5988,23 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .expect("triage id exists");
     assert_eq!(triage_body["data"]["status"], "waiting");
 
+    let triage_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/triage/{triage_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("triage detail succeeds");
+    assert_eq!(triage_detail.status(), StatusCode::OK);
+    let triage_detail_body = json_body(triage_detail).await;
+    assert_eq!(triage_detail_body["data"]["id"], triage_id);
+    assert_eq!(triage_detail_body["data"]["patient_id"], patient_id);
+
     let triage_assign = app
         .clone()
         .oneshot(

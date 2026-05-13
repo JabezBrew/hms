@@ -1145,6 +1145,16 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getTriage": {
+    "operationId": "getTriage",
+    "method": "GET",
+    "path": "/api/v2/triage/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getTriageQueue": {
     "operationId": "getTriageQueue",
     "method": "GET",
@@ -2405,6 +2415,7 @@ export function createGeneratedClient(request) {
     getStorageLocationStock: createOperation(request, operations.getStorageLocationStock),
     getSystemDeploymentCapabilities: createOperation(request, operations.getSystemDeploymentCapabilities),
     getTreatmentSheets: createOperation(request, operations.getTreatmentSheets),
+    getTriage: createOperation(request, operations.getTriage),
     getTriageQueue: createOperation(request, operations.getTriageQueue),
     getVisitById: createOperation(request, operations.getVisitById),
     getVisits: createOperation(request, operations.getVisits),

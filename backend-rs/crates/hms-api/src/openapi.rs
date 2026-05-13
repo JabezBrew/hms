@@ -75,6 +75,7 @@ use utoipa::{Modify, OpenApi};
         crate::handlers::care::checkout_visit,
         crate::handlers::care::get_appointment,
         crate::handlers::care::get_encounter,
+        crate::handlers::care::get_triage,
         crate::handlers::care::get_visit,
         crate::handlers::care::list_appointments,
         crate::handlers::care::list_care_team,

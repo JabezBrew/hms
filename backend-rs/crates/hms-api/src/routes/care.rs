@@ -32,6 +32,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/triage",
             get(care::list_triage).post(care::create_triage),
         )
+        .route("/api/v2/triage/:id", get(care::get_triage))
         .route("/api/v2/triage/:id/assign", post(care::assign_triage))
         .route("/api/v2/triage/:id/cancel", post(care::cancel_triage))
         .route(

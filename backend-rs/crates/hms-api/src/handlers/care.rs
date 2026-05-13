@@ -518,6 +518,40 @@ pub async fn create_triage(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v2/triage/{id}",
+    operation_id = "getTriage",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Triage id")),
+    responses(
+        (status = 200, description = "Triage item detail", body = ObjectResponse<TriageListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Triage item not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_triage(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
+    require_action_permission(
+        &user,
+        state.facility_id(),
+        PermissionCode::NursingTaskManage,
+    )?;
+    let triage = state
+        .get_triage(id)
+        .await
+        .map_err(|_| ApiError::conflict("triage_load_failed", "Triage item could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+    let _patient = load_patient_for_access(&state, &user, triage.patient_id).await?;
+
+    Ok(Json(object(triage)))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v2/triage/{id}/assign",
     operation_id = "postTriageAssign",
