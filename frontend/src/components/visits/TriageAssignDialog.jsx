@@ -81,14 +81,14 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
   // Fetch clinics that accept walk-ins
   const { data: clinics, isLoading: clinicsLoading } = useQuery({
     queryKey: triageAssignKeys.clinics(),
-    queryFn: () => clinicsApi.list({ accepts_walk_ins: true }),
+    queryFn: ({ signal }) => clinicsApi.list({ accepts_walk_ins: true }, { signal }),
     enabled: open && Boolean(facilityCode),
   });
 
   // Fetch appointment types
   const { data: appointmentTypes, isLoading: typesLoading } = useQuery({
     queryKey: triageAssignKeys.appointmentTypes(),
-    queryFn: () => appointmentsApi.getAppointmentTypes(),
+    queryFn: ({ signal }) => appointmentsApi.getAppointmentTypes({ signal }),
     enabled: open && Boolean(facilityCode),
   });
 

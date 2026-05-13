@@ -36,7 +36,7 @@ export default function ClinicWaitingRoomPage() {
     error: clinicError,
   } = useQuery({
     queryKey: clinicKeys.detail(clinicId),
-    queryFn: () => clinicsApi.get(clinicId),
+    queryFn: ({ signal }) => clinicsApi.get(clinicId, { signal }),
     enabled: Boolean(facilityCode) && Boolean(clinicId),
   });
 

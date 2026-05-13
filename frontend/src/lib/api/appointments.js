@@ -772,7 +772,7 @@ export const appointmentsApi = {
    * Get all appointment types
    * @returns {Promise<Array>} List of appointment types
    */
-  getAppointmentTypes: async () => {
+  getAppointmentTypes: async (_options = {}) => {
     try {
       if (isRustV2ApiMode()) {
         return DEFAULT_APPOINTMENT_TYPES;
