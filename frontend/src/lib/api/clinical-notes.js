@@ -77,9 +77,26 @@ function adaptV2Template(template) {
     ...template,
     name: template.title,
     category: template.note_type,
-    is_active: true,
+    is_active: template.is_active !== false,
     structure: template.body_template,
   };
+}
+
+function normalizeTemplatePayload(data = {}) {
+  const payload = {};
+  if (data.title !== undefined || data.name !== undefined) {
+    payload.title = data.title ?? data.name;
+  }
+  if (data.note_type !== undefined || data.category !== undefined || data.type !== undefined) {
+    payload.note_type = data.note_type ?? data.category ?? data.type;
+  }
+  if (data.body_template !== undefined || data.structure !== undefined || data.template !== undefined) {
+    payload.body_template = data.body_template ?? data.structure ?? data.template;
+  }
+  if (data.is_active !== undefined) {
+    payload.is_active = Boolean(data.is_active);
+  }
+  return payload;
 }
 
 function adaptV2Note(note, body) {
@@ -168,13 +185,20 @@ export const clinicalNotesApi = {
    * @param {Object} data - Note template data
    * @returns {Promise<Object>} Created note template data
    */
-  createNoteTemplate: async (data) => {
-    if (isRustV2ApiMode()) {
-      throw new Error('Clinical note template creation is not supported by Rust V2');
-    }
+  createNoteTemplate: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postClinicalNoteTemplates(normalizeTemplatePayload(data), {
+          signal: options.signal,
+        });
+        return adaptV2Template(response?.data);
+      }
       return await apiClient.post('/clinical-notes/templates/', data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create note template'));
+      }
       throw new Error(handleApiError(error, 'Failed to create note template'));
     }
   },
@@ -185,13 +209,22 @@ export const clinicalNotesApi = {
    * @param {Object} data - Note template data to update
    * @returns {Promise<Object>} Updated note template data
    */
-  updateNoteTemplate: async (id, data) => {
-    if (isRustV2ApiMode()) {
-      throw new Error('Clinical note template updates are not supported by Rust V2');
-    }
+  updateNoteTemplate: async (id, data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.patchClinicalNoteTemplate(
+          { id },
+          normalizeTemplatePayload(data),
+          { signal: options.signal },
+        );
+        return adaptV2Template(response?.data);
+      }
       return await apiClient.patch(`/clinical-notes/templates/${id}/`, data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to update note template'));
+      }
       throw new Error(handleApiError(error, 'Failed to update note template'));
     }
   },
@@ -201,13 +234,18 @@ export const clinicalNotesApi = {
    * @param {string} id - Note template ID
    * @returns {Promise<Object>} Empty object or operation outcome
    */
-  deleteNoteTemplate: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw new Error('Clinical note template deletion is not supported by Rust V2');
-    }
+  deleteNoteTemplate: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.deleteClinicalNoteTemplate({ id }, { signal: options.signal });
+        return adaptV2Template(response?.data);
+      }
       return await apiClient.delete(`/clinical-notes/templates/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to delete note template'));
+      }
       throw new Error(handleApiError(error, 'Failed to delete note template'));
     }
   },

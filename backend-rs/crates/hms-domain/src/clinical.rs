@@ -61,6 +61,22 @@ pub struct ClinicalNoteTemplate {
     pub title: String,
     pub note_type: String,
     pub body_template: String,
+    pub is_active: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateClinicalNoteTemplateRequest {
+    pub title: String,
+    pub note_type: String,
+    pub body_template: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateClinicalNoteTemplateRequest {
+    pub title: Option<String>,
+    pub note_type: Option<String>,
+    pub body_template: Option<String>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

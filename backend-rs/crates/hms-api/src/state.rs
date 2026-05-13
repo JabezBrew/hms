@@ -19,8 +19,8 @@ use hms_db::care::{
     NewEncounter, NewTriage, NewVisit,
 };
 use hms_db::clinical::{
-    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewPrescription, NewProblem,
-    NoteContext,
+    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
+    NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
 use hms_db::consent::{ConsentCursor, NewConsentGrant};
 use hms_db::dashboard::NotificationCursor;
@@ -66,7 +66,7 @@ use hms_domain::care::{
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteListItem,
     ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem,
-    ProblemListItem, ProblemStatus, UpdateProblemRequest,
+    ProblemListItem, ProblemStatus, UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
@@ -1250,6 +1250,56 @@ impl AppState {
 
     pub async fn list_clinical_note_templates(&self) -> Result<Vec<ClinicalNoteTemplate>> {
         hms_db::clinical::list_note_templates(&self.inner.pool, self.facility_id()).await
+    }
+
+    pub async fn create_clinical_note_template(
+        &self,
+        title: String,
+        note_type: String,
+        body_template: String,
+    ) -> Result<ClinicalNoteTemplate> {
+        hms_db::clinical::create_note_template(
+            &self.inner.pool,
+            NewClinicalNoteTemplate {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                title,
+                note_type,
+                body_template,
+            },
+        )
+        .await
+    }
+
+    pub async fn update_clinical_note_template(
+        &self,
+        template_id: Uuid,
+        payload: UpdateClinicalNoteTemplateRequest,
+    ) -> Result<Option<ClinicalNoteTemplate>> {
+        hms_db::clinical::update_note_template(
+            &self.inner.pool,
+            self.facility_id(),
+            template_id,
+            UpdateClinicalNoteTemplate {
+                title: payload.title,
+                note_type: payload.note_type,
+                body_template: payload.body_template,
+                is_active: payload.is_active,
+            },
+        )
+        .await
+    }
+
+    pub async fn deactivate_clinical_note_template(
+        &self,
+        template_id: Uuid,
+    ) -> Result<Option<ClinicalNoteTemplate>> {
+        hms_db::clinical::deactivate_note_template(
+            &self.inner.pool,
+            self.facility_id(),
+            template_id,
+        )
+        .await
     }
 
     pub async fn list_clinical_notes(

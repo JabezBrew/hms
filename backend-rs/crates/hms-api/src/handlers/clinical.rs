@@ -8,8 +8,9 @@ use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
     AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteListItem,
     ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest, CreateChartEntryRequest,
-    CreateClinicalNoteRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
-    CreateProblemRequest, PrescriptionListItem, ProblemListItem, UpdateProblemRequest,
+    CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest,
+    CreatePrescriptionRequest, CreateProblemRequest, PrescriptionListItem, ProblemListItem,
+    UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -59,6 +60,139 @@ pub async fn list_note_templates(
             limit: MAX_LIMIT,
         },
     )))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/clinical/note-templates",
+    operation_id = "postClinicalNoteTemplates",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    request_body = CreateClinicalNoteTemplateRequest,
+    responses(
+        (status = 200, description = "Clinical note template created", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 400, description = "Invalid clinical note template", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_note_template(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(payload): Json<CreateClinicalNoteTemplateRequest>,
+) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
+    let note_type = normalize_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
+    let body_template = normalize_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
+    let template = state
+        .create_clinical_note_template(title, note_type, body_template)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_template_create_failed",
+                "Clinical note template could not be saved.",
+            )
+        })?;
+
+    Ok(Json(object(template)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v2/clinical/note-templates/{id}",
+    operation_id = "patchClinicalNoteTemplate",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinical note template id")),
+    request_body = UpdateClinicalNoteTemplateRequest,
+    responses(
+        (status = 200, description = "Clinical note template updated", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 400, description = "Invalid clinical note template", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinical note template not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_note_template(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<UpdateClinicalNoteTemplateRequest>,
+) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    payload.title = normalize_optional_text(payload.title, "title", MAX_TITLE_LEN)?;
+    payload.note_type =
+        normalize_optional_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
+    payload.body_template =
+        normalize_optional_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
+    if payload.title.is_none()
+        && payload.note_type.is_none()
+        && payload.body_template.is_none()
+        && payload.is_active.is_none()
+    {
+        return Err(validation_error(
+            "template",
+            "At least one field is required.",
+        ));
+    }
+
+    let template = state
+        .update_clinical_note_template(id, payload)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_template_update_failed",
+                "Clinical note template could not be saved.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "clinical_template_not_found",
+                "Clinical note template was not found.",
+            )
+        })?;
+
+    Ok(Json(object(template)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v2/clinical/note-templates/{id}",
+    operation_id = "deleteClinicalNoteTemplate",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinical note template id")),
+    responses(
+        (status = 200, description = "Clinical note template deactivated", body = ObjectResponse<ClinicalNoteTemplate>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinical note template not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_note_template(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
+    require_clinical_write_access(&user, state.facility_id())?;
+    let template = state
+        .deactivate_clinical_note_template(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_template_delete_failed",
+                "Clinical note template could not be deactivated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "clinical_template_not_found",
+                "Clinical note template was not found.",
+            )
+        })?;
+
+    Ok(Json(object(template)))
 }
 
 #[utoipa::path(

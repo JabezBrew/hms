@@ -72,6 +72,121 @@ describe('Rust V2 clinical notes bridge', () => {
     ]);
   });
 
+  it('routes clinical note template mutations through generated Rust V2 endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'template-2',
+              title: 'Ward Round Note',
+              note_type: 'ward_round',
+              body_template: 'SOAP template',
+              is_active: true,
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'template-2',
+              title: 'Updated Ward Round Note',
+              note_type: 'ward_round',
+              body_template: 'Updated template',
+              is_active: true,
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'template-2',
+              title: 'Updated Ward Round Note',
+              note_type: 'ward_round',
+              body_template: 'Updated template',
+              is_active: false,
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const created = await clinicalNotesApi.createNoteTemplate(
+      {
+        title: 'Ward Round Note',
+        note_type: 'ward_round',
+        body_template: 'SOAP template',
+      },
+      { signal: new AbortController().signal },
+    );
+    const updated = await clinicalNotesApi.updateNoteTemplate(
+      'template-2',
+      {
+        title: 'Updated Ward Round Note',
+        body_template: 'Updated template',
+      },
+      { signal: new AbortController().signal },
+    );
+    const deleted = await clinicalNotesApi.deleteNoteTemplate('template-2', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinical/note-templates',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          title: 'Ward Round Note',
+          note_type: 'ward_round',
+          body_template: 'SOAP template',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/clinical/note-templates/template-2',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({
+          title: 'Updated Ward Round Note',
+          body_template: 'Updated template',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/clinical/note-templates/template-2',
+      expect.objectContaining({
+        method: 'DELETE',
+        credentials: 'include',
+      }),
+    );
+    expect(created).toEqual(expect.objectContaining({ id: 'template-2', is_active: true }));
+    expect(updated).toEqual(expect.objectContaining({ title: 'Updated Ward Round Note' }));
+    expect(deleted).toEqual(expect.objectContaining({ id: 'template-2', is_active: false }));
+  });
+
   it('lists patient clinical notes through patient-scoped Rust endpoints only', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
@@ -269,12 +384,9 @@ describe('Rust V2 clinical notes bridge', () => {
     );
   });
 
-  it('does not fall back to legacy template mutations without a Rust V2 contract', async () => {
-    await expect(clinicalNotesApi.createNoteTemplate({ title: 'New template' })).rejects.toThrow(
-      'Clinical note template creation is not supported by Rust V2',
-    );
-    await expect(clinicalNotesApi.deleteNoteTemplate('template-1')).rejects.toThrow(
-      'Clinical note template deletion is not supported by Rust V2',
+  it('does not fall back to legacy-only template actions without a Rust V2 contract', async () => {
+    await expect(clinicalNotesApi.duplicateTemplate('template-1')).rejects.toThrow(
+      'Clinical note template duplication is not supported by Rust V2',
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });

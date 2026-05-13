@@ -1193,6 +1193,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "is_active": {
+            "type": "boolean"
+          },
           "note_type": {
             "type": "string"
           },
@@ -1204,7 +1207,8 @@
           "id",
           "title",
           "note_type",
-          "body_template"
+          "body_template",
+          "is_active"
         ],
         "type": "object"
       },
@@ -1765,6 +1769,25 @@
           "note_type",
           "title",
           "body"
+        ],
+        "type": "object"
+      },
+      "CreateClinicalNoteTemplateRequest": {
+        "properties": {
+          "body_template": {
+            "type": "string"
+          },
+          "note_type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "note_type",
+          "body_template"
         ],
         "type": "object"
       },
@@ -4846,6 +4869,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "is_active": {
+                  "type": "boolean"
+                },
                 "note_type": {
                   "type": "string"
                 },
@@ -4857,7 +4883,8 @@
                 "id",
                 "title",
                 "note_type",
-                "body_template"
+                "body_template",
+                "is_active"
               ],
               "type": "object"
             },
@@ -10079,6 +10106,44 @@
               "status",
               "version",
               "updated_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_ClinicalNoteTemplate": {
+        "properties": {
+          "data": {
+            "properties": {
+              "body_template": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "note_type": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "note_type",
+              "body_template",
+              "is_active"
             ],
             "type": "object"
           },
@@ -15520,6 +15585,35 @@
         },
         "type": "object"
       },
+      "UpdateClinicalNoteTemplateRequest": {
+        "properties": {
+          "body_template": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "note_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpdateEncounterRequest": {
         "properties": {
           "encounter_type": {
@@ -20221,6 +20315,221 @@
               }
             },
             "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      },
+      "post": {
+        "operationId": "postClinicalNoteTemplates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClinicalNoteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
+                }
+              }
+            },
+            "description": "Clinical note template created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid clinical note template"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/note-templates/{id}": {
+      "delete": {
+        "operationId": "deleteClinicalNoteTemplate",
+        "parameters": [
+          {
+            "description": "Clinical note template id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
+                }
+              }
+            },
+            "description": "Clinical note template deactivated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Clinical note template not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      },
+      "patch": {
+        "operationId": "patchClinicalNoteTemplate",
+        "parameters": [
+          {
+            "description": "Clinical note template id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateClinicalNoteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicalNoteTemplate"
+                }
+              }
+            },
+            "description": "Clinical note template updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid clinical note template"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Clinical note template not found"
           }
         },
         "security": [

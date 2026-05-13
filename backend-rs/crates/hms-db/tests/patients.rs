@@ -1,5 +1,8 @@
 use chrono::{Datelike, NaiveDate, Utc};
-use hms_db::clinical::{NewAllergy, NewChartEntry, NewClinicalNote, NewPrescription, NewProblem};
+use hms_db::clinical::{
+    NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
+    NewProblem, UpdateClinicalNoteTemplate,
+};
 use hms_db::patients::{PatientContextCursor, PatientUpdate};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{AllergySeverity, ChartEntryType, ProblemStatus, UpdateProblemRequest};
@@ -349,6 +352,88 @@ async fn problem_status_updates_are_facility_scoped() {
     .await
     .expect("cross-facility problem status update succeeds")
     .is_none());
+}
+
+#[tokio::test]
+async fn clinical_note_template_mutations_are_facility_scoped_and_soft_deleted() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let template = hms_db::clinical::create_note_template(
+        &pool,
+        NewClinicalNoteTemplate {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            title: "Ward Round Note".to_owned(),
+            note_type: "ward_round".to_owned(),
+            body_template: "Subjective\nObjective\nAssessment\nPlan".to_owned(),
+        },
+    )
+    .await
+    .expect("template create succeeds");
+    assert!(template.is_active);
+
+    let updated = hms_db::clinical::update_note_template(
+        &pool,
+        facility_id,
+        template.id,
+        UpdateClinicalNoteTemplate {
+            title: Some("Updated Ward Round Note".to_owned()),
+            note_type: None,
+            body_template: Some("Updated SOAP structure".to_owned()),
+            is_active: None,
+        },
+    )
+    .await
+    .expect("template update succeeds")
+    .expect("template exists");
+    assert_eq!(updated.title, "Updated Ward Round Note");
+    assert_eq!(updated.body_template, "Updated SOAP structure");
+    assert!(updated.is_active);
+
+    assert!(hms_db::clinical::update_note_template(
+        &pool,
+        uuid::Uuid::new_v4(),
+        template.id,
+        UpdateClinicalNoteTemplate {
+            title: Some("Cross facility".to_owned()),
+            note_type: None,
+            body_template: None,
+            is_active: None,
+        },
+    )
+    .await
+    .expect("cross-facility template update succeeds")
+    .is_none());
+
+    let deactivated = hms_db::clinical::deactivate_note_template(&pool, facility_id, template.id)
+        .await
+        .expect("template deactivation succeeds")
+        .expect("template exists");
+    assert!(!deactivated.is_active);
+
+    let active_templates = hms_db::clinical::list_note_templates(&pool, facility_id)
+        .await
+        .expect("template list succeeds");
+    assert!(!active_templates
+        .iter()
+        .any(|active_template| active_template.id == template.id));
 }
 
 #[tokio::test]

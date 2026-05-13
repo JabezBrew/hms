@@ -36,6 +36,23 @@ pub struct NewClinicalNote {
 }
 
 #[derive(Clone, Debug)]
+pub struct NewClinicalNoteTemplate {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub title: String,
+    pub note_type: String,
+    pub body_template: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct UpdateClinicalNoteTemplate {
+    pub title: Option<String>,
+    pub note_type: Option<String>,
+    pub body_template: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug)]
 pub struct NewProblem {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -85,6 +102,7 @@ struct TemplateRow {
     title: String,
     note_type: String,
     body_template: String,
+    is_active: bool,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -161,7 +179,7 @@ pub async fn list_note_templates(
 ) -> anyhow::Result<Vec<ClinicalNoteTemplate>> {
     let rows = sqlx::query_as::<_, TemplateRow>(
         r#"
-        SELECT id, title, note_type, body_template
+        SELECT id, title, note_type, body_template, is_active
         FROM clinical_note_templates
         WHERE facility_id = $1 AND is_active = TRUE
         ORDER BY title ASC, id ASC
@@ -172,6 +190,81 @@ pub async fn list_note_templates(
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(template_from_row).collect())
+}
+
+pub async fn create_note_template(
+    pool: &PgPool,
+    template: NewClinicalNoteTemplate,
+) -> anyhow::Result<ClinicalNoteTemplate> {
+    let row = sqlx::query_as::<_, TemplateRow>(
+        r#"
+        INSERT INTO clinical_note_templates (
+            id,
+            facility_id,
+            title,
+            note_type,
+            body_template
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, title, note_type, body_template, is_active
+        "#,
+    )
+    .bind(template.id)
+    .bind(template.facility_id)
+    .bind(template.title)
+    .bind(template.note_type)
+    .bind(template.body_template)
+    .fetch_one(pool)
+    .await?;
+    Ok(template_from_row(row))
+}
+
+pub async fn update_note_template(
+    pool: &PgPool,
+    facility_id: Uuid,
+    template_id: Uuid,
+    update: UpdateClinicalNoteTemplate,
+) -> anyhow::Result<Option<ClinicalNoteTemplate>> {
+    let row = sqlx::query_as::<_, TemplateRow>(
+        r#"
+        UPDATE clinical_note_templates
+        SET title = COALESCE($3, title),
+            note_type = COALESCE($4, note_type),
+            body_template = COALESCE($5, body_template),
+            is_active = COALESCE($6, is_active),
+            updated_at = now()
+        WHERE facility_id = $1 AND id = $2
+        RETURNING id, title, note_type, body_template, is_active
+        "#,
+    )
+    .bind(facility_id)
+    .bind(template_id)
+    .bind(update.title)
+    .bind(update.note_type)
+    .bind(update.body_template)
+    .bind(update.is_active)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(template_from_row))
+}
+
+pub async fn deactivate_note_template(
+    pool: &PgPool,
+    facility_id: Uuid,
+    template_id: Uuid,
+) -> anyhow::Result<Option<ClinicalNoteTemplate>> {
+    update_note_template(
+        pool,
+        facility_id,
+        template_id,
+        UpdateClinicalNoteTemplate {
+            title: None,
+            note_type: None,
+            body_template: None,
+            is_active: Some(false),
+        },
+    )
+    .await
 }
 
 pub async fn list_notes(
@@ -677,6 +770,7 @@ fn template_from_row(row: TemplateRow) -> ClinicalNoteTemplate {
         title: row.title,
         note_type: row.note_type,
         body_template: row.body_template,
+        is_active: row.is_active,
     }
 }
 

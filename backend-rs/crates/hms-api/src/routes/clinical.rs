@@ -1,4 +1,4 @@
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 
 use crate::handlers::clinical;
@@ -8,7 +8,11 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
             "/api/v2/clinical/note-templates",
-            get(clinical::list_note_templates),
+            get(clinical::list_note_templates).post(clinical::create_note_template),
+        )
+        .route(
+            "/api/v2/clinical/note-templates/:id",
+            patch(clinical::update_note_template).delete(clinical::delete_note_template),
         )
         .route(
             "/api/v2/patients/:patient_id/clinical/notes",

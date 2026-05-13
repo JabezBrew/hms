@@ -1367,6 +1367,100 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     let templates_body = json_body(templates).await;
     assert_eq!(templates_body["data"][0]["title"], "General Clinical Note");
 
+    let template_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/clinical/note-templates")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "title": "Ward Round Note",
+                        "note_type": "ward_round",
+                        "body_template": "Subjective\\nObjective\\nAssessment\\nPlan"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("template create succeeds");
+    assert_eq!(template_create.status(), StatusCode::OK);
+    let template_create_body = json_body(template_create).await;
+    let template_id = template_create_body["data"]["id"]
+        .as_str()
+        .expect("template id exists");
+    assert_eq!(template_create_body["data"]["title"], "Ward Round Note");
+    assert_eq!(template_create_body["data"]["is_active"], true);
+
+    let template_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/v2/clinical/note-templates/{template_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "title": "Updated Ward Round Note",
+                        "body_template": "Updated SOAP structure"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("template update succeeds");
+    assert_eq!(template_update.status(), StatusCode::OK);
+    let template_update_body = json_body(template_update).await;
+    assert_eq!(
+        template_update_body["data"]["title"],
+        "Updated Ward Round Note"
+    );
+    assert_eq!(
+        template_update_body["data"]["body_template"],
+        "Updated SOAP structure"
+    );
+
+    let template_delete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/v2/clinical/note-templates/{template_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("template delete succeeds");
+    assert_eq!(template_delete.status(), StatusCode::OK);
+    let template_delete_body = json_body(template_delete).await;
+    assert_eq!(template_delete_body["data"]["is_active"], false);
+
+    let templates_after_delete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/clinical/note-templates")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("template list after delete succeeds");
+    assert_eq!(templates_after_delete.status(), StatusCode::OK);
+    let templates_after_delete_body = json_body(templates_after_delete).await;
+    assert!(!templates_after_delete_body["data"]
+        .as_array()
+        .expect("template list is an array")
+        .iter()
+        .any(|template| template["id"] == template_id));
+
     let note_response = app
         .clone()
         .oneshot(
