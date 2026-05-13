@@ -450,14 +450,18 @@ export const clinicalNotesApi = {
    * Get available template categories
    * @returns {Promise<Array>} List of category options
    */
-  getTemplateCategories: async () => {
+  getTemplateCategories: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const templates = await clinicalNotesApi.getNoteTemplates();
+        const templates = await clinicalNotesApi.getNoteTemplates({}, options);
         return [...new Set(templates.map((template) => template.note_type).filter(Boolean))];
       }
-      return await apiClient.get('/clinical-notes/templates/categories/');
+      return await apiClient.get('/clinical-notes/templates/categories/', options);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch template categories'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch template categories'));
     }
   },
@@ -534,13 +538,14 @@ export const clinicalNotesApi = {
    * @param {string} id - Note entry ID
    * @returns {Promise<Array>} List of sections with preview info
    */
-  getNoteEntrySections: async (id) => {
+  getNoteEntrySections: async (id, options = {}) => {
     if (isRustV2ApiMode()) {
       return [];
     }
     try {
-      return await apiClient.get(`/clinical-notes/entries/${id}/sections/`);
+      return await apiClient.get(`/clinical-notes/entries/${id}/sections/`, options);
     } catch (error) {
+      rethrowAbortError(error);
       throw new Error(handleApiError(error, 'Failed to fetch note sections'));
     }
   },
