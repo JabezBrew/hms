@@ -6,7 +6,7 @@ import { useConsultationWorkflow } from '../useConsultationWorkflow';
 import { useDischargeWorkflow as useDischargeWorkflowState } from '../useDischargeWorkflow';
 import { useNoteWorkflow } from '../useNoteWorkflow';
 import { useWardRoundWorkflow as useWardRoundWorkflowState } from '../useWardRoundWorkflow';
-import { useWorkflow } from '../useWorkflow';
+import { useDraftWorkflows, useWorkflow } from '../useWorkflow';
 import {
   useDischargeWorkflow,
   useWardRoundWorkflow,
@@ -161,5 +161,64 @@ describe('Rust V2 workflow guards', () => {
     expect(result.current.currentStep).toBe(1);
     expect(result.current.error).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('workflow query cancellation outside Rust V2 mode', () => {
+  const originalFetch = globalThis.fetch;
+  const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__;
+
+  beforeEach(() => {
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+      apiMode: 'django',
+      apiBaseUrl: 'http://localhost:8000/api',
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'workflow-1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    __resetV2ApiClientForTests();
+  });
+
+  afterEach(() => {
+    __resetV2ApiClientForTests();
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = originalRuntimeConfig;
+    globalThis.fetch = originalFetch;
+  });
+
+  it('threads React Query AbortSignal through generic workflow detail reads', async () => {
+    const { result } = renderHook(() => useWorkflow('ward-round'), {
+      wrapper: createWrapper(),
+    });
+
+    act(() => {
+      result.current.loadWorkflow('workflow-1');
+    });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+
+    expect(globalThis.fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('threads React Query AbortSignal through draft workflow reads', async () => {
+    renderHook(() => useDraftWorkflows({ patient: 'patient-1' }), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+
+    expect(globalThis.fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('threads React Query AbortSignal through workflow detail query helpers', async () => {
+    renderHook(() => useWorkflowDetail('workflow-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+
+    expect(globalThis.fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 });

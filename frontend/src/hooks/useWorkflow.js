@@ -22,9 +22,9 @@ export function useWorkflow(workflowType) {
   // Fetch workflow by ID
   const { data: workflow, isLoading, error } = useQuery({
     queryKey: workflowKeys.detail(workflowId),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       ensureRustV2WorkflowSupported('Workflow detail');
-      return apiClient.get(`/workflows/${workflowId}/`);
+      return apiClient.get(`/workflows/${workflowId}/`, { signal });
     },
     enabled: !!workflowId,
   });
@@ -170,10 +170,10 @@ export function useWorkflow(workflowType) {
 export function useDraftWorkflows(filters = {}) {
   return useQuery({
     queryKey: workflowKeys.drafts(filters),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       ensureRustV2WorkflowSupported('Draft workflows');
       const params = new URLSearchParams(filters);
-      return apiClient.get(`/workflows/resume/?${params.toString()}`);
+      return apiClient.get(`/workflows/resume/?${params.toString()}`, { signal });
     },
   });
 }

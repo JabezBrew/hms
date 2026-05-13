@@ -154,9 +154,9 @@ export function useDischargeWorkflow() {
 export function useWorkflowDetail(workflowId) {
   return useQuery({
     queryKey: workflowKeys.detail(workflowId),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       ensureRustV2WorkflowSupported('Workflow detail');
-      return apiClient.get(`/workflows/${workflowId}/`);
+      return apiClient.get(`/workflows/${workflowId}/`, { signal });
     },
     enabled: !!workflowId,
   });
