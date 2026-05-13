@@ -678,7 +678,7 @@ export function useMarkBatchAsDisposed() {
 export function useRequisitions(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.requisitionList(filters),
-    queryFn: () => inventoryApi.getRequisitions(filters),
+    queryFn: ({ signal }) => inventoryApi.getRequisitions({ ...filters, signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -691,7 +691,7 @@ export function useRequisitions(filters = {}) {
 export function useRequisition(id) {
   return useQuery({
     queryKey: inventoryKeys.requisitionDetail(id),
-    queryFn: () => inventoryApi.getRequisition(id),
+    queryFn: ({ signal }) => inventoryApi.getRequisition(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });
@@ -829,7 +829,7 @@ export function useConvertRequisitionToPO() {
 export function usePurchaseOrders(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.purchaseOrderList(filters),
-    queryFn: () => inventoryApi.getPurchaseOrders(filters),
+    queryFn: ({ signal }) => inventoryApi.getPurchaseOrders({ ...filters, signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -842,7 +842,7 @@ export function usePurchaseOrders(filters = {}) {
 export function usePurchaseOrder(id) {
   return useQuery({
     queryKey: inventoryKeys.purchaseOrderDetail(id),
-    queryFn: () => inventoryApi.getPurchaseOrder(id),
+    queryFn: ({ signal }) => inventoryApi.getPurchaseOrder(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });
@@ -943,7 +943,7 @@ export function useSendPurchaseOrder() {
 export function useGRNs(filters = {}) {
   return useQuery({
     queryKey: inventoryKeys.grnList(filters),
-    queryFn: () => inventoryApi.getGRNs(filters),
+    queryFn: ({ signal }) => inventoryApi.getGRNs({ ...filters, signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -956,7 +956,7 @@ export function useGRNs(filters = {}) {
 export function useGRN(id) {
   return useQuery({
     queryKey: inventoryKeys.grnDetail(id),
-    queryFn: () => inventoryApi.getGRN(id),
+    queryFn: ({ signal }) => inventoryApi.getGRN(id, { signal }),
     enabled: !!id,
     staleTime: 60 * 1000,
   });

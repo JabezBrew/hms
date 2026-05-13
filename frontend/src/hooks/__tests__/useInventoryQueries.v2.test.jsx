@@ -5,10 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   useExpiredBatches,
   useExpiringSoonBatches,
+  useGRN,
+  useGRNs,
   useInventoryItem,
   useItemExpiryTrackers,
   useItemMovements,
   useItemStockByLocation,
+  usePurchaseOrder,
+  usePurchaseOrders,
+  useRequisition,
+  useRequisitions,
   useStockMovements,
 } from '../useInventoryQueries';
 import { inventoryApi } from '@/features/inventory/api';
@@ -17,10 +23,16 @@ vi.mock('@/features/inventory/api', () => ({
   inventoryApi: {
     getExpiredBatches: vi.fn(),
     getExpiringSoonBatches: vi.fn(),
+    getGRN: vi.fn(),
+    getGRNs: vi.fn(),
     getInventoryItem: vi.fn(),
     getItemExpiryTrackers: vi.fn(),
     getItemMovements: vi.fn(),
     getItemStockByLocation: vi.fn(),
+    getPurchaseOrder: vi.fn(),
+    getPurchaseOrders: vi.fn(),
+    getRequisition: vi.fn(),
+    getRequisitions: vi.fn(),
     getStockMovements: vi.fn(),
   },
 }));
@@ -45,10 +57,16 @@ describe('useInventoryQueries Rust V2 behavior', () => {
     vi.clearAllMocks();
     inventoryApi.getExpiredBatches.mockResolvedValue([]);
     inventoryApi.getExpiringSoonBatches.mockResolvedValue([]);
+    inventoryApi.getGRN.mockResolvedValue({});
+    inventoryApi.getGRNs.mockResolvedValue({ results: [] });
     inventoryApi.getInventoryItem.mockResolvedValue({});
     inventoryApi.getItemExpiryTrackers.mockResolvedValue([]);
     inventoryApi.getItemMovements.mockResolvedValue({ results: [] });
     inventoryApi.getItemStockByLocation.mockResolvedValue([]);
+    inventoryApi.getPurchaseOrder.mockResolvedValue({});
+    inventoryApi.getPurchaseOrders.mockResolvedValue({ results: [] });
+    inventoryApi.getRequisition.mockResolvedValue({});
+    inventoryApi.getRequisitions.mockResolvedValue({ results: [] });
     inventoryApi.getStockMovements.mockResolvedValue({ results: [] });
   });
 
@@ -93,6 +111,41 @@ describe('useInventoryQueries Rust V2 behavior', () => {
         signal: expect.any(AbortSignal),
       });
       expect(inventoryApi.getExpiringSoonBatches).toHaveBeenCalledWith(45, {
+        signal: expect.any(AbortSignal),
+      });
+    });
+  });
+
+  it('threads React Query AbortSignal into inventory procurement reads', async () => {
+    const wrapper = createWrapper();
+
+    renderHook(() => useRequisitions({ status: 'pending' }), { wrapper });
+    renderHook(() => useRequisition('req-1'), { wrapper });
+    renderHook(() => usePurchaseOrders({ status: 'approved' }), { wrapper });
+    renderHook(() => usePurchaseOrder('po-1'), { wrapper });
+    renderHook(() => useGRNs({ status: 'received' }), { wrapper });
+    renderHook(() => useGRN('grn-1'), { wrapper });
+
+    await waitFor(() => {
+      expect(inventoryApi.getRequisitions).toHaveBeenCalledWith({
+        status: 'pending',
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getRequisition).toHaveBeenCalledWith('req-1', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getPurchaseOrders).toHaveBeenCalledWith({
+        status: 'approved',
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getPurchaseOrder).toHaveBeenCalledWith('po-1', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getGRNs).toHaveBeenCalledWith({
+        status: 'received',
+        signal: expect.any(AbortSignal),
+      });
+      expect(inventoryApi.getGRN).toHaveBeenCalledWith('grn-1', {
         signal: expect.any(AbortSignal),
       });
     });

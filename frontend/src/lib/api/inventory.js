@@ -1275,6 +1275,7 @@ export const inventoryApi = {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getStockRequisitions({
           query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
         });
         return adaptV2PaginatedList(response, params, adaptV2Requisition);
       }
@@ -1283,6 +1284,9 @@ export const inventoryApi = {
       const endpoint = `/inventory/requisitions/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch requisitions'));
       }
@@ -1476,6 +1480,7 @@ export const inventoryApi = {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getPurchaseOrders({
           query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
         });
         return adaptV2PaginatedList(response, params, adaptV2PurchaseOrder);
       }
@@ -1484,6 +1489,9 @@ export const inventoryApi = {
       const endpoint = `/inventory/purchase-orders/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch purchase orders'));
       }
@@ -1630,6 +1638,7 @@ export const inventoryApi = {
       if (isRustV2ApiMode()) {
         const response = await v2Api.getGoodsReceivedNotes({
           query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
         });
         return adaptV2PaginatedList(response, params, adaptV2GoodsReceivedNote);
       }
@@ -1638,6 +1647,9 @@ export const inventoryApi = {
       const endpoint = `/inventory/grns/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to fetch GRNs'));
       }

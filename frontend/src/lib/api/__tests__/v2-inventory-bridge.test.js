@@ -305,6 +305,42 @@ describe('Rust V2 inventory bridge', () => {
     ).rejects.toBe(abortError);
   });
 
+  it('threads AbortSignal into Rust V2 procurement list reads', async () => {
+    const controller = new AbortController();
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'req-1', status: 'requested' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'po-1', status: 'approved' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: 'grn-1', status: 'received' }],
+        page: { limit: 20, has_next: false, next_cursor: null },
+        meta: {},
+      }));
+
+    await expect(inventoryApi.getRequisitions({ signal: controller.signal })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'req-1' })],
+    });
+    await expect(inventoryApi.getPurchaseOrders({ signal: controller.signal })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'po-1' })],
+    });
+    await expect(inventoryApi.getGRNs({ signal: controller.signal })).resolves.toMatchObject({
+      results: [expect.objectContaining({ id: 'grn-1' })],
+    });
+
+    expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.signal])).toEqual([
+      ['http://localhost:8080/api/v2/inventory/requisitions?limit=20', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/purchase-orders?limit=20', 'GET', controller.signal],
+      ['http://localhost:8080/api/v2/inventory/goods-received-notes?limit=20', 'GET', controller.signal],
+    ]);
+  });
+
   it('routes inventory list pages through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'cat-1', name: 'Medication' }], meta: {} }))
