@@ -311,6 +311,73 @@ describe('Rust V2 appointments bridge', () => {
     });
   });
 
+  it('maps arrived status updates to the Rust visit check-in contract', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'appointment-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-MAIN-2026-000001',
+              patient_display_name: 'Ama Mensah',
+              starts_at: '2026-05-12T09:00:00Z',
+              ends_at: '2026-05-12T09:30:00Z',
+              status: 'scheduled',
+              created_at: '2026-05-11T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'visit-1',
+              patient_id: 'patient-1',
+              patient_code: 'MRN-MAIN-2026-000001',
+              patient_display_name: 'Ama Mensah',
+              appointment_id: 'appointment-1',
+              clinic_id: null,
+              status: 'waiting',
+              checked_in_at: '2026-05-12T08:55:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const response = await appointmentsApi.updateAppointmentStatus('appointment-1', 'arrived');
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/visits/check-in',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          patient_id: 'patient-1',
+          appointment_id: 'appointment-1',
+          clinic_id: null,
+        }),
+      }),
+    );
+    expect(response).toMatchObject({
+      id: 'visit-1',
+      appointment: 'appointment-1',
+      patient: 'patient-1',
+      visit_status: 'waiting',
+    });
+  });
+
   it('does not fall back to legacy schedule mappings when Rust V2 has no generated contract', async () => {
     await expect(
       appointmentsApi.getScheduleMappings({ clinic_id: 'clinic-1' }),

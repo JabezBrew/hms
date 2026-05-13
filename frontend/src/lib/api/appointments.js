@@ -609,6 +609,9 @@ export const appointmentsApi = {
         if (status === 'cancelled') {
           return appointmentsApi.cancelAppointment(id);
         }
+        if (status === 'arrived' || status === 'checked_in') {
+          return appointmentsApi.checkInAppointment(id);
+        }
         throw unsupportedInRustV2('Rust V2 only supports appointment cancellation as a direct status transition.');
       }
 
