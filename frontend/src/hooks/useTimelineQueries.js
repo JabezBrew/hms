@@ -488,7 +488,11 @@ export function usePrefetchTimelinePage(patientId, options, currentPage) {
   const prefetchNextPage = () => {
     queryClient.prefetchQuery({
       queryKey: timelineKeys.filtered(patientId, { ...options, page: currentPage + 1 }),
-      queryFn: () => fetchTimelinePage(patientId, { ...options, page: currentPage + 1 }),
+      queryFn: ({ signal }) => fetchTimelinePage(
+        patientId,
+        { ...options, page: currentPage + 1 },
+        { signal },
+      ),
     });
   };
 
@@ -553,12 +557,16 @@ export function usePatientTimelineSimple(patientId, options = {}) {
 
   return useQuery({
     queryKey: timelineKeys.filtered(patientId, { type, search, pageSize, page, simple: true }),
-    queryFn: () => fetchTimelinePage(patientId, {
-      type,
-      search,
-      page,
-      page_size: pageSize,
-    }),
+    queryFn: ({ signal }) => fetchTimelinePage(
+      patientId,
+      {
+        type,
+        search,
+        page,
+        page_size: pageSize,
+      },
+      { signal },
+    ),
     enabled: !!patientId && enabled,
     staleTime: 30000,
     select: (data) => data.results || [],
