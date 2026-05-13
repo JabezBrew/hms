@@ -149,7 +149,7 @@ export function useInvoices(filters = {}) {
 export function useInvoice(id) {
   return useQuery({
     queryKey: billingKeys.invoiceDetail(id),
-    queryFn: () => billingApi.getInvoice(id),
+    queryFn: ({ signal }) => billingApi.getInvoice(id, { signal }),
     enabled: !!id,
   });
 }
@@ -286,7 +286,7 @@ export function useClaims(filters = {}) {
 export function useClaim(id) {
   return useQuery({
     queryKey: billingKeys.claimDetail(id),
-    queryFn: () => billingApi.getClaim(id),
+    queryFn: ({ signal }) => billingApi.getClaim(id, { signal }),
     enabled: !!id,
   });
 }
@@ -623,7 +623,7 @@ export function useBillingRules(filters = {}) {
 export function useBillingRule(id) {
   return useQuery({
     queryKey: billingKeys.billingRuleDetail(id),
-    queryFn: () => billingApi.getBillingRule(id),
+    queryFn: ({ signal }) => billingApi.getBillingRule(id, { signal }),
     enabled: !!id,
   });
 }
