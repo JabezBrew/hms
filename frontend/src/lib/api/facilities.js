@@ -20,11 +20,16 @@ function adaptV2FacilitiesResponse(response, includeInactive) {
 }
 
 export const facilitiesApi = {
-  listFacilities: async ({ includeInactive = false } = {}) => {
+  listFacilities: async ({ includeInactive = false, signal } = {}) => {
     try {
       if (isRustV2ApiMode()) {
+        const query = { unit_type: "facility" };
+        if (!includeInactive) {
+          query.is_active = true;
+        }
         const response = await v2Api.getAdminOrgUnits({
-          query: { limit: 100 },
+          query,
+          signal,
         });
         return adaptV2FacilitiesResponse(response, includeInactive);
       }

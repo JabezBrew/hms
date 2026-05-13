@@ -8,9 +8,9 @@ use hms_domain::admin::{
     CommitteeListItem, CreateAuthorityAppointmentRequest, CreateCommitteeRequest,
     CreateDelegationRequest, CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest,
     CreatePositionRequest, CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
-    FeatureEntitlementListItem, OrganizationUnitListItem, PermissionAssignmentListItem,
-    PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
-    StaffListItem, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
+    FeatureEntitlementListItem, OrganizationUnitListItem, OrganizationUnitListQuery,
+    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
+    StaffDirectoryItem, StaffListItem, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
     UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::AuthUser;
@@ -30,16 +30,21 @@ const MAX_NAME_LEN: usize = 160;
 const MAX_TEXT_LEN: usize = 240;
 const MAX_EMAIL_LEN: usize = 254;
 
-#[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+#[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(OrganizationUnitListQuery), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_org_units(
     State(state): State<AppState>,
     AuthenticatedUser(user): AuthenticatedUser,
-    Query(query): Query<AdminListQuery>,
+    Query(query): Query<OrganizationUnitListQuery>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
+    let unit_type = query.unit_type;
+    let is_active = query.is_active;
+    let (cursor, page_size) = page_request(AdminListQuery {
+        cursor: query.cursor,
+        limit: query.limit,
+    })?;
     let rows = state
-        .list_organization_units(cursor, page_size as i64 + 1)
+        .list_organization_units(cursor, page_size as i64 + 1, unit_type, is_active)
         .await
         .map_err(|_| {
             ApiError::conflict(

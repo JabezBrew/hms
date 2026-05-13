@@ -598,6 +598,25 @@ async fn seed_admin_authority_baseline(
     pool: &PgPool,
     baseline: &BaselineProvisioning,
 ) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO organization_units (id, facility_id, code, name, unit_type)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (facility_id, code) DO UPDATE
+        SET id = EXCLUDED.id,
+            name = EXCLUDED.name,
+            unit_type = EXCLUDED.unit_type,
+            is_active = TRUE
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(baseline.facility_id)
+    .bind(&baseline.facility_code)
+    .bind(&baseline.facility_name)
+    .bind(codec::encode(OrgUnitType::Facility)?)
+    .execute(pool)
+    .await?;
+
     for (id, code, name, unit_type) in [
         (
             DEFAULT_ORG_UNIT_ADMIN_ID,

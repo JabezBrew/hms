@@ -12,6 +12,14 @@ pub struct AdminListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct OrganizationUnitListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub unit_type: Option<OrgUnitType>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 pub struct AdminLimitQuery {
     pub limit: Option<u8>,
 }

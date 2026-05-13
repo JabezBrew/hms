@@ -269,6 +269,8 @@ pub async fn list_organization_units(
     facility_id: Uuid,
     cursor: Option<AdminCursor>,
     limit: i64,
+    unit_type: Option<OrgUnitType>,
+    is_active: Option<bool>,
 ) -> anyhow::Result<Vec<OrganizationUnitListItem>> {
     let mut query = QueryBuilder::new(
         "SELECT organization_units.id,
@@ -284,6 +286,14 @@ pub async fn list_organization_units(
          WHERE organization_units.facility_id = ",
     );
     query.push_bind(facility_id);
+    if let Some(unit_type) = unit_type {
+        query.push(" AND organization_units.unit_type = ");
+        query.push_bind(codec::encode(unit_type)?);
+    }
+    if let Some(is_active) = is_active {
+        query.push(" AND organization_units.is_active = ");
+        query.push_bind(is_active);
+    }
     append_cursor(
         &mut query,
         "organization_units.created_at",

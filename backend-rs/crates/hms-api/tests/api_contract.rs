@@ -4232,6 +4232,28 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
     );
     assert!(units_body["page"]["limit"].as_u64().unwrap() <= 5);
 
+    let facility_units = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/org-units?unit_type=facility&is_active=true&limit=10")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("facility org units list succeeds");
+    assert_eq!(facility_units.status(), StatusCode::OK);
+    let facility_units_body = json_body(facility_units).await;
+    let facility_units_data = facility_units_body["data"]
+        .as_array()
+        .expect("facility units are array");
+    assert!(!facility_units_data.is_empty());
+    assert!(facility_units_data.iter().all(|unit| {
+        unit["unit_type"] == "facility" && unit["is_active"].as_bool() == Some(true)
+    }));
+
     let org_unit = app
         .clone()
         .oneshot(

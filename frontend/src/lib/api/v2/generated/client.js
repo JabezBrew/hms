@@ -128,7 +128,9 @@ export const operations = {
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
-      "limit"
+      "limit",
+      "unit_type",
+      "is_active"
     ],
     "hasBody": false
   },

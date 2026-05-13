@@ -17087,6 +17087,32 @@
                 "null"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "unit_type",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/OrgUnitType"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {

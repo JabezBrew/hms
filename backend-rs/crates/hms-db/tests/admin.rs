@@ -1,6 +1,7 @@
 use chrono::NaiveDate;
-use hms_db::admin::{NewPractitionerProfile, NewStaffAccount};
+use hms_db::admin::{NewOrganizationUnit, NewPractitionerProfile, NewStaffAccount};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_domain::admin::OrgUnitType;
 use hms_domain::deployment::{DeploymentProfile, FeatureKey};
 use uuid::Uuid;
 
@@ -69,6 +70,77 @@ async fn feature_entitlements_are_facility_scoped_and_override_profile_defaults(
             .expect("cross-facility list succeeds")
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn organization_unit_lists_can_filter_by_type_and_active_state() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+
+    let inactive_facility = hms_db::admin::create_organization_unit(
+        &pool,
+        NewOrganizationUnit {
+            facility_id,
+            code: "OLD_FACILITY".to_owned(),
+            name: "Closed Facility".to_owned(),
+            unit_type: OrgUnitType::Facility,
+            parent_unit_id: None,
+        },
+    )
+    .await
+    .expect("inactive facility unit is created");
+    hms_db::admin::create_organization_unit(
+        &pool,
+        NewOrganizationUnit {
+            facility_id,
+            code: "SUPPORT_DEPT".to_owned(),
+            name: "Support Department".to_owned(),
+            unit_type: OrgUnitType::Department,
+            parent_unit_id: None,
+        },
+    )
+    .await
+    .expect("department unit is created");
+    sqlx::query("UPDATE organization_units SET is_active = false WHERE id = $1")
+        .bind(inactive_facility.id)
+        .execute(&pool)
+        .await
+        .expect("facility can be marked inactive");
+
+    let facility_units = hms_db::admin::list_organization_units(
+        &pool,
+        facility_id,
+        None,
+        100,
+        Some(OrgUnitType::Facility),
+        Some(true),
+    )
+    .await
+    .expect("facility units list");
+
+    assert!(!facility_units.is_empty());
+    assert!(facility_units
+        .iter()
+        .all(|unit| unit.unit_type == OrgUnitType::Facility && unit.is_active));
+    assert!(!facility_units
+        .iter()
+        .any(|unit| unit.id == inactive_facility.id));
 }
 
 #[tokio::test]

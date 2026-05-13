@@ -26,7 +26,8 @@ describe('Rust V2 facilities bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('lists active facilities from Rust organization units without calling the old facilities endpoint', async () => {
+  it('lists active facilities from Rust organization units with server-side filters', async () => {
+    const controller = new AbortController();
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -39,24 +40,8 @@ describe('Rust V2 facilities bridge', () => {
               is_active: true,
               created_at: '2026-05-12T09:00:00Z',
             },
-            {
-              id: 'facility-2',
-              code: 'OLD',
-              name: 'Closed Site',
-              unit_type: 'facility',
-              is_active: false,
-              created_at: '2026-05-12T09:00:00Z',
-            },
-            {
-              id: 'department-1',
-              code: 'LAB',
-              name: 'Laboratory',
-              unit_type: 'department',
-              is_active: true,
-              created_at: '2026-05-12T09:00:00Z',
-            },
           ],
-          page: { limit: 100, has_next: false, next_cursor: null },
+          page: { limit: 25, has_next: false, next_cursor: null },
           meta: {},
         }),
         {
@@ -66,13 +51,14 @@ describe('Rust V2 facilities bridge', () => {
       ),
     );
 
-    const response = await facilitiesApi.listFacilities();
+    const response = await facilitiesApi.listFacilities({ signal: controller.signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/admin/org-units?limit=100',
+      'http://localhost:8080/api/v2/admin/org-units?unit_type=facility&is_active=true',
       expect.objectContaining({
         method: 'GET',
         credentials: 'include',
+        signal: controller.signal,
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
           'X-Facility-Code': 'HMS',
@@ -122,6 +108,11 @@ describe('Rust V2 facilities bridge', () => {
     );
 
     const response = await facilitiesApi.listFacilities({ includeInactive: true });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/admin/org-units?unit_type=facility',
+      expect.any(Object),
+    );
 
     expect(response.map((facility) => facility.code)).toEqual(['HMS', 'OLD']);
   });

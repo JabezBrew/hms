@@ -46,9 +46,9 @@ use hms_domain::admin::{
     CreateAuthorityAppointmentRequest, CreateCommitteeRequest, CreateDelegationRequest,
     CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest, CreatePositionRequest,
     CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
-    FeatureEntitlementListItem, OrganizationUnitListItem, PermissionAssignmentListItem,
-    PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
-    StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
+    FeatureEntitlementListItem, OrgUnitType, OrganizationUnitListItem,
+    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
+    StaffDirectoryItem, StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
@@ -732,9 +732,18 @@ impl AppState {
         &self,
         cursor: Option<AdminCursor>,
         limit: i64,
+        unit_type: Option<OrgUnitType>,
+        is_active: Option<bool>,
     ) -> Result<Vec<OrganizationUnitListItem>> {
-        hms_db::admin::list_organization_units(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
+        hms_db::admin::list_organization_units(
+            &self.inner.pool,
+            self.facility_id(),
+            cursor,
+            limit,
+            unit_type,
+            is_active,
+        )
+        .await
     }
 
     pub async fn create_organization_unit(
