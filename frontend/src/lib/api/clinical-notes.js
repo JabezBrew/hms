@@ -287,13 +287,18 @@ export const clinicalNotesApi = {
    * @param {string} id - Note entry ID
    * @returns {Promise<Object>} Note entry data
    */
-  getNoteEntry: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw new Error('Clinical note entry lookup by note id is not supported by Rust V2');
-    }
+  getNoteEntry: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getClinicalNoteById({ note_id: id }, { signal: options.signal });
+        return adaptV2Note(response?.data, response?.data?.body);
+      }
       return await apiClient.get(`/clinical-notes/entries/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch note entry'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch note entry'));
     }
   },

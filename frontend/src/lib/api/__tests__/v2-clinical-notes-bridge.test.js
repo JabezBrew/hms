@@ -241,6 +241,50 @@ describe('Rust V2 clinical notes bridge', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it('loads a note entry detail through Rust /api/v2 with patient access enforced server-side', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'note-1',
+            patient_id: 'patient-1',
+            note_type: 'consultation',
+            title: 'Initial consult',
+            body: JSON.stringify({ assessment: 'Upper respiratory infection' }),
+            status: 'draft',
+            version: 1,
+            updated_at: '2026-05-12T09:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const note = await clinicalNotesApi.getNoteEntry('note-1', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/notes/note-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    );
+    expect(note).toEqual(
+      expect.objectContaining({
+        id: 'note-1',
+        patient: 'patient-1',
+        patient_id: 'patient-1',
+        data: { assessment: 'Upper respiratory infection' },
+      }),
+    );
+  });
+
   it('creates patient notes through Rust /api/v2 and serializes structured note data into the body', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(

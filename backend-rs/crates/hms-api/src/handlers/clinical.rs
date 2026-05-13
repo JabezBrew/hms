@@ -6,11 +6,11 @@ use hms_db::clinical::ClinicalCursor;
 use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
-    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteListItem,
-    ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest, CreateChartEntryRequest,
-    CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest,
-    CreatePrescriptionRequest, CreateProblemRequest, PrescriptionListItem, ProblemListItem,
-    UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
+    AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
+    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, CreateAllergyRequest,
+    CreateChartEntryRequest, CreateClinicalNoteRequest, CreateClinicalNoteTemplateRequest,
+    CreateClinicalNoteVersionRequest, CreatePrescriptionRequest, CreateProblemRequest,
+    PrescriptionListItem, ProblemListItem, UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -271,6 +271,48 @@ pub async fn create_note(
                 "clinical_note_create_failed",
                 "Clinical note could not be created.",
             )
+        })?;
+
+    Ok(Json(object(note)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/clinical/notes/{note_id}",
+    operation_id = "getClinicalNoteById",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("note_id" = Uuid, Path, description = "Clinical note id")),
+    responses(
+        (status = 200, description = "Clinical note detail", body = ObjectResponse<ClinicalNoteDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinical note not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_note(
+    State(state): State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(note_id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ClinicalNoteDetail>>, ApiError> {
+    let _note_context = load_note_for_access(
+        &state,
+        &user,
+        note_id,
+        PermissionCode::ClinicalDocumentationView,
+    )
+    .await?;
+    let note = state
+        .get_clinical_note_detail(note_id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_note_load_failed",
+                "Clinical note could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("clinical_note_not_found", "Clinical note was not found.")
         })?;
 
     Ok(Json(object(note)))

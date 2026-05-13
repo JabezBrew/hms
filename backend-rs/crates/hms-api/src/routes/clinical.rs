@@ -22,6 +22,7 @@ pub fn routes() -> Router<AppState> {
             "/api/v2/clinical/notes/:note_id/versions",
             get(clinical::list_note_versions).post(clinical::create_note_version),
         )
+        .route("/api/v2/clinical/notes/:note_id", get(clinical::get_note))
         .route(
             "/api/v2/patients/:patient_id/clinical/problems",
             get(clinical::list_problems).post(clinical::create_problem),

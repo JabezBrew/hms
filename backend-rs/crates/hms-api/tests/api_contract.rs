@@ -1488,6 +1488,26 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .expect("clinical note id exists");
     assert_eq!(note_body["data"]["status"], "draft");
 
+    let note_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/clinical/notes/{note_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinical note detail succeeds");
+    assert_eq!(note_detail.status(), StatusCode::OK);
+    let note_detail_body = json_body(note_detail).await;
+    assert_eq!(note_detail_body["data"]["id"], note_id);
+    assert_eq!(
+        note_detail_body["data"]["body"],
+        "History recorded. Assessment and plan captured."
+    );
+
     let notes = app
         .clone()
         .oneshot(

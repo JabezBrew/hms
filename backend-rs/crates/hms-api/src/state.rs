@@ -64,9 +64,10 @@ use hms_domain::care::{
     VisitListItem, VisitStatus,
 };
 use hms_domain::clinical::{
-    AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteListItem,
-    ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem,
-    ProblemListItem, ProblemStatus, UpdateClinicalNoteTemplateRequest, UpdateProblemRequest,
+    AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
+    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary,
+    PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateClinicalNoteTemplateRequest,
+    UpdateProblemRequest,
 };
 use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{DashboardSnapshot, NotificationListItem, RealtimeChannelKind};
@@ -1343,6 +1344,13 @@ impl AppState {
 
     pub async fn get_clinical_note_context(&self, note_id: Uuid) -> Result<Option<NoteContext>> {
         hms_db::clinical::get_note_context(&self.inner.pool, self.facility_id(), note_id).await
+    }
+
+    pub async fn get_clinical_note_detail(
+        &self,
+        note_id: Uuid,
+    ) -> Result<Option<ClinicalNoteDetail>> {
+        hms_db::clinical::get_note_detail(&self.inner.pool, self.facility_id(), note_id).await
     }
 
     pub async fn list_clinical_note_versions(

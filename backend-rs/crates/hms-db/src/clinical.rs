@@ -1,9 +1,9 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
-    ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate, ClinicalNoteVersion,
-    PatientChronicleSummary, PrescriptionListItem, PrescriptionStatus, ProblemListItem,
-    ProblemStatus, UpdateProblemRequest,
+    ClinicalNoteDetail, ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate,
+    ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem, PrescriptionStatus,
+    ProblemListItem, ProblemStatus, UpdateProblemRequest,
 };
 use hms_domain::patients::PatientDetail;
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -111,6 +111,18 @@ struct NoteRow {
     patient_id: Uuid,
     note_type: String,
     title: String,
+    status: String,
+    version: i64,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct NoteDetailRow {
+    id: Uuid,
+    patient_id: Uuid,
+    note_type: String,
+    title: String,
+    body: String,
     status: String,
     version: i64,
     updated_at: DateTime<Utc>,
@@ -362,6 +374,25 @@ pub async fn get_note_context(
         id: row.id,
         patient_id: row.patient_id,
     }))
+}
+
+pub async fn get_note_detail(
+    pool: &PgPool,
+    facility_id: Uuid,
+    note_id: Uuid,
+) -> anyhow::Result<Option<ClinicalNoteDetail>> {
+    let row = sqlx::query_as::<_, NoteDetailRow>(
+        r#"
+        SELECT id, patient_id, note_type, title, body, status, version, updated_at
+        FROM clinical_notes
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(note_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(note_detail_from_row).transpose()
 }
 
 pub async fn list_note_versions(
@@ -780,6 +811,19 @@ fn note_from_row(row: NoteRow) -> anyhow::Result<ClinicalNoteListItem> {
         patient_id: row.patient_id,
         note_type: row.note_type,
         title: row.title,
+        status: codec::decode(&row.status)?,
+        version: row.version,
+        updated_at: row.updated_at,
+    })
+}
+
+fn note_detail_from_row(row: NoteDetailRow) -> anyhow::Result<ClinicalNoteDetail> {
+    Ok(ClinicalNoteDetail {
+        id: row.id,
+        patient_id: row.patient_id,
+        note_type: row.note_type,
+        title: row.title,
+        body: row.body,
         status: codec::decode(&row.status)?,
         version: row.version,
         updated_at: row.updated_at,

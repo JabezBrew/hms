@@ -91,6 +91,18 @@ pub struct ClinicalNoteListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ClinicalNoteDetail {
+    pub id: Uuid,
+    pub patient_id: Uuid,
+    pub note_type: String,
+    pub title: String,
+    pub body: String,
+    pub status: ClinicalNoteStatus,
+    pub version: i64,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateClinicalNoteRequest {
     pub note_type: String,
     pub title: String,

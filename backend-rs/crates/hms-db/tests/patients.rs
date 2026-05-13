@@ -190,7 +190,7 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
     .await
     .expect("patient exists");
 
-    hms_db::clinical::create_note(
+    let note = hms_db::clinical::create_note(
         &pool,
         NewClinicalNote {
             id: uuid::Uuid::new_v4(),
@@ -204,6 +204,19 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
     )
     .await
     .expect("note is created");
+
+    let detail = hms_db::clinical::get_note_detail(&pool, facility_id, note.id)
+        .await
+        .expect("note detail query succeeds")
+        .expect("note exists in facility");
+    assert_eq!(detail.body, "Clinical summary body.");
+    assert!(
+        hms_db::clinical::get_note_detail(&pool, uuid::Uuid::new_v4(), note.id)
+            .await
+            .expect("cross-facility detail query succeeds")
+            .is_none()
+    );
+
     hms_db::clinical::create_problem(
         &pool,
         NewProblem {
