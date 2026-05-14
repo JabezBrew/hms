@@ -49,11 +49,13 @@ import {
   useUpdateAppointmentType,
   useDeleteAppointmentType
 } from '@/features/appointments/hooks/useAppointmentQueries';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 /**
  * Component for managing appointment types
  */
 const AppointmentTypeManager = () => {
+  const appointmentTypeMutationsAvailable = !isRustV2ApiMode();
   // Use React Query hooks
   const { 
     data: appointmentTypes = [], 
@@ -240,20 +242,31 @@ const AppointmentTypeManager = () => {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Appointment Types</h2>
-        <Button onClick={handleAddNew} className="flex items-center gap-1">
-          <PlusCircle className="h-4 w-4" />
-          Add New
-        </Button>
+        {appointmentTypeMutationsAvailable ? (
+          <Button onClick={handleAddNew} className="flex items-center gap-1">
+            <PlusCircle className="h-4 w-4" />
+            Add New
+          </Button>
+        ) : null}
       </div>
+
+      {!appointmentTypeMutationsAvailable ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Appointment type management is not available in Rust V2 yet. Existing default
+          types remain available for scheduling.
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="text-center py-4">Loading appointment types...</div>
       ) : appointmentTypes.length === 0 ? (
         <div className="text-center py-4 border rounded-md bg-muted/20">
           <p className="text-muted-foreground">No appointment types found.</p>
-          <Button onClick={handleAddNew} variant="outline" className="mt-2">
-            Create your first appointment type
-          </Button>
+          {appointmentTypeMutationsAvailable ? (
+            <Button onClick={handleAddNew} variant="outline" className="mt-2">
+              Create your first appointment type
+            </Button>
+          ) : null}
         </div>
       ) : (
         <Table>
@@ -265,7 +278,9 @@ const AppointmentTypeManager = () => {
               <TableHead>Color</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
+              {appointmentTypeMutationsAvailable ? (
+                <TableHead className="w-[100px]">Actions</TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -295,26 +310,28 @@ const AppointmentTypeManager = () => {
                   }
                 </TableCell>
                 <TableCell>{type.description}</TableCell>
-                <TableCell>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(type)}
-                      title="Edit"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(type.id)}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
+                {appointmentTypeMutationsAvailable ? (
+                  <TableCell>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(type)}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(type.id)}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                ) : null}
               </TableRow>
             ))}
           </TableBody>
