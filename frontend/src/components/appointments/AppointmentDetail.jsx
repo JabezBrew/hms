@@ -47,6 +47,7 @@ import {
   useUpdateAppointmentStatus,
   useDeleteAppointment
 } from '@/features/appointments/hooks/useAppointmentQueries';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 // Chronicle Design System status colors
 // Using amber for pending/proposed, emerald for confirmed, rose for cancelled, sky for info
@@ -340,6 +341,11 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
   const patient = getPatientDetails();
   const practitioner = getPractitionerDetails();
   const status = statusConfig[appointment.status] || statusConfig.pending;
+  const rustV2Mode = isRustV2ApiMode();
+  const canCheckInInRustV2 = rustV2Mode
+    && !['arrived', 'fulfilled', 'cancelled', 'noshow'].includes(appointment.status);
+  const canCancelInRustV2 = rustV2Mode
+    && !['cancelled', 'fulfilled'].includes(appointment.status);
 
   return (
     <div className="space-y-6 animate-chronicle-enter">
@@ -407,43 +413,91 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
             {/* Right: Quick Actions */}
             <div className="flex flex-wrap items-center gap-2">
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="font-mono text-xs"
-                    disabled={updateStatusMutation.isPending}
-                  >
-                    Change Status
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="font-display text-xl">Update Appointment Status</DialogTitle>
-                    <DialogDescription className="font-mono text-xs">
-                      Select a new status for this appointment.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid grid-cols-2 gap-3 py-4">
-                    {Object.entries(statusConfig).map(([key, config]) => (
-                      <Button
-                        key={key}
-                        variant="outline"
-                        className={cn(
-                          "justify-start font-mono text-xs",
-                          appointment.status === key && "ring-2 ring-primary"
-                        )}
-                        onClick={() => handleStatusUpdate(key)}
-                        disabled={appointment.status === key || updateStatusMutation.isPending}
+              {!rustV2Mode ? (
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs"
+                      disabled={updateStatusMutation.isPending}
+                    >
+                      Change Status
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle className="font-display text-xl">Update Appointment Status</DialogTitle>
+                      <DialogDescription className="font-mono text-xs">
+                        Select a new status for this appointment.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-3 py-4">
+                      {Object.entries(statusConfig).map(([key, config]) => (
+                        <Button
+                          key={key}
+                          variant="outline"
+                          className={cn(
+                            "justify-start font-mono text-xs",
+                            appointment.status === key && "ring-2 ring-primary"
+                          )}
+                          onClick={() => handleStatusUpdate(key)}
+                          disabled={appointment.status === key || updateStatusMutation.isPending}
+                        >
+                          <span className={cn("w-2 h-2 rounded-full mr-2", config.dot)} />
+                          {config.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              ) : null}
+
+              {canCheckInInRustV2 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs"
+                  onClick={() => handleStatusUpdate('arrived')}
+                  disabled={updateStatusMutation.isPending}
+                >
+                  <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                  Check In
+                </Button>
+              ) : null}
+
+              {canCancelInRustV2 ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={updateStatusMutation.isPending}
+                    >
+                      <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                      Cancel Appointment
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="font-display text-xl">Cancel Appointment</AlertDialogTitle>
+                      <AlertDialogDescription className="font-mono text-sm">
+                        This will cancel the appointment without deleting its schedule record.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="font-mono text-xs">Keep Appointment</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleStatusUpdate('cancelled')}
+                        className="font-mono text-xs bg-destructive hover:bg-destructive/90"
                       >
-                        <span className={cn("w-2 h-2 rounded-full mr-2", config.dot)} />
-                        {config.label}
-                      </Button>
-                    ))}
-                  </div>
-                </DialogContent>
-              </Dialog>
+                        Confirm Cancellation
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
 
               <Button
                 variant="outline"
@@ -455,37 +509,39 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                 Edit
               </Button>
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="font-display text-xl">Delete Appointment</AlertDialogTitle>
-                    <AlertDialogDescription className="font-mono text-sm">
+              {!rustV2Mode ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="font-display text-xl">Delete Appointment</AlertDialogTitle>
+                      <AlertDialogDescription className="font-mono text-sm">
 	                      This action cannot be undone. This will permanently delete the appointment
 	                      for {patient.name} on {startDate ? format(startDate, 'MMMM d, yyyy') : 'N/A'}.
 	                    </AlertDialogDescription>
 	                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="font-mono text-xs bg-destructive hover:bg-destructive/90"
-                    >
-                      {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        className="font-mono text-xs bg-destructive hover:bg-destructive/90"
+                      >
+                        {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
             </div>
           </div>
         </div>
