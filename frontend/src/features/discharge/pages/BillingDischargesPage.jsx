@@ -14,6 +14,7 @@ import { PageShell } from '@/shared/components/page/PageShell'
 import { PageState } from '@/shared/components/page/PageState'
 import { usePageMeta } from '@/shared/hooks/usePageMeta'
 import { useClearBilling, useDischargeCase, useDischargeCases, useUpdateBillingCutoff } from '@/features/discharge/hooks/useDischargeCaseQueries'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 
 function getBillingBlocker(item) {
   return (item?.blockers || []).find((task) => task.task_type === 'billing_clearance') || null
@@ -56,6 +57,7 @@ export default function BillingDischargesPage() {
   const { data: selectedCase } = useDischargeCase(selectedCaseId, { enabled: !!selectedCaseId })
   const updateBillingCutoff = useUpdateBillingCutoff()
   const clearBilling = useClearBilling()
+  const billingClearanceMutationsAvailable = !isRustV2ApiMode()
 
   const cases = useMemo(() => {
     const results = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []
@@ -151,34 +153,45 @@ export default function BillingDischargesPage() {
                       </div>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <Input
-                        type="datetime-local"
-                        value={draftValue}
-                        onChange={(event) => {
-                          setCutoffDrafts((current) => ({
-                            ...current,
-                            [item.id]: event.target.value,
-                          }))
-                        }}
-                      />
-                      <Button
-                        variant="outline"
-                        disabled={updateBillingCutoff.isPending || !draftValue}
-                        onClick={() => updateBillingCutoff.mutate({
-                          caseId: item.id,
-                          billingCutoffAt: new Date(draftValue).toISOString(),
-                        })}
-                      >
-                        Save Cutoff
-                      </Button>
-                      <Button
-                        disabled={clearBilling.isPending}
-                        onClick={() => clearBilling.mutate({ caseId: item.id })}
-                      >
-                        Clear Billing
-                      </Button>
-                    </div>
+                    {billingClearanceMutationsAvailable ? (
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                        <Input
+                          type="datetime-local"
+                          value={draftValue}
+                          onChange={(event) => {
+                            setCutoffDrafts((current) => ({
+                              ...current,
+                              [item.id]: event.target.value,
+                            }))
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          disabled={updateBillingCutoff.isPending || !draftValue}
+                          onClick={() => updateBillingCutoff.mutate({
+                            caseId: item.id,
+                            billingCutoffAt: new Date(draftValue).toISOString(),
+                          })}
+                        >
+                          Save Cutoff
+                        </Button>
+                        <Button
+                          disabled={clearBilling.isPending}
+                          onClick={() => clearBilling.mutate({ caseId: item.id })}
+                        >
+                          Clear Billing
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                        <p className="font-mono text-xs uppercase tracking-wide">
+                          Rust V2 discharge billing review
+                        </p>
+                        <p className="mt-1">
+                          Billing cutoff edits and billing clearance are not available in Rust V2 mode yet. Case detail review remains available.
+                        </p>
+                      </div>
+                    )}
 
                     <Button
                       variant="ghost"
