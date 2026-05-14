@@ -31,10 +31,13 @@ import {
 import { toast } from 'sonner';
 import format from 'date-fns/format';
 import { useDiscontinueTreatmentEntry } from '@/features/nursing/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 export function TreatmentSheetGrid({ entries, onUpdate, readOnly = false }) {
   const [discontinueDialog, setDiscontinueDialog] = useState({ open: false, entry: null });
   const [discontinueReason, setDiscontinueReason] = useState('');
+  const rustV2Mode = isRustV2ApiMode();
+  const discontinueActionsAvailable = !readOnly && !rustV2Mode;
 
   const discontinueMutation = useDiscontinueTreatmentEntry();
 
@@ -61,6 +64,12 @@ export function TreatmentSheetGrid({ entries, onUpdate, readOnly = false }) {
 
   return (
     <>
+      {!readOnly && rustV2Mode ? (
+        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Treatment-sheet discontinuation is not available in Rust V2 mode yet.
+        </div>
+      ) : null}
+
       <Card>
         <Table>
           <TableHeader>
@@ -72,7 +81,7 @@ export function TreatmentSheetGrid({ entries, onUpdate, readOnly = false }) {
               <TableHead>Started</TableHead>
               <TableHead>Ordered By</TableHead>
               <TableHead>Administration</TableHead>
-              {!readOnly && <TableHead className="text-right">Actions</TableHead>}
+              {discontinueActionsAvailable && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -93,7 +102,7 @@ export function TreatmentSheetGrid({ entries, onUpdate, readOnly = false }) {
                     ? 'From existing prescription'
                     : `${entry.total_doses_administered}/${entry.total_doses_ordered} doses`}
                 </TableCell>
-                {!readOnly && (
+                {discontinueActionsAvailable && (
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
