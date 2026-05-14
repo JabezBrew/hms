@@ -17,6 +17,7 @@ import { PageState } from '@/shared/components/page/PageState'
 import { usePageMeta } from '@/shared/hooks/usePageMeta'
 import { useAuth } from '@/lib/auth'
 import { usePatient } from '@/features/patients/hooks/usePatientQueries'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 import {
   useAdmissionCase,
   useActivateAdmissionCase,
@@ -60,6 +61,7 @@ export default function AdmissionCaseDetailPage() {
   const completeTask = useCompleteAdmissionTask()
   const acknowledgeTask = useAcknowledgeAdmissionTask()
   const [selectedBed, setSelectedBed] = useState(null)
+  const admissionTaskMutationsAvailable = !isRustV2ApiMode()
 
   const userType = user?.user_type
   const isNursingRole = ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'].includes(userType)
@@ -253,7 +255,7 @@ export default function AdmissionCaseDetailPage() {
           </Card>
         )}
 
-        {admissionCase.status === 'intake_in_progress' && isNursingRole && (
+        {admissionCase.status === 'intake_in_progress' && isNursingRole && admissionTaskMutationsAvailable && (
           <Card>
             <CardHeader>
               <CardTitle>Finish Admission Intake</CardTitle>
@@ -279,13 +281,28 @@ export default function AdmissionCaseDetailPage() {
             <CardDescription>Blocking tasks must clear before activation or intake completion. Advisory tasks stay visible but do not block.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {!admissionTaskMutationsAvailable && (
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                <p className="font-mono text-xs uppercase tracking-wide">
+                  Rust V2 admission task review
+                </p>
+                <p className="mt-1">
+                  Admission task clearance and intake completion are not available in Rust V2 mode yet. Bed reservation, activation, and case cancellation remain available.
+                </p>
+              </div>
+            )}
             {(admissionCase.tasks || []).map((task) => {
               const isAssignedUser = task.assigned_role === userType || userType === 'admin'
               const canComplete =
+                admissionTaskMutationsAvailable &&
                 task.status === 'pending' &&
                 isAssignedUser &&
                 !(task.phase === 'pre_activation' && task.blocking && ['medical_admission_order', 'placement'].includes(task.task_type))
-              const canAcknowledge = task.status === 'pending' && !task.blocking && isAssignedUser
+              const canAcknowledge =
+                admissionTaskMutationsAvailable &&
+                task.status === 'pending' &&
+                !task.blocking &&
+                isAssignedUser
 
               return (
                 <div key={task.id} className="rounded-lg border border-border p-4">
