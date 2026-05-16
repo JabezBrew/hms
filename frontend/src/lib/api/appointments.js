@@ -872,31 +872,32 @@ export const appointmentsApi = {
 function buildLocalAvailabilitySlots(params = {}) {
   const startDate = params.start_date || params.date || new Date().toISOString().slice(0, 10);
   const endDate = params.end_date || startDate;
-  const start = new Date(`${startDate}T08:00:00`);
-  const end = new Date(`${endDate}T16:00:00`);
+  const startDay = new Date(`${startDate}T00:00:00`);
+  const requestedEndDay = new Date(`${endDate}T00:00:00`);
+  const maxEndDay = new Date(startDay);
+  maxEndDay.setDate(maxEndDay.getDate() + 45);
+  const endDay = requestedEndDay < maxEndDay ? requestedEndDay : maxEndDay;
   const slots = [];
 
-  for (
-    let cursor = new Date(start);
-    cursor <= end && slots.length < 160;
-    cursor = new Date(cursor.getTime() + 30 * 60 * 1000)
-  ) {
-    const hour = cursor.getHours();
-    if (hour < 8 || hour >= 16) {
-      continue;
+  for (let day = new Date(startDay); day <= endDay; day.setDate(day.getDate() + 1)) {
+    for (let hour = 8; hour < 16; hour += 1) {
+      for (const minute of [0, 30]) {
+        const slotStart = new Date(day);
+        slotStart.setHours(hour, minute, 0, 0);
+        const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+        const id = [
+          params.practitioner_id || params.clinic_id || 'v2',
+          slotStart.toISOString(),
+        ].join(':');
+        slots.push({
+          id,
+          start: slotStart.toISOString(),
+          end: slotEnd.toISOString(),
+          status: 'free',
+          capacity: { max: 1, remaining: 1 },
+        });
+      }
     }
-    const slotEnd = new Date(cursor.getTime() + 30 * 60 * 1000);
-    const id = [
-      params.practitioner_id || params.clinic_id || 'v2',
-      cursor.toISOString(),
-    ].join(':');
-    slots.push({
-      id,
-      start: cursor.toISOString(),
-      end: slotEnd.toISOString(),
-      status: 'free',
-      capacity: { max: 1, remaining: 1 },
-    });
   }
 
   return slots;

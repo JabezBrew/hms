@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'owner@hms.local';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
 const patientDetailRoutePattern = /\/patients\/[0-9a-f-]{36}(?:\/chronicle)?$/;
+const appointmentDetailRoutePattern = /\/appointments\/[0-9a-f-]{36}$/;
 
 const rustV2Routes = [
   '/',
@@ -104,6 +105,11 @@ async function submitMinimumPatientRegistration(page) {
   const response = await createPatientResponse;
   expect(response.status()).toBeLessThan(300);
   await expect(page).toHaveURL(patientDetailRoutePattern);
+}
+
+async function createSmokePatient(page) {
+  await submitMinimumPatientRegistration(page);
+  return new URL(page.url()).pathname.match(/\/patients\/([0-9a-f-]{36})/)?.[1];
 }
 
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
@@ -226,6 +232,50 @@ test('Rust V2 patient edit preloads and updates demographics from the existing f
   expect(response.status()).toBeLessThan(300);
   await expect(page).toHaveURL(patientDetailRoutePattern);
   await expect(page.getByRole('heading', { name: 'Playwright Updated' })).toBeVisible();
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 appointment create schedules through the existing appointment UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  const patientId = await createSmokePatient(page);
+  expect(patientId).toBeTruthy();
+
+  await page.goto(`/appointments/create?patientId=${patientId}`);
+  await expect(page.getByRole('heading', { name: 'Schedule Appointment' })).toBeVisible();
+
+  await page.getByRole('combobox').filter({ hasText: /Select clinic/i }).click();
+  await page.getByRole('option', { name: /General Clinic/i }).click();
+
+  await page.getByRole('combobox').filter({ hasText: /Select type/i }).click();
+  await page.getByRole('option', { name: /General/i }).click();
+
+  await expect(page.getByText(/No slots for this date/i)).toHaveCount(0);
+  await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/ }).first().click();
+
+  const createAppointmentResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/appointments') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Schedule Appointment' }).click();
+
+  const response = await createAppointmentResponse;
+  expect(response.status()).toBeLessThan(300);
+  await expect(page).toHaveURL(appointmentDetailRoutePattern);
 
   expect(failures).toEqual([]);
 });

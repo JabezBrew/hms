@@ -492,6 +492,18 @@ describe('Rust V2 appointments bridge', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it('builds local Rust V2 availability across the requested calendar range', async () => {
+    const slots = await appointmentsApi.getAvailableSlots({
+      clinic_id: 'clinic-1',
+      start_date: '2026-05-01',
+      end_date: '2026-05-31',
+    });
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(slots.some((slot) => slot.start.startsWith('2026-05-16T'))).toBe(true);
+    expect(slots.every((slot) => slot.status === 'free')).toBe(true);
+  });
+
   it('preserves AbortError from Rust appointment list calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);
