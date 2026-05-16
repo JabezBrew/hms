@@ -399,3 +399,30 @@ test('Rust V2 appointment edit reschedules through the existing appointment UI',
 
   expect(failures).toEqual([]);
 });
+
+test('Rust V2 practitioner availability opens as a read-only scheduling surface', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  await page.goto('/practitioner-availability');
+
+  await expect(page.getByRole('heading', { name: 'Practitioner Availability' })).toBeVisible();
+  await expect(page.getByText(/calendar availability remains read-only/i)).toBeVisible();
+  await expect(page.getByText(/Rust V2/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /new rule/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /block time/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /create rule/i })).toHaveCount(0);
+
+  expect(failures).toEqual([]);
+});

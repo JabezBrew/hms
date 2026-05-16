@@ -364,8 +364,8 @@ const PractitionerAvailabilityPage = () => {
 
           {!availabilityMutationsAvailable && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-              Availability rule and blocked-time management is not available in Rust V2 mode yet.
-              Calendar availability remains read-only until the Rust scheduling contract is implemented.
+              Availability rule and blocked-time management is not available in this deployment yet.
+              Calendar availability remains read-only until scheduling management is enabled.
             </div>
           )}
 

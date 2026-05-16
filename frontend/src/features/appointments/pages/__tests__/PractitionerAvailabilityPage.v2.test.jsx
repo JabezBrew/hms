@@ -72,8 +72,9 @@ describe('PractitionerAvailabilityPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /block time/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /create rule/i })).not.toBeInTheDocument();
     expect(
-      screen.getByText(/availability rule and blocked-time management is not available in rust v2/i),
+      screen.getByText(/availability rule and blocked-time management is not available in this deployment/i),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/rust v2/i)).not.toBeInTheDocument();
   });
 
   it('keeps availability mutation controls available outside Rust V2 mode', () => {
