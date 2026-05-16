@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useStandingOrders } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
@@ -201,6 +202,7 @@ function StandingOrderCard({
 export default function StandingOrdersPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const standingOrderManagementAvailable = !isRustV2ApiMode();
 
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const showInactive = searchParams.get('show_inactive') === 'true';
@@ -265,9 +267,24 @@ export default function StandingOrdersPage() {
   const hasActiveFilters = debouncedSearch || showInactive;
 
   const handleClick = (id) => navigate(`/inventory/standing-orders/${id}`);
-  const handleEdit = (id) => navigate(`/inventory/standing-orders/${id}?action=edit`);
-  const handleGenerate = (id) => navigate(`/inventory/standing-orders/${id}?action=generate`);
-  const handleCreate = () => navigate('/inventory/standing-orders?action=create');
+  const handleEdit = (id) => {
+    if (!standingOrderManagementAvailable) {
+      return;
+    }
+    navigate(`/inventory/standing-orders/${id}?action=edit`);
+  };
+  const handleGenerate = (id) => {
+    if (!standingOrderManagementAvailable) {
+      return;
+    }
+    navigate(`/inventory/standing-orders/${id}?action=generate`);
+  };
+  const handleCreate = () => {
+    if (!standingOrderManagementAvailable) {
+      return;
+    }
+    navigate('/inventory/standing-orders?action=create');
+  };
 
   const orderColumns = [
     {
@@ -316,21 +333,23 @@ export default function StandingOrdersPage() {
       width: '100px',
       render: (order) => <span className="font-mono text-sm text-muted-foreground">{order.items_count || 0}</span>,
     },
-    {
-      key: 'actions',
-      header: '',
-      width: '180px',
-      render: (order) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleEdit(order.id); }}>
-            Edit
-          </Button>
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleGenerate(order.id); }}>
-            Generate
-          </Button>
-        </div>
-      ),
-    },
+    ...(standingOrderManagementAvailable
+      ? [{
+          key: 'actions',
+          header: '',
+          width: '180px',
+          render: (order) => (
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleEdit(order.id); }}>
+                Edit
+              </Button>
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleGenerate(order.id); }}>
+                Generate
+              </Button>
+            </div>
+          ),
+        }]
+      : []),
   ];
 
   if (isLoading) {
@@ -381,15 +400,24 @@ export default function StandingOrdersPage() {
               <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
-            <Button onClick={handleCreate}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Template
-            </Button>
+            {standingOrderManagementAvailable && (
+              <Button onClick={handleCreate}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Template
+              </Button>
+            )}
           </div>
         )}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!standingOrderManagementAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Standing order template management is not available in Rust V2 mode yet. Existing
+          template review remains visible, but creation, editing, and generation require a
+          generated /api/v2 standing-order contract.
+        </div>
+      )}
 
       <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-center">
         <div className="relative flex-1 max-w-md">
@@ -443,7 +471,7 @@ export default function StandingOrdersPage() {
               ? 'Try adjusting your filters'
               : 'Create a template for recurring requisitions'}
           </p>
-          {!hasActiveFilters && (
+          {!hasActiveFilters && standingOrderManagementAvailable && (
             <Button onClick={handleCreate}>
               <Plus className="h-4 w-4 mr-2" />
               New Template
