@@ -50,6 +50,7 @@ import {
   useDeleteStaffAssignment,
 } from '@/features/wards/hooks/useWardQueries';
 import { useSearchPractitioners } from '@/features/staff/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { toast } from 'sonner';
 
 /**
@@ -65,6 +66,7 @@ export function WardStaffManagement({ wardId }) {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const staffAssignmentMutationsAvailable = !isRustV2ApiMode();
 
   // Fetch assignments for this ward
   const { data: assignmentsData = [], isLoading } = useStaffAssignments(
@@ -147,23 +149,32 @@ export function WardStaffManagement({ wardId }) {
             Manage nursing, medical, and allied health staff assigned to this ward
           </p>
         </div>
-        <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Assign Staff
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <StaffAssignmentForm
-              wardId={wardId}
-              existingAssignments={assignments}
-              onSubmit={handleCreate}
-              isSubmitting={createMutation.isPending}
-            />
-          </DialogContent>
-        </Dialog>
+        {staffAssignmentMutationsAvailable && (
+          <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Assign Staff
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <StaffAssignmentForm
+                wardId={wardId}
+                existingAssignments={assignments}
+                onSubmit={handleCreate}
+                isSubmitting={createMutation.isPending}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
+
+      {!staffAssignmentMutationsAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Ward staff assignment management is not available in Rust V2 mode yet. Existing staff
+          assignments are shown read-only until generated /api/v2 assignment contracts exist.
+        </div>
+      )}
 
       {/* Staff List */}
       {assignments.length === 0 ? (
@@ -171,12 +182,16 @@ export function WardStaffManagement({ wardId }) {
           <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h4 className="text-lg font-medium text-foreground mb-2">No staff assigned</h4>
           <p className="text-sm text-muted-foreground mb-4">
-            Assign nurses, doctors, and allied health staff to this ward
+            {staffAssignmentMutationsAvailable
+              ? 'Assign nurses, doctors, and allied health staff to this ward'
+              : 'Staff assignment data is not available from Rust V2 yet'}
           </p>
-          <Button onClick={() => setAssignDialogOpen(true)}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Assign First Staff Member
-          </Button>
+          {staffAssignmentMutationsAvailable && (
+            <Button onClick={() => setAssignDialogOpen(true)}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Assign First Staff Member
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
@@ -188,6 +203,7 @@ export function WardStaffManagement({ wardId }) {
               assignments={nursingStaff}
               onEdit={openEditDialog}
               onDelete={handleDelete}
+              readOnly={!staffAssignmentMutationsAvailable}
             />
           )}
 
@@ -199,6 +215,7 @@ export function WardStaffManagement({ wardId }) {
               assignments={medicalStaff}
               onEdit={openEditDialog}
               onDelete={handleDelete}
+              readOnly={!staffAssignmentMutationsAvailable}
             />
           )}
 
@@ -210,13 +227,14 @@ export function WardStaffManagement({ wardId }) {
               assignments={alliedStaff}
               onEdit={openEditDialog}
               onDelete={handleDelete}
+              readOnly={!staffAssignmentMutationsAvailable}
             />
           )}
         </div>
       )}
 
       {/* Edit Dialog */}
-      {selectedAssignment && (
+      {staffAssignmentMutationsAvailable && selectedAssignment && (
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent className="max-w-lg">
             <StaffAssignmentForm
@@ -236,7 +254,7 @@ export function WardStaffManagement({ wardId }) {
 /**
  * StaffSection - Group of staff by category
  */
-function StaffSection({ title, icon, assignments, onEdit, onDelete }) {
+function StaffSection({ title, icon, assignments, onEdit, onDelete, readOnly = false }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -253,6 +271,7 @@ function StaffSection({ title, icon, assignments, onEdit, onDelete }) {
             assignment={assignment}
             onEdit={() => onEdit(assignment)}
             onDelete={() => onDelete(assignment.id)}
+            readOnly={readOnly}
           />
         ))}
       </div>
@@ -263,7 +282,7 @@ function StaffSection({ title, icon, assignments, onEdit, onDelete }) {
 /**
  * StaffCard - Individual staff assignment card
  */
-function StaffCard({ assignment, onEdit, onDelete }) {
+function StaffCard({ assignment, onEdit, onDelete, readOnly = false }) {
   // Get color for role category
   const getCategoryColor = (category) => {
     switch (category) {
@@ -316,34 +335,36 @@ function StaffCard({ assignment, onEdit, onDelete }) {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-2 border-t">
-        <Button variant="outline" size="sm" onClick={onEdit} className="flex-1">
-          <Edit className="h-3.5 w-3.5 mr-1" />
-          Edit
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm" className="text-destructive">
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remove Staff Assignment</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to remove {assignment.practitioner_name} from this ward?
-                This will not delete the staff member, only their ward assignment.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onDelete} className="bg-destructive text-destructive-foreground">
-                Remove
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      {!readOnly && (
+        <div className="flex items-center gap-2 pt-2 border-t">
+          <Button variant="outline" size="sm" onClick={onEdit} className="flex-1">
+            <Edit className="h-3.5 w-3.5 mr-1" />
+            Edit
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="text-destructive">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove Staff Assignment</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to remove {assignment.practitioner_name} from this ward?
+                  This will not delete the staff member, only their ward assignment.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={onDelete} className="bg-destructive text-destructive-foreground">
+                  Remove
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
     </div>
   );
 }
