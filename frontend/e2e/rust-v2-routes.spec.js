@@ -4,6 +4,7 @@ const adminEmail = process.env.E2E_ADMIN_EMAIL || 'owner@hms.local';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
 const patientDetailRoutePattern = /\/patients\/[0-9a-f-]{36}(?:\/chronicle)?$/;
 const appointmentDetailRoutePattern = /\/appointments\/[0-9a-f-]{36}$/;
+const encounterDetailRoutePattern = /\/encounters\/[0-9a-f-]{36}$/;
 
 const rustV2Routes = [
   '/',
@@ -629,6 +630,94 @@ test('Rust V2 triage assesses a checked-in visit through the existing triage UI'
   await expect(page.getByText(/Triaged - Pending Assignment/i)).toBeVisible();
   await expect(triagedCard).toBeVisible();
   await expect(triagedCard.getByRole('button', { name: 'Assign to Clinic' })).toBeVisible();
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 encounters create, detail, edit, workspace, and cancel through the existing UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  const patientName = uniquePatientName('Encounter');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  await page.goto('/encounters/new');
+  await expect(page.getByRole('heading', { name: 'New Encounter' })).toBeVisible();
+
+  await page.getByPlaceholder('Search for a patient...').fill(patientName);
+  await expect(page.getByText(patientName)).toBeVisible();
+  await page.getByText(patientName).click();
+
+  const createResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/encounters') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Create Encounter' }).click();
+
+  const createResponse = await createResponsePromise;
+  expect(createResponse.status()).toBeLessThan(300);
+  const createPayload = await createResponse.json();
+  const encounterId = createPayload?.data?.id;
+  expect(encounterId).toBeTruthy();
+
+  await expect(page).toHaveURL(encounterDetailRoutePattern);
+  await expect(page.getByRole('heading', { name: 'Outpatient Visit' })).toBeVisible();
+  await expect(page.getByRole('link', { name: patientName, exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Edit Encounter' }).click();
+  await expect(page).toHaveURL(new RegExp(`/encounters/${encounterId}/edit$`));
+  await expect(page.getByRole('heading', { name: 'Edit Encounter' })).toBeVisible();
+
+  await page.getByRole('combobox').filter({ hasText: /Outpatient/i }).click();
+  await page.getByRole('option', { name: 'Emergency' }).click();
+
+  const updateResponsePromise = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/encounters/${encounterId}`) &&
+    response.request().method() === 'PATCH'
+  ));
+
+  await page.getByRole('button', { name: 'Update Encounter' }).click();
+
+  const updateResponse = await updateResponsePromise;
+  expect(updateResponse.status()).toBeLessThan(300);
+  await expect(page).toHaveURL(new RegExp(`/encounters/${encounterId}$`));
+  await expect(page.getByRole('heading', { name: 'Emergency Visit' })).toBeVisible();
+
+  await page.goto(`/encounters/${encounterId}/workspace`);
+  await expect(page.getByRole('tab', { name: 'Clinical Note' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Review of Systems' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Orders & Plan' })).toBeVisible();
+
+  await page.goto(`/encounters/${encounterId}`);
+  await page.getByRole('button', { name: /^Cancel$/ }).click();
+  await expect(page.getByRole('heading', { name: 'Cancel Encounter' })).toBeVisible();
+
+  const cancelResponsePromise = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/encounters/${encounterId}/cancel`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Cancel Encounter' }).click();
+
+  const cancelResponse = await cancelResponsePromise;
+  expect(cancelResponse.status()).toBeLessThan(300);
+  await expect(page.getByText(/^Cancelled$/i)).toBeVisible();
 
   expect(failures).toEqual([]);
 });

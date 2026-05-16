@@ -37,9 +37,10 @@ import {
   useSearchPatientsForEncounter,
   useSearchPractitioners
 } from '@/features/encounters/hooks/useEncounterQueries';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 // Form validation schema
-const encounterFormSchema = z.object({
+const legacyEncounterFormSchema = z.object({
   patient_id: z.string().min(1, { message: "Patient is required" }),
   practitioner_id: z.string().min(1, { message: "Practitioner is required" }),
   encounter_type: z.string().min(1, { message: "Encounter type is required" }),
@@ -75,9 +76,17 @@ const encounterFormSchema = z.object({
     path: ["status"]
   });
 
+const rustV2EncounterFormSchema = z.object({
+  patient_id: z.string().min(1, { message: "Patient is required" }),
+  encounter_type: z.enum(['outpatient', 'emergency', 'triage'], {
+    message: "Encounter type is required",
+  }),
+});
+
 export function EncounterForm({ isEditing = false }) {
   const navigate = useNavigate();
   const { id } = useParams();
+  const rustV2Mode = isRustV2ApiMode();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [slotSelected, setSlotSelected] = useState(false);
@@ -114,7 +123,7 @@ export function EncounterForm({ isEditing = false }) {
 
   // Initialize form with React Hook Form
   const form = useForm({
-    resolver: zodResolver(encounterFormSchema),
+    resolver: zodResolver(rustV2Mode ? rustV2EncounterFormSchema : legacyEncounterFormSchema),
     defaultValues: {
       patient_id: '',
       practitioner_id: '',
@@ -191,11 +200,16 @@ export function EncounterForm({ isEditing = false }) {
   // Handle form submission
   const onSubmit = (data) => {
     // Format dates for API
-    const formattedData = {
-      ...data,
-      start_time: data.start_time.toISOString(),
-      end_time: data.end_time ? data.end_time.toISOString() : null,
-    };
+    const formattedData = rustV2Mode
+      ? {
+          patient_id: data.patient_id,
+          encounter_type: data.encounter_type,
+        }
+      : {
+          ...data,
+          start_time: data.start_time.toISOString(),
+          end_time: data.end_time ? data.end_time.toISOString() : null,
+        };
 
     setSubmitting(true);
 
@@ -384,7 +398,7 @@ export function EncounterForm({ isEditing = false }) {
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
-                      disabled={submitting || (isEditing && form.getValues("status") !== 'planned')}
+                      disabled={submitting || (!rustV2Mode && isEditing && form.getValues("status") !== 'planned')}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -393,8 +407,11 @@ export function EncounterForm({ isEditing = false }) {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="outpatient">Outpatient</SelectItem>
-                        <SelectItem value="inpatient">Inpatient</SelectItem>
+                        {!rustV2Mode && (
+                          <SelectItem value="inpatient">Inpatient</SelectItem>
+                        )}
                         <SelectItem value="emergency">Emergency</SelectItem>
+                        {rustV2Mode && <SelectItem value="triage">Triage</SelectItem>}
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
@@ -406,120 +423,128 @@ export function EncounterForm({ isEditing = false }) {
               />
 
               {/* Status */}
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      disabled={submitting}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="planned">Planned</SelectItem>
-                        <SelectItem value="in-progress">In Progress</SelectItem>
-                        <SelectItem value="finished">Finished</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!rustV2Mode && (
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={submitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="planned">Planned</SelectItem>
+                          <SelectItem value="in-progress">In Progress</SelectItem>
+                          <SelectItem value="finished">Finished</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Practitioner */}
-              <FormField
-                control={form.control}
-                name="practitioner_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Practitioner</FormLabel>
-                    <FormControl>
-                      <SearchBar
-                        options={practitionerOptions}
-                        value={field.value}
-                        onChange={field.onChange}
-                        onInputChange={setPractitionerSearchQuery}
-                        placeholder="Search for a practitioner..."
-                        emptyMessage={isLoadingPractitioners ? "Searching..." : "No practitioners found."}
-                        searchPlaceholder="Search by name, employee ID, or license number..."
-                        disabled={submitting}
-                        maxHeight="20rem"
-                        isLoading={isLoadingPractitioners}
-                      />
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">
-                      Search for a doctor, nurse, or other healthcare provider.
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!rustV2Mode && (
+                <FormField
+                  control={form.control}
+                  name="practitioner_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Practitioner</FormLabel>
+                      <FormControl>
+                        <SearchBar
+                          options={practitionerOptions}
+                          value={field.value}
+                          onChange={field.onChange}
+                          onInputChange={setPractitionerSearchQuery}
+                          placeholder="Search for a practitioner..."
+                          emptyMessage={isLoadingPractitioners ? "Searching..." : "No practitioners found."}
+                          searchPlaceholder="Search by name, employee ID, or license number..."
+                          disabled={submitting}
+                          maxHeight="20rem"
+                          isLoading={isLoadingPractitioners}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Search for a doctor, nurse, or other healthcare provider.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Reason */}
-              <FormField
-                control={form.control}
-                name="reason"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reason for Visit</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Enter the reason for this encounter..."
-                        rows={2}
-                        disabled={submitting}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!rustV2Mode && (
+                <FormField
+                  control={form.control}
+                  name="reason"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reason for Visit</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Enter the reason for this encounter..."
+                          rows={2}
+                          disabled={submitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Service Type */}
-              <FormField
-                control={form.control}
-                name="service_type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Type</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      disabled={submitting}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select service type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="General Practice">General Practice</SelectItem>
-                        <SelectItem value="Cardiology">Cardiology</SelectItem>
-                        <SelectItem value="Neurology">Neurology</SelectItem>
-                        <SelectItem value="Orthopedics">Orthopedics</SelectItem>
-                        <SelectItem value="Pediatrics">Pediatrics</SelectItem>
-                        <SelectItem value="Obstetrics">Obstetrics</SelectItem>
-                        <SelectItem value="Gynecology">Gynecology</SelectItem>
-                        <SelectItem value="Emergency Medicine">Emergency Medicine</SelectItem>
-                        <SelectItem value="Surgery">Surgery</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!rustV2Mode && (
+                <FormField
+                  control={form.control}
+                  name="service_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Service Type</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={submitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select service type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="General Practice">General Practice</SelectItem>
+                          <SelectItem value="Cardiology">Cardiology</SelectItem>
+                          <SelectItem value="Neurology">Neurology</SelectItem>
+                          <SelectItem value="Orthopedics">Orthopedics</SelectItem>
+                          <SelectItem value="Pediatrics">Pediatrics</SelectItem>
+                          <SelectItem value="Obstetrics">Obstetrics</SelectItem>
+                          <SelectItem value="Gynecology">Gynecology</SelectItem>
+                          <SelectItem value="Emergency Medicine">Emergency Medicine</SelectItem>
+                          <SelectItem value="Surgery">Surgery</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Availability Calendar */}
-              {form.watch("practitioner_id") && (
+              {!rustV2Mode && form.watch("practitioner_id") && (
                 <div className="rounded-md border p-4">
                   <h3 className="text-sm font-medium mb-4">Practitioner Availability</h3>
                   <DoctorAvailabilityCalendar
@@ -534,7 +559,7 @@ export function EncounterForm({ isEditing = false }) {
               )}
 
               {/* Selected Time Display */}
-              {slotSelected && form.watch("start_time") && (
+              {!rustV2Mode && slotSelected && form.watch("start_time") && (
                 <div className="rounded-md border p-4 bg-muted/50">
                   <div className="flex flex-col space-y-1">
                     <span className="text-sm font-medium text-muted-foreground">Selected Time</span>
@@ -547,7 +572,7 @@ export function EncounterForm({ isEditing = false }) {
               )}
 
               {/* Manual Time Entry - Only show if NO slot selected AND (editing OR not planned) */}
-              {!slotSelected && (isEditing || form.watch("status") !== 'planned') && (
+              {!rustV2Mode && !slotSelected && (isEditing || form.watch("status") !== 'planned') && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Start Time */}
                   <FormField
@@ -593,37 +618,39 @@ export function EncounterForm({ isEditing = false }) {
               )}
 
               {/* Location */}
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Location</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      disabled={submitting}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="Main Hospital">Main Hospital</SelectItem>
-                        <SelectItem value="Outpatient Clinic">Outpatient Clinic</SelectItem>
-                        <SelectItem value="Emergency Department">Emergency Department</SelectItem>
-                        <SelectItem value="Surgical Center">Surgical Center</SelectItem>
-                        <SelectItem value="Radiology">Radiology</SelectItem>
-                        <SelectItem value="Laboratory">Laboratory</SelectItem>
-                        <SelectItem value="Physical Therapy">Physical Therapy</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!rustV2Mode && (
+                <FormField
+                  control={form.control}
+                  name="location"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Location</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={submitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select location" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="Main Hospital">Main Hospital</SelectItem>
+                          <SelectItem value="Outpatient Clinic">Outpatient Clinic</SelectItem>
+                          <SelectItem value="Emergency Department">Emergency Department</SelectItem>
+                          <SelectItem value="Surgical Center">Surgical Center</SelectItem>
+                          <SelectItem value="Radiology">Radiology</SelectItem>
+                          <SelectItem value="Laboratory">Laboratory</SelectItem>
+                          <SelectItem value="Physical Therapy">Physical Therapy</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Admission Source (only for inpatient) */}
               {form.watch("encounter_type") === 'inpatient' && (
