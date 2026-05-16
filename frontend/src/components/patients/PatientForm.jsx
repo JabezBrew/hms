@@ -71,6 +71,7 @@ const patientFormSchema = z.object({
   phone_number: z.string().optional(),
   // Required for registration; optional for edit flows that may be missing DOB.
   date_of_birth: z.date().optional(),
+  gender: z.string().optional(),
 
   // PatientProfile fields
   medical_record_number: z.string().optional(), // Made optional as it will be generated on the backend
@@ -158,6 +159,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       last_name: "",
       phone_number: "",
       date_of_birth: undefined,
+      gender: "",
       medical_record_number: "",
       nhis_id: "",
       emergency_contact_name: "",
@@ -185,6 +187,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       last_name: patient.local_data?.user_details?.last_name || "",
       phone_number: patient.local_data?.user_details?.phone_number || phoneFromFhir || "",
       date_of_birth: patient.local_data?.user_details?.date_of_birth ? new Date(patient.local_data.user_details.date_of_birth) : undefined,
+      gender: patient.local_data?.user_details?.gender || patient.local_data?.gender || patient.gender || patient.fhir_data?.gender || "",
       medical_record_number: patient.local_data?.medical_record_number || "",
       nhis_id: patient.local_data?.nhis_id || "",
       emergency_contact_name: patient.local_data?.emergency_contact_name || "",
@@ -430,7 +433,7 @@ const PatientForm = ({ patient, onSuccess }) => {
     }
 
     const stepFields = {
-      identity: ['first_name', 'last_name', 'date_of_birth', 'email', 'phone_number', 'nhis_id'],
+      identity: ['first_name', 'last_name', 'date_of_birth', 'gender', 'email', 'phone_number', 'nhis_id'],
       contact: [
         'address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country',
         'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relationship',
@@ -457,7 +460,9 @@ const PatientForm = ({ patient, onSuccess }) => {
     }
 
     // Apply server-driven validation rules for the fields on this step.
-    const ruleErrors = applyRules(getValuesForRules(), fields.length ? fields : null);
+    const ruleFields = fields.length ? fields : Array.from(rulesByField.keys());
+    form.clearErrors(ruleFields);
+    const ruleErrors = applyRules(getValuesForRules(), ruleFields);
     if (ruleErrors.length) {
       ruleErrors.forEach(({ field, message }) => {
         if (fields.length && !fields.includes(field)) return;
@@ -466,7 +471,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       return false;
     }
     return true;
-  }, [applyRules, form, getValuesForRules, isEditMode, noEmail, validateEncounterStep, validateInsuranceStep]);
+  }, [applyRules, form, getValuesForRules, isEditMode, noEmail, rulesByField, validateEncounterStep, validateInsuranceStep]);
 
   const currentStepIndex = stepKeys.indexOf(activeStep);
   const isFirstStep = currentStepIndex <= 0;
@@ -495,6 +500,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       first_name: 'identity',
       last_name: 'identity',
       date_of_birth: 'identity',
+      gender: 'identity',
       email: 'identity',
       phone_number: 'identity',
       nhis_id: 'identity',
@@ -548,7 +554,9 @@ const PatientForm = ({ patient, onSuccess }) => {
           last_name: data.last_name,
           phone_number: data.phone_number,
           date_of_birth: updateDob,
+          gender: data.gender,
         },
+        gender: data.gender,
         medical_record_number: data.medical_record_number,
         nhis_id: data.nhis_id,
         emergency_contact_name: data.emergency_contact_name,
@@ -559,6 +567,7 @@ const PatientForm = ({ patient, onSuccess }) => {
         ...patient.fhir_data,
         name: [{ family: data.last_name, given: [data.first_name] }],
         telecom: data.phone_number ? [{ system: "phone", value: data.phone_number, use: "home" }] : (patient.fhir_data?.telecom || []),
+        gender: data.gender || patient.fhir_data?.gender,
         ...(updateDob ? { birthDate: updateDob } : {}),
         address: [
           {
@@ -744,6 +753,7 @@ const PatientForm = ({ patient, onSuccess }) => {
       first_name: 'identity',
       last_name: 'identity',
       date_of_birth: 'identity',
+      gender: 'identity',
       email: 'identity',
       phone_number: 'identity',
       nhis_id: 'identity',
@@ -1186,6 +1196,32 @@ const PatientForm = ({ patient, onSuccess }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
+                    name="gender"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Sex {!isEditMode && <span className="text-rose-500">*</span>}
+                        </FormLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="font-mono">
+                              <SelectValue placeholder="Select sex" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="female">Female</SelectItem>
+                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                            <SelectItem value="unknown">Unknown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="phone_number"
                     render={({ field }) => (
                       <FormItem>
@@ -1618,6 +1654,9 @@ const PatientForm = ({ patient, onSuccess }) => {
                     </p>
                     <p className="text-sm">
                       <span className="font-medium">DOB:</span> {dobString || 'Not set'}
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">Sex:</span> {form.getValues('gender') || 'Not set'}
                     </p>
                     <p className="text-sm">
                       <span className="font-medium">Email:</span> {form.getValues('email') || 'Not set'}

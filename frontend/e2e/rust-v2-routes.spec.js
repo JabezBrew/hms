@@ -55,6 +55,24 @@ async function signInAsAdmin(page) {
   await page.waitForURL((url) => !url.pathname.endsWith('/login'));
 }
 
+async function selectOutpatientDepartment(page) {
+  await page.getByRole('combobox').filter({ hasText: /Select department/i }).click();
+  await expect(page.getByRole('option', { name: 'Outpatient Department' })).toBeVisible();
+  await page.getByRole('option', { name: 'Outpatient Department' }).click();
+}
+
+async function fillMinimumPatientIdentity(page, email) {
+  await page.getByPlaceholder('First name').fill('Playwright');
+  await page.getByPlaceholder('Last name').fill('Smoke');
+  await page.getByText('Pick a date').click();
+  await expect(page.locator('[role=grid] button').filter({ hasText: /^15$/ })).toBeVisible();
+  await page.locator('[role=grid] button').filter({ hasText: /^15$/ }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('combobox').filter({ hasText: /Select sex/i }).click();
+  await page.getByRole('option', { name: 'Female' }).click();
+  await page.getByPlaceholder('Email address').fill(email);
+}
+
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
   const failures = [];
 
@@ -101,10 +119,57 @@ test('Rust V2 patient registration exposes seeded departments without requiring 
   await page.goto('/patients/create');
 
   await expect(page.getByRole('heading', { name: /Register New Patient/i })).toBeVisible();
-  await page.getByRole('combobox').filter({ hasText: /Select department/i }).click();
-  await expect(page.getByRole('option', { name: 'Outpatient Department' })).toBeVisible();
-  await page.getByRole('option', { name: 'Outpatient Department' }).click();
+  await selectOutpatientDepartment(page);
   await expect(page.getByText(/Registration will continue under the selected department/i)).toBeVisible();
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 patient registration submits the existing multi-step form', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  await page.goto('/patients/create');
+  await selectOutpatientDepartment(page);
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  await fillMinimumPatientIdentity(page, `playwright.${Date.now()}@example.test`);
+  const createPatientResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/patients') &&
+    response.request().method() === 'POST'
+  ));
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (/\/patients\/[0-9a-f-]{36}$/.test(new URL(page.url()).pathname)) {
+      break;
+    }
+    const registerButton = page.getByRole('button', { name: 'Register Patient' });
+    if (await registerButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await registerButton.click({ force: true });
+      break;
+    }
+    const nextButton = page.getByRole('button', { name: 'Next' });
+    if (!(await nextButton.isVisible({ timeout: 500 }).catch(() => false))) {
+      break;
+    }
+    await nextButton.click();
+  }
+
+  const response = await createPatientResponse;
+  expect(response.status()).toBeLessThan(300);
+  await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/);
+  await expect(page.getByText('Playwright Smoke')).toBeVisible();
 
   expect(failures).toEqual([]);
 });
