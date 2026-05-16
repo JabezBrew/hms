@@ -9,6 +9,7 @@ import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,6 +34,8 @@ export function PharmacyQueue() {
   const [viewMode, setViewMode] = useState('by-patient');
   const [contextOpen, setContextOpen] = useState(false);
   const [contextPatient, setContextPatient] = useState(null);
+  const rustV2Mode = isRustV2ApiMode();
+  const dispensingActionsAvailable = !rustV2Mode;
 
   // Fetch pending dispensing (grouped per prescription so a "5 mg TDS x 7 days"
   // course shows as one row, not 21).
@@ -126,6 +129,7 @@ export function PharmacyQueue() {
 
   // Toggle medication selection
   const toggleMedSelection = (medId) => {
+    if (!dispensingActionsAvailable) return;
     setSelectedMeds(prev =>
       prev.includes(medId)
         ? prev.filter(id => id !== medId)
@@ -135,6 +139,7 @@ export function PharmacyQueue() {
 
   // Select all for a patient
   const selectAllForPatient = (patientId) => {
+    if (!dispensingActionsAvailable) return;
     const patientMeds = groupedByPatient[patientId]?.medications.map(m => m.id) || [];
     const allSelected = patientMeds.every(id => selectedMeds.includes(id));
 
@@ -148,6 +153,10 @@ export function PharmacyQueue() {
   // Single dispense (a "row" is now a prescription group, so dispense flips every
   // MAR entry it represents — one supply issued covers all scheduled doses).
   const handleDispense = async (medication) => {
+    if (!dispensingActionsAvailable) {
+      toast.error('Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.');
+      return;
+    }
     const ids = medication.mar_entry_ids?.length
       ? medication.mar_entry_ids
       : [medication.mar_entry_id || medication.id];
@@ -164,6 +173,10 @@ export function PharmacyQueue() {
   // Bulk dispense — selectedMeds holds group ids; expand to the union of their
   // child MAR entry ids before posting.
   const handleBulkDispense = async () => {
+    if (!dispensingActionsAvailable) {
+      toast.error('Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.');
+      return;
+    }
     if (selectedMeds.length === 0) {
       toast.error('No medications selected');
       return;
@@ -192,6 +205,7 @@ export function PharmacyQueue() {
 
   // Open confirm dialog
   const openConfirmDialog = (medication) => {
+    if (!dispensingActionsAvailable) return;
     setConfirmMedication(medication);
     setShowConfirmDialog(true);
   };
@@ -311,8 +325,14 @@ export function PharmacyQueue() {
         </div>
       </div>
 
+      {rustV2Mode ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
+          Pharmacy dispensing actions from the nursing queue are not available in Rust V2 mode yet.
+        </div>
+      ) : null}
+
       {/* Bulk Actions */}
-      {selectedMeds.length > 0 && (
+      {dispensingActionsAvailable && selectedMeds.length > 0 && (
         <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
           <span className="font-mono text-sm text-primary">
             {selectedMeds.length} medication{selectedMeds.length !== 1 ? 's' : ''} selected
@@ -343,6 +363,7 @@ export function PharmacyQueue() {
           getPatientWard={getPatientWard}
           getPrescriberName={getPrescriberName}
           formatTime={formatTime}
+          dispensingActionsAvailable={dispensingActionsAvailable}
         />
       ) : (
         <AllMedicationsView
@@ -357,6 +378,7 @@ export function PharmacyQueue() {
           getPatientMRN={getPatientMRN}
           getPrescriberName={getPrescriberName}
           formatDateTime={formatDateTime}
+          dispensingActionsAvailable={dispensingActionsAvailable}
         />
       )}
 
@@ -492,6 +514,7 @@ const ByPatientView = ({
   getPatientWard,
   getPrescriberName,
   formatTime,
+  dispensingActionsAvailable,
 }) => {
   const totalPatients = Object.keys(groupedByPatient).length;
 
@@ -519,11 +542,13 @@ const ByPatientView = ({
               {/* Patient Header */}
               <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
                 <div className="flex items-center gap-3">
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={() => selectAllForPatient(patientId)}
-                    className={someSelected && !allSelected ? 'opacity-50' : ''}
-                  />
+                  {dispensingActionsAvailable ? (
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={() => selectAllForPatient(patientId)}
+                      className={someSelected && !allSelected ? 'opacity-50' : ''}
+                    />
+                  ) : null}
                   <div>
                     <h3 className="font-display text-base text-foreground">
                       {getPatientName(data.firstMed)}
@@ -558,10 +583,12 @@ const ByPatientView = ({
                       med.is_overdue && "bg-destructive/5"
                     )}
                   >
-                    <Checkbox
-                      checked={selectedMeds.includes(med.id)}
-                      onCheckedChange={() => toggleMedSelection(med.id)}
-                    />
+                    {dispensingActionsAvailable ? (
+                      <Checkbox
+                        checked={selectedMeds.includes(med.id)}
+                        onCheckedChange={() => toggleMedSelection(med.id)}
+                      />
+                    ) : null}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-foreground truncate">
@@ -592,16 +619,18 @@ const ByPatientView = ({
                         </span>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant={med.is_overdue ? 'destructive' : 'outline'}
-                      onClick={() => openConfirmDialog(med)}
-                      disabled={dispenseMutation.isPending}
-                      className="font-mono text-xs shrink-0"
-                    >
-                      <Package className="h-3.5 w-3.5 mr-1.5" />
-                      Dispense
-                    </Button>
+                    {dispensingActionsAvailable ? (
+                      <Button
+                        size="sm"
+                        variant={med.is_overdue ? 'destructive' : 'outline'}
+                        onClick={() => openConfirmDialog(med)}
+                        disabled={dispenseMutation.isPending}
+                        className="font-mono text-xs shrink-0"
+                      >
+                        <Package className="h-3.5 w-3.5 mr-1.5" />
+                        Dispense
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -628,6 +657,7 @@ const AllMedicationsView = ({
   getPatientMRN,
   getPrescriberName,
   formatDateTime,
+  dispensingActionsAvailable,
 }) => {
   if (filteredMeds.length === 0) {
     return <EmptyState />;
@@ -639,16 +669,18 @@ const AllMedicationsView = ({
     <div className="bg-card/50 backdrop-blur border border-border rounded-xl overflow-hidden">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border bg-muted/30">
-        <Checkbox
-          checked={allSelected}
-          onCheckedChange={(checked) => {
-            if (checked) {
-              setSelectedMeds(filteredMeds.map(m => m.id));
-            } else {
-              setSelectedMeds([]);
-            }
-          }}
-        />
+        {dispensingActionsAvailable ? (
+          <Checkbox
+            checked={allSelected}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                setSelectedMeds(filteredMeds.map(m => m.id));
+              } else {
+                setSelectedMeds([]);
+              }
+            }}
+          />
+        ) : null}
         <h3 className="font-heading text-sm font-medium text-foreground">
           All Pending Medications ({filteredMeds.length})
         </h3>
@@ -665,10 +697,12 @@ const AllMedicationsView = ({
                 med.is_overdue && "bg-destructive/5"
               )}
             >
-              <Checkbox
-                checked={selectedMeds.includes(med.id)}
-                onCheckedChange={() => toggleMedSelection(med.id)}
-              />
+              {dispensingActionsAvailable ? (
+                <Checkbox
+                  checked={selectedMeds.includes(med.id)}
+                  onCheckedChange={() => toggleMedSelection(med.id)}
+                />
+              ) : null}
               <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
                 <div>
                   <p className="font-display text-sm text-foreground truncate">
@@ -710,15 +744,17 @@ const AllMedicationsView = ({
                   </p>
                 </div>
               </div>
-              <Button
-                size="sm"
-                variant={med.is_overdue ? 'destructive' : 'outline'}
-                onClick={() => openConfirmDialog(med)}
-                disabled={dispenseMutation.isPending}
-                className="font-mono text-xs shrink-0"
-              >
-                Dispense
-              </Button>
+              {dispensingActionsAvailable ? (
+                <Button
+                  size="sm"
+                  variant={med.is_overdue ? 'destructive' : 'outline'}
+                  onClick={() => openConfirmDialog(med)}
+                  disabled={dispenseMutation.isPending}
+                  className="font-mono text-xs shrink-0"
+                >
+                  Dispense
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 size="sm"
