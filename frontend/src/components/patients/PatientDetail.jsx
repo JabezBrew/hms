@@ -26,6 +26,7 @@ import Layers from 'lucide-react/dist/esm/icons/layers.js';
 import { useState } from "react";
 import { toast } from "sonner";
 import { patientsApi } from '@/features/patients/api';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -57,6 +58,7 @@ import format from "date-fns/format";
 
 const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
   const [isDeleting, setIsDeleting] = useState(false);
+  const patientDeletionAvailable = !isRustV2ApiMode();
 
   if (!patient) {
     return (
@@ -217,6 +219,11 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
 
   // Function to handle patient deletion
   const handleDeletePatient = async () => {
+    if (!patientDeletionAvailable) {
+      toast.error("Patient deletion is not available in Rust V2 mode.");
+      return;
+    }
+
     if (!patient.local_data?.id) {
       toast.error("Cannot delete patient without local ID");
       return;
@@ -314,33 +321,39 @@ const PatientDetail = ({ patient, onBack, onEdit, onDeleted }) => {
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="sm">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete the patient
-                  record and all associated data.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction 
-                  onClick={handleDeletePatient}
-                  disabled={isDeleting}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {patientDeletionAvailable ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the patient
+                    record and all associated data.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeletePatient}
+                    disabled={isDeleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <p className="max-w-56 text-right text-xs text-muted-foreground">
+              Patient deletion is not available in Rust V2 mode.
+            </p>
+          )}
         </div>
       </CardHeader>
       <CardContent>
