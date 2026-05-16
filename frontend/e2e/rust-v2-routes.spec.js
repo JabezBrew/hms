@@ -63,9 +63,9 @@ async function selectOutpatientDepartment(page) {
   await page.getByRole('option', { name: 'Outpatient Department' }).click();
 }
 
-async function fillMinimumPatientIdentity(page, email) {
-  await page.getByPlaceholder('First name').fill('Playwright');
-  await page.getByPlaceholder('Last name').fill('Smoke');
+async function fillMinimumPatientIdentity(page, email, identity = {}) {
+  await page.getByPlaceholder('First name').fill(identity.firstName || 'Playwright');
+  await page.getByPlaceholder('Last name').fill(identity.lastName || 'Smoke');
   await page.getByText('Pick a date').click();
   await expect(page.locator('[role=grid] button').filter({ hasText: /^15$/ })).toBeVisible();
   await page.locator('[role=grid] button').filter({ hasText: /^15$/ }).click();
@@ -75,11 +75,11 @@ async function fillMinimumPatientIdentity(page, email) {
   await page.getByPlaceholder('Email address').fill(email);
 }
 
-async function submitMinimumPatientRegistration(page) {
+async function submitMinimumPatientRegistration(page, identity = {}) {
   await page.goto('/patients/create');
   await selectOutpatientDepartment(page);
   await page.getByRole('button', { name: 'Next' }).click();
-  await fillMinimumPatientIdentity(page, `playwright.${Date.now()}@example.test`);
+  await fillMinimumPatientIdentity(page, `playwright.${Date.now()}@example.test`, identity);
 
   const createPatientResponse = page.waitForResponse((response) => (
     response.url().includes('/api/v2/patients') &&
@@ -107,13 +107,13 @@ async function submitMinimumPatientRegistration(page) {
   await expect(page).toHaveURL(patientDetailRoutePattern);
 }
 
-async function createSmokePatient(page) {
-  await submitMinimumPatientRegistration(page);
+async function createSmokePatient(page, identity = {}) {
+  await submitMinimumPatientRegistration(page, identity);
   return new URL(page.url()).pathname.match(/\/patients\/([0-9a-f-]{36})/)?.[1];
 }
 
-async function createSmokeAppointment(page) {
-  const patientId = await createSmokePatient(page);
+async function createSmokeAppointment(page, identity = {}) {
+  const patientId = await createSmokePatient(page, identity);
   expect(patientId).toBeTruthy();
 
   await page.goto(`/appointments/create?patientId=${patientId}`);
@@ -140,6 +140,66 @@ async function createSmokeAppointment(page) {
   await expect(page).toHaveURL(appointmentDetailRoutePattern);
 
   return new URL(page.url()).pathname.match(/\/appointments\/([0-9a-f-]{36})/)?.[1];
+}
+
+function uniquePatientName(label) {
+  const uniqueSuffix = Date.now()
+    .toString()
+    .slice(-6)
+    .split('')
+    .map((digit) => String.fromCharCode(65 + Number(digit)))
+    .join('');
+  return `Playwright ${label}${uniqueSuffix}`;
+}
+
+async function postV2FromBrowser(page, path, body) {
+  return page.evaluate(async ({ requestPath, requestBody }) => {
+    const readCookie = (name) => {
+      return document.cookie
+        .split(';')
+        .map((cookie) => cookie.trim())
+        .find((cookie) => cookie.startsWith(`${name}=`))
+        ?.split('=')
+        .slice(1)
+        .join('=') || '';
+    };
+
+    const csrfToken = readCookie('hms_v2_csrf');
+    const refreshResponse = await fetch('/api/v2/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+      headers: csrfToken ? { 'X-HMS-CSRF': csrfToken } : {},
+    });
+
+    if (!refreshResponse.ok) {
+      throw new Error(`token refresh failed with ${refreshResponse.status}`);
+    }
+
+    const refreshPayload = await refreshResponse.json();
+    const accessToken = refreshPayload?.data?.access_token;
+    if (!accessToken) {
+      throw new Error('token refresh did not return an access token');
+    }
+
+    const nextCsrfToken = readCookie('hms_v2_csrf') || csrfToken;
+    const response = await fetch(requestPath, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        'X-Facility-Code': 'HMS',
+        ...(nextCsrfToken ? { 'X-HMS-CSRF': nextCsrfToken } : {}),
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(`POST ${requestPath} failed with ${response.status}: ${JSON.stringify(payload)}`);
+    }
+    return payload;
+  }, { requestPath: path, requestBody: body });
 }
 
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
@@ -423,6 +483,152 @@ test('Rust V2 practitioner availability opens as a read-only scheduling surface'
   await expect(page.getByRole('button', { name: /new rule/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /block time/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /create rule/i })).toHaveCount(0);
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 clinic waiting room calls a checked-in visit through the existing queue UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  const patientName = uniquePatientName('Waiting');
+  const appointmentId = await createSmokeAppointment(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(appointmentId).toBeTruthy();
+
+  const checkInResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/visits/check-in') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Check In' }).click();
+
+  const visitResponse = await checkInResponse;
+  expect(visitResponse.status()).toBeLessThan(300);
+  const visitPayload = await visitResponse.json();
+  const visitId = visitPayload?.data?.id;
+  const clinicId = visitPayload?.data?.clinic_id;
+  expect(visitId).toBeTruthy();
+  expect(clinicId).toBeTruthy();
+
+  await page.goto(`/clinics/${clinicId}/waiting-room`);
+  await expect(page.getByRole('heading', { name: /Waiting Room/i })).toBeVisible();
+
+  const waitingCard = page
+    .locator('article')
+    .filter({ hasText: patientName })
+    .filter({ hasText: 'Call Patient' })
+    .first();
+  await expect(waitingCard).toBeVisible();
+
+  const callResponse = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/visits/${visitId}/call`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await waitingCard.getByRole('button', { name: 'Call Patient' }).click();
+
+  const response = await callResponse;
+  expect(response.status()).toBeLessThan(300);
+
+  const calledCard = page
+    .locator('article')
+    .filter({ hasText: patientName })
+    .filter({ hasText: 'Start Consultation' })
+    .first();
+  await expect(page.getByText(/Called/i).first()).toBeVisible();
+  await expect(calledCard).toBeVisible();
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 triage assesses a checked-in visit through the existing triage UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  const patientName = uniquePatientName('Triage');
+  const appointmentId = await createSmokeAppointment(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(appointmentId).toBeTruthy();
+
+  const checkInResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/visits/check-in') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Check In' }).click();
+
+  const visitResponse = await checkInResponse;
+  expect(visitResponse.status()).toBeLessThan(300);
+  const visitPayload = await visitResponse.json();
+  const visitId = visitPayload?.data?.id;
+  expect(visitId).toBeTruthy();
+
+  const triagePayload = await postV2FromBrowser(page, '/api/v2/triage', {
+    visit_id: visitId,
+    acuity: 'urgent',
+  });
+  const triageId = triagePayload?.data?.id;
+  expect(triageId).toBeTruthy();
+
+  await page.goto('/triage');
+  await expect(page.getByRole('heading', { name: 'Triage Queue' })).toBeVisible();
+  const waitingCard = page
+    .locator('article')
+    .filter({ hasText: patientName })
+    .filter({ hasText: 'Triage' })
+    .first();
+  await expect(waitingCard).toBeVisible();
+
+  await waitingCard.getByRole('button', { name: 'Triage' }).click();
+  await expect(page.getByRole('heading', { name: 'Triage Assessment' })).toBeVisible();
+  const assessmentDialog = page.getByRole('dialog', { name: 'Triage Assessment' });
+  await assessmentDialog.getByText('Emergency').click();
+  await page.getByLabel('Triage Notes').fill('Browser smoke assessment notes.');
+
+  const assessmentResponse = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/triage/${triageId}/assessment`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Save Assessment' }).click();
+
+  const response = await assessmentResponse;
+  expect(response.status()).toBeLessThan(300);
+  const triagedCard = page
+    .locator('article')
+    .filter({ hasText: patientName })
+    .filter({ hasText: 'Browser smoke assessment notes.' })
+    .first();
+  await expect(page.getByText(/Triaged - Pending Assignment/i)).toBeVisible();
+  await expect(triagedCard).toBeVisible();
+  await expect(triagedCard.getByRole('button', { name: 'Assign to Clinic' })).toBeVisible();
 
   expect(failures).toEqual([]);
 });

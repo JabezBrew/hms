@@ -84,7 +84,8 @@ describe('TriageAssignDialog Rust V2 guards', () => {
     renderDialog();
 
     expect(screen.getByText('Practitioner *')).toBeInTheDocument();
-    expect(screen.getByText(/rust v2 requires a practitioner/i)).toBeInTheDocument();
+    expect(screen.getByText(/select a practitioner before assigning/i)).toBeInTheDocument();
+    expect(screen.queryByText(/rust v2/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Any available')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /assign to clinic/i })).toBeDisabled();
   });
@@ -96,7 +97,7 @@ describe('TriageAssignDialog Rust V2 guards', () => {
 
     expect(screen.getByText('Practitioner (Optional)')).toBeInTheDocument();
     expect(screen.getByText('Any available')).toBeInTheDocument();
-    expect(screen.queryByText(/rust v2 requires a practitioner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/select a practitioner before assigning/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /assign to clinic/i })).not.toBeDisabled();
   });
 });

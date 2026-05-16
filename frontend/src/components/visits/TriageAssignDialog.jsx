@@ -325,7 +325,7 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
             </Select>
             {isRustV2 && (
               <p className="text-sm text-muted-foreground">
-                Rust V2 requires a practitioner before assigning triage to a clinic.
+                Select a practitioner before assigning this triage entry to a clinic.
               </p>
             )}
             {errors.practitioner_id && (

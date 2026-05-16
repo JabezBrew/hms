@@ -277,7 +277,10 @@ export function useUpdatePatientWithFHIR() {
   return useMutation({
     mutationFn: ({ id, data }) => patientsApi.updatePatientWithFHIR(id, data),
     onSuccess: (data, variables) => {
-      // Update the cache for this specific patient
+      if (data) {
+        queryClient.setQueryData(patientKeys.detail(variables.id), data);
+      }
+      // Refetch the specific patient after seeding returned data for immediate navigation.
       queryClient.invalidateQueries({ 
         queryKey: patientKeys.detail(variables.id) 
       });
