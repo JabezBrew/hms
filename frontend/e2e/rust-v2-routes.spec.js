@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL || 'owner@hms.local';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
+const patientDetailRoutePattern = /\/patients\/[0-9a-f-]{36}(?:\/chronicle)?$/;
 
 const rustV2Routes = [
   '/',
@@ -73,6 +74,38 @@ async function fillMinimumPatientIdentity(page, email) {
   await page.getByPlaceholder('Email address').fill(email);
 }
 
+async function submitMinimumPatientRegistration(page) {
+  await page.goto('/patients/create');
+  await selectOutpatientDepartment(page);
+  await page.getByRole('button', { name: 'Next' }).click();
+  await fillMinimumPatientIdentity(page, `playwright.${Date.now()}@example.test`);
+
+  const createPatientResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/patients') &&
+    response.request().method() === 'POST'
+  ));
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (patientDetailRoutePattern.test(new URL(page.url()).pathname)) {
+      break;
+    }
+    const registerButton = page.getByRole('button', { name: 'Register Patient' });
+    if (await registerButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await registerButton.click({ force: true });
+      break;
+    }
+    const nextButton = page.getByRole('button', { name: 'Next' });
+    if (!(await nextButton.isVisible({ timeout: 500 }).catch(() => false))) {
+      break;
+    }
+    await nextButton.click();
+  }
+
+  const response = await createPatientResponse;
+  expect(response.status()).toBeLessThan(300);
+  await expect(page).toHaveURL(patientDetailRoutePattern);
+}
+
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
   const failures = [];
 
@@ -140,23 +173,46 @@ test('Rust V2 patient registration submits the existing multi-step form', async 
   });
 
   await signInAsAdmin(page);
-  await page.goto('/patients/create');
-  await selectOutpatientDepartment(page);
-  await page.getByRole('button', { name: 'Next' }).click();
+  await submitMinimumPatientRegistration(page);
+  await expect(page.getByRole('heading', { name: 'Playwright Smoke' })).toBeVisible();
 
-  await fillMinimumPatientIdentity(page, `playwright.${Date.now()}@example.test`);
-  const createPatientResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/patients') &&
-    response.request().method() === 'POST'
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 patient edit preloads and updates demographics from the existing form', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  await submitMinimumPatientRegistration(page);
+  await page.getByRole('link', { name: /Edit Demographics/i }).click();
+
+  await expect(page.getByPlaceholder('First name')).toHaveValue('Playwright');
+  await expect(page.getByPlaceholder('Last name')).toHaveValue('Smoke');
+  await page.getByPlaceholder('Last name').fill('Updated');
+
+  const updatePatientResponse = page.waitForResponse((response) => (
+    /\/api\/v2\/patients\/[0-9a-f-]+$/.test(new URL(response.url()).pathname) &&
+    response.request().method() === 'PATCH'
   ));
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    if (/\/patients\/[0-9a-f-]{36}$/.test(new URL(page.url()).pathname)) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (patientDetailRoutePattern.test(new URL(page.url()).pathname)) {
       break;
     }
-    const registerButton = page.getByRole('button', { name: 'Register Patient' });
-    if (await registerButton.isVisible({ timeout: 500 }).catch(() => false)) {
-      await registerButton.click({ force: true });
+    const updateButton = page.getByRole('button', { name: 'Update Patient' });
+    if (await updateButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await updateButton.click({ force: true });
       break;
     }
     const nextButton = page.getByRole('button', { name: 'Next' });
@@ -166,10 +222,10 @@ test('Rust V2 patient registration submits the existing multi-step form', async 
     await nextButton.click();
   }
 
-  const response = await createPatientResponse;
+  const response = await updatePatientResponse;
   expect(response.status()).toBeLessThan(300);
-  await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/);
-  await expect(page.getByText('Playwright Smoke')).toBeVisible();
+  await expect(page).toHaveURL(patientDetailRoutePattern);
+  await expect(page.getByRole('heading', { name: 'Playwright Updated' })).toBeVisible();
 
   expect(failures).toEqual([]);
 });

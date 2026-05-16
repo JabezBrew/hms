@@ -65,7 +65,7 @@ import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 // Form validation schema
 const patientFormSchema = z.object({
   // User fields
-  email: z.string().email({ message: "Please enter a valid email address" }),
+  email: z.string().trim().email({ message: "Please enter a valid email address" }).or(z.literal("")).optional(),
   first_name: z.string().min(1, { message: "First name is required" }),
   last_name: z.string().min(1, { message: "Last name is required" }),
   phone_number: z.string().optional(),
@@ -180,19 +180,22 @@ const PatientForm = ({ patient, onSuccess }) => {
     if (!isEditMode || !patient) {
       return;
     }
+    const localData = patient.local_data || {};
+    const userDetails = localData.user_details || {};
     const phoneFromFhir = patient.fhir_data?.telecom?.find(t => t.system === 'phone')?.value || "";
+    const dateOfBirth = userDetails.date_of_birth || localData.date_of_birth || patient.date_of_birth;
     form.reset({
-      email: patient.local_data?.user_details?.email || "",
-      first_name: patient.local_data?.user_details?.first_name || "",
-      last_name: patient.local_data?.user_details?.last_name || "",
-      phone_number: patient.local_data?.user_details?.phone_number || phoneFromFhir || "",
-      date_of_birth: patient.local_data?.user_details?.date_of_birth ? new Date(patient.local_data.user_details.date_of_birth) : undefined,
-      gender: patient.local_data?.user_details?.gender || patient.local_data?.gender || patient.gender || patient.fhir_data?.gender || "",
-      medical_record_number: patient.local_data?.medical_record_number || "",
-      nhis_id: patient.local_data?.nhis_id || "",
-      emergency_contact_name: patient.local_data?.emergency_contact_name || "",
-      emergency_contact_phone: patient.local_data?.emergency_contact_phone || "",
-      emergency_contact_relationship: patient.local_data?.emergency_contact_relationship || "",
+      email: userDetails.email || localData.email || patient.email || "",
+      first_name: userDetails.first_name || localData.first_name || patient.first_name || "",
+      last_name: userDetails.last_name || localData.last_name || patient.last_name || "",
+      phone_number: userDetails.phone_number || localData.phone_number || patient.phone_number || phoneFromFhir || "",
+      date_of_birth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+      gender: userDetails.gender || localData.gender || patient.gender || patient.fhir_data?.gender || "",
+      medical_record_number: localData.medical_record_number || patient.medical_record_number || patient.mrn || "",
+      nhis_id: localData.nhis_id || patient.nhis_id || "",
+      emergency_contact_name: localData.emergency_contact_name || patient.emergency_contact_name || "",
+      emergency_contact_phone: localData.emergency_contact_phone || patient.emergency_contact_phone || "",
+      emergency_contact_relationship: localData.emergency_contact_relationship || patient.emergency_contact_relationship || "",
       address_line1: patient.fhir_data?.address?.[0]?.line?.[0] || "",
       address_line2: patient.fhir_data?.address?.[0]?.line?.[1] || "",
       city: patient.fhir_data?.address?.[0]?.city || "",
@@ -450,6 +453,11 @@ const PatientForm = ({ patient, onSuccess }) => {
     // Registration requires DOB (schema allows optional for edit).
     if (!isEditMode && stepKey === 'identity' && !form.getValues('date_of_birth')) {
       form.setError('date_of_birth', { type: 'manual', message: 'Date of birth is required' });
+      return false;
+    }
+
+    if (!isEditMode && stepKey === 'identity' && !noEmail && !form.getValues('email')?.trim()) {
+      form.setError('email', { type: 'manual', message: 'Email is required unless no email is available' });
       return false;
     }
 
