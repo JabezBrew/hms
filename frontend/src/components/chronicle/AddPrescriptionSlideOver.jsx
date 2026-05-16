@@ -29,7 +29,10 @@ import { useSafetyCheck, usePatientAllergies, useDrugForms } from "@/hooks/useDr
 import { DrugSafetyDialog } from "@/components/drug-safety/DrugSafetyDialog";
 import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutocomplete";
 import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
-import { createPrescription, invalidatePrescriptionMutationQueries } from "@/hooks/usePrescriptionMutations";
+import {
+  createPrescription as createPrescriptionRequest,
+  invalidatePrescriptionMutationQueries,
+} from "@/hooks/usePrescriptionMutations";
 import { nursingKeys } from "@/hooks/useNursingQueries";
 import { emitOnboardingEvent } from "@/features/onboarding";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
@@ -52,7 +55,9 @@ const AddPrescriptionSlideOver = ({
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
-  const marGenerationAvailable = !isRustV2ApiMode();
+  const rustV2Mode = isRustV2ApiMode();
+  const marGenerationAvailable = !rustV2Mode;
+  const drugSafetyEnhancementsAvailable = !rustV2Mode;
 
   const queryClient = useQueryClient();
 
@@ -91,7 +96,9 @@ const AddPrescriptionSlideOver = ({
   const { data: allergiesData } = usePatientAllergies(patientId, { enabled: open });
 
   // Fetch drug forms when medication is selected and slide-over is open
-  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui, { enabled: open && !!selectedRxcui });
+  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui, {
+    enabled: open && drugSafetyEnhancementsAvailable && !!selectedRxcui,
+  });
   const drugForms = drugFormsData?.forms || [];
 
   // Route options
@@ -131,7 +138,7 @@ const AddPrescriptionSlideOver = ({
   // API mutation
   const createPrescriptionMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await createPrescription(data);
+      const response = await createPrescriptionRequest(data);
       return response;
     },
     onSuccess: (data) => {
@@ -170,7 +177,7 @@ const AddPrescriptionSlideOver = ({
       ...prev,
       medication_name: medication.name
     }));
-    setSelectedRxcui(medication.rxcui);
+    setSelectedRxcui(drugSafetyEnhancementsAvailable ? medication.rxcui : null);
 
     // Clear error
     if (errors.medication_name) {
@@ -246,6 +253,10 @@ const AddPrescriptionSlideOver = ({
   // Perform drug safety check
   const performSafetyCheck = async () => {
     if (!validate()) return false;
+
+    if (!drugSafetyEnhancementsAvailable) {
+      return true;
+    }
 
     setSafetyCheckPending(true);
 
@@ -447,19 +458,36 @@ const AddPrescriptionSlideOver = ({
           <div className="space-y-2">
             <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <Shield className="h-3.5 w-3.5 text-sky-600" />
-              Medication Name * (with drug safety check)
+              {drugSafetyEnhancementsAvailable
+                ? 'Medication Name * (with drug safety check)'
+                : 'Medication Name *'}
             </Label>
-            <MedicationAutocomplete
-              value={formData.medication_name}
-              onSelect={handleMedicationSelect}
-              placeholder="Search for medication..."
-              className={cn(
-                "font-mono",
-                errors.medication_name && "border-red-500"
-              )}
-            />
+            {drugSafetyEnhancementsAvailable ? (
+              <MedicationAutocomplete
+                value={formData.medication_name}
+                onSelect={handleMedicationSelect}
+                placeholder="Search for medication..."
+                className={cn(
+                  "font-mono",
+                  errors.medication_name && "border-red-500"
+                )}
+              />
+            ) : (
+              <Input
+                aria-label="Medication"
+                placeholder="Enter medication name..."
+                value={formData.medication_name}
+                onChange={(event) => handleChange('medication_name', event.target.value)}
+                className={cn(
+                  "font-mono",
+                  errors.medication_name && "border-red-500"
+                )}
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              Drug interactions and allergy checks will be performed automatically
+              {drugSafetyEnhancementsAvailable
+                ? 'Drug interactions and allergy checks will be performed automatically'
+                : 'Drug interaction checks are not exposed in Rust V2 yet; patient allergy warnings remain visible.'}
             </p>
             {errors.medication_name && (
               <p className="text-xs text-red-500">{errors.medication_name}</p>
@@ -467,7 +495,7 @@ const AddPrescriptionSlideOver = ({
           </div>
 
           {/* Drug Form Selector - Shows available strengths/forms from RxNorm */}
-          {selectedRxcui && (
+          {drugSafetyEnhancementsAvailable && selectedRxcui && (
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Package className="h-3.5 w-3.5 text-sky-600" />
