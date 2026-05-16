@@ -345,7 +345,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
   const canCheckInInRustV2 = rustV2Mode
     && !['arrived', 'fulfilled', 'cancelled', 'noshow'].includes(appointment.status);
   const canCancelInRustV2 = rustV2Mode
-    && !['cancelled', 'fulfilled'].includes(appointment.status);
+    && (appointment.v2_status === 'scheduled' || appointment.status === 'booked');
 
   return (
     <div className="space-y-6 animate-chronicle-enter">

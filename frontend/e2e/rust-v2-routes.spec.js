@@ -112,6 +112,36 @@ async function createSmokePatient(page) {
   return new URL(page.url()).pathname.match(/\/patients\/([0-9a-f-]{36})/)?.[1];
 }
 
+async function createSmokeAppointment(page) {
+  const patientId = await createSmokePatient(page);
+  expect(patientId).toBeTruthy();
+
+  await page.goto(`/appointments/create?patientId=${patientId}`);
+  await expect(page.getByRole('heading', { name: 'Schedule Appointment' })).toBeVisible();
+
+  await page.getByRole('combobox').filter({ hasText: /Select clinic/i }).click();
+  await page.getByRole('option', { name: /General Clinic/i }).click();
+
+  await page.getByRole('combobox').filter({ hasText: /Select type/i }).click();
+  await page.getByRole('option', { name: /General/i }).click();
+
+  await expect(page.getByText(/No slots for this date/i)).toHaveCount(0);
+  await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/ }).first().click();
+
+  const createAppointmentResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/appointments') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Schedule Appointment' }).click();
+
+  const response = await createAppointmentResponse;
+  expect(response.status()).toBeLessThan(300);
+  await expect(page).toHaveURL(appointmentDetailRoutePattern);
+
+  return new URL(page.url()).pathname.match(/\/appointments\/([0-9a-f-]{36})/)?.[1];
+}
+
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
   const failures = [];
 
@@ -251,31 +281,80 @@ test('Rust V2 appointment create schedules through the existing appointment UI',
   });
 
   await signInAsAdmin(page);
-  const patientId = await createSmokePatient(page);
-  expect(patientId).toBeTruthy();
+  const appointmentId = await createSmokeAppointment(page);
+  expect(appointmentId).toBeTruthy();
 
-  await page.goto(`/appointments/create?patientId=${patientId}`);
-  await expect(page.getByRole('heading', { name: 'Schedule Appointment' })).toBeVisible();
+  expect(failures).toEqual([]);
+});
 
-  await page.getByRole('combobox').filter({ hasText: /Select clinic/i }).click();
-  await page.getByRole('option', { name: /General Clinic/i }).click();
+test('Rust V2 appointment detail checks in through the existing appointment UI', async ({ page }) => {
+  const failures = [];
 
-  await page.getByRole('combobox').filter({ hasText: /Select type/i }).click();
-  await page.getByRole('option', { name: /General/i }).click();
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
 
-  await expect(page.getByText(/No slots for this date/i)).toHaveCount(0);
-  await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/ }).first().click();
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
 
-  const createAppointmentResponse = page.waitForResponse((response) => (
-    response.url().includes('/api/v2/appointments') &&
+  await signInAsAdmin(page);
+  const appointmentId = await createSmokeAppointment(page);
+  expect(appointmentId).toBeTruthy();
+
+  await expect(page.getByRole('button', { name: 'Check In' })).toBeVisible();
+
+  const checkInResponse = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/visits/check-in') &&
     response.request().method() === 'POST'
   ));
 
-  await page.getByRole('button', { name: 'Schedule Appointment' }).click();
+  await page.getByRole('button', { name: 'Check In' }).click();
 
-  const response = await createAppointmentResponse;
+  const response = await checkInResponse;
   expect(response.status()).toBeLessThan(300);
-  await expect(page).toHaveURL(appointmentDetailRoutePattern);
+  await expect(page.getByText(/^Arrived$/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 appointment detail cancels scheduled appointments through the existing appointment UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  const appointmentId = await createSmokeAppointment(page);
+  expect(appointmentId).toBeTruthy();
+
+  await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel Appointment' }).click();
+
+  const cancelResponse = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/appointments/${appointmentId}/cancel`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Confirm Cancellation' }).click();
+
+  const response = await cancelResponse;
+  expect(response.status()).toBeLessThan(300);
+  await expect(page.getByText(/^Cancelled$/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check In' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
 
   expect(failures).toEqual([]);
 });
