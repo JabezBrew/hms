@@ -48,6 +48,7 @@ import { toast } from 'sonner';
 import format from 'date-fns/format';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { normalizeApiResults } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   useNursingTasks,
   useTodayTasks,
@@ -108,6 +109,8 @@ export default function NursingTasksPage() {
     priority: 'medium',
   });
   const [completionNotes, setCompletionNotes] = useState('');
+  const rustV2Mode = isRustV2ApiMode();
+  const generalTaskEditsAvailable = !rustV2Mode;
 
   // Fetch tasks
   const { data: tasksData, isLoading, refetch } = useNursingTasks({
@@ -205,6 +208,11 @@ export default function NursingTasksPage() {
 
   // Handle status update
   const handleStatusUpdate = async (task, newStatus) => {
+    if (rustV2Mode && !['completed', 'cancelled'].includes(newStatus)) {
+      toast.error('General nursing task edits are not available in Rust V2 mode yet.');
+      return;
+    }
+
     try {
       await updateMutation.mutateAsync({
         taskId: task.id,
@@ -458,6 +466,12 @@ export default function NursingTasksPage() {
         </div>
 
         {/* Filters */}
+        {rustV2Mode ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
+            General nursing task edits are not available in Rust V2 mode yet. Complete and cancel actions remain available.
+          </div>
+        ) : null}
+
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-wrap gap-4 items-end">
@@ -605,7 +619,7 @@ export default function NursingTasksPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              {task.status === 'pending' && (
+                              {task.status === 'pending' && generalTaskEditsAvailable && (
                                 <DropdownMenuItem
                                   onClick={() => handleStatusUpdate(task, 'in_progress')}
                                 >
