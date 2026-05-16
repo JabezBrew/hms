@@ -165,7 +165,10 @@ impl AppState {
         if config.provision_baseline {
             hms_db::provision::provision_baseline(
                 &pool,
-                &BaselineProvisioning::hms_local(config.deployment_profile),
+                &BaselineProvisioning::hms_local_with_facility_code(
+                    config.deployment_profile,
+                    config.facility_code.clone(),
+                ),
             )
             .await
             .context("failed to provision baseline HMS data")?;

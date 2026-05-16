@@ -142,6 +142,38 @@ async fn login_with_password_and_device(
     (access_token, cookie_header, csrf_token)
 }
 
+#[tokio::test]
+async fn provisioned_baseline_uses_configured_facility_code_for_login() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    config.facility_code = "MAIN".to_owned();
+    let app = app_with_config(config, database).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "email": "owner@hms.local",
+                        "password": "ChangeMe123!",
+                        "facility_code": "MAIN"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("login request succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["user"]["facility_code"], "MAIN");
+}
+
 fn auth_cookies(headers: &HeaderMap) -> (String, String) {
     let mut refresh_cookie = None;
     let mut csrf_cookie = None;
@@ -6625,6 +6657,9 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
         .expect("admission activation succeeds");
     assert_eq!(activate_response.status(), StatusCode::OK);
 
+    let recent_vitals_recorded_at = Utc::now() - Duration::hours(1);
+    let stale_vitals_recorded_at = Utc::now() - Duration::hours(72);
+
     let vitals_response = app
         .clone()
         .oneshot(
@@ -6636,7 +6671,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
                 .body(Body::from(
                     json!({
                         "admission_case_id": admission_case_id,
-                        "recorded_at": "2026-05-12T09:00:00Z",
+                        "recorded_at": recent_vitals_recorded_at.to_rfc3339(),
                         "temperature_c": 37.5,
                         "systolic_bp": 120,
                         "diastolic_bp": 80,
@@ -6665,7 +6700,7 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_patient_scope
                 .body(Body::from(
                     json!({
                         "admission_case_id": admission_case_id,
-                        "recorded_at": "2026-05-07T10:00:00Z",
+                        "recorded_at": stale_vitals_recorded_at.to_rfc3339(),
                         "temperature_c": 36.8,
                         "systolic_bp": 118,
                         "diastolic_bp": 76,

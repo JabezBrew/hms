@@ -88,6 +88,15 @@ impl BaselineProvisioning {
             seed_demo_patients: true,
         }
     }
+
+    pub fn hms_local_with_facility_code(
+        deployment_profile: DeploymentProfile,
+        facility_code: impl Into<String>,
+    ) -> Self {
+        let mut baseline = Self::hms_local(deployment_profile);
+        baseline.facility_code = facility_code.into();
+        baseline
+    }
 }
 
 pub async fn provision_baseline(
