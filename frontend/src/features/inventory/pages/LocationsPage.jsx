@@ -41,6 +41,7 @@ import {
 import { LocationForm } from '@/components/inventory';
 import { useStorageLocations } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
@@ -77,6 +78,7 @@ const TEMP_ZONE_OPTIONS = [
 export default function LocationsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const locationMutationsAvailable = !isRustV2ApiMode();
 
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -89,7 +91,7 @@ export default function LocationsPage() {
 
   // Sheet state from URL
   const action = searchParams.get('action');
-  const isCreateOpen = action === 'create';
+  const isCreateOpen = locationMutationsAvailable && action === 'create';
 
   // Build query params
   const queryParams = {
@@ -184,6 +186,9 @@ export default function LocationsPage() {
   };
 
   const handleEditLocation = (locationId) => {
+    if (!locationMutationsAvailable) {
+      return;
+    }
     navigate(`/inventory/locations/${locationId}?action=edit`);
   };
 
@@ -192,6 +197,9 @@ export default function LocationsPage() {
   };
 
   const handleCreateLocation = () => {
+    if (!locationMutationsAvailable) {
+      return;
+    }
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('action', 'create');
@@ -303,11 +311,15 @@ export default function LocationsPage() {
               <ArrowRightLeft className="h-4 w-4 mr-2" />
               Transfer To
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditLocation(location.id); }}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </DropdownMenuItem>
+            {locationMutationsAvailable && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditLocation(location.id); }}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ),
@@ -316,6 +328,7 @@ export default function LocationsPage() {
     handleEditLocation,
     handleTransferTo,
     handleViewStock,
+    locationMutationsAvailable,
   ]);
 
   const handleCloseSheet = () => {
@@ -384,15 +397,23 @@ export default function LocationsPage() {
               <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
-            <Button onClick={handleCreateLocation}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Location
-            </Button>
+            {locationMutationsAvailable && (
+              <Button onClick={handleCreateLocation}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Location
+              </Button>
+            )}
           </div>
         )}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!locationMutationsAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Storage location creation and editing is not available in Rust V2 mode yet. Existing
+          location review, stock visibility, and transfer request workflows remain available.
+        </div>
+      )}
 
       {/* Filters Row */}
       <div className="flex flex-col lg:flex-row gap-3">
@@ -477,7 +498,7 @@ export default function LocationsPage() {
               ? 'Try adjusting your filters'
               : 'Add your first storage location to get started'}
           </p>
-          {!hasActiveFilters && (
+          {!hasActiveFilters && locationMutationsAvailable && (
             <Button onClick={handleCreateLocation} className="font-mono text-xs">
               <Plus className="h-4 w-4 mr-2" />
               Add Location
