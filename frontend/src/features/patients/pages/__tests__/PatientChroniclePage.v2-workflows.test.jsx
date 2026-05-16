@@ -6,18 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PatientChroniclePage from '../PatientChroniclePage'
 import { SidebarProvider } from '@/components/ui/sidebar'
 
+const patientHookState = vi.hoisted(() => ({
+  data: {
+    id: 'patient-1',
+    name: 'Ama Mensah',
+    access: { clinical: true },
+    current_admission_id: 'admission-1',
+    local_data: {
+      id: 'patient-1',
+      medical_record_number: 'MRN-001',
+      current_admission_id: 'admission-1',
+    },
+  },
+}))
+
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
   usePatient: () => ({
-    data: {
-      id: 'patient-1',
-      name: 'Ama Mensah',
-      access: { clinical: true },
-      current_admission_id: 'admission-1',
-      local_data: {
-        id: 'patient-1',
-        current_admission_id: 'admission-1',
-      },
-    },
+    data: patientHookState.data,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -173,6 +178,17 @@ function renderPage(initialEntry = '/patients/patient-1') {
 describe('PatientChroniclePage Rust V2 workflow guards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    patientHookState.data = {
+      id: 'patient-1',
+      name: 'Ama Mensah',
+      access: { clinical: true },
+      current_admission_id: 'admission-1',
+      local_data: {
+        id: 'patient-1',
+        medical_record_number: 'MRN-001',
+        current_admission_id: 'admission-1',
+      },
+    }
   })
 
   afterEach(() => {
@@ -204,6 +220,24 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     await waitFor(() => {
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
     })
+  })
+
+  it('does not expose unsupported break-glass access in Rust V2 mode', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    patientHookState.data = {
+      id: 'patient-1',
+      name: 'Ama Mensah',
+      access: { clinical: false },
+      local_data: {
+        id: 'patient-1',
+        medical_record_number: 'MRN-001',
+      },
+    }
+
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: /request break-glass access/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/break-glass access is not available in rust v2/i)).toBeInTheDocument()
   })
 
   it('keeps legacy ward-round workflow actions available outside Rust V2 mode', async () => {

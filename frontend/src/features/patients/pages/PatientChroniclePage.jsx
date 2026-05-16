@@ -1198,7 +1198,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [activeEncounter, patient, openChronicleWorkspace]);
 
   const userRole = user?.role || user?.user_type;
-  const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);
+  const canRequestBreakGlass = !rustV2Mode && ['admin', 'doctor', 'nurse'].includes(userRole);
   // Access denied if patient loaded but user lacks clinical access
   const accessDenied = patient && !isLoading && patient?.access?.clinical === false;
   const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
@@ -1233,6 +1233,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   });
 
   const handleBreakGlassSubmit = useCallback(() => {
+    if (rustV2Mode) {
+      toast.error('Break-glass access is not available in Rust V2 mode.');
+      return;
+    }
+
     if (!breakGlassReason.trim()) {
       return;
     }
@@ -1240,7 +1245,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       reason: breakGlassReason.trim(),
       scope: 'clinical',
     });
-  }, [breakGlassReason, breakGlassMutation]);
+  }, [breakGlassReason, breakGlassMutation, rustV2Mode]);
 
   // ============================================
   // Loading state
@@ -1302,6 +1307,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       Provide a reason to unlock this record for a limited time.
                     </span>
                   </div>
+                ) : rustV2Mode ? (
+                  <p className="text-xs text-muted-foreground">
+                    Break-glass access is not available in Rust V2 mode.
+                  </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     Break-glass access is available to clinical staff only.
@@ -1311,17 +1320,19 @@ const PatientChroniclePage = ({ defaultAction }) => {
             </div>
           </div>
 
-          <BreakGlassDialog
-            open={isBreakGlassOpen}
-            onOpenChange={setBreakGlassOpen}
-            patientName={patientName}
-            patientMrn={patientMrn}
-            reason={breakGlassReason}
-            onReasonChange={setBreakGlassReason}
-            onSubmit={handleBreakGlassSubmit}
-            isSubmitting={breakGlassMutation.isPending}
-            ttlMinutes={30}
-          />
+          {canRequestBreakGlass && (
+            <BreakGlassDialog
+              open={isBreakGlassOpen}
+              onOpenChange={setBreakGlassOpen}
+              patientName={patientName}
+              patientMrn={patientMrn}
+              reason={breakGlassReason}
+              onReasonChange={setBreakGlassReason}
+              onSubmit={handleBreakGlassSubmit}
+              isSubmitting={breakGlassMutation.isPending}
+              ttlMinutes={30}
+            />
+          )}
         </div>
       </>
     );
