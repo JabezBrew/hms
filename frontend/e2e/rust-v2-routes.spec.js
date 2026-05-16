@@ -721,3 +721,88 @@ test('Rust V2 encounters create, detail, edit, workspace, and cancel through the
 
   expect(failures).toEqual([]);
 });
+
+test('Rust V2 wards list, detail, section setup, and reports use the existing UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  await page.goto('/wards');
+  await expect(page.getByRole('heading', { name: 'Ward Management' })).toBeVisible();
+  await expect(page.getByText('Total Beds')).toBeVisible();
+
+  const seededWardRow = page
+    .getByRole('row')
+    .filter({ hasText: 'Active' })
+    .first();
+  await expect(seededWardRow).toBeVisible();
+  await seededWardRow.click();
+  await expect(page).toHaveURL(/\/wards\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole('tab', { name: 'Ward Overview' })).toBeVisible();
+  await expect(page.getByText('Total Beds')).toBeVisible();
+
+  const wardName = `Playwright Ward ${Date.now()}`;
+  await page.goto('/wards/new');
+  await expect(page.getByRole('heading', { name: 'Create New Ward' })).toBeVisible();
+  await page.getByLabel('Ward Name').fill(wardName);
+  await page.getByLabel('Total Beds').fill('1');
+  await page.getByLabel(/Base Rate Per Night/i).fill('100');
+
+  const createWardResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/wards') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Create Ward' }).click();
+
+  const createWardResponse = await createWardResponsePromise;
+  expect(createWardResponse.status()).toBeLessThan(300);
+  const createWardPayload = await createWardResponse.json();
+  const wardId = createWardPayload?.data?.id;
+  expect(wardId).toBeTruthy();
+
+  await expect(page).toHaveURL(/\/wards$/);
+  await page.getByPlaceholder('Search wards...').fill(wardName);
+  const createdWardRow = page.getByRole('row').filter({ hasText: wardName }).first();
+  await expect(createdWardRow).toBeVisible();
+  await createdWardRow.click();
+  await expect(page).toHaveURL(new RegExp(`/wards/${wardId}$`));
+  await expect(page.getByRole('heading', { name: wardName })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Manage Sections' }).click();
+  await expect(page.getByRole('heading', { name: 'Ward Sections' })).toBeVisible();
+
+  const sectionName = `Recovery Bay ${Date.now()}`;
+  await page.getByRole('button', { name: 'Create Section' }).first().click();
+  const sectionDialog = page.getByRole('dialog', { name: 'Create Section' });
+  await expect(sectionDialog).toBeVisible();
+  await sectionDialog.getByLabel(/Section Name/i).fill(sectionName);
+
+  const createSectionResponsePromise = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/wards/${wardId}/sections`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await sectionDialog.getByRole('button', { name: 'Create Section' }).click();
+
+  const createSectionResponse = await createSectionResponsePromise;
+  expect(createSectionResponse.status()).toBeLessThan(300);
+  await expect(page.getByText(sectionName)).toBeVisible();
+
+  await page.goto('/wards/reports');
+  await expect(page.getByRole('heading', { name: /Ward Occupancy Reports/i })).toBeVisible();
+  await expect(page.getByText('Report Filters')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export Report' })).toBeVisible();
+
+  expect(failures).toEqual([]);
+});

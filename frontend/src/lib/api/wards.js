@@ -24,6 +24,18 @@ function normalizeV2Limit(params = {}, fallback = 100) {
   return Math.min(parsed, 100);
 }
 
+function deriveRustCodeFromName(value, fallback) {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '');
+
+  return normalized || fallback;
+}
+
 function adaptV2Ward(ward) {
   const totalBeds = Number(ward.active_bed_count || 0);
   const occupiedBeds = Number(ward.occupied_bed_count || 0);
@@ -159,7 +171,10 @@ function bedUpdatePayloadFrom(data = {}) {
 
 function wardPayloadFrom(data = {}) {
   const name = String(data.name || data.label || data.code || '').trim();
-  const code = String(data.code || data.ward_code || data.ward_type || name).trim();
+  const explicitCode = data.code ?? data.ward_code;
+  const code = explicitCode !== undefined && explicitCode !== null
+    ? String(explicitCode).trim()
+    : deriveRustCodeFromName(name || data.ward_type, 'WARD');
   return { code, name };
 }
 
@@ -821,8 +836,11 @@ export const wardsApi = {
     try {
       if (isRustV2ApiMode()) {
         const wardId = wardIdFrom(data);
-        const code = String(data.code || '').trim();
         const name = String(data.name || '').trim();
+        const explicitCode = data.code ?? data.section_code;
+        const code = explicitCode !== undefined && explicitCode !== null
+          ? String(explicitCode).trim()
+          : deriveRustCodeFromName(name, 'SECTION');
         if (!wardId || !code || !name) {
           throw new Error('Rust V2 section creation requires a ward, code, and name.');
         }

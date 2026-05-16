@@ -280,6 +280,46 @@ describe('Rust V2 wards bridge', () => {
     }));
   });
 
+  it('derives Rust ward codes from preserved UI names when no explicit code field exists', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'ward-derived',
+            code: 'PLAYWRIGHT-GENERAL-WARD',
+            name: 'Playwright General Ward',
+            status: 'active',
+            active_bed_count: 0,
+            occupied_bed_count: 0,
+            created_at: '2026-05-12T10:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardsApi.createWard({
+      name: 'Playwright General Ward',
+      ward_type: 'general',
+      total_beds: 12,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'PLAYWRIGHT-GENERAL-WARD',
+          name: 'Playwright General Ward',
+        }),
+      }),
+    );
+  });
+
   it('updates wards through the Rust V2 ward setup contract', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
@@ -617,6 +657,46 @@ describe('Rust V2 wards bridge', () => {
     ]);
     expect(createdSection).toEqual(expect.objectContaining({ id: 'section-2', ward: 'ward-1' }));
     expect(createdBed).toEqual(expect.objectContaining({ id: 'bed-1', bed_number: 'W-01', ward: 'ward-1' }));
+  });
+
+  it('derives Rust section codes from preserved UI names when no explicit code field exists', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'section-derived',
+            ward_id: 'ward-1',
+            code: 'RECOVERY-BAY',
+            name: 'Recovery Bay',
+            status: 'active',
+            active_bed_count: 0,
+            created_at: '2026-05-12T09:05:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardsApi.createSection({
+      ward: 'ward-1',
+      name: 'Recovery Bay',
+      accommodation_tier: 'open',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/ward-1/sections',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'RECOVERY-BAY',
+          name: 'Recovery Bay',
+        }),
+      }),
+    );
   });
 
   it('loads ward sections through the bounded Rust V2 section list helper', async () => {
