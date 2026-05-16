@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ import { clinicsApi } from '@/features/clinics/api';
 import { appointmentsApi } from '@/features/appointments/api';
 import { staffApi } from '@/lib/api/staff';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { keyWith } from '@/shared/lib/queryKeys';
 
 const triageAssignKeys = {
@@ -39,12 +41,18 @@ const triageAssignKeys = {
   practitioners: (clinicId) => keyWith('clinic-practitioners', clinicId),
 };
 
-const assignSchema = z.object({
-  clinic_id: z.string().min(1, 'Clinic is required'),
-  appointment_type_id: z.string().min(1, 'Appointment type is required'),
-  start_time: z.string().min(1, 'Start time is required'),
-  practitioner_id: z.string().optional(),
-});
+const ANY_PRACTITIONER_VALUE = '__any_available';
+
+function buildAssignSchema({ practitionerRequired }) {
+  return z.object({
+    clinic_id: z.string().min(1, 'Clinic is required'),
+    appointment_type_id: z.string().min(1, 'Appointment type is required'),
+    start_time: z.string().min(1, 'Start time is required'),
+    practitioner_id: practitionerRequired
+      ? z.string().min(1, 'Practitioner is required in Rust V2 mode')
+      : z.string().optional(),
+  });
+}
 
 /**
  * TriageAssignDialog - Dialog for assigning triaged patient to a clinic
@@ -58,6 +66,11 @@ const assignSchema = z.object({
 export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
   const { facilityCode } = useAuth();
   const { assignToClinic } = useTriageActions();
+  const isRustV2 = isRustV2ApiMode();
+  const assignSchema = React.useMemo(
+    () => buildAssignSchema({ practitionerRequired: isRustV2 }),
+    [isRustV2],
+  );
 
   const {
     register,
@@ -148,6 +161,9 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
           <DialogTitle className="font-display text-xl">
             Assign to Clinic
           </DialogTitle>
+          <DialogDescription>
+            Choose the clinic, appointment type, time, and practitioner for this triage entry.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -195,11 +211,11 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
               </SelectTrigger>
               <SelectContent>
                 {clinicsLoading ? (
-                  <SelectItem value="" disabled>
+                  <SelectItem value="__loading_clinics" disabled>
                     Loading...
                   </SelectItem>
                 ) : clinicsList.length === 0 ? (
-                  <SelectItem value="" disabled>
+                  <SelectItem value="__no_clinics" disabled>
                     No clinics available
                   </SelectItem>
                 ) : (
@@ -231,11 +247,11 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
               </SelectTrigger>
               <SelectContent>
                 {typesLoading ? (
-                  <SelectItem value="" disabled>
+                  <SelectItem value="__loading_appointment_types" disabled>
                     Loading...
                   </SelectItem>
                 ) : typesList.length === 0 ? (
-                  <SelectItem value="" disabled>
+                  <SelectItem value="__no_appointment_types" disabled>
                     No types available
                   </SelectItem>
                 ) : (
@@ -268,25 +284,35 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
             )}
           </div>
 
-          {/* Practitioner (Optional) */}
+          {/* Practitioner */}
           <div className="space-y-2">
             <Label htmlFor="practitioner_id" className="flex items-center gap-2">
               <User className="h-4 w-4" />
-              Practitioner (Optional)
+              {isRustV2 ? 'Practitioner *' : 'Practitioner (Optional)'}
             </Label>
             <Select
               value={watch('practitioner_id')}
-              onValueChange={(value) => setValue('practitioner_id', value)}
+              onValueChange={(value) => setValue(
+                'practitioner_id',
+                value === ANY_PRACTITIONER_VALUE ? '' : value,
+                { shouldValidate: true },
+              )}
               disabled={!clinicId}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Any available..." />
+                <SelectValue placeholder={isRustV2 ? 'Select practitioner...' : 'Any available...'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Any available</SelectItem>
+                {!isRustV2 && (
+                  <SelectItem value={ANY_PRACTITIONER_VALUE}>Any available</SelectItem>
+                )}
                 {practitionersLoading ? (
-                  <SelectItem value="" disabled>
+                  <SelectItem value="__loading_practitioners" disabled>
                     Loading...
+                  </SelectItem>
+                ) : practitionersList.length === 0 ? (
+                  <SelectItem value="__no_practitioners" disabled>
+                    No practitioners available
                   </SelectItem>
                 ) : (
                   practitionersList.map((p) => (
@@ -297,13 +323,24 @@ export function TriageAssignDialog({ open, onClose, entry, onSuccess }) {
                 )}
               </SelectContent>
             </Select>
+            {isRustV2 && (
+              <p className="text-sm text-muted-foreground">
+                Rust V2 requires a practitioner before assigning triage to a clinic.
+              </p>
+            )}
+            {errors.practitioner_id && (
+              <p className="text-sm text-rose-400">{errors.practitioner_id.message}</p>
+            )}
           </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={assignToClinic.isPending}>
+            <Button
+              type="submit"
+              disabled={assignToClinic.isPending || (isRustV2 && !watch('practitioner_id'))}
+            >
               {assignToClinic.isPending ? 'Assigning...' : 'Assign to Clinic'}
             </Button>
           </DialogFooter>
