@@ -32,6 +32,7 @@ import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
 import { createPrescription, invalidatePrescriptionMutationQueries } from "@/hooks/usePrescriptionMutations";
 import { nursingKeys } from "@/hooks/useNursingQueries";
 import { emitOnboardingEvent } from "@/features/onboarding";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 /**
  * AddPrescriptionSlideOver - Split-screen panel for prescribing medications
@@ -51,6 +52,7 @@ const AddPrescriptionSlideOver = ({
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
+  const marGenerationAvailable = !isRustV2ApiMode();
 
   const queryClient = useQueryClient();
 
@@ -67,7 +69,7 @@ const AddPrescriptionSlideOver = ({
   });
 
   // MAR generation option - auto generates for inpatients
-  const [generateMAR, setGenerateMAR] = useState(true);
+  const [generateMAR, setGenerateMAR] = useState(marGenerationAvailable);
   const [marDays, setMarDays] = useState(7);
 
   // Check if patient is admitted (for MAR generation hint)
@@ -156,10 +158,10 @@ const AddPrescriptionSlideOver = ({
       });
       setSelectedRxcui(null);
       setErrors({});
-      setGenerateMAR(true);
+      setGenerateMAR(marGenerationAvailable);
       setMarDays(7);
     }
-  }, [open]);
+  }, [marGenerationAvailable, open]);
 
   // Handle medication selection from autocomplete
   const handleMedicationSelect = (medication) => {
@@ -298,10 +300,12 @@ const AddPrescriptionSlideOver = ({
       route: formData.route,
       frequency: formData.frequency,
       start_date: formData.start_date,
-      // MAR generation options
-      generate_mar: generateMAR ? 'yes' : 'no',
-      mar_days: marDays,
     };
+
+    if (marGenerationAvailable) {
+      data.generate_mar = generateMAR ? 'yes' : 'no';
+      data.mar_days = marDays;
+    }
 
     if (formData.duration_days) {
       data.duration_days = parseInt(formData.duration_days);
@@ -641,50 +645,58 @@ const AddPrescriptionSlideOver = ({
             />
           </div>
 
-          {/* MAR Generation (for nursing workflow) */}
-          <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="generate-mar"
-                checked={generateMAR}
-                onCheckedChange={setGenerateMAR}
-                className="mt-0.5"
-              />
-              <div className="flex-1 space-y-2">
-                <Label
-                  htmlFor="generate-mar"
-                  className="font-mono text-sm font-medium cursor-pointer flex items-center gap-2"
-                >
-                  <ClipboardList className="h-4 w-4 text-sky-600" />
-                  Generate Medication Administration Record (MAR)
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Creates scheduled doses for nursing to administer and pharmacy to dispense.
-                  {isPatientAdmitted && (
-                    <span className="text-sky-600 font-medium"> Patient is currently admitted.</span>
+          {marGenerationAvailable ? (
+            <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="generate-mar"
+                  checked={generateMAR}
+                  onCheckedChange={setGenerateMAR}
+                  className="mt-0.5"
+                />
+                <div className="flex-1 space-y-2">
+                  <Label
+                    htmlFor="generate-mar"
+                    className="font-mono text-sm font-medium cursor-pointer flex items-center gap-2"
+                  >
+                    <ClipboardList className="h-4 w-4 text-sky-600" />
+                    Generate Medication Administration Record (MAR)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Creates scheduled doses for nursing to administer and pharmacy to dispense.
+                    {isPatientAdmitted && (
+                      <span className="text-sky-600 font-medium"> Patient is currently admitted.</span>
+                    )}
+                  </p>
+                  {generateMAR && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <Label className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        Generate for
+                      </Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={marDays}
+                        onChange={(e) => setMarDays(parseInt(e.target.value) || 7)}
+                        className="font-mono w-16 h-8 text-center"
+                      />
+                      <Label className="font-mono text-xs text-muted-foreground">
+                        days
+                      </Label>
+                    </div>
                   )}
-                </p>
-                {generateMAR && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <Label className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-                      Generate for
-                    </Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="30"
-                      value={marDays}
-                      onChange={(e) => setMarDays(parseInt(e.target.value) || 7)}
-                      className="font-mono w-16 h-8 text-center"
-                    />
-                    <Label className="font-mono text-xs text-muted-foreground">
-                      days
-                    </Label>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <Alert>
+              <ClipboardList className="h-4 w-4" />
+              <AlertDescription>
+                MAR generation is not available in Rust V2 mode yet.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Prescription Summary */}
           {formData.medication_name && formData.dosage && (
