@@ -13,6 +13,12 @@ const V2_FEATURE_ALIASES = Object.freeze({
   admin: ['audit', 'department_rosters'],
 })
 
+const DEFAULT_V2_OPERATIONAL_CAPABILITIES = Object.freeze({
+  outpatient_requires_active_clinic_schedule: false,
+  facility_switcher: false,
+  multi_facility_mode: false,
+})
+
 function expandV2FeatureMap(features = {}) {
   const expanded = { ...features }
   Object.entries(V2_FEATURE_ALIASES).forEach(([sourceFeature, aliases]) => {
@@ -31,6 +37,10 @@ function adaptV2DeploymentCapabilities(response) {
   return {
     ...data,
     features: expandV2FeatureMap(data.features),
+    capabilities: {
+      ...DEFAULT_V2_OPERATIONAL_CAPABILITIES,
+      ...(data.capabilities || {}),
+    },
   }
 }
 

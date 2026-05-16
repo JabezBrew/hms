@@ -82,3 +82,29 @@ test('Rust V2 static work surfaces load without route crashes or server errors',
 
   expect(failures).toEqual([]);
 });
+
+test('Rust V2 patient registration exposes seeded departments without requiring roster clinic schedules', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  await page.goto('/patients/create');
+
+  await expect(page.getByRole('heading', { name: /Register New Patient/i })).toBeVisible();
+  await page.getByRole('combobox').filter({ hasText: /Select department/i }).click();
+  await expect(page.getByRole('option', { name: 'Outpatient Department' })).toBeVisible();
+  await page.getByRole('option', { name: 'Outpatient Department' }).click();
+  await expect(page.getByText(/Registration will continue under the selected department/i)).toBeVisible();
+
+  expect(failures).toEqual([]);
+});

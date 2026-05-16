@@ -3315,6 +3315,15 @@
       },
       "DeploymentCapabilities": {
         "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "deployment_profile": {
             "$ref": "#/components/schemas/DeploymentProfile"
           },
@@ -3378,6 +3387,7 @@
           "facility_id",
           "facility_code",
           "features",
+          "capabilities",
           "permissions",
           "terminology",
           "navigation"
@@ -11381,6 +11391,15 @@
         "properties": {
           "data": {
             "properties": {
+              "capabilities": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
               "deployment_profile": {
                 "$ref": "#/components/schemas/DeploymentProfile"
               },
@@ -11444,6 +11463,7 @@
               "facility_id",
               "facility_code",
               "features",
+              "capabilities",
               "permissions",
               "terminology",
               "navigation"

@@ -57,6 +57,9 @@ pub const DEFAULT_BILLING_RULE_NHIS_ID: u128 = 0x9000000000000000000000000000002
 pub const DEFAULT_CASH_DRAWER_ID: u128 = 0x90000000000000000000000000000030;
 pub const DEFAULT_ORG_UNIT_ADMIN_ID: u128 = 0xa0000000000000000000000000000001;
 pub const DEFAULT_ORG_UNIT_CLINICAL_ID: u128 = 0xa0000000000000000000000000000002;
+pub const DEFAULT_ORG_UNIT_OPD_ID: u128 = 0xa0000000000000000000000000000003;
+pub const DEFAULT_ORG_UNIT_EMERGENCY_ID: u128 = 0xa0000000000000000000000000000004;
+pub const DEFAULT_ORG_UNIT_MEDICINE_ID: u128 = 0xa0000000000000000000000000000005;
 pub const DEFAULT_POSITION_TEMPLATE_ADMIN_ID: u128 = 0xa0000000000000000000000000000010;
 pub const DEFAULT_POSITION_ADMIN_ID: u128 = 0xa0000000000000000000000000000020;
 pub const DEFAULT_AUTHORITY_APPOINTMENT_ID: u128 = 0xa0000000000000000000000000000030;
@@ -701,6 +704,37 @@ async fn seed_admin_authority_baseline(
         .bind(code)
         .bind(name)
         .bind(codec::encode(unit_type)?)
+        .execute(pool)
+        .await?;
+    }
+
+    for (id, code, name) in [
+        (DEFAULT_ORG_UNIT_OPD_ID, "OPD", "Outpatient Department"),
+        (
+            DEFAULT_ORG_UNIT_EMERGENCY_ID,
+            "EMERGENCY",
+            "Emergency Department",
+        ),
+        (DEFAULT_ORG_UNIT_MEDICINE_ID, "MEDICINE", "General Medicine"),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO organization_units (id, facility_id, parent_unit_id, code, name, unit_type)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (facility_id, code) DO UPDATE
+            SET id = EXCLUDED.id,
+                parent_unit_id = EXCLUDED.parent_unit_id,
+                name = EXCLUDED.name,
+                unit_type = EXCLUDED.unit_type,
+                is_active = TRUE
+            "#,
+        )
+        .bind(Uuid::from_u128(id))
+        .bind(baseline.facility_id)
+        .bind(Uuid::from_u128(DEFAULT_ORG_UNIT_CLINICAL_ID))
+        .bind(code)
+        .bind(name)
+        .bind(codec::encode(OrgUnitType::Department)?)
         .execute(pool)
         .await?;
     }

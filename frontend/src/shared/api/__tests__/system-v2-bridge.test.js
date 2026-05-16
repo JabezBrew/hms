@@ -52,6 +52,9 @@ describe('Rust V2 system bridge', () => {
               dashboards: true,
               admin: true,
             },
+            capabilities: {
+              outpatient_requires_active_clinic_schedule: false,
+            },
             permissions: ['system.deployment_capabilities.view'],
             terminology: {},
             navigation: { groups: [] },
@@ -87,6 +90,41 @@ describe('Rust V2 system bridge', () => {
       insurance_claims: true,
       audit: true,
       department_rosters: true,
+    });
+    expect(response.capabilities).toMatchObject({
+      outpatient_requires_active_clinic_schedule: false,
+    });
+  });
+
+  it('defaults Rust V2 outpatient registration away from roster-only clinic schedules', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            deployment_profile: 'hospital',
+            profile_label: 'Hospital',
+            facility_id: 'facility-1',
+            facility_code: 'HMS',
+            features: { patients: true },
+            permissions: ['system.deployment_capabilities.view'],
+            terminology: {},
+            navigation: { groups: [] },
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await systemApi.getDeploymentCapabilities();
+
+    expect(response.capabilities).toMatchObject({
+      outpatient_requires_active_clinic_schedule: false,
+      facility_switcher: false,
+      multi_facility_mode: false,
     });
   });
 

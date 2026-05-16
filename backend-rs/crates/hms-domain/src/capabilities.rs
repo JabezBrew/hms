@@ -44,6 +44,7 @@ pub struct DeploymentCapabilities {
     pub facility_id: Uuid,
     pub facility_code: String,
     pub features: HashMap<FeatureKey, bool>,
+    pub capabilities: HashMap<String, bool>,
     pub permissions: Vec<PermissionCode>,
     pub terminology: HashMap<String, String>,
     pub navigation: NavigationManifest,
@@ -72,10 +73,23 @@ pub fn deployment_capabilities_from_features(
         facility_id,
         facility_code: facility_code.to_owned(),
         features: features.clone(),
+        capabilities: operational_capabilities_for_profile(profile),
         permissions,
         terminology: terminology_for_profile(profile),
         navigation: navigation_for_features(&features),
     }
+}
+
+fn operational_capabilities_for_profile(profile: DeploymentProfile) -> HashMap<String, bool> {
+    let mut capabilities = HashMap::new();
+    let multi_facility = matches!(profile, DeploymentProfile::HospitalNetwork);
+    capabilities.insert("facility_switcher".to_owned(), multi_facility);
+    capabilities.insert("multi_facility_mode".to_owned(), multi_facility);
+    capabilities.insert(
+        "outpatient_requires_active_clinic_schedule".to_owned(),
+        false,
+    );
+    capabilities
 }
 
 pub fn enabled_features_for_profile(profile: DeploymentProfile) -> Vec<FeatureKey> {
