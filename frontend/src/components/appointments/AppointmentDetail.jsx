@@ -346,6 +346,9 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
     && !['arrived', 'fulfilled', 'cancelled', 'noshow'].includes(appointment.status);
   const canCancelInRustV2 = rustV2Mode
     && (appointment.v2_status === 'scheduled' || appointment.status === 'booked');
+  const canEditInRustV2 = !rustV2Mode
+    || appointment.v2_status === 'scheduled'
+    || appointment.status === 'booked';
 
   return (
     <div className="space-y-6 animate-chronicle-enter">
@@ -499,15 +502,17 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                 </AlertDialog>
               ) : null}
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="font-mono text-xs"
-                onClick={handleEdit}
-              >
-                <Edit className="h-3.5 w-3.5 mr-1.5" />
-                Edit
-              </Button>
+              {canEditInRustV2 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs"
+                  onClick={handleEdit}
+                >
+                  <Edit className="h-3.5 w-3.5 mr-1.5" />
+                  Edit
+                </Button>
+              ) : null}
 
               {!rustV2Mode ? (
                 <AlertDialog>

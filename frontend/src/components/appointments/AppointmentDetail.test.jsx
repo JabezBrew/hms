@@ -83,7 +83,7 @@ describe('AppointmentDetail', () => {
     expect(getByRole('button', { name: /cancel appointment/i })).toBeInTheDocument();
   });
 
-  it('hides Rust V2 appointment cancellation after check-in', () => {
+  it('hides Rust V2 appointment edit and cancellation after check-in', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
     appointmentStatus = 'arrived';
 
@@ -93,6 +93,7 @@ describe('AppointmentDetail', () => {
     );
 
     expect(queryByRole('button', { name: /check in/i })).not.toBeInTheDocument();
+    expect(queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
     expect(queryByRole('button', { name: /cancel appointment/i })).not.toBeInTheDocument();
   });
 

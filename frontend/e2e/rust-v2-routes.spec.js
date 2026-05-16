@@ -317,6 +317,7 @@ test('Rust V2 appointment detail checks in through the existing appointment UI',
   const response = await checkInResponse;
   expect(response.status()).toBeLessThan(300);
   await expect(page.getByText(/^Arrived$/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Edit$/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
 
   expect(failures).toEqual([]);
@@ -354,7 +355,47 @@ test('Rust V2 appointment detail cancels scheduled appointments through the exis
   expect(response.status()).toBeLessThan(300);
   await expect(page.getByText(/^Cancelled$/i)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check In' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Edit$/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancel Appointment' })).toHaveCount(0);
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 appointment edit reschedules through the existing appointment UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+  const appointmentId = await createSmokeAppointment(page);
+  expect(appointmentId).toBeTruthy();
+
+  await page.getByRole('button', { name: /^Edit$/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/appointments/${appointmentId}/edit$`));
+  await expect(page.getByRole('heading', { name: 'Edit Appointment' })).toBeVisible();
+
+  await page.getByRole('button', { name: /\d{1,2}:\d{2} [AP]M - \d{1,2}:\d{2} [AP]M/ }).last().click();
+
+  const updateResponse = page.waitForResponse((response) => (
+    response.url().includes(`/api/v2/appointments/${appointmentId}`) &&
+    response.request().method() === 'PATCH'
+  ));
+
+  await page.getByRole('button', { name: 'Save Changes' }).click();
+
+  const response = await updateResponse;
+  expect(response.status()).toBeLessThan(300);
+  await expect(page).toHaveURL(new RegExp(`/appointments/${appointmentId}$`));
+  await expect(page.getByText(/^Booked$/i).first()).toBeVisible();
 
   expect(failures).toEqual([]);
 });
