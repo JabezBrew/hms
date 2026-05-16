@@ -12,6 +12,7 @@ import { TablePagination } from '@/components/ui/table-pagination';
 import VirtualizedTable from '@/components/ui/VirtualizedTable';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   LabEmptyState,
   LabMetricGrid,
@@ -51,6 +52,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useSlideOver } from "@/hooks/useSlideOver";
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const CATALOG_PAGE_SIZE = 24;
 
@@ -108,6 +110,8 @@ function getStatusQueryParams(statusFilter) {
  * - Chronicle design system styling
  */
 const LabCatalogPage = () => {
+  const catalogMutationsAvailable = !isRustV2ApiMode();
+
   // Tab state
   const [activeTab, setActiveTab] = useState("tests");
 
@@ -229,6 +233,11 @@ const LabCatalogPage = () => {
 
   // Handle customize
   const handleCustomize = (item, type) => {
+    if (!catalogMutationsAvailable) {
+      toast.error("Lab catalog editing is not available in Rust V2 mode yet.");
+      return;
+    }
+
     setSelectedItem(item);
     setItemType(type);
     openSlideOver();
@@ -236,6 +245,11 @@ const LabCatalogPage = () => {
 
   // Handle reset
   const handleReset = (item, type) => {
+    if (!catalogMutationsAvailable) {
+      toast.error("Lab catalog editing is not available in Rust V2 mode yet.");
+      return;
+    }
+
     setSelectedItem(item);
     setItemType(type);
     openSlideOver();
@@ -243,6 +257,11 @@ const LabCatalogPage = () => {
 
   // Handle delete initiation
   const handleDeleteInit = (item, type) => {
+    if (!catalogMutationsAvailable) {
+      toast.error("Lab catalog editing is not available in Rust V2 mode yet.");
+      return;
+    }
+
     setItemToDelete({ ...item, type });
     setDeleteDialogOpen(true);
   };
@@ -250,6 +269,12 @@ const LabCatalogPage = () => {
   // Handle delete confirm
   const handleDeleteConfirm = async () => {
     if (!itemToDelete) return;
+    if (!catalogMutationsAvailable) {
+      toast.error("Lab catalog editing is not available in Rust V2 mode yet.");
+      setDeleteDialogOpen(false);
+      setItemToDelete(null);
+      return;
+    }
 
     try {
       if (itemToDelete.type === "panel") {
@@ -437,7 +462,7 @@ const LabCatalogPage = () => {
         </div>
       ),
     },
-  ];
+  ].filter((column) => catalogMutationsAvailable || column.key !== "actions");
 
   const panelsColumns = [
     {
@@ -550,7 +575,7 @@ const LabCatalogPage = () => {
         </div>
       ),
     },
-  ];
+  ].filter((column) => catalogMutationsAvailable || column.key !== "actions");
 
   return (
     <PageShell>
@@ -571,22 +596,35 @@ const LabCatalogPage = () => {
               <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", isActiveFetching && "animate-spin")} />
               Refresh
             </Button>
-            <Button
-              size="sm"
-              className="font-mono text-xs"
-              onClick={() => {
-                setAddItemType(activeTab === "tests" ? "test" : "panel");
-                openAddSlideOver();
-              }}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Add {activeTab === "tests" ? "Test" : "Panel"}
-            </Button>
+            {catalogMutationsAvailable && (
+              <Button
+                size="sm"
+                className="font-mono text-xs"
+                onClick={() => {
+                  setAddItemType(activeTab === "tests" ? "test" : "panel");
+                  openAddSlideOver();
+                }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add {activeTab === "tests" ? "Test" : "Panel"}
+              </Button>
+            )}
           </div>
         )}
       >
         <LabMetricGrid metrics={metrics} className="mt-4 sm:mt-6" />
       </PageHeader>
+
+      {!catalogMutationsAvailable && (
+        <div className="px-4 pt-4 sm:px-6">
+          <Alert>
+            <TestTube2 className="h-4 w-4" />
+            <AlertDescription>
+              Lab catalog editing is not available in Rust V2 mode yet. Existing tests and panels remain available for ordering.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <LabToolbar className="py-3">
@@ -670,7 +708,7 @@ const LabCatalogPage = () => {
                   <Button variant="outline" size="sm" onClick={clearFilters} className="font-mono text-xs">
                     Clear Filters
                   </Button>
-                ) : (
+                ) : catalogMutationsAvailable ? (
                   <Button
                     size="sm"
                     onClick={() => {
@@ -682,7 +720,7 @@ const LabCatalogPage = () => {
                     <Plus className="mr-1.5 h-3.5 w-3.5" />
                     Add Test
                   </Button>
-                )}
+                ) : null}
               />
             ) : (
               <div className="overflow-x-auto">
@@ -691,7 +729,7 @@ const LabCatalogPage = () => {
                   rowKey={(test) => test.id}
                   rowHeight={68}
                   columns={testsColumns}
-                  onRowClick={(test) => handleCustomize(test, "test")}
+                  onRowClick={catalogMutationsAvailable ? (test) => handleCustomize(test, "test") : undefined}
                   rowClassName="hover:bg-muted/30"
                   className={cn(labTableClassName, "min-w-[1260px]")}
                   headerClassName={labTableHeaderClassName}
@@ -716,7 +754,7 @@ const LabCatalogPage = () => {
                   <Button variant="outline" size="sm" onClick={clearFilters} className="font-mono text-xs">
                     Clear Filters
                   </Button>
-                ) : (
+                ) : catalogMutationsAvailable ? (
                   <Button
                     size="sm"
                     onClick={() => {
@@ -728,7 +766,7 @@ const LabCatalogPage = () => {
                     <Plus className="mr-1.5 h-3.5 w-3.5" />
                     Add Panel
                   </Button>
-                )}
+                ) : null}
               />
             ) : (
               <div className="overflow-x-auto">
@@ -737,7 +775,7 @@ const LabCatalogPage = () => {
                   rowKey={(panel) => panel.id}
                   rowHeight={68}
                   columns={panelsColumns}
-                  onRowClick={(panel) => handleCustomize(panel, "panel")}
+                  onRowClick={catalogMutationsAvailable ? (panel) => handleCustomize(panel, "panel") : undefined}
                   rowClassName="hover:bg-muted/30"
                   className={cn(labTableClassName, "min-w-[1180px]")}
                   headerClassName={labTableHeaderClassName}
@@ -760,28 +798,32 @@ const LabCatalogPage = () => {
         </main>
       </Tabs>
 
-      {/* Customize slide-over */}
-      <LabTestCustomizeSlideOver
-        open={slideOverOpen}
-        onClose={closeSlideOver}
-        item={selectedItem}
-        type={itemType}
-        onSuccess={handleSlideOverSuccess}
-      />
+      {catalogMutationsAvailable && (
+        <>
+          {/* Customize slide-over */}
+          <LabTestCustomizeSlideOver
+            open={slideOverOpen}
+            onClose={closeSlideOver}
+            item={selectedItem}
+            type={itemType}
+            onSuccess={handleSlideOverSuccess}
+          />
 
-      {/* Add slide-over */}
-      <AddLabTestSlideOver
-        open={addSlideOverOpen}
-        onClose={closeAddSlideOver}
-        type={addItemType}
-        onSuccess={() => {
-          if (addItemType === "panel") {
-            refetchPanels();
-          } else {
-            refetchTests();
-          }
-        }}
-      />
+          {/* Add slide-over */}
+          <AddLabTestSlideOver
+            open={addSlideOverOpen}
+            onClose={closeAddSlideOver}
+            type={addItemType}
+            onSuccess={() => {
+              if (addItemType === "panel") {
+                refetchPanels();
+              } else {
+                refetchTests();
+              }
+            }}
+          />
+        </>
+      )}
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
