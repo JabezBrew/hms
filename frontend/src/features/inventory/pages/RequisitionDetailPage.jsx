@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -204,9 +205,10 @@ export default function RequisitionDetailPage() {
   const priorityConfig = getPriorityConfig(requisition.priority);
   const items = requisition.items || requisition.requisition_items || [];
   const totalAmount = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.unit_price || item.estimated_price || 0), 0);
+  const requisitionConversionAvailable = !isRustV2ApiMode();
 
   const canApprove = requisition.status === 'pending';
-  const canConvert = requisition.status === 'approved';
+  const canConvert = requisitionConversionAvailable && requisition.status === 'approved';
 
   return (
     <PageShell>
@@ -291,6 +293,13 @@ export default function RequisitionDetailPage() {
       </PageHeader>
 
       <div className="p-4 sm:p-6 space-y-6">
+        {!requisitionConversionAvailable && requisition.status === 'approved' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Requisition conversion to purchase order is not available in Rust V2 mode yet.
+            Create purchase orders directly until the generated /api/v2 stock requisition
+            conversion contract exists.
+          </div>
+        )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
