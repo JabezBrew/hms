@@ -45,6 +45,7 @@ import {
   useSuppliers,
 } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
@@ -85,6 +86,7 @@ const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
 export default function ItemsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const itemMutationsAvailable = !isRustV2ApiMode();
 
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -102,7 +104,7 @@ export default function ItemsPage() {
 
   // Sheet state from URL
   const action = searchParams.get('action');
-  const isCreateOpen = action === 'create';
+  const isCreateOpen = itemMutationsAvailable && action === 'create';
 
   // Debounced search
   const debouncedSearch = useDebounce(search, 300);
@@ -268,10 +270,16 @@ export default function ItemsPage() {
   };
 
   const handleEditItem = (itemId) => {
+    if (!itemMutationsAvailable) {
+      return;
+    }
     navigate(`/inventory/items/${itemId}?action=edit`);
   };
 
   const handleCreateItem = () => {
+    if (!itemMutationsAvailable) {
+      return;
+    }
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('action', 'create');
@@ -395,10 +403,12 @@ export default function ItemsPage() {
               <Eye className="h-4 w-4 mr-2" />
               View Details
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditItem(item.id); }}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </DropdownMenuItem>
+            {itemMutationsAvailable && (
+              <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditItem(item.id); }}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={(event) => {
                 event.stopPropagation();
@@ -416,6 +426,7 @@ export default function ItemsPage() {
     handleSelectAll,
     handleItemClick,
     handleEditItem,
+    itemMutationsAvailable,
     navigate,
     selectAll,
     selectedItems,
@@ -491,15 +502,24 @@ export default function ItemsPage() {
               <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
               Refresh
             </Button>
-            <Button onClick={handleCreateItem}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
-            </Button>
+            {itemMutationsAvailable && (
+              <Button onClick={handleCreateItem}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Item
+              </Button>
+            )}
           </div>
         )}
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!itemMutationsAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Inventory item creation and editing is not available in Rust V2 mode yet. Existing
+          item catalog review, stock levels, movement history, and requisition workflows remain
+          available.
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={handleTabChange}>
@@ -680,7 +700,7 @@ export default function ItemsPage() {
               ? 'Try adjusting your filters'
               : 'Add your first inventory item to get started'}
           </p>
-          {!hasActiveFilters && (
+          {!hasActiveFilters && itemMutationsAvailable && (
             <Button onClick={handleCreateItem} className="font-mono text-xs">
               <Plus className="h-4 w-4 mr-2" />
               Add Item
