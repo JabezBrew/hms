@@ -16,6 +16,7 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageState } from '@/shared/components/page/PageState';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
@@ -135,6 +136,7 @@ export default function AdmissionDetailPage() {
   const lengthOfStayLabel = admission?.length_of_stay != null ? `${admission.length_of_stay} days` : 'N/A';
 
   const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
+  const medicalDischargeAvailable = !isRustV2ApiMode();
   const backToWardPath = wardId ? `/wards/${wardId}` : '/wards';
   const backLabel = wardId ? 'Back to Ward' : 'Back to Wards';
   const pageMeta = usePageMeta({
@@ -213,7 +215,7 @@ export default function AdmissionDetailPage() {
                 Admission Case
               </Button>
             )}
-            {['admitted', 'pending_discharge'].includes(admission.status) && (
+            {medicalDischargeAvailable && ['admitted', 'pending_discharge'].includes(admission.status) && (
               <Button
                 size="sm"
                 disabled={!patientId}
@@ -233,6 +235,13 @@ export default function AdmissionDetailPage() {
       </PageHeader>
 
       <main className="p-6 space-y-6">
+      {!medicalDischargeAvailable && ['admitted', 'pending_discharge'].includes(admission.status) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Medical discharge is not available in Rust V2 mode yet. Admission details remain
+          read-only until the generated /api/v2 admission discharge contract exists.
+        </div>
+      )}
+
       {/* Admission header */}
       <Card>
         <CardHeader className="pb-2">
