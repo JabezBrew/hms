@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
-use hms_db::care::CareCursor;
+use hms_db::care::{
+    AppointmentUpdate, CareCursor, ClinicUpdate, EncounterUpdate, NewAppointment,
+    NewCareTeamAssignment, NewClinic, NewEncounter, NewTriage, NewVisit, TriageFilters,
+};
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, AssignTriageRequest, CareTeamAssignment,
     CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest,
@@ -34,32 +37,41 @@ impl CareService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_appointments(
         &self,
         ctx: &hms_access::RequestContext,
         query: AppointmentListQuery,
     ) -> Result<ListResponse<AppointmentListItem>, ApiError> {
-        require_workflow_list_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentView,
-        )?;
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
         let date = query.date;
         let clinic_id = query.clinic_id;
         let (cursor, page_size) = page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
         })?;
-        let rows = self
-            .state
-            .list_appointments(cursor, date, clinic_id, page_size as i64 + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "appointment_list_failed",
-                    "Appointments could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::care::list_appointments(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            date,
+            clinic_id,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "appointment_list_failed",
+                "Appointments could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.starts_at, item.id)
@@ -71,19 +83,16 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         query: CursorListQuery,
     ) -> Result<ListResponse<ClinicListItem>, ApiError> {
-        require_workflow_list_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentView,
-        )?;
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
         let (cursor, page_size) = page_request(query)?;
-        let rows = self
-            .state
-            .list_clinics(cursor, page_size as i64 + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("clinic_list_failed", "Clinics could not be loaded.")
-            })?;
+        let rows = hms_db::care::list_clinics(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("clinic_list_failed", "Clinics could not be loaded."))?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -95,14 +104,8 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ClinicListItem>, ApiError> {
-        require_workflow_list_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentView,
-        )?;
-        let clinic = self
-            .state
-            .get_clinic(id)
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
+        let clinic = hms_db::care::get_clinic(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| ApiError::conflict("clinic_load_failed", "Clinic could not be loaded."))?
             .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
@@ -115,22 +118,19 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         payload: CreateClinicRequest,
     ) -> Result<ObjectResponse<ClinicListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentManage,
-        )?;
-        let clinic = self
-            .state
-            .create_clinic(
-                validate_required_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
-                validate_required_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("clinic_create_failed", "Clinic could not be created.")
-            })?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
+        let clinic = hms_db::care::create_clinic(
+            self.pool(),
+            NewClinic {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                code: validate_required_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
+                name: validate_required_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("clinic_create_failed", "Clinic could not be created."))?;
 
         Ok(object(clinic))
     }
@@ -141,25 +141,21 @@ impl CareService {
         id: Uuid,
         payload: UpdateClinicRequest,
     ) -> Result<ObjectResponse<ClinicListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentManage,
-        )?;
-        let clinic = self
-            .state
-            .update_clinic(
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
+        let clinic = hms_db::care::update_clinic(
+            self.pool(),
+            ClinicUpdate {
                 id,
-                validate_optional_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
-                validate_optional_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
-                payload.is_active,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("clinic_update_failed", "Clinic could not be updated.")
-            })?
-            .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
+                facility_id: self.facility_id(),
+                code: validate_optional_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
+                name: validate_optional_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
+                is_active: payload.is_active,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("clinic_update_failed", "Clinic could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
 
         Ok(object(clinic))
     }
@@ -169,19 +165,14 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ClinicListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentManage,
-        )?;
-        let clinic = self
-            .state
-            .deactivate_clinic(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("clinic_delete_failed", "Clinic could not be deactivated.")
-            })?
-            .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
+        let clinic =
+            hms_db::care::deactivate_clinic(self.pool(), self.facility_id(), id, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("clinic_delete_failed", "Clinic could not be deactivated.")
+                })?
+                .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
 
         Ok(object(clinic))
     }
@@ -191,11 +182,7 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         payload: CreateAppointmentRequest,
     ) -> Result<ObjectResponse<AppointmentListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
         let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         if payload.ends_at <= payload.starts_at {
             return Err(ApiError::bad_request(
@@ -204,21 +191,24 @@ impl CareService {
             ));
         }
 
-        let appointment = self
-            .state
-            .create_appointment(
-                payload.patient_id,
-                payload.starts_at,
-                payload.ends_at,
-                ctx.user_id,
+        let appointment = hms_db::care::create_appointment(
+            self.pool(),
+            NewAppointment {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
+                starts_at: payload.starts_at,
+                ends_at: payload.ends_at,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "appointment_create_failed",
+                "Appointment could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "appointment_create_failed",
-                    "Appointment could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(appointment))
     }
@@ -260,22 +250,29 @@ impl CareService {
             ));
         }
 
-        let appointment = self
-            .state
-            .update_appointment(id, Some(starts_at), Some(ends_at), ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "appointment_update_failed",
-                    "Appointment could not be updated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "appointment_update_failed",
-                    "Only scheduled appointments can be updated.",
-                )
-            })?;
+        let appointment = hms_db::care::update_appointment(
+            self.pool(),
+            AppointmentUpdate {
+                id,
+                facility_id: self.facility_id(),
+                starts_at: Some(starts_at),
+                ends_at: Some(ends_at),
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "appointment_update_failed",
+                "Appointment could not be updated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "appointment_update_failed",
+                "Only scheduled appointments can be updated.",
+            )
+        })?;
 
         Ok(object(appointment))
     }
@@ -288,22 +285,21 @@ impl CareService {
         let _existing =
             load_appointment_for_access(&self.state, ctx, id, PermissionCode::AppointmentManage)
                 .await?;
-        let appointment = self
-            .state
-            .cancel_appointment(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "appointment_cancel_failed",
-                    "Appointment could not be cancelled.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "appointment_cancel_failed",
-                    "Only scheduled appointments can be cancelled.",
-                )
-            })?;
+        let appointment =
+            hms_db::care::cancel_appointment(self.pool(), self.facility_id(), id, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "appointment_cancel_failed",
+                        "Appointment could not be cancelled.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::conflict(
+                        "appointment_cancel_failed",
+                        "Only scheduled appointments can be cancelled.",
+                    )
+                })?;
 
         Ok(object(appointment))
     }
@@ -313,21 +309,21 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         query: VisitListQuery,
     ) -> Result<ListResponse<VisitListItem>, ApiError> {
-        require_workflow_list_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentView,
-        )?;
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
         let clinic_id = query.clinic_id;
         let (cursor, page_size) = page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
         })?;
-        let rows = self
-            .state
-            .list_visits(clinic_id, cursor, page_size as i64 + 1)
-            .await
-            .map_err(|_| ApiError::conflict("visit_list_failed", "Visits could not be loaded."))?;
+        let rows = hms_db::care::list_visits(
+            self.pool(),
+            self.facility_id(),
+            clinic_id,
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("visit_list_failed", "Visits could not be loaded."))?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.checked_in_at, item.id)
@@ -339,11 +335,7 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentView,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
         Ok(object(load_visit_for_access(&self.state, ctx, id).await?))
     }
 
@@ -352,24 +344,23 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         payload: CheckInVisitRequest,
     ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AppointmentManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
         let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
-        let visit = self
-            .state
-            .check_in_visit(
-                payload.patient_id,
-                payload.appointment_id,
-                payload.clinic_id,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("visit_check_in_failed", "Visit could not be checked in.")
-            })?;
+        let visit = hms_db::care::check_in_visit(
+            self.pool(),
+            NewVisit {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
+                appointment_id: payload.appointment_id,
+                clinic_id: payload.clinic_id,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("visit_check_in_failed", "Visit could not be checked in.")
+        })?;
 
         Ok(object(visit))
     }
@@ -465,14 +456,15 @@ impl CareService {
         status: VisitStatus,
         permission: PermissionCode,
     ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
-        require_action_permission(ctx, self.state.facility_id(), permission)?;
+        require_action_permission(ctx, self.facility_id(), permission)?;
         let _visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
-        let updated = self
-            .state
-            .update_visit_status(visit_id, status)
-            .await
-            .map_err(|_| ApiError::conflict("visit_update_failed", "Visit could not be updated."))?
-            .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+        let updated =
+            hms_db::care::update_visit_status(self.pool(), self.facility_id(), visit_id, status)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("visit_update_failed", "Visit could not be updated.")
+                })?
+                .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
 
         Ok(object(updated))
     }
@@ -482,22 +474,25 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         query: TriageListQuery,
     ) -> Result<ListResponse<TriageListItem>, ApiError> {
-        require_workflow_list_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
         let (cursor, page_size) = page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
         })?;
-        let rows = self
-            .state
-            .list_triage(cursor, page_size as i64 + 1, query.status, query.acuity)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("triage_list_failed", "Triage queue could not be loaded.")
-            })?;
+        let rows = hms_db::care::list_triage(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            TriageFilters {
+                acuity: query.acuity,
+                status: query.status,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("triage_list_failed", "Triage queue could not be loaded.")
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -509,24 +504,23 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         payload: CreateTriageRequest,
     ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
         let visit = load_visit_for_access(&self.state, ctx, payload.visit_id).await?;
-        let triage = self
-            .state
-            .create_triage(
-                payload.visit_id,
-                visit.patient_id,
-                payload.acuity,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("triage_create_failed", "Triage item could not be created.")
-            })?;
+        let triage = hms_db::care::create_triage(
+            self.pool(),
+            NewTriage {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                visit_id: payload.visit_id,
+                patient_id: visit.patient_id,
+                acuity: payload.acuity,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("triage_create_failed", "Triage item could not be created.")
+        })?;
 
         Ok(object(triage))
     }
@@ -536,11 +530,7 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
         let triage = load_triage_for_access(&self.state, ctx, id).await?;
 
         Ok(object(triage))
@@ -552,11 +542,7 @@ impl CareService {
         id: Uuid,
         mut payload: TriageAssessmentRequest,
     ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
         let _existing = load_triage_for_access(&self.state, ctx, id).await?;
         if let Some(notes) = payload.notes.take() {
             let notes = notes.trim().to_owned();
@@ -568,9 +554,7 @@ impl CareService {
             }
             payload.notes = if notes.is_empty() { None } else { Some(notes) };
         }
-        let triage = self
-            .state
-            .assess_triage(id, payload)
+        let triage = hms_db::care::assess_triage(self.pool(), self.facility_id(), id, payload)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -589,20 +573,19 @@ impl CareService {
         id: Uuid,
         payload: AssignTriageRequest,
     ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
         let _existing = load_triage_for_access(&self.state, ctx, id).await?;
-        let triage = self
-            .state
-            .assign_triage(id, payload.assigned_to_user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("triage_assign_failed", "Triage item could not be assigned.")
-            })?
-            .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+        let triage = hms_db::care::assign_triage(
+            self.pool(),
+            self.facility_id(),
+            id,
+            payload.assigned_to_user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("triage_assign_failed", "Triage item could not be assigned.")
+        })?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
 
         Ok(object(triage))
     }
@@ -612,11 +595,7 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::NursingTaskManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::NursingTaskManage)?;
         let existing = load_triage_for_access(&self.state, ctx, id).await?;
         if existing.status != TriageStatus::Waiting {
             return Err(ApiError::conflict(
@@ -625,9 +604,7 @@ impl CareService {
             ));
         }
 
-        let triage = self
-            .state
-            .cancel_triage(id)
+        let triage = hms_db::care::cancel_triage(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -645,7 +622,7 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         query: EncounterListQuery,
     ) -> Result<ListResponse<EncounterListItem>, ApiError> {
-        require_workflow_list_access(ctx, self.state.facility_id(), PermissionCode::EncounterView)?;
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::EncounterView)?;
         if let Some(patient_id) = query.patient_id {
             let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         }
@@ -653,13 +630,17 @@ impl CareService {
             cursor: query.cursor,
             limit: query.limit,
         })?;
-        let rows = self
-            .state
-            .list_encounters(query.patient_id, cursor, page_size as i64 + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("encounter_list_failed", "Encounters could not be loaded.")
-            })?;
+        let rows = hms_db::care::list_encounters(
+            self.pool(),
+            self.facility_id(),
+            query.patient_id,
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("encounter_list_failed", "Encounters could not be loaded.")
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.started_at, item.id)
@@ -671,11 +652,7 @@ impl CareService {
         ctx: &hms_access::RequestContext,
         payload: CreateEncounterRequest,
     ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
-        require_action_permission(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::EncounterManage,
-        )?;
+        require_action_permission(ctx, self.facility_id(), PermissionCode::EncounterManage)?;
         let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         if let Some(visit_id) = payload.visit_id {
             let visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
@@ -686,18 +663,21 @@ impl CareService {
                 ));
             }
         }
-        let encounter = self
-            .state
-            .create_encounter(
-                payload.patient_id,
-                payload.visit_id,
-                payload.encounter_type,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("encounter_create_failed", "Encounter could not be created.")
-            })?;
+        let encounter = hms_db::care::create_encounter(
+            self.pool(),
+            NewEncounter {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
+                visit_id: payload.visit_id,
+                encounter_type: payload.encounter_type,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("encounter_create_failed", "Encounter could not be created.")
+        })?;
 
         Ok(object(encounter))
     }
@@ -738,19 +718,26 @@ impl CareService {
             }
         }
 
-        let updated = self
-            .state
-            .update_encounter(id, payload.visit_id, payload.encounter_type, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "encounter_update_not_allowed",
-                    "Encounter could not be updated in its current state.",
-                )
-            })?;
+        let updated = hms_db::care::update_encounter(
+            self.pool(),
+            EncounterUpdate {
+                id,
+                facility_id: self.facility_id(),
+                visit_id: payload.visit_id,
+                encounter_type: payload.encounter_type,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "encounter_update_not_allowed",
+                "Encounter could not be updated in its current state.",
+            )
+        })?;
 
         Ok(object(updated))
     }
@@ -785,9 +772,7 @@ impl CareService {
             PermissionCode::EncounterView,
         )
         .await?;
-        let assignments = self
-            .state
-            .list_care_team_assignments(encounter.id)
+        let assignments = hms_db::care::list_care_team_assignments(self.pool(), encounter.id)
             .await
             .map_err(|_| {
                 ApiError::conflict("care_team_list_failed", "Care team could not be loaded.")
@@ -816,16 +801,23 @@ impl CareService {
             PermissionCode::EncounterManage,
         )
         .await?;
-        let assignment = self
-            .state
-            .create_care_team_assignment(encounter.id, payload.user_id, payload.role, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "care_team_assign_failed",
-                    "Care team assignment could not be saved.",
-                )
-            })?;
+        let assignment = hms_db::care::create_care_team_assignment(
+            self.pool(),
+            NewCareTeamAssignment {
+                id: Uuid::new_v4(),
+                encounter_id: encounter.id,
+                user_id: payload.user_id,
+                role: payload.role,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "care_team_assign_failed",
+                "Care team assignment could not be saved.",
+            )
+        })?;
 
         Ok(object(assignment))
     }
@@ -843,16 +835,17 @@ impl CareService {
             PermissionCode::EncounterManage,
         )
         .await?;
-        let updated = self
-            .state
-            .update_encounter_status(encounter_id, status)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("encounter_not_found", "Encounter was not found.")
-            })?;
+        let updated = hms_db::care::update_encounter_status(
+            self.pool(),
+            self.facility_id(),
+            encounter_id,
+            status,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
+        })?
+        .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
 
         Ok(object(updated))
     }
@@ -871,18 +864,18 @@ async fn load_appointment_for_access(
     permission: PermissionCode,
 ) -> Result<AppointmentListItem, ApiError> {
     require_action_permission(ctx, state.facility_id(), permission)?;
-    let appointment = state
-        .get_appointment(appointment_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_load_failed",
-                "Appointment could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("appointment_not_found", "Appointment was not found.")
-        })?;
+    let appointment =
+        hms_db::care::get_appointment(state.db_pool(), state.facility_id(), appointment_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "appointment_load_failed",
+                    "Appointment could not be loaded.",
+                )
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("appointment_not_found", "Appointment was not found.")
+            })?;
     let _patient = load_patient_for_access(state, ctx, appointment.patient_id).await?;
     Ok(appointment)
 }
@@ -892,8 +885,7 @@ async fn load_visit_for_access(
     ctx: &hms_access::RequestContext,
     visit_id: Uuid,
 ) -> Result<VisitListItem, ApiError> {
-    let visit = state
-        .get_visit(visit_id)
+    let visit = hms_db::care::get_visit(state.db_pool(), state.facility_id(), visit_id)
         .await
         .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
@@ -906,8 +898,7 @@ async fn load_triage_for_access(
     ctx: &hms_access::RequestContext,
     triage_id: Uuid,
 ) -> Result<TriageListItem, ApiError> {
-    let triage = state
-        .get_triage(triage_id)
+    let triage = hms_db::care::get_triage(state.db_pool(), state.facility_id(), triage_id)
         .await
         .map_err(|_| ApiError::conflict("triage_load_failed", "Triage item could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
@@ -922,8 +913,7 @@ async fn load_encounter_for_access(
     permission: PermissionCode,
 ) -> Result<EncounterListItem, ApiError> {
     require_action_permission(ctx, state.facility_id(), permission)?;
-    let encounter = state
-        .get_encounter(encounter_id)
+    let encounter = hms_db::care::get_encounter(state.db_pool(), state.facility_id(), encounter_id)
         .await
         .map_err(|_| ApiError::conflict("encounter_load_failed", "Encounter could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
