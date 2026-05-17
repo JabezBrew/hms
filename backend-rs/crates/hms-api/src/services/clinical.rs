@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
-    ClinicalCursor, NewClinicalNote, NewClinicalNoteTemplate, NoteContext,
+    ClinicalCursor, NewClinicalNote, NewClinicalNoteTemplate, NewProblem, NoteContext,
     UpdateClinicalNoteTemplate,
 };
 use hms_domain::care::CursorListQuery;
@@ -353,17 +353,19 @@ impl ClinicalService {
         patient_id: Uuid,
         query: CursorListQuery,
     ) -> Result<ListResponse<ProblemListItem>, ApiError> {
-        require_clinical_list_access(ctx, self.state.facility_id())?;
+        require_clinical_list_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_problems(patient_id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("problem_list_failed", "Problems could not be loaded.")
-            })?;
+        let rows = hms_db::clinical::list_problems(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("problem_list_failed", "Problems could not be loaded."))?;
 
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
@@ -376,16 +378,22 @@ impl ClinicalService {
         patient_id: Uuid,
         payload: CreateProblemRequest,
     ) -> Result<ObjectResponse<ProblemListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let label = normalize_text(payload.label, "label", MAX_TITLE_LEN)?;
-        let problem = self
-            .state
-            .create_problem(patient_id, label, payload.onset_date, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("problem_create_failed", "Problem could not be saved.")
-            })?;
+        let problem = hms_db::clinical::create_problem(
+            self.pool(),
+            NewProblem {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id,
+                label,
+                onset_date: payload.onset_date,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("problem_create_failed", "Problem could not be saved."))?;
 
         Ok(object(problem))
     }
@@ -395,7 +403,7 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ProblemListItem>, ApiError> {
-        require_clinical_list_access(ctx, self.state.facility_id())?;
+        require_clinical_list_access(ctx, self.facility_id())?;
         Ok(object(load_problem_for_access(&self.state, ctx, id).await?))
     }
 
@@ -405,19 +413,20 @@ impl ClinicalService {
         id: Uuid,
         mut payload: UpdateProblemRequest,
     ) -> Result<ObjectResponse<ProblemListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _existing = load_problem_for_access(&self.state, ctx, id).await?;
         if let Some(label) = payload.label.take() {
             payload.label = Some(normalize_text(label, "label", MAX_TITLE_LEN)?);
         }
-        let problem = self
-            .state
-            .update_problem(id, payload)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("problem_update_failed", "Problem could not be updated.")
-            })?
-            .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
+        let problem =
+            hms_db::clinical::update_problem(self.pool(), self.facility_id(), id, payload)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("problem_update_failed", "Problem could not be updated.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("problem_not_found", "Problem was not found.")
+                })?;
 
         Ok(object(problem))
     }
@@ -428,19 +437,22 @@ impl ClinicalService {
         id: Uuid,
         payload: ChangeProblemStatusRequest,
     ) -> Result<ObjectResponse<ProblemListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _existing = load_problem_for_access(&self.state, ctx, id).await?;
-        let problem = self
-            .state
-            .update_problem_status(id, payload.status)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "problem_status_update_failed",
-                    "Problem status could not be updated.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
+        let problem = hms_db::clinical::update_problem_status(
+            self.pool(),
+            self.facility_id(),
+            id,
+            payload.status,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "problem_status_update_failed",
+                "Problem status could not be updated.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
 
         Ok(object(problem))
     }
@@ -785,8 +797,7 @@ async fn load_problem_for_access(
     ctx: &hms_access::RequestContext,
     id: Uuid,
 ) -> Result<ProblemListItem, ApiError> {
-    let problem = state
-        .get_problem(id)
+    let problem = hms_db::clinical::get_problem(state.db_pool(), state.facility_id(), id)
         .await
         .map_err(|_| ApiError::conflict("problem_load_failed", "Problem could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;

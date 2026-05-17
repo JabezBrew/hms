@@ -9,7 +9,7 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::clinical::{ClinicalCursor, NewAllergy, NewChartEntry, NewPrescription, NewProblem};
+use hms_db::clinical::{ClinicalCursor, NewAllergy, NewChartEntry, NewPrescription};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -31,8 +31,7 @@ use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, PatientChronicleSummary,
-    PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
-    UpdatePrescriptionRequest, UpdateProblemRequest,
+    PrescriptionListItem, UpdateAllergyRequest, UpdatePrescriptionRequest,
 };
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
@@ -1052,70 +1051,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_problems(
-        &self,
-        patient_id: Uuid,
-        cursor: Option<ClinicalCursor>,
-        limit: i64,
-    ) -> Result<Vec<ProblemListItem>> {
-        hms_db::clinical::list_problems(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_problem(
-        &self,
-        patient_id: Uuid,
-        label: String,
-        onset_date: Option<NaiveDate>,
-        actor_user_id: Uuid,
-    ) -> Result<ProblemListItem> {
-        hms_db::clinical::create_problem(
-            &self.inner.pool,
-            NewProblem {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                label,
-                onset_date,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_problem(&self, problem_id: Uuid) -> Result<Option<ProblemListItem>> {
-        hms_db::clinical::get_problem(&self.inner.pool, self.facility_id(), problem_id).await
-    }
-
-    pub async fn update_problem_status(
-        &self,
-        problem_id: Uuid,
-        status: ProblemStatus,
-    ) -> Result<Option<ProblemListItem>> {
-        hms_db::clinical::update_problem_status(
-            &self.inner.pool,
-            self.facility_id(),
-            problem_id,
-            status,
-        )
-        .await
-    }
-
-    pub async fn update_problem(
-        &self,
-        problem_id: Uuid,
-        update: UpdateProblemRequest,
-    ) -> Result<Option<ProblemListItem>> {
-        hms_db::clinical::update_problem(&self.inner.pool, self.facility_id(), problem_id, update)
-            .await
     }
 
     pub async fn list_allergies(
