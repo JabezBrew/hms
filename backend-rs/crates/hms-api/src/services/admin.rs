@@ -1,15 +1,18 @@
 use chrono::{DateTime, Utc};
 use hms_db::admin::{
-    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewPermissionAssignment,
-    NewPractitionerProfile, NewStaffAccount,
+    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewOrganizationUnit,
+    NewPermissionAssignment, NewPosition, NewPositionTemplate, NewPractitionerProfile,
+    NewStaffAccount,
 };
 use hms_domain::admin::{
-    AdminListQuery, AuditEventListItem, AuditEventListQuery, AuthorityAppointmentListItem,
-    CreateAuthorityAppointmentRequest, CreateDelegationRequest, CreatePermissionAssignmentRequest,
-    CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem,
-    PermissionAssignmentListItem, PractitionerListItem, PractitionerListQuery, StaffDirectoryItem,
-    StaffListItem, StaffListQuery, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
-    UpsertPractitionerProfileRequest,
+    AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
+    AuthorityAppointmentListItem, CreateAuthorityAppointmentRequest, CreateDelegationRequest,
+    CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest, CreatePositionRequest,
+    CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
+    FeatureEntitlementListItem, OrganizationUnitListItem, OrganizationUnitListQuery,
+    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
+    PractitionerListQuery, StaffDirectoryItem, StaffListItem, StaffListQuery,
+    UpdateFeatureEntitlementRequest, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use uuid::Uuid;
@@ -43,6 +46,284 @@ impl AdminService {
 
     fn pool(&self) -> &hms_db::PgPool {
         self.state.db_pool()
+    }
+
+    pub async fn list_org_units(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: OrganizationUnitListQuery,
+    ) -> Result<ListResponse<OrganizationUnitListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        let unit_type = query.unit_type;
+        let is_active = query.is_active;
+        let page = page_request(AdminListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::admin::list_organization_units(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+            unit_type,
+            is_active,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_list_failed",
+                "Organization units could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn create_org_unit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateOrganizationUnitRequest,
+    ) -> Result<ObjectResponse<OrganizationUnitListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        validate_code(&payload.code)?;
+        validate_text(&payload.name, MAX_NAME_LEN, "name")?;
+        let unit = hms_db::admin::create_organization_unit(
+            self.pool(),
+            NewOrganizationUnit {
+                facility_id: self.facility_id(),
+                code: payload.code,
+                name: payload.name,
+                unit_type: payload.unit_type,
+                parent_unit_id: payload.parent_unit_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_create_failed",
+                "Organization unit could not be saved.",
+            )
+        })?;
+        Ok(object(unit))
+    }
+
+    pub async fn get_org_unit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<OrganizationUnitListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        Ok(object(self.load_org_unit(id).await?))
+    }
+
+    pub async fn list_org_unit_children(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: AdminListQuery,
+    ) -> Result<ListResponse<OrganizationUnitListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        self.load_org_unit(id).await?;
+        let page = page_request(query)?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::admin::list_organization_unit_children(
+            self.pool(),
+            self.facility_id(),
+            id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_children_failed",
+                "Organization unit children could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_org_unit_ancestors(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: AdminLimitQuery,
+    ) -> Result<ListResponse<OrganizationUnitListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        self.load_org_unit(id).await?;
+        let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+        let rows = hms_db::admin::list_organization_unit_ancestors(
+            self.pool(),
+            self.facility_id(),
+            id,
+            page_size as i64,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_ancestors_failed",
+                "Organization unit ancestors could not be loaded.",
+            )
+        })?;
+        Ok(list(
+            rows,
+            PageInfo {
+                next_cursor: None,
+                has_next: false,
+                limit: page_size,
+            },
+        ))
+    }
+
+    pub async fn list_org_unit_descendants(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: AdminListQuery,
+    ) -> Result<ListResponse<OrganizationUnitListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        self.load_org_unit(id).await?;
+        let page = page_request(query)?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::admin::list_organization_unit_descendants(
+            self.pool(),
+            self.facility_id(),
+            id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "org_unit_descendants_failed",
+                "Organization unit descendants could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_position_templates(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: AdminListQuery,
+    ) -> Result<ListResponse<PositionTemplateListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        let page = page_request(query)?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::admin::list_position_templates(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "position_template_list_failed",
+                "Position templates could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn create_position_template(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreatePositionTemplateRequest,
+    ) -> Result<ObjectResponse<PositionTemplateListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        validate_code(&payload.code)?;
+        validate_text(&payload.title, MAX_NAME_LEN, "title")?;
+        validate_text(&payload.description, MAX_TEXT_LEN, "description")?;
+        ensure_supported_permissions(&self.state, &payload.permission_codes).await?;
+        let template = hms_db::admin::create_position_template(
+            self.pool(),
+            NewPositionTemplate {
+                facility_id: self.facility_id(),
+                code: payload.code,
+                title: payload.title,
+                description: payload.description,
+                permission_codes: payload.permission_codes,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "position_template_create_failed",
+                "Position template could not be saved.",
+            )
+        })?;
+        Ok(object(template))
+    }
+
+    pub async fn list_positions(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: AdminListQuery,
+    ) -> Result<ListResponse<PositionListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        let page = page_request(query)?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::admin::list_positions(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("position_list_failed", "Positions could not be loaded.")
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn create_position(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreatePositionRequest,
+    ) -> Result<ObjectResponse<PositionListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        validate_code(&payload.code)?;
+        validate_text(&payload.title, MAX_NAME_LEN, "title")?;
+        let position = hms_db::admin::create_position(
+            self.pool(),
+            NewPosition {
+                facility_id: self.facility_id(),
+                code: payload.code,
+                title: payload.title,
+                org_unit_id: payload.org_unit_id,
+                template_id: payload.template_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("position_create_failed", "Position could not be saved.")
+        })?;
+        Ok(object(position))
+    }
+
+    async fn load_org_unit(&self, id: Uuid) -> Result<OrganizationUnitListItem, ApiError> {
+        hms_db::admin::get_organization_unit_by_id(self.pool(), self.facility_id(), id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "org_unit_load_failed",
+                    "Organization unit could not be loaded.",
+                )
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("org_unit_not_found", "Organization unit was not found.")
+            })
     }
 
     pub async fn list_authority_appointments(

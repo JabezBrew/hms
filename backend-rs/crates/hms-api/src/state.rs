@@ -3,10 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::{DateTime, NaiveDate, Utc};
-use hms_db::admin::{
-    AdminCursor, AuditEventFilters, NewCommittee, NewDelegation, NewOrganizationUnit, NewPosition,
-    NewPositionTemplate,
-};
+use hms_db::admin::{AdminCursor, AuditEventFilters, NewCommittee, NewDelegation};
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -18,9 +15,7 @@ use hms_db::ward::{
 };
 use hms_domain::admin::{
     AuditEventListItem, CommitteeListItem, CreateCommitteeRequest, CreateDelegationRequest,
-    CreateOrganizationUnitRequest, CreatePositionRequest, CreatePositionTemplateRequest,
-    DelegationListItem, OrgUnitType, OrganizationUnitListItem, PositionListItem,
-    PositionTemplateListItem,
+    DelegationListItem,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -551,145 +546,6 @@ impl AppState {
             &self.inner.config.facility_code,
             features,
         ))
-    }
-
-    pub async fn list_organization_units(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-        unit_type: Option<OrgUnitType>,
-        is_active: Option<bool>,
-    ) -> Result<Vec<OrganizationUnitListItem>> {
-        hms_db::admin::list_organization_units(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            unit_type,
-            is_active,
-        )
-        .await
-    }
-
-    pub async fn create_organization_unit(
-        &self,
-        payload: CreateOrganizationUnitRequest,
-    ) -> Result<OrganizationUnitListItem> {
-        hms_db::admin::create_organization_unit(
-            &self.inner.pool,
-            NewOrganizationUnit {
-                facility_id: self.facility_id(),
-                code: payload.code,
-                name: payload.name,
-                unit_type: payload.unit_type,
-                parent_unit_id: payload.parent_unit_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_organization_unit(
-        &self,
-        id: Uuid,
-    ) -> Result<Option<OrganizationUnitListItem>> {
-        hms_db::admin::get_organization_unit_by_id(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_organization_unit_children(
-        &self,
-        parent_unit_id: Uuid,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<OrganizationUnitListItem>> {
-        hms_db::admin::list_organization_unit_children(
-            &self.inner.pool,
-            self.facility_id(),
-            parent_unit_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn list_organization_unit_ancestors(
-        &self,
-        unit_id: Uuid,
-        limit: i64,
-    ) -> Result<Vec<OrganizationUnitListItem>> {
-        hms_db::admin::list_organization_unit_ancestors(
-            &self.inner.pool,
-            self.facility_id(),
-            unit_id,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn list_organization_unit_descendants(
-        &self,
-        unit_id: Uuid,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<OrganizationUnitListItem>> {
-        hms_db::admin::list_organization_unit_descendants(
-            &self.inner.pool,
-            self.facility_id(),
-            unit_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn list_position_templates(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<PositionTemplateListItem>> {
-        hms_db::admin::list_position_templates(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn create_position_template(
-        &self,
-        payload: CreatePositionTemplateRequest,
-    ) -> Result<PositionTemplateListItem> {
-        hms_db::admin::create_position_template(
-            &self.inner.pool,
-            NewPositionTemplate {
-                facility_id: self.facility_id(),
-                code: payload.code,
-                title: payload.title,
-                description: payload.description,
-                permission_codes: payload.permission_codes,
-            },
-        )
-        .await
-    }
-
-    pub async fn list_positions(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<PositionListItem>> {
-        hms_db::admin::list_positions(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_position(
-        &self,
-        payload: CreatePositionRequest,
-    ) -> Result<PositionListItem> {
-        hms_db::admin::create_position(
-            &self.inner.pool,
-            NewPosition {
-                facility_id: self.facility_id(),
-                code: payload.code,
-                title: payload.title,
-                org_unit_id: payload.org_unit_id,
-                template_id: payload.template_id,
-            },
-        )
-        .await
     }
 
     pub async fn list_committees(
