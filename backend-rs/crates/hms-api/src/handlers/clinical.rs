@@ -1,8 +1,5 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::{DateTime, Utc};
-use hms_access::require_patient_demographics_access;
-use hms_db::clinical::ClinicalCursor;
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
     AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
@@ -12,22 +9,12 @@ use hms_domain::clinical::{
     CreateProblemRequest, PrescriptionListItem, ProblemListItem, UpdateAllergyRequest,
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
-use hms_domain::deployment::PermissionCode;
-use hms_domain::patients::PatientRecord;
-use serde_json::json;
 use uuid::Uuid;
 
-use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: u8 = 25;
-const MAX_LIMIT: u8 = 100;
-const MAX_TITLE_LEN: usize = 160;
-const MAX_SHORT_TEXT_LEN: usize = 120;
-const MAX_NOTE_BODY_LEN: usize = 20_000;
 
 #[utoipa::path(
     get,
@@ -47,26 +34,12 @@ pub async fn list_note_templates(
     RequestContext(user): RequestContext,
     Query(query): Query<ClinicalNoteTemplateListQuery>,
 ) -> Result<Json<ListResponse<ClinicalNoteTemplate>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let templates = state
-        .list_clinical_note_templates(page_size as i64)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_list_failed",
-                "Clinical note templates could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(list(
-        templates,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: page_size,
-        },
-    )))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_note_templates(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -88,21 +61,12 @@ pub async fn create_note_template(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateClinicalNoteTemplateRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
-    let note_type = normalize_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
-    let body_template = normalize_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
-    let template = state
-        .create_clinical_note_template(title, note_type, body_template)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_create_failed",
-                "Clinical note template could not be saved.",
-            )
-        })?;
-
-    Ok(Json(object(template)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_note_template(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -124,28 +88,12 @@ pub async fn get_note_template(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::ClinicalDocumentationView,
-    )?;
-    let template = state
-        .get_clinical_note_template(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_load_failed",
-                "Clinical note template could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "clinical_template_not_found",
-                "Clinical note template was not found.",
-            )
-        })?;
-
-    Ok(Json(object(template)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .get_note_template(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -168,42 +116,14 @@ pub async fn update_note_template(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-    Json(mut payload): Json<UpdateClinicalNoteTemplateRequest>,
+    Json(payload): Json<UpdateClinicalNoteTemplateRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    payload.title = normalize_optional_text(payload.title, "title", MAX_TITLE_LEN)?;
-    payload.note_type =
-        normalize_optional_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
-    payload.body_template =
-        normalize_optional_text(payload.body_template, "body_template", MAX_NOTE_BODY_LEN)?;
-    if payload.title.is_none()
-        && payload.note_type.is_none()
-        && payload.body_template.is_none()
-        && payload.is_active.is_none()
-    {
-        return Err(validation_error(
-            "template",
-            "At least one field is required.",
-        ));
-    }
-
-    let template = state
-        .update_clinical_note_template(id, payload)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_update_failed",
-                "Clinical note template could not be saved.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "clinical_template_not_found",
-                "Clinical note template was not found.",
-            )
-        })?;
-
-    Ok(Json(object(template)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .update_note_template(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -225,24 +145,12 @@ pub async fn delete_note_template(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let template = state
-        .deactivate_clinical_note_template(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_template_delete_failed",
-                "Clinical note template could not be deactivated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "clinical_template_not_found",
-                "Clinical note template was not found.",
-            )
-        })?;
-
-    Ok(Json(object(template)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .delete_note_template(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -268,22 +176,12 @@ pub async fn list_notes(
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ClinicalNoteListItem>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_clinical_notes(patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_list_failed",
-                "Clinical notes could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.updated_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_notes(&user, patient_id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -308,22 +206,12 @@ pub async fn create_note(
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateClinicalNoteRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let note_type = normalize_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
-    let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
-    let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
-    let note = state
-        .create_clinical_note(patient_id, note_type, title, body, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_create_failed",
-                "Clinical note could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(note)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_note(&user, patient_id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -345,27 +233,9 @@ pub async fn get_note(
     RequestContext(user): RequestContext,
     Path(note_id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteDetail>>, ApiError> {
-    let _note_context = load_note_for_access(
-        &state,
-        &user,
-        note_id,
-        PermissionCode::ClinicalDocumentationView,
-    )
-    .await?;
-    let note = state
-        .get_clinical_note_detail(note_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_load_failed",
-                "Clinical note could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("clinical_note_not_found", "Clinical note was not found.")
-        })?;
-
-    Ok(Json(object(note)))
+    Ok(Json(
+        state.clinical_service().get_note(&user, note_id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -387,31 +257,12 @@ pub async fn list_note_versions(
     RequestContext(user): RequestContext,
     Path(note_id): Path<Uuid>,
 ) -> Result<Json<ListResponse<ClinicalNoteVersion>>, ApiError> {
-    let note = load_note_for_access(
-        &state,
-        &user,
-        note_id,
-        PermissionCode::ClinicalDocumentationView,
-    )
-    .await?;
-    let versions = state
-        .list_clinical_note_versions(note.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_version_list_failed",
-                "Clinical note versions could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(list(
-        versions,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: MAX_LIMIT,
-        },
-    )))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_note_versions(&user, note_id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -436,25 +287,12 @@ pub async fn create_note_version(
     Path(note_id): Path<Uuid>,
     Json(payload): Json<CreateClinicalNoteVersionRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteVersion>>, ApiError> {
-    let note = load_note_for_access(
-        &state,
-        &user,
-        note_id,
-        PermissionCode::ClinicalDocumentationManage,
-    )
-    .await?;
-    let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
-    let version = state
-        .create_clinical_note_version(note.id, body, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_version_create_failed",
-                "Clinical note version could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(version)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_note_version(&user, note_id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -480,17 +318,12 @@ pub async fn list_problems(
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ProblemListItem>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_problems(patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("problem_list_failed", "Problems could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_problems(&user, patient_id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -515,15 +348,12 @@ pub async fn create_problem(
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateProblemRequest>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let label = normalize_text(payload.label, "label", MAX_TITLE_LEN)?;
-    let problem = state
-        .create_problem(patient_id, label, payload.onset_date, user.id)
-        .await
-        .map_err(|_| ApiError::conflict("problem_create_failed", "Problem could not be saved."))?;
-
-    Ok(Json(object(problem)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_problem(&user, patient_id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -545,15 +375,7 @@ pub async fn get_problem(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let problem = state
-        .get_problem(id)
-        .await
-        .map_err(|_| ApiError::conflict("problem_load_failed", "Problem could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, problem.patient_id).await?;
-
-    Ok(Json(object(problem)))
+    Ok(Json(state.clinical_service().get_problem(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -576,25 +398,14 @@ pub async fn update_problem(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-    Json(mut payload): Json<UpdateProblemRequest>,
+    Json(payload): Json<UpdateProblemRequest>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let existing = state
-        .get_problem(id)
-        .await
-        .map_err(|_| ApiError::conflict("problem_load_failed", "Problem could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    if let Some(label) = payload.label.take() {
-        payload.label = Some(normalize_text(label, "label", MAX_TITLE_LEN)?);
-    }
-    let problem = state
-        .update_problem(id, payload)
-        .await
-        .map_err(|_| ApiError::conflict("problem_update_failed", "Problem could not be updated."))?
-        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
-
-    Ok(Json(object(problem)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .update_problem(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -619,25 +430,12 @@ pub async fn change_problem_status(
     Path(id): Path<Uuid>,
     Json(payload): Json<ChangeProblemStatusRequest>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let existing = state
-        .get_problem(id)
-        .await
-        .map_err(|_| ApiError::conflict("problem_load_failed", "Problem could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    let problem = state
-        .update_problem_status(id, payload.status)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "problem_status_update_failed",
-                "Problem status could not be updated.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
-
-    Ok(Json(object(problem)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .change_problem_status(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -663,17 +461,12 @@ pub async fn list_allergies(
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<AllergyListItem>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_allergies(patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("allergy_list_failed", "Allergies could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_allergies(&user, patient_id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -698,16 +491,12 @@ pub async fn create_allergy(
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateAllergyRequest>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let substance = normalize_text(payload.substance, "substance", MAX_TITLE_LEN)?;
-    let reaction = normalize_optional_text(payload.reaction, "reaction", MAX_TITLE_LEN)?;
-    let allergy = state
-        .create_allergy(patient_id, substance, reaction, payload.severity, user.id)
-        .await
-        .map_err(|_| ApiError::conflict("allergy_create_failed", "Allergy could not be saved."))?;
-
-    Ok(Json(object(allergy)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_allergy(&user, patient_id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -729,19 +518,7 @@ pub async fn get_allergy(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::ClinicalDocumentationView,
-    )?;
-    let allergy = state
-        .get_allergy(id)
-        .await
-        .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, allergy.patient_id).await?;
-
-    Ok(Json(object(allergy)))
+    Ok(Json(state.clinical_service().get_allergy(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -764,36 +541,14 @@ pub async fn update_allergy(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-    Json(mut payload): Json<UpdateAllergyRequest>,
+    Json(payload): Json<UpdateAllergyRequest>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let current = state
-        .get_allergy(id)
-        .await
-        .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, current.patient_id).await?;
-
-    payload.substance = normalize_optional_text(payload.substance, "substance", MAX_TITLE_LEN)?;
-    payload.reaction = normalize_optional_text(payload.reaction, "reaction", MAX_TITLE_LEN)?;
-    if payload.substance.is_none()
-        && payload.reaction.is_none()
-        && payload.severity.is_none()
-        && payload.status.is_none()
-    {
-        return Err(validation_error(
-            "allergy",
-            "At least one field is required.",
-        ));
-    }
-
-    let allergy = state
-        .update_allergy(id, payload)
-        .await
-        .map_err(|_| ApiError::conflict("allergy_update_failed", "Allergy could not be updated."))?
-        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
-
-    Ok(Json(object(allergy)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .update_allergy(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -815,25 +570,9 @@ pub async fn delete_allergy(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let current = state
-        .get_allergy(id)
-        .await
-        .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, current.patient_id).await?;
-    let allergy = state
-        .deactivate_allergy(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "allergy_deactivate_failed",
-                "Allergy could not be deactivated.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
-
-    Ok(Json(object(allergy)))
+    Ok(Json(
+        state.clinical_service().delete_allergy(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -859,22 +598,12 @@ pub async fn list_prescriptions(
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<PrescriptionListItem>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_prescriptions(patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "prescription_list_failed",
-                "Prescriptions could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.prescribed_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_prescriptions(&user, patient_id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -899,23 +628,12 @@ pub async fn create_prescription(
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreatePrescriptionRequest>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let medication_name =
-        normalize_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
-    let dose = normalize_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
-    let frequency = normalize_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
-    let prescription = state
-        .create_prescription(patient_id, medication_name, dose, frequency, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "prescription_create_failed",
-                "Prescription could not be saved.",
-            )
-        })?;
-
-    Ok(Json(object(prescription)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_prescription(&user, patient_id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -937,26 +655,9 @@ pub async fn get_prescription(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::ClinicalDocumentationView,
-    )?;
-    let prescription = state
-        .get_prescription(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "prescription_load_failed",
-                "Prescription could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("prescription_not_found", "Prescription was not found.")
-        })?;
-    let _patient = load_patient_for_access(&state, &user, prescription.patient_id).await?;
-
-    Ok(Json(object(prescription)))
+    Ok(Json(
+        state.clinical_service().get_prescription(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -979,53 +680,14 @@ pub async fn update_prescription(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-    Json(mut payload): Json<UpdatePrescriptionRequest>,
+    Json(payload): Json<UpdatePrescriptionRequest>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let current = state
-        .get_prescription(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "prescription_load_failed",
-                "Prescription could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("prescription_not_found", "Prescription was not found.")
-        })?;
-    let _patient = load_patient_for_access(&state, &user, current.patient_id).await?;
-
-    payload.medication_name =
-        normalize_optional_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
-    payload.dose = normalize_optional_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
-    payload.frequency =
-        normalize_optional_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
-    if payload.medication_name.is_none()
-        && payload.dose.is_none()
-        && payload.frequency.is_none()
-        && payload.status.is_none()
-    {
-        return Err(validation_error(
-            "prescription",
-            "At least one field is required.",
-        ));
-    }
-
-    let prescription = state
-        .update_prescription(id, payload)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "prescription_update_failed",
-                "Prescription could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("prescription_not_found", "Prescription was not found.")
-        })?;
-
-    Ok(Json(object(prescription)))
+    Ok(Json(
+        state
+            .clinical_service()
+            .update_prescription(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1051,22 +713,12 @@ pub async fn list_chart_entries(
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ChartEntryListItem>>, ApiError> {
-    require_clinical_list_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_chart_entries(patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "chart_entry_list_failed",
-                "Chart entries could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.measured_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_chart_entries(&user, patient_id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1091,163 +743,10 @@ pub async fn create_chart_entry(
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateChartEntryRequest>,
 ) -> Result<Json<ObjectResponse<ChartEntryListItem>>, ApiError> {
-    require_clinical_write_access(&user, state.facility_id())?;
-    let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    let value = normalize_text(payload.value, "value", MAX_SHORT_TEXT_LEN)?;
-    let unit = normalize_optional_text(payload.unit, "unit", MAX_SHORT_TEXT_LEN)?;
-    let entry = state
-        .create_chart_entry(
-            patient_id,
-            payload.entry_type,
-            payload.measured_at,
-            value,
-            unit,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "chart_entry_create_failed",
-                "Chart entry could not be saved.",
-            )
-        })?;
-
-    Ok(Json(object(entry)))
-}
-
-async fn load_note_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    note_id: Uuid,
-    permission: PermissionCode,
-) -> Result<hms_db::clinical::NoteContext, ApiError> {
-    require_action_permission(user, state.facility_id(), permission)?;
-    let note = state
-        .get_clinical_note_context(note_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "clinical_note_load_failed",
-                "Clinical note could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("clinical_note_not_found", "Clinical note was not found.")
-        })?;
-    let _patient = load_patient_for_access(state, user, note.patient_id).await?;
-    Ok(note)
-}
-
-async fn load_patient_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    patient_id: Uuid,
-) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
-        .await
-        .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
-
-    require_patient_demographics_access(user, &patient).map_err(|_| {
-        ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to this patient.",
-        )
-    })?;
-
-    Ok(patient)
-}
-
-fn require_clinical_list_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_clinical_list_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to patient clinical documentation.",
-        ),
-        other => ApiError::from(other),
-    })
-}
-
-fn require_clinical_write_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_clinical_write_access(user, facility_id).map_err(ApiError::from)
-}
-
-fn require_action_permission(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to perform this action.",
-        )
-    })
-}
-
-fn page_request(query: CursorListQuery) -> Result<(Option<ClinicalCursor>, u8), ApiError> {
-    let page = cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT,
-        |occurred_at, id| ClinicalCursor { occurred_at, id },
-    )?;
-    Ok((page.cursor, page.limit))
-}
-
-fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
-where
-    F: Fn(&T) -> String,
-{
-    cursor_list::page_response(rows, page_size, cursor_for)
-}
-
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    cursor_list::encode_cursor(occurred_at, id)
-}
-
-fn normalize_text(value: String, field: &'static str, max_len: usize) -> Result<String, ApiError> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Err(validation_error(field, "This field is required."));
-    }
-    if value.chars().count() > max_len {
-        return Err(validation_error(field, "This field is too long."));
-    }
-    Ok(value.to_owned())
-}
-
-fn normalize_optional_text(
-    value: Option<String>,
-    field: &'static str,
-    max_len: usize,
-) -> Result<Option<String>, ApiError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let value = value.trim();
-    if value.is_empty() {
-        return Ok(None);
-    }
-    if value.chars().count() > max_len {
-        return Err(validation_error(field, "This field is too long."));
-    }
-    Ok(Some(value.to_owned()))
-}
-
-fn validation_error(field: &'static str, message: &'static str) -> ApiError {
-    let mut error = ApiError::bad_request(
-        "invalid_clinical_documentation",
-        "Clinical documentation request is invalid.",
-    );
-    error.details = json!({ field: [message] });
-    error
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_chart_entry(&user, patient_id, payload)
+            .await?,
+    ))
 }

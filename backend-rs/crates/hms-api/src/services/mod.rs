@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod billing;
+pub mod clinical;
 pub mod consent;
 pub mod dashboard;
 pub mod laboratory;
