@@ -1,18 +1,19 @@
 use chrono::{DateTime, Utc};
 use hms_db::admin::{
-    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewOrganizationUnit,
-    NewPermissionAssignment, NewPosition, NewPositionTemplate, NewPractitionerProfile,
-    NewStaffAccount,
+    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewCommittee, NewDelegation,
+    NewOrganizationUnit, NewPermissionAssignment, NewPosition, NewPositionTemplate,
+    NewPractitionerProfile, NewStaffAccount,
 };
 use hms_domain::admin::{
     AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
-    AuthorityAppointmentListItem, CreateAuthorityAppointmentRequest, CreateDelegationRequest,
-    CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest, CreatePositionRequest,
-    CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
-    FeatureEntitlementListItem, OrganizationUnitListItem, OrganizationUnitListQuery,
-    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
-    PractitionerListQuery, StaffDirectoryItem, StaffListItem, StaffListQuery,
-    UpdateFeatureEntitlementRequest, UpdateStaffRequest, UpsertPractitionerProfileRequest,
+    AuthorityAppointmentListItem, CommitteeListItem, CreateAuthorityAppointmentRequest,
+    CreateCommitteeRequest, CreateDelegationRequest, CreateOrganizationUnitRequest,
+    CreatePermissionAssignmentRequest, CreatePositionRequest, CreatePositionTemplateRequest,
+    CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem, OrganizationUnitListItem,
+    OrganizationUnitListQuery, PermissionAssignmentListItem, PositionListItem,
+    PositionTemplateListItem, PractitionerListItem, PractitionerListQuery, StaffDirectoryItem,
+    StaffListItem, StaffListQuery, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
+    UpsertPractitionerProfileRequest,
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use uuid::Uuid;
@@ -815,21 +816,72 @@ impl AdminService {
         Ok(object(practitioner))
     }
 
+    pub async fn list_committees(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: AdminListQuery,
+    ) -> Result<ListResponse<CommitteeListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        let page = page_request(query)?;
+        let fetch_limit = page.fetch_limit();
+        let rows = hms_db::admin::list_committees(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("committee_list_failed", "Committees could not be loaded.")
+        })?;
+        Ok(page_response(rows, page.limit, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn create_committee(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateCommitteeRequest,
+    ) -> Result<ObjectResponse<CommitteeListItem>, ApiError> {
+        require_admin_access(ctx, self.facility_id())?;
+        validate_code(&payload.code)?;
+        validate_text(&payload.name, MAX_NAME_LEN, "name")?;
+        validate_text(&payload.mandate, MAX_TEXT_LEN, "mandate")?;
+        let committee = hms_db::admin::create_committee(
+            self.pool(),
+            NewCommittee {
+                facility_id: self.facility_id(),
+                code: payload.code,
+                name: payload.name,
+                mandate: payload.mandate,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("committee_create_failed", "Committee could not be saved.")
+        })?;
+        Ok(object(committee))
+    }
+
     pub async fn list_delegations(
         &self,
         ctx: &hms_access::RequestContext,
         query: AdminListQuery,
     ) -> Result<ListResponse<DelegationListItem>, ApiError> {
-        require_admin_access(ctx, self.state.facility_id())?;
+        require_admin_access(ctx, self.facility_id())?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_delegations(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("delegation_list_failed", "Delegations could not be loaded.")
-            })?;
+        let rows = hms_db::admin::list_delegations(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("delegation_list_failed", "Delegations could not be loaded.")
+        })?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -842,19 +894,29 @@ impl AdminService {
     ) -> Result<ObjectResponse<DelegationListItem>, ApiError> {
         require_high_risk_admin_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::AdminAuthorityManage,
         )?;
         validate_text(&payload.reason, MAX_TEXT_LEN, "reason")?;
         validate_time_window(payload.starts_at, payload.ends_at)?;
         ensure_supported_permissions(&self.state, &[payload.permission_code]).await?;
-        let delegation = self
-            .state
-            .create_delegation(payload, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict("delegation_create_failed", "Delegation could not be saved.")
-            })?;
+        let delegation = hms_db::admin::create_delegation(
+            self.pool(),
+            NewDelegation {
+                facility_id: self.facility_id(),
+                delegator_user_id: payload.delegator_user_id,
+                delegate_user_id: payload.delegate_user_id,
+                permission_code: payload.permission_code,
+                starts_at: payload.starts_at.unwrap_or_else(Utc::now),
+                ends_at: payload.ends_at,
+                reason: payload.reason,
+            },
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("delegation_create_failed", "Delegation could not be saved.")
+        })?;
         Ok(object(delegation))
     }
 
@@ -863,7 +925,7 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         query: AuditEventListQuery,
     ) -> Result<ListResponse<AuditEventListItem>, ApiError> {
-        require_admin_access(ctx, self.state.facility_id())?;
+        require_admin_access(ctx, self.facility_id())?;
         let filters = AuditEventFilters {
             search: query.search,
             category: query.category,
@@ -876,16 +938,20 @@ impl AdminService {
             limit: query.limit,
         })?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_audit_events(page.cursor, fetch_limit, filters)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "audit_event_list_failed",
-                    "Audit events could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::admin::list_audit_events(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+            filters,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "audit_event_list_failed",
+                "Audit events could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.occurred_at, item.id)
         }))

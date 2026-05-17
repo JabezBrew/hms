@@ -1,7 +1,5 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::{DateTime, Utc};
-use hms_db::admin::AdminCursor;
 use hms_domain::admin::{
     AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
     AuthorityAppointmentListItem, CommitteeListItem, CreateAuthorityAppointmentRequest,
@@ -16,17 +14,10 @@ use hms_domain::admin::{
 use hms_domain::deployment::FeatureKey;
 use uuid::Uuid;
 
-use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::response::{object, ListResponse, ObjectResponse};
+use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: u8 = 25;
-const MAX_LIMIT: u8 = 100;
-const MAX_CODE_LEN: usize = 48;
-const MAX_NAME_LEN: usize = 160;
-const MAX_TEXT_LEN: usize = 240;
 
 #[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(OrganizationUnitListQuery), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_org_units(
@@ -398,17 +389,9 @@ pub async fn list_committees(
     RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<CommitteeListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_committees(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("committee_list_failed", "Committees could not be loaded.")
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state.admin_service().list_committees(&user, query).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/committees", operation_id = "postAdminCommittees", tag = "admin", security(("bearerAuth" = [])), request_body = CreateCommitteeRequest, responses((status = 200, body = ObjectResponse<CommitteeListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -417,14 +400,12 @@ pub async fn create_committee(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateCommitteeRequest>,
 ) -> Result<Json<ObjectResponse<CommitteeListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
-    validate_code(&payload.code)?;
-    validate_text(&payload.name, MAX_NAME_LEN, "name")?;
-    validate_text(&payload.mandate, MAX_TEXT_LEN, "mandate")?;
-    let committee = state.create_committee(payload).await.map_err(|_| {
-        ApiError::conflict("committee_create_failed", "Committee could not be saved.")
-    })?;
-    Ok(Json(object(committee)))
+    Ok(Json(
+        state
+            .admin_service()
+            .create_committee(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/delegations", operation_id = "getAdminDelegations", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<DelegationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -464,55 +445,4 @@ pub async fn list_audit_events(
             .list_audit_events(&user, query)
             .await?,
     ))
-}
-
-fn require_admin_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_admin_authority_access(user, facility_id).map_err(ApiError::from)
-}
-
-fn validate_code(value: &str) -> Result<(), ApiError> {
-    validate_text(value, MAX_CODE_LEN, "code")?;
-    if !value
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        return Err(ApiError::bad_request(
-            "invalid_code",
-            "Code may only contain letters, numbers, dashes, and underscores.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_text(value: &str, max_len: usize, field: &'static str) -> Result<(), ApiError> {
-    if value.trim().is_empty() || value.len() > max_len {
-        return Err(ApiError::bad_request("invalid_text", field));
-    }
-    Ok(())
-}
-
-fn page_request(query: AdminListQuery) -> Result<(Option<AdminCursor>, u8), ApiError> {
-    let page = cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT,
-        |occurred_at, id| AdminCursor { occurred_at, id },
-    )?;
-    Ok((page.cursor, page.limit))
-}
-
-fn page_response<T>(
-    rows: Vec<T>,
-    page_size: u8,
-    cursor_for: impl Fn(&T) -> String,
-) -> ListResponse<T> {
-    cursor_list::page_response(rows, page_size, cursor_for)
-}
-
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    cursor_list::encode_cursor(occurred_at, id)
 }

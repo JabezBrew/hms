@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::{DateTime, NaiveDate, Utc};
-use hms_db::admin::{AdminCursor, AuditEventFilters, NewCommittee, NewDelegation};
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -12,10 +11,6 @@ use hms_db::ward::{
     NewHandoff, NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
     NewPatientVitals, NewTreatmentSheet, NewWard, NewWardSection, NewWardStockRequest, WardCursor,
     WardSectionUpdate, WardUpdate,
-};
-use hms_domain::admin::{
-    AuditEventListItem, CommitteeListItem, CreateCommitteeRequest, CreateDelegationRequest,
-    DelegationListItem,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -546,75 +541,6 @@ impl AppState {
             &self.inner.config.facility_code,
             features,
         ))
-    }
-
-    pub async fn list_committees(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<CommitteeListItem>> {
-        hms_db::admin::list_committees(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_committee(
-        &self,
-        payload: CreateCommitteeRequest,
-    ) -> Result<CommitteeListItem> {
-        hms_db::admin::create_committee(
-            &self.inner.pool,
-            NewCommittee {
-                facility_id: self.facility_id(),
-                code: payload.code,
-                name: payload.name,
-                mandate: payload.mandate,
-            },
-        )
-        .await
-    }
-
-    pub async fn list_delegations(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<DelegationListItem>> {
-        hms_db::admin::list_delegations(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_delegation(
-        &self,
-        payload: CreateDelegationRequest,
-        request_id: Option<String>,
-    ) -> Result<DelegationListItem> {
-        hms_db::admin::create_delegation(
-            &self.inner.pool,
-            NewDelegation {
-                facility_id: self.facility_id(),
-                delegator_user_id: payload.delegator_user_id,
-                delegate_user_id: payload.delegate_user_id,
-                permission_code: payload.permission_code,
-                starts_at: payload.starts_at.unwrap_or_else(Utc::now),
-                ends_at: payload.ends_at,
-                reason: payload.reason,
-            },
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn list_audit_events(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-        filters: AuditEventFilters,
-    ) -> Result<Vec<AuditEventListItem>> {
-        hms_db::admin::list_audit_events(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            filters,
-        )
-        .await
     }
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
