@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
-    ClinicalCursor, NewAllergy, NewClinicalNote, NewClinicalNoteTemplate, NewProblem, NoteContext,
-    UpdateClinicalNoteTemplate,
+    ClinicalCursor, NewAllergy, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
+    NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
@@ -584,20 +584,24 @@ impl ClinicalService {
         patient_id: Uuid,
         query: CursorListQuery,
     ) -> Result<ListResponse<PrescriptionListItem>, ApiError> {
-        require_clinical_list_access(ctx, self.state.facility_id())?;
+        require_clinical_list_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_prescriptions(patient_id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "prescription_list_failed",
-                    "Prescriptions could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::clinical::list_prescriptions(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "prescription_list_failed",
+                "Prescriptions could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.prescribed_at, item.id)
@@ -610,22 +614,31 @@ impl ClinicalService {
         patient_id: Uuid,
         payload: CreatePrescriptionRequest,
     ) -> Result<ObjectResponse<PrescriptionListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let medication_name =
             normalize_text(payload.medication_name, "medication_name", MAX_TITLE_LEN)?;
         let dose = normalize_text(payload.dose, "dose", MAX_SHORT_TEXT_LEN)?;
         let frequency = normalize_text(payload.frequency, "frequency", MAX_SHORT_TEXT_LEN)?;
-        let prescription = self
-            .state
-            .create_prescription(patient_id, medication_name, dose, frequency, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "prescription_create_failed",
-                    "Prescription could not be saved.",
-                )
-            })?;
+        let prescription = hms_db::clinical::create_prescription(
+            self.pool(),
+            NewPrescription {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id,
+                medication_name,
+                dose,
+                frequency,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "prescription_create_failed",
+                "Prescription could not be saved.",
+            )
+        })?;
 
         Ok(object(prescription))
     }
@@ -637,7 +650,7 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<PrescriptionListItem>, ApiError> {
         require_action_permission(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::ClinicalDocumentationView,
         )?;
         Ok(object(
@@ -651,7 +664,7 @@ impl ClinicalService {
         id: Uuid,
         mut payload: UpdatePrescriptionRequest,
     ) -> Result<ObjectResponse<PrescriptionListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _current = load_prescription_for_access(&self.state, ctx, id).await?;
 
         payload.medication_name =
@@ -670,19 +683,18 @@ impl ClinicalService {
             ));
         }
 
-        let prescription = self
-            .state
-            .update_prescription(id, payload)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "prescription_update_failed",
-                    "Prescription could not be updated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("prescription_not_found", "Prescription was not found.")
-            })?;
+        let prescription =
+            hms_db::clinical::update_prescription(self.pool(), self.facility_id(), id, payload)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "prescription_update_failed",
+                        "Prescription could not be updated.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("prescription_not_found", "Prescription was not found.")
+                })?;
 
         Ok(object(prescription))
     }
@@ -825,8 +837,7 @@ async fn load_prescription_for_access(
     ctx: &hms_access::RequestContext,
     id: Uuid,
 ) -> Result<PrescriptionListItem, ApiError> {
-    let prescription = state
-        .get_prescription(id)
+    let prescription = hms_db::clinical::get_prescription(state.db_pool(), state.facility_id(), id)
         .await
         .map_err(|_| {
             ApiError::conflict(

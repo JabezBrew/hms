@@ -9,7 +9,7 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::clinical::{ClinicalCursor, NewChartEntry, NewPrescription};
+use hms_db::clinical::{ClinicalCursor, NewChartEntry};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -29,10 +29,7 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::clinical::{
-    ChartEntryListItem, ChartEntryType, PatientChronicleSummary, PrescriptionListItem,
-    UpdatePrescriptionRequest,
-};
+use hms_domain::clinical::{ChartEntryListItem, ChartEntryType, PatientChronicleSummary};
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
@@ -1051,67 +1048,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_prescriptions(
-        &self,
-        patient_id: Uuid,
-        cursor: Option<ClinicalCursor>,
-        limit: i64,
-    ) -> Result<Vec<PrescriptionListItem>> {
-        hms_db::clinical::list_prescriptions(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_prescription(
-        &self,
-        patient_id: Uuid,
-        medication_name: String,
-        dose: String,
-        frequency: String,
-        actor_user_id: Uuid,
-    ) -> Result<PrescriptionListItem> {
-        hms_db::clinical::create_prescription(
-            &self.inner.pool,
-            NewPrescription {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                medication_name,
-                dose,
-                frequency,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_prescription(
-        &self,
-        prescription_id: Uuid,
-    ) -> Result<Option<PrescriptionListItem>> {
-        hms_db::clinical::get_prescription(&self.inner.pool, self.facility_id(), prescription_id)
-            .await
-    }
-
-    pub async fn update_prescription(
-        &self,
-        prescription_id: Uuid,
-        update: UpdatePrescriptionRequest,
-    ) -> Result<Option<PrescriptionListItem>> {
-        hms_db::clinical::update_prescription(
-            &self.inner.pool,
-            self.facility_id(),
-            prescription_id,
-            update,
-        )
-        .await
     }
 
     pub async fn list_chart_entries(
