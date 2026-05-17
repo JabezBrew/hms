@@ -9,8 +9,7 @@ use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
     AdmissionContext, BedUpdate, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
     NewHandoff, NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
-    NewPatientVitals, NewTreatmentSheet, NewWard, NewWardSection, NewWardStockRequest, WardCursor,
-    WardSectionUpdate, WardUpdate,
+    NewPatientVitals, NewTreatmentSheet, NewWardStockRequest, WardCursor,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -20,8 +19,8 @@ use hms_domain::ward::{
     AdmissionCaseListItem, BedListItem, DischargeCaseListItem, FluidBalanceListItem,
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
     MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity, NursingTaskListItem,
-    NursingTaskType, PatientVitalsListItem, TreatmentSheetListItem, WardBoardItem, WardListItem,
-    WardSectionListItem, WardStockRequestListItem,
+    NursingTaskType, PatientVitalsListItem, TreatmentSheetListItem, WardBoardItem,
+    WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -545,97 +544,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_wards(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-        search: Option<String>,
-    ) -> Result<Vec<WardListItem>> {
-        hms_db::ward::list_wards(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            search.as_deref(),
-        )
-        .await
-    }
-
-    pub async fn get_ward(&self, ward_id: Uuid) -> Result<Option<WardListItem>> {
-        hms_db::ward::get_ward(&self.inner.pool, self.facility_id(), ward_id).await
-    }
-
-    pub async fn create_ward(&self, code: String, name: String) -> Result<WardListItem> {
-        hms_db::ward::create_ward(
-            &self.inner.pool,
-            NewWard {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                code,
-                name,
-            },
-        )
-        .await
-    }
-
-    pub async fn update_ward(
-        &self,
-        ward_id: Uuid,
-        update: WardUpdate,
-    ) -> Result<Option<WardListItem>> {
-        hms_db::ward::update_ward(&self.inner.pool, self.facility_id(), ward_id, update).await
-    }
-
-    pub async fn list_ward_sections(
-        &self,
-        ward_id: Uuid,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<WardSectionListItem>> {
-        hms_db::ward::list_ward_sections(
-            &self.inner.pool,
-            self.facility_id(),
-            ward_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_ward_section(
-        &self,
-        ward_id: Uuid,
-        code: String,
-        name: String,
-        actor_user_id: Uuid,
-    ) -> Result<WardSectionListItem> {
-        hms_db::ward::create_ward_section(
-            &self.inner.pool,
-            NewWardSection {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                ward_id,
-                code,
-                name,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_ward_section(&self, section_id: Uuid) -> Result<Option<WardSectionListItem>> {
-        hms_db::ward::get_ward_section_by_id(&self.inner.pool, self.facility_id(), section_id).await
-    }
-
-    pub async fn update_ward_section(
-        &self,
-        section_id: Uuid,
-        update: WardSectionUpdate,
-    ) -> Result<Option<WardSectionListItem>> {
-        hms_db::ward::update_ward_section(&self.inner.pool, self.facility_id(), section_id, update)
-            .await
     }
 
     pub async fn list_ward_beds(

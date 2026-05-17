@@ -77,8 +77,7 @@ pub(super) async fn load_admission_case_for_access(
 }
 
 pub(super) async fn load_ward(state: &AppState, ward_id: Uuid) -> Result<WardListItem, ApiError> {
-    state
-        .get_ward(ward_id)
+    hms_db::ward::get_ward(state.db_pool(), state.facility_id(), ward_id)
         .await
         .map_err(|_| ApiError::conflict("ward_load_failed", "Ward could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))
@@ -88,8 +87,7 @@ pub(super) async fn load_ward_section(
     state: &AppState,
     section_id: Uuid,
 ) -> Result<WardSectionListItem, ApiError> {
-    state
-        .get_ward_section(section_id)
+    hms_db::ward::get_ward_section_by_id(state.db_pool(), state.facility_id(), section_id)
         .await
         .map_err(|_| {
             ApiError::conflict(

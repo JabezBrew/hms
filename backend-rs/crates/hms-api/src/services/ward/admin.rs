@@ -1,4 +1,4 @@
-use hms_db::ward::{WardSectionUpdate, WardUpdate};
+use hms_db::ward::{NewWard, NewWardSection, WardSectionUpdate, WardUpdate};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
@@ -38,11 +38,15 @@ impl WardAdminService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_wards(page.cursor, fetch_limit, query.search)
-            .await
-            .map_err(|_| ApiError::conflict("ward_list_failed", "Wards could not be loaded."))?;
+        let rows = hms_db::ward::list_wards(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+            query.search.as_deref(),
+        )
+        .await
+        .map_err(|_| ApiError::conflict("ward_list_failed", "Wards could not be loaded."))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
@@ -75,11 +79,17 @@ impl WardAdminService {
             ));
         }
 
-        let ward = self
-            .state
-            .create_ward(code.to_owned(), name.to_owned())
-            .await
-            .map_err(|_| ApiError::conflict("ward_create_failed", "Ward could not be created."))?;
+        let ward = hms_db::ward::create_ward(
+            self.state.db_pool(),
+            NewWard {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                code: code.to_owned(),
+                name: name.to_owned(),
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("ward_create_failed", "Ward could not be created."))?;
 
         Ok(object(ward))
     }
@@ -119,19 +129,19 @@ impl WardAdminService {
             ));
         }
 
-        let ward = self
-            .state
-            .update_ward(
-                id,
-                WardUpdate {
-                    code,
-                    name,
-                    status: payload.status,
-                },
-            )
-            .await
-            .map_err(|_| ApiError::conflict("ward_update_failed", "Ward could not be updated."))?
-            .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))?;
+        let ward = hms_db::ward::update_ward(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            WardUpdate {
+                code,
+                name,
+                status: payload.status,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("ward_update_failed", "Ward could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))?;
 
         Ok(object(ward))
     }
@@ -151,13 +161,17 @@ impl WardAdminService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_ward_sections(id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("ward_sections_failed", "Ward sections could not be loaded.")
-            })?;
+        let rows = hms_db::ward::list_ward_sections(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("ward_sections_failed", "Ward sections could not be loaded.")
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
@@ -199,26 +213,26 @@ impl WardAdminService {
             ));
         }
 
-        let section = self
-            .state
-            .update_ward_section(
-                id,
-                WardSectionUpdate {
-                    code,
-                    name,
-                    status: payload.status,
-                },
+        let section = hms_db::ward::update_ward_section(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            WardSectionUpdate {
+                code,
+                name,
+                status: payload.status,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_section_update_failed",
+                "Ward section could not be updated.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "ward_section_update_failed",
-                    "Ward section could not be updated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("ward_section_not_found", "Ward section was not found.")
-            })?;
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("ward_section_not_found", "Ward section was not found.")
+        })?;
 
         Ok(object(section))
     }
@@ -244,16 +258,24 @@ impl WardAdminService {
             ));
         }
 
-        let section = self
-            .state
-            .create_ward_section(id, code.to_owned(), name.to_owned(), ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "ward_section_create_failed",
-                    "Ward section could not be created.",
-                )
-            })?;
+        let section = hms_db::ward::create_ward_section(
+            self.state.db_pool(),
+            NewWardSection {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                ward_id: id,
+                code: code.to_owned(),
+                name: name.to_owned(),
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_section_create_failed",
+                "Ward section could not be created.",
+            )
+        })?;
 
         Ok(object(section))
     }
