@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_domain::ward::{AdmissionStatus, BedStatus, DischargeCaseListItem, DischargeStatus};
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -49,10 +50,11 @@ pub async fn list_discharge_cases(
     query.push(" ORDER BY discharge_cases.requested_at ASC, discharge_cases.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query
-        .build_query_as::<DischargeCaseRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.discharge_cases.list",
+        query.build_query_as::<DischargeCaseRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(discharge_from_row).collect()
 }
 
@@ -66,10 +68,13 @@ pub async fn get_discharge_case(
     query.push_bind(facility_id);
     query.push(" AND discharge_cases.id = ");
     query.push_bind(discharge_case_id);
-    let row = query
-        .build_query_as::<DischargeCaseRow>()
-        .fetch_optional(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.discharge_cases.get",
+        query
+            .build_query_as::<DischargeCaseRow>()
+            .fetch_optional(pool),
+    )
+    .await?;
     row.map(discharge_from_row).transpose()
 }
 
@@ -81,8 +86,10 @@ pub async fn request_discharge(
     actor_user_id: Uuid,
 ) -> anyhow::Result<DischargeCaseListItem> {
     let mut transaction = pool.begin().await?;
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.discharge_cases.request.insert",
+        sqlx::query(
+            r#"
         INSERT INTO discharge_cases (
             id,
             facility_id,
@@ -96,28 +103,32 @@ pub async fn request_discharge(
         SET status = EXCLUDED.status,
             updated_at = now()
         "#,
+        )
+        .bind(id)
+        .bind(facility_id)
+        .bind(admission.id)
+        .bind(admission.patient_id)
+        .bind(codec::encode(DischargeStatus::Requested)?)
+        .bind(actor_user_id)
+        .execute(&mut *transaction),
     )
-    .bind(id)
-    .bind(facility_id)
-    .bind(admission.id)
-    .bind(admission.patient_id)
-    .bind(codec::encode(DischargeStatus::Requested)?)
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
     .await?;
 
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.discharge_cases.request.mark_admission_pending",
+        sqlx::query(
+            r#"
         UPDATE admission_cases
         SET status = $1,
             updated_at = now()
         WHERE facility_id = $2 AND id = $3
         "#,
+        )
+        .bind(codec::encode(AdmissionStatus::DischargePending)?)
+        .bind(facility_id)
+        .bind(admission.id)
+        .execute(&mut *transaction),
     )
-    .bind(codec::encode(AdmissionStatus::DischargePending)?)
-    .bind(facility_id)
-    .bind(admission.id)
-    .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
@@ -130,8 +141,10 @@ pub async fn complete_discharge(
     discharge_case_id: Uuid,
 ) -> anyhow::Result<Option<DischargeCaseListItem>> {
     let mut transaction = pool.begin().await?;
-    let row = sqlx::query_as::<_, DischargeContextRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.discharge_cases.complete.mark_discharge",
+        sqlx::query_as::<_, DischargeContextRow>(
+            r#"
         UPDATE discharge_cases
         SET status = $1,
             discharged_at = COALESCE(discharged_at, now()),
@@ -139,19 +152,22 @@ pub async fn complete_discharge(
         WHERE facility_id = $2 AND id = $3
         RETURNING admission_case_id
         "#,
+        )
+        .bind(codec::encode(DischargeStatus::Completed)?)
+        .bind(facility_id)
+        .bind(discharge_case_id)
+        .fetch_optional(&mut *transaction),
     )
-    .bind(codec::encode(DischargeStatus::Completed)?)
-    .bind(facility_id)
-    .bind(discharge_case_id)
-    .fetch_optional(&mut *transaction)
     .await?;
 
     let Some(row) = row else {
         return Ok(None);
     };
 
-    let admission = sqlx::query_as::<_, AdmissionContextRow>(
-        r#"
+    let admission = observe_db_query(
+        "ward.discharge_cases.complete.mark_admission_discharged",
+        sqlx::query_as::<_, AdmissionContextRow>(
+            r#"
         UPDATE admission_cases
         SET status = $1,
             discharged_at = COALESCE(discharged_at, now()),
@@ -159,26 +175,30 @@ pub async fn complete_discharge(
         WHERE facility_id = $2 AND id = $3
         RETURNING bed_id
         "#,
+        )
+        .bind(codec::encode(AdmissionStatus::Discharged)?)
+        .bind(facility_id)
+        .bind(row.admission_case_id)
+        .fetch_one(&mut *transaction),
     )
-    .bind(codec::encode(AdmissionStatus::Discharged)?)
-    .bind(facility_id)
-    .bind(row.admission_case_id)
-    .fetch_one(&mut *transaction)
     .await?;
 
     if let Some(bed_id) = admission.bed_id {
-        sqlx::query(
-            r#"
+        observe_db_query(
+            "ward.discharge_cases.complete.release_bed",
+            sqlx::query(
+                r#"
             UPDATE beds
             SET status = $1,
                 updated_at = now()
             WHERE facility_id = $2 AND id = $3
             "#,
+            )
+            .bind(codec::encode(BedStatus::Available)?)
+            .bind(facility_id)
+            .bind(bed_id)
+            .execute(&mut *transaction),
         )
-        .bind(codec::encode(BedStatus::Available)?)
-        .bind(facility_id)
-        .bind(bed_id)
-        .execute(&mut *transaction)
         .await?;
     }
 
@@ -194,8 +214,10 @@ pub async fn cancel_discharge(
     discharge_case_id: Uuid,
 ) -> anyhow::Result<Option<DischargeCaseListItem>> {
     let mut transaction = pool.begin().await?;
-    let row = sqlx::query_as::<_, DischargeContextRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.discharge_cases.cancel.mark_discharge",
+        sqlx::query_as::<_, DischargeContextRow>(
+            r#"
         UPDATE discharge_cases
         SET status = $1,
             discharged_at = NULL,
@@ -205,20 +227,23 @@ pub async fn cancel_discharge(
           AND status <> $4
         RETURNING admission_case_id
         "#,
+        )
+        .bind(codec::encode(DischargeStatus::Cancelled)?)
+        .bind(facility_id)
+        .bind(discharge_case_id)
+        .bind(codec::encode(DischargeStatus::Completed)?)
+        .fetch_optional(&mut *transaction),
     )
-    .bind(codec::encode(DischargeStatus::Cancelled)?)
-    .bind(facility_id)
-    .bind(discharge_case_id)
-    .bind(codec::encode(DischargeStatus::Completed)?)
-    .fetch_optional(&mut *transaction)
     .await?;
 
     let Some(row) = row else {
         return Ok(None);
     };
 
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.discharge_cases.cancel.restore_admission",
+        sqlx::query(
+            r#"
         UPDATE admission_cases
         SET status = $1,
             discharged_at = NULL,
@@ -227,12 +252,13 @@ pub async fn cancel_discharge(
           AND id = $3
           AND status <> $4
         "#,
+        )
+        .bind(codec::encode(AdmissionStatus::Admitted)?)
+        .bind(facility_id)
+        .bind(row.admission_case_id)
+        .bind(codec::encode(AdmissionStatus::Discharged)?)
+        .execute(&mut *transaction),
     )
-    .bind(codec::encode(AdmissionStatus::Admitted)?)
-    .bind(facility_id)
-    .bind(row.admission_case_id)
-    .bind(codec::encode(AdmissionStatus::Discharged)?)
-    .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
@@ -268,10 +294,11 @@ async fn discharge_item_by_admission(
     query.push_bind(facility_id);
     query.push(" AND discharge_cases.admission_case_id = ");
     query.push_bind(admission_case_id);
-    let row = query
-        .build_query_as::<DischargeCaseRow>()
-        .fetch_one(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.discharge_cases.get_by_admission",
+        query.build_query_as::<DischargeCaseRow>().fetch_one(pool),
+    )
+    .await?;
     discharge_from_row(row)
 }
 

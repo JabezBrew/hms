@@ -3,6 +3,7 @@ use hms_domain::ward::{
     MedicationAdministrationListItem, MedicationAdministrationStatus, TreatmentSheetListItem,
     TreatmentSheetStatus,
 };
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -78,10 +79,13 @@ pub async fn list_medication_administrations(
     query.push(" ORDER BY medication_administrations.scheduled_at ASC, medication_administrations.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query
-        .build_query_as::<MedicationAdministrationRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.mar.medication_administrations.list",
+        query
+            .build_query_as::<MedicationAdministrationRow>()
+            .fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(medication_from_row).collect()
 }
 
@@ -89,8 +93,10 @@ pub async fn schedule_medication_administration(
     pool: &PgPool,
     medication: NewMedicationAdministration,
 ) -> anyhow::Result<MedicationAdministrationListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.mar.medication_administrations.schedule",
+        sqlx::query(
+            r#"
         INSERT INTO medication_administrations (
             id,
             facility_id,
@@ -103,16 +109,17 @@ pub async fn schedule_medication_administration(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
+        )
+        .bind(medication.id)
+        .bind(medication.facility_id)
+        .bind(medication.admission_case_id)
+        .bind(medication.patient_id)
+        .bind(&medication.medication_name)
+        .bind(medication.scheduled_at)
+        .bind(codec::encode(MedicationAdministrationStatus::Scheduled)?)
+        .bind(medication.actor_user_id)
+        .execute(pool),
     )
-    .bind(medication.id)
-    .bind(medication.facility_id)
-    .bind(medication.admission_case_id)
-    .bind(medication.patient_id)
-    .bind(&medication.medication_name)
-    .bind(medication.scheduled_at)
-    .bind(codec::encode(MedicationAdministrationStatus::Scheduled)?)
-    .bind(medication.actor_user_id)
-    .execute(pool)
     .await?;
 
     medication_by_id(pool, medication.facility_id, medication.id).await
@@ -125,8 +132,10 @@ pub async fn administer_medication(
     actor_user_id: Uuid,
     witness_user_id: Option<Uuid>,
 ) -> anyhow::Result<Option<MedicationAdministrationListItem>> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.mar.medication_administrations.administer",
+        sqlx::query(
+            r#"
         UPDATE medication_administrations
         SET status = $1,
             administered_at = COALESCE(administered_at, now()),
@@ -135,13 +144,14 @@ pub async fn administer_medication(
             updated_at = now()
         WHERE facility_id = $4 AND id = $5
         "#,
+        )
+        .bind(codec::encode(MedicationAdministrationStatus::Administered)?)
+        .bind(actor_user_id)
+        .bind(witness_user_id)
+        .bind(facility_id)
+        .bind(medication_id)
+        .execute(pool),
     )
-    .bind(codec::encode(MedicationAdministrationStatus::Administered)?)
-    .bind(actor_user_id)
-    .bind(witness_user_id)
-    .bind(facility_id)
-    .bind(medication_id)
-    .execute(pool)
     .await?;
 
     optional_medication_by_id(pool, facility_id, medication_id).await
@@ -174,10 +184,11 @@ pub async fn list_treatment_sheets(
     query.push(" ORDER BY treatment_sheets.updated_at ASC, treatment_sheets.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query
-        .build_query_as::<TreatmentSheetRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.mar.treatment_sheets.list",
+        query.build_query_as::<TreatmentSheetRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(treatment_sheet_from_row).collect()
 }
 
@@ -185,8 +196,10 @@ pub async fn create_treatment_sheet(
     pool: &PgPool,
     sheet: NewTreatmentSheet,
 ) -> anyhow::Result<TreatmentSheetListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.mar.treatment_sheets.create",
+        sqlx::query(
+            r#"
         INSERT INTO treatment_sheets (
             id,
             facility_id,
@@ -200,15 +213,16 @@ pub async fn create_treatment_sheet(
         ON CONFLICT (admission_case_id, sheet_date) DO UPDATE
         SET updated_at = now()
         "#,
+        )
+        .bind(sheet.id)
+        .bind(sheet.facility_id)
+        .bind(sheet.admission_case_id)
+        .bind(sheet.patient_id)
+        .bind(sheet.sheet_date)
+        .bind(codec::encode(TreatmentSheetStatus::Active)?)
+        .bind(sheet.actor_user_id)
+        .execute(pool),
     )
-    .bind(sheet.id)
-    .bind(sheet.facility_id)
-    .bind(sheet.admission_case_id)
-    .bind(sheet.patient_id)
-    .bind(sheet.sheet_date)
-    .bind(codec::encode(TreatmentSheetStatus::Active)?)
-    .bind(sheet.actor_user_id)
-    .execute(pool)
     .await?;
 
     treatment_sheet_by_admission_date(
@@ -275,10 +289,13 @@ async fn optional_medication_by_id(
     query.push_bind(facility_id);
     query.push(" AND medication_administrations.id = ");
     query.push_bind(medication_id);
-    let row = query
-        .build_query_as::<MedicationAdministrationRow>()
-        .fetch_optional(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.mar.medication_administrations.get",
+        query
+            .build_query_as::<MedicationAdministrationRow>()
+            .fetch_optional(pool),
+    )
+    .await?;
     row.map(medication_from_row).transpose()
 }
 
@@ -295,10 +312,11 @@ async fn treatment_sheet_by_admission_date(
     query.push_bind(admission_case_id);
     query.push(" AND treatment_sheets.sheet_date = ");
     query.push_bind(sheet_date);
-    let row = query
-        .build_query_as::<TreatmentSheetRow>()
-        .fetch_one(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.mar.treatment_sheets.get_by_admission_date",
+        query.build_query_as::<TreatmentSheetRow>().fetch_one(pool),
+    )
+    .await?;
     treatment_sheet_from_row(row)
 }
 

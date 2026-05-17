@@ -940,3 +940,44 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         .expect("ward board denial succeeds");
     assert_eq!(denied.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn ward_list_records_stable_query_metrics_without_phi_labels() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/wards?limit=1&search=Ama%20Mensah")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("ward list succeeds");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let metrics = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/metrics")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("metrics request succeeds");
+    assert_eq!(metrics.status(), StatusCode::OK);
+    let bytes = to_bytes(metrics.into_body(), usize::MAX)
+        .await
+        .expect("metrics body reads");
+    let body = String::from_utf8(bytes.to_vec()).expect("metrics body is utf-8");
+
+    assert!(body.contains("query=\"ward.admin.wards.list\""));
+    assert!(body.contains("route=\"/api/v2/wards\""));
+    assert!(!body.contains("Ama"));
+    assert!(!body.contains("Mensah"));
+}

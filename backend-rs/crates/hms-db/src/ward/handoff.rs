@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_domain::ward::{HandoffListItem, HandoffStatus};
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -64,13 +65,19 @@ pub async fn list_handoffs(
     query.push(" ORDER BY handoffs.created_at ASC, handoffs.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query.build_query_as::<HandoffRow>().fetch_all(pool).await?;
+    let rows = observe_db_query(
+        "ward.handoffs.list",
+        query.build_query_as::<HandoffRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(handoff_from_row).collect()
 }
 
 pub async fn create_handoff(pool: &PgPool, handoff: NewHandoff) -> anyhow::Result<HandoffListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.handoffs.create",
+        sqlx::query(
+            r#"
         INSERT INTO handoffs (
             id,
             facility_id,
@@ -82,15 +89,16 @@ pub async fn create_handoff(pool: &PgPool, handoff: NewHandoff) -> anyhow::Resul
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
+        )
+        .bind(handoff.id)
+        .bind(handoff.facility_id)
+        .bind(handoff.ward_id)
+        .bind(handoff.from_user_id)
+        .bind(handoff.to_user_id)
+        .bind(&handoff.shift_label)
+        .bind(codec::encode(HandoffStatus::Draft)?)
+        .execute(pool),
     )
-    .bind(handoff.id)
-    .bind(handoff.facility_id)
-    .bind(handoff.ward_id)
-    .bind(handoff.from_user_id)
-    .bind(handoff.to_user_id)
-    .bind(&handoff.shift_label)
-    .bind(codec::encode(HandoffStatus::Draft)?)
-    .execute(pool)
     .await?;
 
     handoff_by_id(pool, handoff.facility_id, handoff.id).await
@@ -101,19 +109,22 @@ pub async fn complete_handoff(
     facility_id: Uuid,
     handoff_id: Uuid,
 ) -> anyhow::Result<Option<HandoffListItem>> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.handoffs.complete",
+        sqlx::query(
+            r#"
         UPDATE handoffs
         SET status = $1,
             completed_at = COALESCE(completed_at, now()),
             updated_at = now()
         WHERE facility_id = $2 AND id = $3
         "#,
+        )
+        .bind(codec::encode(HandoffStatus::Completed)?)
+        .bind(facility_id)
+        .bind(handoff_id)
+        .execute(pool),
     )
-    .bind(codec::encode(HandoffStatus::Completed)?)
-    .bind(facility_id)
-    .bind(handoff_id)
-    .execute(pool)
     .await?;
 
     optional_handoff_by_id(pool, facility_id, handoff_id).await
@@ -142,8 +153,10 @@ async fn optional_handoff_by_id(
     facility_id: Uuid,
     handoff_id: Uuid,
 ) -> anyhow::Result<Option<HandoffListItem>> {
-    let row = sqlx::query_as::<_, HandoffRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.handoffs.get",
+        sqlx::query_as::<_, HandoffRow>(
+            r#"
         SELECT handoffs.id,
                handoffs.ward_id,
                wards.name AS ward_name,
@@ -158,10 +171,11 @@ async fn optional_handoff_by_id(
           AND wards.facility_id = $1
           AND handoffs.id = $2
         "#,
+        )
+        .bind(facility_id)
+        .bind(handoff_id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(handoff_id)
-    .fetch_optional(pool)
     .await?;
     row.map(handoff_from_row).transpose()
 }

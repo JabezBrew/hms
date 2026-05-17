@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_domain::ward::{WardListItem, WardSectionListItem, WardStatus};
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -116,7 +117,11 @@ pub async fn list_wards(
     query.push(" ORDER BY wards.created_at ASC, wards.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query.build_query_as::<WardRow>().fetch_all(pool).await?;
+    let rows = observe_db_query(
+        "ward.admin.wards.list",
+        query.build_query_as::<WardRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(ward_from_row).collect()
 }
 
@@ -125,8 +130,10 @@ pub async fn get_ward(
     facility_id: Uuid,
     ward_id: Uuid,
 ) -> anyhow::Result<Option<WardListItem>> {
-    let row = sqlx::query_as::<_, WardRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.admin.wards.get",
+        sqlx::query_as::<_, WardRow>(
+            r#"
         SELECT wards.id,
                wards.code,
                wards.name,
@@ -146,18 +153,21 @@ pub async fn get_ward(
         WHERE wards.facility_id = $1
           AND wards.id = $2
         "#,
+        )
+        .bind(facility_id)
+        .bind(ward_id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(ward_id)
-    .fetch_optional(pool)
     .await?;
 
     row.map(ward_from_row).transpose()
 }
 
 pub async fn create_ward(pool: &PgPool, ward: NewWard) -> anyhow::Result<WardListItem> {
-    let row = sqlx::query_as::<_, WardRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.admin.wards.create",
+        sqlx::query_as::<_, WardRow>(
+            r#"
         INSERT INTO wards (
             id,
             facility_id,
@@ -174,13 +184,14 @@ pub async fn create_ward(pool: &PgPool, ward: NewWard) -> anyhow::Result<WardLis
                   0::bigint AS occupied_bed_count,
                   created_at
         "#,
+        )
+        .bind(ward.id)
+        .bind(ward.facility_id)
+        .bind(ward.code)
+        .bind(ward.name)
+        .bind(codec::encode(WardStatus::Active)?)
+        .fetch_one(pool),
     )
-    .bind(ward.id)
-    .bind(ward.facility_id)
-    .bind(ward.code)
-    .bind(ward.name)
-    .bind(codec::encode(WardStatus::Active)?)
-    .fetch_one(pool)
     .await?;
 
     ward_from_row(row)
@@ -193,8 +204,10 @@ pub async fn update_ward(
     update: WardUpdate,
 ) -> anyhow::Result<Option<WardListItem>> {
     let status = update.status.map(codec::encode).transpose()?;
-    let row = sqlx::query_as::<_, WardRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.admin.wards.update",
+        sqlx::query_as::<_, WardRow>(
+            r#"
         WITH updated AS (
             UPDATE wards
                SET code = COALESCE($3, code),
@@ -226,13 +239,14 @@ pub async fn update_ward(
             GROUP BY ward_id
         ) bed_counts ON bed_counts.ward_id = updated.id
         "#,
+        )
+        .bind(facility_id)
+        .bind(ward_id)
+        .bind(update.code)
+        .bind(update.name)
+        .bind(status)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(ward_id)
-    .bind(update.code)
-    .bind(update.name)
-    .bind(status)
-    .fetch_optional(pool)
     .await?;
 
     row.map(ward_from_row).transpose()
@@ -286,10 +300,11 @@ pub async fn list_ward_sections(
     query.push(" ORDER BY ward_sections.created_at ASC, ward_sections.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query
-        .build_query_as::<WardSectionRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.admin.sections.list",
+        query.build_query_as::<WardSectionRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(ward_section_from_row).collect()
 }
 
@@ -298,8 +313,10 @@ pub async fn get_ward_section_by_id(
     facility_id: Uuid,
     section_id: Uuid,
 ) -> anyhow::Result<Option<WardSectionListItem>> {
-    let row = sqlx::query_as::<_, WardSectionRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.admin.sections.get",
+        sqlx::query_as::<_, WardSectionRow>(
+            r#"
         SELECT ward_sections.id,
                ward_sections.ward_id,
                ward_sections.code,
@@ -319,10 +336,11 @@ pub async fn get_ward_section_by_id(
         WHERE ward_sections.facility_id = $1
           AND ward_sections.id = $2
         "#,
+        )
+        .bind(facility_id)
+        .bind(section_id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(section_id)
-    .fetch_optional(pool)
     .await?;
 
     row.map(ward_section_from_row).transpose()
@@ -332,8 +350,10 @@ pub async fn create_ward_section(
     pool: &PgPool,
     section: NewWardSection,
 ) -> anyhow::Result<WardSectionListItem> {
-    let row = sqlx::query_as::<_, WardSectionRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.admin.sections.create",
+        sqlx::query_as::<_, WardSectionRow>(
+            r#"
         WITH inserted AS (
             INSERT INTO ward_sections (
                 id,
@@ -367,15 +387,16 @@ pub async fn create_ward_section(
                inserted.created_at
         FROM inserted
         "#,
+        )
+        .bind(section.id)
+        .bind(section.facility_id)
+        .bind(section.ward_id)
+        .bind(section.code)
+        .bind(section.name)
+        .bind(codec::encode(WardStatus::Active)?)
+        .bind(section.actor_user_id)
+        .fetch_optional(pool),
     )
-    .bind(section.id)
-    .bind(section.facility_id)
-    .bind(section.ward_id)
-    .bind(section.code)
-    .bind(section.name)
-    .bind(codec::encode(WardStatus::Active)?)
-    .bind(section.actor_user_id)
-    .fetch_optional(pool)
     .await?
     .ok_or_else(|| anyhow::anyhow!("ward not found for section"))?;
 
@@ -389,8 +410,10 @@ pub async fn update_ward_section(
     update: WardSectionUpdate,
 ) -> anyhow::Result<Option<WardSectionListItem>> {
     let status = update.status.map(codec::encode).transpose()?;
-    let row = sqlx::query_as::<_, WardSectionRow>(
-        r#"
+    let row = observe_db_query(
+        "ward.admin.sections.update",
+        sqlx::query_as::<_, WardSectionRow>(
+            r#"
         WITH updated AS (
             UPDATE ward_sections
                SET code = COALESCE($3, code),
@@ -423,13 +446,14 @@ pub async fn update_ward_section(
             GROUP BY section_id
         ) bed_counts ON bed_counts.section_id = updated.id
         "#,
+        )
+        .bind(facility_id)
+        .bind(section_id)
+        .bind(update.code)
+        .bind(update.name)
+        .bind(status)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(section_id)
-    .bind(update.code)
-    .bind(update.name)
-    .bind(status)
-    .fetch_optional(pool)
     .await?;
 
     row.map(ward_section_from_row).transpose()

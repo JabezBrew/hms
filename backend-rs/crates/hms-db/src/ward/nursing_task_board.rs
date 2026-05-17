@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_domain::ward::{NursingTaskListItem, NursingTaskStatus, NursingTaskType};
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -52,10 +53,11 @@ pub async fn list_nursing_tasks(
     query.push(" ORDER BY nursing_tasks.due_at ASC, nursing_tasks.id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query
-        .build_query_as::<NursingTaskRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.nursing_tasks.list",
+        query.build_query_as::<NursingTaskRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(nursing_task_from_row).collect()
 }
 
@@ -63,8 +65,10 @@ pub async fn create_nursing_task(
     pool: &PgPool,
     task: NewNursingTask,
 ) -> anyhow::Result<NursingTaskListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.nursing_tasks.create",
+        sqlx::query(
+            r#"
         INSERT INTO nursing_tasks (
             id,
             facility_id,
@@ -79,18 +83,19 @@ pub async fn create_nursing_task(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
+        )
+        .bind(task.id)
+        .bind(task.facility_id)
+        .bind(task.admission_case_id)
+        .bind(task.patient_id)
+        .bind(task.ward_id)
+        .bind(codec::encode(task.task_type)?)
+        .bind(codec::encode(NursingTaskStatus::Open)?)
+        .bind(task.due_at)
+        .bind(task.assigned_to_user_id)
+        .bind(task.actor_user_id)
+        .execute(pool),
     )
-    .bind(task.id)
-    .bind(task.facility_id)
-    .bind(task.admission_case_id)
-    .bind(task.patient_id)
-    .bind(task.ward_id)
-    .bind(codec::encode(task.task_type)?)
-    .bind(codec::encode(NursingTaskStatus::Open)?)
-    .bind(task.due_at)
-    .bind(task.assigned_to_user_id)
-    .bind(task.actor_user_id)
-    .execute(pool)
     .await?;
 
     nursing_task_by_id(pool, task.facility_id, task.id).await
@@ -101,19 +106,22 @@ pub async fn complete_nursing_task(
     facility_id: Uuid,
     task_id: Uuid,
 ) -> anyhow::Result<Option<NursingTaskListItem>> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.nursing_tasks.complete",
+        sqlx::query(
+            r#"
         UPDATE nursing_tasks
         SET status = $1,
             completed_at = COALESCE(completed_at, now()),
             updated_at = now()
         WHERE facility_id = $2 AND id = $3
         "#,
+        )
+        .bind(codec::encode(NursingTaskStatus::Completed)?)
+        .bind(facility_id)
+        .bind(task_id)
+        .execute(pool),
     )
-    .bind(codec::encode(NursingTaskStatus::Completed)?)
-    .bind(facility_id)
-    .bind(task_id)
-    .execute(pool)
     .await?;
 
     optional_nursing_task_by_id(pool, facility_id, task_id).await
@@ -124,19 +132,22 @@ pub async fn cancel_nursing_task(
     facility_id: Uuid,
     task_id: Uuid,
 ) -> anyhow::Result<Option<NursingTaskListItem>> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.nursing_tasks.cancel",
+        sqlx::query(
+            r#"
         UPDATE nursing_tasks
         SET status = $1,
             completed_at = NULL,
             updated_at = now()
         WHERE facility_id = $2 AND id = $3
         "#,
+        )
+        .bind(codec::encode(NursingTaskStatus::Cancelled)?)
+        .bind(facility_id)
+        .bind(task_id)
+        .execute(pool),
     )
-    .bind(codec::encode(NursingTaskStatus::Cancelled)?)
-    .bind(facility_id)
-    .bind(task_id)
-    .execute(pool)
     .await?;
 
     optional_nursing_task_by_id(pool, facility_id, task_id).await
@@ -187,10 +198,13 @@ async fn optional_nursing_task_by_id(
     query.push_bind(facility_id);
     query.push(" AND nursing_tasks.id = ");
     query.push_bind(task_id);
-    let row = query
-        .build_query_as::<NursingTaskRow>()
-        .fetch_optional(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.nursing_tasks.get",
+        query
+            .build_query_as::<NursingTaskRow>()
+            .fetch_optional(pool),
+    )
+    .await?;
     row.map(nursing_task_from_row).transpose()
 }
 

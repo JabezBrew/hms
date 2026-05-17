@@ -3,6 +3,7 @@ use hms_domain::ward::{
     FluidBalanceListItem, MonitoringEventKind, MonitoringEventListItem, NursingAlertListItem,
     NursingAlertSeverity, NursingAlertStatus, PatientVitalsListItem,
 };
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -149,10 +150,11 @@ pub async fn list_patient_vitals(
     );
     query.push(" ORDER BY patient_vitals.recorded_at ASC, patient_vitals.id ASC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<PatientVitalsRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.observations.patient_vitals.list",
+        query.build_query_as::<PatientVitalsRow>().fetch_all(pool),
+    )
+    .await?;
     Ok(rows.into_iter().map(patient_vitals_from_row).collect())
 }
 
@@ -160,8 +162,10 @@ pub async fn create_patient_vitals(
     pool: &PgPool,
     vitals: NewPatientVitals,
 ) -> anyhow::Result<PatientVitalsListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.observations.patient_vitals.create",
+        sqlx::query(
+            r#"
         INSERT INTO patient_vitals (
             id, facility_id, admission_case_id, patient_id, recorded_at, temperature_c,
             systolic_bp, diastolic_bp, pulse, respiratory_rate, oxygen_saturation,
@@ -176,20 +180,21 @@ pub async fn create_patient_vitals(
               AND admission_cases.patient_id = $4
         )
         "#,
+        )
+        .bind(vitals.id)
+        .bind(vitals.facility_id)
+        .bind(vitals.admission_case_id)
+        .bind(vitals.patient_id)
+        .bind(vitals.recorded_at)
+        .bind(vitals.temperature_c)
+        .bind(vitals.systolic_bp)
+        .bind(vitals.diastolic_bp)
+        .bind(vitals.pulse)
+        .bind(vitals.respiratory_rate)
+        .bind(vitals.oxygen_saturation)
+        .bind(vitals.recorded_by_user_id)
+        .execute(pool),
     )
-    .bind(vitals.id)
-    .bind(vitals.facility_id)
-    .bind(vitals.admission_case_id)
-    .bind(vitals.patient_id)
-    .bind(vitals.recorded_at)
-    .bind(vitals.temperature_c)
-    .bind(vitals.systolic_bp)
-    .bind(vitals.diastolic_bp)
-    .bind(vitals.pulse)
-    .bind(vitals.respiratory_rate)
-    .bind(vitals.oxygen_saturation)
-    .bind(vitals.recorded_by_user_id)
-    .execute(pool)
     .await?;
     patient_vitals_by_id(pool, vitals.facility_id, vitals.id).await
 }
@@ -211,10 +216,11 @@ pub async fn list_nursing_alerts(
     );
     query.push(" ORDER BY nursing_alerts.created_at ASC, nursing_alerts.id ASC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<NursingAlertRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.observations.nursing_alerts.list",
+        query.build_query_as::<NursingAlertRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(nursing_alert_from_row).collect()
 }
 
@@ -222,8 +228,10 @@ pub async fn create_nursing_alert(
     pool: &PgPool,
     alert: NewNursingAlert,
 ) -> anyhow::Result<NursingAlertListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.observations.nursing_alerts.create",
+        sqlx::query(
+            r#"
         INSERT INTO nursing_alerts (
             id, facility_id, admission_case_id, patient_id, severity, title, status,
             created_by_user_id
@@ -237,16 +245,17 @@ pub async fn create_nursing_alert(
               AND admission_cases.patient_id = $4
         )
         "#,
+        )
+        .bind(alert.id)
+        .bind(alert.facility_id)
+        .bind(alert.admission_case_id)
+        .bind(alert.patient_id)
+        .bind(codec::encode(alert.severity)?)
+        .bind(alert.title)
+        .bind(codec::encode(NursingAlertStatus::Open)?)
+        .bind(alert.created_by_user_id)
+        .execute(pool),
     )
-    .bind(alert.id)
-    .bind(alert.facility_id)
-    .bind(alert.admission_case_id)
-    .bind(alert.patient_id)
-    .bind(codec::encode(alert.severity)?)
-    .bind(alert.title)
-    .bind(codec::encode(NursingAlertStatus::Open)?)
-    .bind(alert.created_by_user_id)
-    .execute(pool)
     .await?;
     nursing_alert_by_id(pool, alert.facility_id, alert.id).await
 }
@@ -257,8 +266,10 @@ pub async fn acknowledge_nursing_alert(
     alert_id: Uuid,
     actor_user_id: Uuid,
 ) -> anyhow::Result<Option<NursingAlertListItem>> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.observations.nursing_alerts.acknowledge",
+        sqlx::query(
+            r#"
         UPDATE nursing_alerts
         SET status = $1,
             acknowledged_by_user_id = $2,
@@ -266,12 +277,13 @@ pub async fn acknowledge_nursing_alert(
             updated_at = now()
         WHERE facility_id = $3 AND id = $4
         "#,
+        )
+        .bind(codec::encode(NursingAlertStatus::Acknowledged)?)
+        .bind(actor_user_id)
+        .bind(facility_id)
+        .bind(alert_id)
+        .execute(pool),
     )
-    .bind(codec::encode(NursingAlertStatus::Acknowledged)?)
-    .bind(actor_user_id)
-    .bind(facility_id)
-    .bind(alert_id)
-    .execute(pool)
     .await?;
     optional_nursing_alert_by_id(pool, facility_id, alert_id).await
 }
@@ -301,10 +313,11 @@ pub async fn list_monitoring_events(
     );
     query.push(" ORDER BY monitoring_events.recorded_at ASC, monitoring_events.id ASC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<MonitoringEventRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.observations.monitoring_events.list",
+        query.build_query_as::<MonitoringEventRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(monitoring_event_from_row).collect()
 }
 
@@ -312,8 +325,10 @@ pub async fn create_monitoring_event(
     pool: &PgPool,
     event: NewMonitoringEvent,
 ) -> anyhow::Result<MonitoringEventListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.observations.monitoring_events.create",
+        sqlx::query(
+            r#"
         INSERT INTO monitoring_events (
             id, facility_id, admission_case_id, patient_id, event_kind, summary,
             recorded_at, recorded_by_user_id
@@ -327,16 +342,17 @@ pub async fn create_monitoring_event(
               AND admission_cases.patient_id = $4
         )
         "#,
+        )
+        .bind(event.id)
+        .bind(event.facility_id)
+        .bind(event.admission_case_id)
+        .bind(event.patient_id)
+        .bind(codec::encode(event.event_kind)?)
+        .bind(event.summary)
+        .bind(event.recorded_at)
+        .bind(event.recorded_by_user_id)
+        .execute(pool),
     )
-    .bind(event.id)
-    .bind(event.facility_id)
-    .bind(event.admission_case_id)
-    .bind(event.patient_id)
-    .bind(codec::encode(event.event_kind)?)
-    .bind(event.summary)
-    .bind(event.recorded_at)
-    .bind(event.recorded_by_user_id)
-    .execute(pool)
     .await?;
     monitoring_event_by_id(pool, event.facility_id, event.id).await
 }
@@ -360,10 +376,11 @@ pub async fn list_fluid_balance_entries(
         " ORDER BY fluid_balance_entries.recorded_at ASC, fluid_balance_entries.id ASC LIMIT ",
     );
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<FluidBalanceRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.observations.fluid_balance.list",
+        query.build_query_as::<FluidBalanceRow>().fetch_all(pool),
+    )
+    .await?;
     Ok(rows.into_iter().map(fluid_balance_from_row).collect())
 }
 
@@ -371,8 +388,10 @@ pub async fn create_fluid_balance_entry(
     pool: &PgPool,
     entry: NewFluidBalanceEntry,
 ) -> anyhow::Result<FluidBalanceListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.observations.fluid_balance.create",
+        sqlx::query(
+            r#"
         INSERT INTO fluid_balance_entries (
             id, facility_id, admission_case_id, patient_id, recorded_at, intake_ml,
             output_ml, recorded_by_user_id
@@ -386,16 +405,17 @@ pub async fn create_fluid_balance_entry(
               AND admission_cases.patient_id = $4
         )
         "#,
+        )
+        .bind(entry.id)
+        .bind(entry.facility_id)
+        .bind(entry.admission_case_id)
+        .bind(entry.patient_id)
+        .bind(entry.recorded_at)
+        .bind(entry.intake_ml)
+        .bind(entry.output_ml)
+        .bind(entry.recorded_by_user_id)
+        .execute(pool),
     )
-    .bind(entry.id)
-    .bind(entry.facility_id)
-    .bind(entry.admission_case_id)
-    .bind(entry.patient_id)
-    .bind(entry.recorded_at)
-    .bind(entry.intake_ml)
-    .bind(entry.output_ml)
-    .bind(entry.recorded_by_user_id)
-    .execute(pool)
     .await?;
     fluid_balance_by_id(pool, entry.facility_id, entry.id).await
 }
@@ -493,10 +513,11 @@ async fn patient_vitals_by_id(
     query.push_bind(facility_id);
     query.push(" AND patient_vitals.id = ");
     query.push_bind(vitals_id);
-    let row = query
-        .build_query_as::<PatientVitalsRow>()
-        .fetch_one(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.observations.patient_vitals.get",
+        query.build_query_as::<PatientVitalsRow>().fetch_one(pool),
+    )
+    .await?;
     Ok(patient_vitals_from_row(row))
 }
 
@@ -520,10 +541,13 @@ async fn optional_nursing_alert_by_id(
     query.push_bind(facility_id);
     query.push(" AND nursing_alerts.id = ");
     query.push_bind(alert_id);
-    let row = query
-        .build_query_as::<NursingAlertRow>()
-        .fetch_optional(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.observations.nursing_alerts.get",
+        query
+            .build_query_as::<NursingAlertRow>()
+            .fetch_optional(pool),
+    )
+    .await?;
     row.map(nursing_alert_from_row).transpose()
 }
 
@@ -537,10 +561,11 @@ async fn monitoring_event_by_id(
     query.push_bind(facility_id);
     query.push(" AND monitoring_events.id = ");
     query.push_bind(event_id);
-    let row = query
-        .build_query_as::<MonitoringEventRow>()
-        .fetch_one(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.observations.monitoring_events.get",
+        query.build_query_as::<MonitoringEventRow>().fetch_one(pool),
+    )
+    .await?;
     monitoring_event_from_row(row)
 }
 
@@ -554,10 +579,11 @@ async fn fluid_balance_by_id(
     query.push_bind(facility_id);
     query.push(" AND fluid_balance_entries.id = ");
     query.push_bind(entry_id);
-    let row = query
-        .build_query_as::<FluidBalanceRow>()
-        .fetch_one(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.observations.fluid_balance.get",
+        query.build_query_as::<FluidBalanceRow>().fetch_one(pool),
+    )
+    .await?;
     Ok(fluid_balance_from_row(row))
 }
 

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_domain::ward::{WardStockRequestListItem, WardStockRequestStatus};
+use hms_observability::observe_db_query;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -48,10 +49,13 @@ pub async fn list_ward_stock_requests(
     );
     query.push(" ORDER BY ward_stock_requests.requested_at ASC, ward_stock_requests.id ASC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<WardStockRequestRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "ward.stock_requests.list",
+        query
+            .build_query_as::<WardStockRequestRow>()
+            .fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(ward_stock_request_from_row).collect()
 }
 
@@ -59,8 +63,10 @@ pub async fn create_ward_stock_request(
     pool: &PgPool,
     request: NewWardStockRequest,
 ) -> anyhow::Result<WardStockRequestListItem> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "ward.stock_requests.create",
+        sqlx::query(
+            r#"
         INSERT INTO ward_stock_requests (
             id, facility_id, ward_id, requested_item, quantity_requested, status,
             requested_by_user_id
@@ -73,15 +79,16 @@ pub async fn create_ward_stock_request(
               AND wards.id = $3
         )
         "#,
+        )
+        .bind(request.id)
+        .bind(request.facility_id)
+        .bind(request.ward_id)
+        .bind(request.requested_item)
+        .bind(request.quantity_requested)
+        .bind(codec::encode(WardStockRequestStatus::Requested)?)
+        .bind(request.requested_by_user_id)
+        .execute(pool),
     )
-    .bind(request.id)
-    .bind(request.facility_id)
-    .bind(request.ward_id)
-    .bind(request.requested_item)
-    .bind(request.quantity_requested)
-    .bind(codec::encode(WardStockRequestStatus::Requested)?)
-    .bind(request.requested_by_user_id)
-    .execute(pool)
     .await?;
     ward_stock_request_by_id(pool, request.facility_id, request.id).await
 }
@@ -158,10 +165,13 @@ async fn optional_ward_stock_request_by_id(
     query.push_bind(facility_id);
     query.push(" AND ward_stock_requests.id = ");
     query.push_bind(request_id);
-    let row = query
-        .build_query_as::<WardStockRequestRow>()
-        .fetch_optional(pool)
-        .await?;
+    let row = observe_db_query(
+        "ward.stock_requests.get",
+        query
+            .build_query_as::<WardStockRequestRow>()
+            .fetch_optional(pool),
+    )
+    .await?;
     row.map(ward_stock_request_from_row).transpose()
 }
 
@@ -174,8 +184,10 @@ async fn update_ward_stock_request_status(
 ) -> anyhow::Result<Option<WardStockRequestListItem>> {
     match status {
         WardStockRequestStatus::Approved => {
-            sqlx::query(
-                r#"
+            observe_db_query(
+                "ward.stock_requests.approve",
+                sqlx::query(
+                    r#"
                 UPDATE ward_stock_requests
                 SET status = $1,
                     approved_by_user_id = $2,
@@ -185,18 +197,21 @@ async fn update_ward_stock_request_status(
                   AND id = $4
                   AND status = $5
                 "#,
+                )
+                .bind(codec::encode(WardStockRequestStatus::Approved)?)
+                .bind(actor_user_id)
+                .bind(facility_id)
+                .bind(request_id)
+                .bind(codec::encode(WardStockRequestStatus::Requested)?)
+                .execute(pool),
             )
-            .bind(codec::encode(WardStockRequestStatus::Approved)?)
-            .bind(actor_user_id)
-            .bind(facility_id)
-            .bind(request_id)
-            .bind(codec::encode(WardStockRequestStatus::Requested)?)
-            .execute(pool)
             .await?;
         }
         WardStockRequestStatus::Fulfilled => {
-            sqlx::query(
-                r#"
+            observe_db_query(
+                "ward.stock_requests.fulfill",
+                sqlx::query(
+                    r#"
                 UPDATE ward_stock_requests
                 SET status = $1,
                     fulfilled_by_user_id = $2,
@@ -206,13 +221,14 @@ async fn update_ward_stock_request_status(
                   AND id = $4
                   AND status = $5
                 "#,
+                )
+                .bind(codec::encode(WardStockRequestStatus::Fulfilled)?)
+                .bind(actor_user_id)
+                .bind(facility_id)
+                .bind(request_id)
+                .bind(codec::encode(WardStockRequestStatus::Approved)?)
+                .execute(pool),
             )
-            .bind(codec::encode(WardStockRequestStatus::Fulfilled)?)
-            .bind(actor_user_id)
-            .bind(facility_id)
-            .bind(request_id)
-            .bind(codec::encode(WardStockRequestStatus::Approved)?)
-            .execute(pool)
             .await?;
         }
         WardStockRequestStatus::Requested | WardStockRequestStatus::Cancelled => {}
