@@ -2,10 +2,12 @@ use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::CareCursor;
 use hms_domain::care::{
-    AppointmentListItem, AppointmentListQuery, AssignTriageRequest, CheckInVisitRequest,
-    ClinicListItem, CreateAppointmentRequest, CreateClinicRequest, CreateTriageRequest,
-    CursorListQuery, TriageAssessmentRequest, TriageListItem, TriageListQuery, TriageStatus,
-    UpdateAppointmentRequest, UpdateClinicRequest, VisitListItem, VisitListQuery, VisitStatus,
+    AppointmentListItem, AppointmentListQuery, AssignTriageRequest, CareTeamAssignment,
+    CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest,
+    CreateClinicRequest, CreateEncounterRequest, CreateTriageRequest, CursorListQuery,
+    EncounterListItem, EncounterListQuery, EncounterStatus, TriageAssessmentRequest,
+    TriageListItem, TriageListQuery, TriageStatus, UpdateAppointmentRequest, UpdateClinicRequest,
+    UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -13,7 +15,7 @@ use uuid::Uuid;
 
 use crate::cursor_list;
 use crate::error::ApiError;
-use crate::response::{object, ListResponse, ObjectResponse};
+use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
@@ -637,6 +639,223 @@ impl CareService {
 
         Ok(object(triage))
     }
+
+    pub async fn list_encounters(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: EncounterListQuery,
+    ) -> Result<ListResponse<EncounterListItem>, ApiError> {
+        require_workflow_list_access(ctx, self.state.facility_id(), PermissionCode::EncounterView)?;
+        if let Some(patient_id) = query.patient_id {
+            let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        }
+        let (cursor, page_size) = page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let rows = self
+            .state
+            .list_encounters(query.patient_id, cursor, page_size as i64 + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("encounter_list_failed", "Encounters could not be loaded.")
+            })?;
+
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.started_at, item.id)
+        }))
+    }
+
+    pub async fn create_encounter(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateEncounterRequest,
+    ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::EncounterManage,
+        )?;
+        let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
+        if let Some(visit_id) = payload.visit_id {
+            let visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
+            if visit.patient_id != payload.patient_id {
+                return Err(ApiError::bad_request(
+                    "invalid_encounter",
+                    "Visit does not belong to the supplied patient.",
+                ));
+            }
+        }
+        let encounter = self
+            .state
+            .create_encounter(
+                payload.patient_id,
+                payload.visit_id,
+                payload.encounter_type,
+                ctx.user_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict("encounter_create_failed", "Encounter could not be created.")
+            })?;
+
+        Ok(object(encounter))
+    }
+
+    pub async fn get_encounter(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
+        Ok(object(
+            load_encounter_for_access(&self.state, ctx, id, PermissionCode::EncounterView).await?,
+        ))
+    }
+
+    pub async fn update_encounter(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: UpdateEncounterRequest,
+    ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
+        if payload.visit_id.is_none() && payload.encounter_type.is_none() {
+            return Err(ApiError::bad_request(
+                "invalid_encounter_update",
+                "At least one encounter field must be supplied.",
+            ));
+        }
+
+        let encounter =
+            load_encounter_for_access(&self.state, ctx, id, PermissionCode::EncounterManage)
+                .await?;
+        if let Some(visit_id) = payload.visit_id {
+            let visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
+            if visit.patient_id != encounter.patient_id {
+                return Err(ApiError::bad_request(
+                    "invalid_encounter_update",
+                    "Visit does not belong to the encounter patient.",
+                ));
+            }
+        }
+
+        let updated = self
+            .state
+            .update_encounter(id, payload.visit_id, payload.encounter_type, ctx.user_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
+            })?
+            .ok_or_else(|| {
+                ApiError::conflict(
+                    "encounter_update_not_allowed",
+                    "Encounter could not be updated in its current state.",
+                )
+            })?;
+
+        Ok(object(updated))
+    }
+
+    pub async fn complete_encounter(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
+        self.update_encounter_with_access(ctx, id, EncounterStatus::Completed)
+            .await
+    }
+
+    pub async fn cancel_encounter(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
+        self.update_encounter_with_access(ctx, id, EncounterStatus::Cancelled)
+            .await
+    }
+
+    pub async fn list_care_team(
+        &self,
+        ctx: &hms_access::RequestContext,
+        encounter_id: Uuid,
+    ) -> Result<ListResponse<CareTeamAssignment>, ApiError> {
+        let encounter = load_encounter_for_access(
+            &self.state,
+            ctx,
+            encounter_id,
+            PermissionCode::EncounterView,
+        )
+        .await?;
+        let assignments = self
+            .state
+            .list_care_team_assignments(encounter.id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("care_team_list_failed", "Care team could not be loaded.")
+            })?;
+
+        Ok(list(
+            assignments,
+            PageInfo {
+                next_cursor: None,
+                has_next: false,
+                limit: MAX_LIMIT,
+            },
+        ))
+    }
+
+    pub async fn create_care_team_assignment(
+        &self,
+        ctx: &hms_access::RequestContext,
+        encounter_id: Uuid,
+        payload: CreateCareTeamAssignmentRequest,
+    ) -> Result<ObjectResponse<CareTeamAssignment>, ApiError> {
+        let encounter = load_encounter_for_access(
+            &self.state,
+            ctx,
+            encounter_id,
+            PermissionCode::EncounterManage,
+        )
+        .await?;
+        let assignment = self
+            .state
+            .create_care_team_assignment(encounter.id, payload.user_id, payload.role, ctx.user_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "care_team_assign_failed",
+                    "Care team assignment could not be saved.",
+                )
+            })?;
+
+        Ok(object(assignment))
+    }
+
+    async fn update_encounter_with_access(
+        &self,
+        ctx: &hms_access::RequestContext,
+        encounter_id: Uuid,
+        status: EncounterStatus,
+    ) -> Result<ObjectResponse<EncounterListItem>, ApiError> {
+        let _encounter = load_encounter_for_access(
+            &self.state,
+            ctx,
+            encounter_id,
+            PermissionCode::EncounterManage,
+        )
+        .await?;
+        let updated = self
+            .state
+            .update_encounter_status(encounter_id, status)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("encounter_not_found", "Encounter was not found.")
+            })?;
+
+        Ok(object(updated))
+    }
 }
 
 impl AppState {
@@ -694,6 +913,22 @@ async fn load_triage_for_access(
         .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
     let _patient = load_patient_for_access(state, ctx, triage.patient_id).await?;
     Ok(triage)
+}
+
+async fn load_encounter_for_access(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    encounter_id: Uuid,
+    permission: PermissionCode,
+) -> Result<EncounterListItem, ApiError> {
+    require_action_permission(ctx, state.facility_id(), permission)?;
+    let encounter = state
+        .get_encounter(encounter_id)
+        .await
+        .map_err(|_| ApiError::conflict("encounter_load_failed", "Encounter could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
+    let _patient = load_patient_for_access(state, ctx, encounter.patient_id).await?;
+    Ok(encounter)
 }
 
 async fn load_patient_for_access(

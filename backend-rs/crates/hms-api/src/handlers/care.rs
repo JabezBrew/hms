@@ -1,28 +1,19 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::{DateTime, Utc};
-use hms_access::require_patient_demographics_access;
-use hms_db::care::CareCursor;
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, CareTeamAssignment, CheckInVisitRequest,
     ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
     CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
-    EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageListQuery,
+    EncounterListQuery, TriageAssessmentRequest, TriageListItem, TriageListQuery,
     UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest, VisitListItem,
     VisitListQuery,
 };
-use hms_domain::deployment::PermissionCode;
-use hms_domain::patients::PatientRecord;
 use uuid::Uuid;
 
-use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: u8 = 25;
-const MAX_LIMIT: u8 = 100;
 
 #[utoipa::path(
     get,
@@ -644,24 +635,9 @@ pub async fn list_encounters(
     RequestContext(user): RequestContext,
     Query(query): Query<EncounterListQuery>,
 ) -> Result<Json<ListResponse<EncounterListItem>>, ApiError> {
-    require_workflow_list_access(&user, state.facility_id(), PermissionCode::EncounterView)?;
-    if let Some(patient_id) = query.patient_id {
-        let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    }
-    let (cursor, page_size) = page_request(CursorListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_encounters(query.patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_list_failed", "Encounters could not be loaded.")
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.started_at, item.id)
-    })))
+    Ok(Json(
+        state.care_service().list_encounters(&user, query).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -682,30 +658,12 @@ pub async fn create_encounter(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateEncounterRequest>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
-    require_action_permission(&user, state.facility_id(), PermissionCode::EncounterManage)?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    if let Some(visit_id) = payload.visit_id {
-        let visit = load_visit_for_access(&state, &user, visit_id).await?;
-        if visit.patient_id != payload.patient_id {
-            return Err(ApiError::bad_request(
-                "invalid_encounter",
-                "Visit does not belong to the supplied patient.",
-            ));
-        }
-    }
-    let encounter = state
-        .create_encounter(
-            payload.patient_id,
-            payload.visit_id,
-            payload.encounter_type,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_create_failed", "Encounter could not be created.")
-        })?;
-
-    Ok(Json(object(encounter)))
+    Ok(Json(
+        state
+            .care_service()
+            .create_encounter(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -727,9 +685,7 @@ pub async fn get_encounter(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
-    let encounter =
-        load_encounter_for_access(&state, &user, id, PermissionCode::EncounterView).await?;
-    Ok(Json(object(encounter)))
+    Ok(Json(state.care_service().get_encounter(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -755,39 +711,12 @@ pub async fn update_encounter(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateEncounterRequest>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
-    if payload.visit_id.is_none() && payload.encounter_type.is_none() {
-        return Err(ApiError::bad_request(
-            "invalid_encounter_update",
-            "At least one encounter field must be supplied.",
-        ));
-    }
-
-    let encounter =
-        load_encounter_for_access(&state, &user, id, PermissionCode::EncounterManage).await?;
-    if let Some(visit_id) = payload.visit_id {
-        let visit = load_visit_for_access(&state, &user, visit_id).await?;
-        if visit.patient_id != encounter.patient_id {
-            return Err(ApiError::bad_request(
-                "invalid_encounter_update",
-                "Visit does not belong to the encounter patient.",
-            ));
-        }
-    }
-
-    let updated = state
-        .update_encounter(id, payload.visit_id, payload.encounter_type, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "encounter_update_not_allowed",
-                "Encounter could not be updated in its current state.",
-            )
-        })?;
-
-    Ok(Json(object(updated)))
+    Ok(Json(
+        state
+            .care_service()
+            .update_encounter(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -809,7 +738,9 @@ pub async fn complete_encounter(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
-    update_encounter_with_access(&state, &user, id, EncounterStatus::Completed).await
+    Ok(Json(
+        state.care_service().complete_encounter(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -831,7 +762,9 @@ pub async fn cancel_encounter(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
-    update_encounter_with_access(&state, &user, id, EncounterStatus::Cancelled).await
+    Ok(Json(
+        state.care_service().cancel_encounter(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -853,23 +786,7 @@ pub async fn list_care_team(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ListResponse<CareTeamAssignment>>, ApiError> {
-    let encounter =
-        load_encounter_for_access(&state, &user, id, PermissionCode::EncounterView).await?;
-    let assignments = state
-        .list_care_team_assignments(encounter.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("care_team_list_failed", "Care team could not be loaded.")
-        })?;
-
-    Ok(Json(list(
-        assignments,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: MAX_LIMIT,
-        },
-    )))
+    Ok(Json(state.care_service().list_care_team(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -893,139 +810,10 @@ pub async fn create_care_team_assignment(
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateCareTeamAssignmentRequest>,
 ) -> Result<Json<ObjectResponse<CareTeamAssignment>>, ApiError> {
-    let encounter =
-        load_encounter_for_access(&state, &user, id, PermissionCode::EncounterManage).await?;
-    let assignment = state
-        .create_care_team_assignment(encounter.id, payload.user_id, payload.role, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "care_team_assign_failed",
-                "Care team assignment could not be saved.",
-            )
-        })?;
-
-    Ok(Json(object(assignment)))
-}
-
-async fn update_encounter_with_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    encounter_id: Uuid,
-    status: EncounterStatus,
-) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
-    let _encounter =
-        load_encounter_for_access(state, user, encounter_id, PermissionCode::EncounterManage)
-            .await?;
-    let updated = state
-        .update_encounter_status(encounter_id, status)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("encounter_update_failed", "Encounter could not be updated.")
-        })?
-        .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
-
-    Ok(Json(object(updated)))
-}
-
-async fn load_visit_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    visit_id: Uuid,
-) -> Result<VisitListItem, ApiError> {
-    let visit = state
-        .get_visit(visit_id)
-        .await
-        .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
-    let _patient = load_patient_for_access(state, user, visit.patient_id).await?;
-    Ok(visit)
-}
-
-async fn load_encounter_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    encounter_id: Uuid,
-    permission: PermissionCode,
-) -> Result<EncounterListItem, ApiError> {
-    require_action_permission(user, state.facility_id(), permission)?;
-    let encounter = state
-        .get_encounter(encounter_id)
-        .await
-        .map_err(|_| ApiError::conflict("encounter_load_failed", "Encounter could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("encounter_not_found", "Encounter was not found."))?;
-    let _patient = load_patient_for_access(state, user, encounter.patient_id).await?;
-    Ok(encounter)
-}
-
-async fn load_patient_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    patient_id: Uuid,
-) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
-        .await
-        .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
-
-    require_patient_demographics_access(user, &patient).map_err(|_| {
-        ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to this patient.",
-        )
-    })?;
-
-    Ok(patient)
-}
-
-fn require_workflow_list_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|error| {
-        match error {
-            hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
-                "patient_access_denied",
-                "You do not have access to patient workflow lists.",
-            ),
-            other => ApiError::from(other),
-        }
-    })
-}
-
-fn require_action_permission(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to perform this action.",
-        )
-    })
-}
-
-fn page_request(query: CursorListQuery) -> Result<(Option<CareCursor>, u8), ApiError> {
-    let page = cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT,
-        |occurred_at, id| CareCursor { occurred_at, id },
-    )?;
-    Ok((page.cursor, page.limit))
-}
-
-fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
-where
-    F: Fn(&T) -> String,
-{
-    cursor_list::page_response(rows, page_size, cursor_for)
-}
-
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    cursor_list::encode_cursor(occurred_at, id)
+    Ok(Json(
+        state
+            .care_service()
+            .create_care_team_assignment(&user, id, payload)
+            .await?,
+    ))
 }
