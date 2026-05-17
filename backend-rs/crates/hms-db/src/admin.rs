@@ -9,6 +9,7 @@ use hms_domain::admin::{
     PositionTemplateListItem, PractitionerListItem, PractitionerProfileSummary, StaffDirectoryItem,
     StaffListItem, UpdateStaffRequest,
 };
+use hms_domain::auth::{ActiveAuthority, AuthorityScope, AuthoritySource};
 use hms_domain::capabilities::{feature_flags_for_profile, ALL_FEATURES};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use serde_json::{json, Value};
@@ -170,6 +171,18 @@ struct AuthorityAppointmentRow {
     ends_at: Option<DateTime<Utc>>,
     status: String,
     created_at: DateTime<Utc>,
+}
+
+#[derive(FromRow)]
+struct ActiveAuthorityRow {
+    source: String,
+    source_id: Uuid,
+    facility_id: Uuid,
+    permission_code: Option<String>,
+    scope_type: String,
+    scope_id: Option<Uuid>,
+    starts_at: DateTime<Utc>,
+    ends_at: Option<DateTime<Utc>>,
 }
 
 #[derive(FromRow)]
@@ -697,6 +710,77 @@ pub async fn list_permission_assignments(
     rows.into_iter()
         .map(permission_assignment_from_row)
         .collect()
+}
+
+pub async fn active_authorities_for_user(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<Vec<ActiveAuthority>> {
+    let rows = sqlx::query_as::<_, ActiveAuthorityRow>(
+        r#"
+        SELECT 'position_appointment' AS source,
+               authority_appointments.id AS source_id,
+               authority_appointments.facility_id,
+               authority_permissions.permission_code,
+               'organization_unit' AS scope_type,
+               positions.org_unit_id AS scope_id,
+               authority_appointments.starts_at,
+               authority_appointments.ends_at
+        FROM authority_appointments
+        JOIN positions ON positions.id = authority_appointments.position_id
+        LEFT JOIN position_templates ON position_templates.id = positions.template_id
+        LEFT JOIN LATERAL unnest(COALESCE(position_templates.permission_codes, '{}'::text[]))
+            AS authority_permissions(permission_code) ON TRUE
+        WHERE authority_appointments.facility_id = $1
+          AND authority_appointments.user_id = $2
+          AND authority_appointments.status = 'active'
+          AND positions.status = 'active'
+          AND authority_appointments.starts_at <= now()
+          AND (authority_appointments.ends_at IS NULL OR authority_appointments.ends_at > now())
+
+        UNION ALL
+
+        SELECT 'permission_assignment' AS source,
+               permission_assignments.id AS source_id,
+               permission_assignments.facility_id,
+               permission_assignments.permission_code,
+               permission_assignments.scope_type,
+               permission_assignments.scope_id,
+               permission_assignments.starts_at,
+               permission_assignments.ends_at
+        FROM permission_assignments
+        WHERE permission_assignments.facility_id = $1
+          AND permission_assignments.grantee_user_id = $2
+          AND permission_assignments.status = 'active'
+          AND permission_assignments.starts_at <= now()
+          AND (permission_assignments.ends_at IS NULL OR permission_assignments.ends_at > now())
+
+        UNION ALL
+
+        SELECT 'delegation' AS source,
+               delegations.id AS source_id,
+               delegations.facility_id,
+               delegations.permission_code,
+               'facility' AS scope_type,
+               NULL::uuid AS scope_id,
+               delegations.starts_at,
+               delegations.ends_at
+        FROM delegations
+        WHERE delegations.facility_id = $1
+          AND delegations.delegate_user_id = $2
+          AND delegations.status = 'active'
+          AND delegations.starts_at <= now()
+          AND (delegations.ends_at IS NULL OR delegations.ends_at > now())
+        ORDER BY starts_at ASC, source_id ASC, permission_code ASC NULLS LAST
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter().map(active_authority_from_row).collect()
 }
 
 pub async fn create_permission_assignment(
@@ -2129,6 +2213,32 @@ fn authority_appointment_from_row(
         ends_at: row.ends_at,
         status: codec::decode(&row.status)?,
         created_at: row.created_at,
+    })
+}
+
+fn active_authority_from_row(row: ActiveAuthorityRow) -> anyhow::Result<ActiveAuthority> {
+    let source = match row.source.as_str() {
+        "position_appointment" => AuthoritySource::PositionAppointment,
+        "permission_assignment" => AuthoritySource::PermissionAssignment,
+        "delegation" => AuthoritySource::Delegation,
+        other => anyhow::bail!("unsupported authority source: {other}"),
+    };
+    let permission_code = row
+        .permission_code
+        .as_deref()
+        .map(codec::decode)
+        .transpose()?;
+    Ok(ActiveAuthority {
+        source,
+        source_id: row.source_id,
+        facility_id: row.facility_id,
+        permission_code,
+        scope: AuthorityScope {
+            scope_type: row.scope_type,
+            scope_id: row.scope_id,
+        },
+        starts_at: row.starts_at,
+        ends_at: row.ends_at,
     })
 }
 

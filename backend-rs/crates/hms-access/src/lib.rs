@@ -1,7 +1,9 @@
 use std::ops::Deref;
 
 use chrono::{DateTime, Duration, Utc};
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
+use hms_domain::auth::{
+    ActiveAuthority, AuthUser, AuthorityScope, AuthoritySource, PatientDataVisibility,
+};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use hms_domain::patients::PatientRecord;
 use serde::{Deserialize, Serialize};
@@ -21,6 +23,7 @@ pub struct RequestContext {
     pub enabled_features: Vec<FeatureKey>,
     pub permissions: Vec<PermissionCode>,
     pub patient_visibility: Vec<PatientDataVisibility>,
+    pub active_authorities: Vec<ActiveAuthority>,
     pub session_version: i64,
     pub permission_version: i64,
     pub offsite: OffsiteState,
@@ -48,6 +51,7 @@ impl RequestContext {
             enabled_features,
             permissions: user.permissions.clone(),
             patient_visibility: user.patient_visibility.clone(),
+            active_authorities: vec![],
             session_version: user.session_version,
             permission_version: user.permission_version,
             offsite,
@@ -58,6 +62,11 @@ impl RequestContext {
 
     pub fn auth_user(&self) -> &AuthUser {
         &self.user
+    }
+
+    pub fn with_active_authorities(mut self, active_authorities: Vec<ActiveAuthority>) -> Self {
+        self.active_authorities = active_authorities;
+        self
     }
 
     pub fn has_permission(&self, permission: PermissionCode) -> bool {
@@ -71,6 +80,26 @@ impl RequestContext {
     pub fn has_patient_visibility(&self, visibility: PatientDataVisibility) -> bool {
         self.patient_visibility.contains(&visibility)
     }
+
+    pub fn authority_for_permission(
+        &self,
+        facility_id: Uuid,
+        permission: PermissionCode,
+    ) -> Option<&ActiveAuthority> {
+        self.active_authorities.iter().find(|authority| {
+            authority_grants_facility_permission(authority, facility_id, permission)
+        })
+    }
+}
+
+fn authority_grants_facility_permission(
+    authority: &ActiveAuthority,
+    facility_id: Uuid,
+    permission: PermissionCode,
+) -> bool {
+    authority.facility_id == facility_id
+        && authority.permission_code == Some(permission)
+        && authority.scope.covers_facility()
 }
 
 impl Deref for RequestContext {
@@ -86,6 +115,13 @@ pub trait AccessSubject {
     fn enabled_features(&self) -> &[FeatureKey];
     fn permissions(&self) -> &[PermissionCode];
     fn patient_visibility(&self) -> &[PatientDataVisibility];
+    fn authority_for_permission(
+        &self,
+        _facility_id: Uuid,
+        _permission: PermissionCode,
+    ) -> Option<&ActiveAuthority> {
+        None
+    }
 
     fn has_feature(&self, feature: FeatureKey) -> bool {
         self.enabled_features().contains(&feature)
@@ -93,6 +129,13 @@ pub trait AccessSubject {
 
     fn has_permission(&self, permission: PermissionCode) -> bool {
         self.permissions().contains(&permission)
+    }
+
+    fn has_facility_permission(&self, facility_id: Uuid, permission: PermissionCode) -> bool {
+        self.has_permission(permission)
+            || self
+                .authority_for_permission(facility_id, permission)
+                .is_some()
     }
 
     fn has_patient_visibility(&self, visibility: PatientDataVisibility) -> bool {
@@ -115,6 +158,14 @@ impl AccessSubject for RequestContext {
 
     fn patient_visibility(&self) -> &[PatientDataVisibility] {
         &self.patient_visibility
+    }
+
+    fn authority_for_permission(
+        &self,
+        facility_id: Uuid,
+        permission: PermissionCode,
+    ) -> Option<&ActiveAuthority> {
+        RequestContext::authority_for_permission(self, facility_id, permission)
     }
 }
 
@@ -210,6 +261,86 @@ pub enum AccessError {
     OffsiteReadOnly,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessDomain {
+    Facility,
+    Patient,
+    PatientWorkflow,
+    Billing,
+    Laboratory,
+    Inventory,
+    AdminAuthority,
+    Staff,
+    Dashboard,
+    Notification,
+    Consent,
+    Referral,
+    Clinical,
+    HighRisk,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccessRequirement {
+    pub domain: AccessDomain,
+    pub facility_id: Option<Uuid>,
+    pub feature: Option<FeatureKey>,
+    pub permission: Option<PermissionCode>,
+    pub patient_visibility: Option<PatientDataVisibility>,
+    pub high_risk_reauth: bool,
+    pub offsite_write: bool,
+}
+
+impl AccessRequirement {
+    pub fn facility_permission(
+        domain: AccessDomain,
+        facility_id: Uuid,
+        permission: PermissionCode,
+    ) -> Self {
+        Self {
+            domain,
+            facility_id: Some(facility_id),
+            feature: None,
+            permission: Some(permission),
+            patient_visibility: None,
+            high_risk_reauth: false,
+            offsite_write: false,
+        }
+    }
+
+    pub fn with_feature(mut self, feature: FeatureKey) -> Self {
+        self.feature = Some(feature);
+        self
+    }
+
+    pub fn with_patient_visibility(mut self, visibility: PatientDataVisibility) -> Self {
+        self.patient_visibility = Some(visibility);
+        self
+    }
+
+    pub fn high_risk_write(mut self) -> Self {
+        self.high_risk_reauth = true;
+        self.offsite_write = true;
+        self
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AccessGrant {
+    DirectPermission(PermissionCode),
+    ActiveAuthority {
+        source: AuthoritySource,
+        source_id: Uuid,
+        permission: PermissionCode,
+        scope: AuthorityScope,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccessDecision {
+    pub requirement: AccessRequirement,
+    pub grant: Option<AccessGrant>,
+}
+
 pub fn require_auth(ctx: &RequestContext) -> Result<(), AccessError> {
     if ctx.user_id.is_nil() || ctx.session_id.is_nil() {
         Err(AccessError::MissingPermission)
@@ -267,9 +398,67 @@ pub fn require_facility_permission(
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), AccessError> {
+    evaluate_facility_permission(
+        ctx,
+        AccessRequirement::facility_permission(AccessDomain::Facility, facility_id, permission),
+    )
+    .map(|_| ())
+}
+
+pub fn require_any_facility_permission(
+    ctx: &impl AccessSubject,
+    facility_id: Uuid,
+    permissions: &[PermissionCode],
+) -> Result<(), AccessError> {
+    require_facility(ctx, facility_id)?;
+    if permissions
+        .iter()
+        .any(|permission| ctx.has_facility_permission(facility_id, *permission))
+    {
+        Ok(())
+    } else {
+        Err(AccessError::MissingPermission)
+    }
+}
+
+pub fn evaluate_facility_permission(
+    ctx: &RequestContext,
+    requirement: AccessRequirement,
+) -> Result<AccessDecision, AccessError> {
+    let facility_id = requirement
+        .facility_id
+        .ok_or(AccessError::MissingFacility)?;
+    let permission = requirement
+        .permission
+        .ok_or(AccessError::MissingPermission)?;
+
     require_auth(ctx)?;
     require_facility(ctx, facility_id)?;
-    require_permission(ctx, permission)
+
+    if let Some(feature) = requirement.feature {
+        require_feature(ctx, feature)?;
+    }
+
+    if ctx.permissions.contains(&permission) {
+        return Ok(AccessDecision {
+            requirement,
+            grant: Some(AccessGrant::DirectPermission(permission)),
+        });
+    }
+
+    if let Some(authority) = ctx.authority_for_permission(facility_id, permission) {
+        return Ok(AccessDecision {
+            requirement,
+            grant: Some(AccessGrant::ActiveAuthority {
+                source: authority.source,
+                source_id: authority.source_id,
+                permission,
+                scope: authority.scope.clone(),
+            }),
+        });
+    }
+
+    Err(AccessError::MissingPermission)
 }
 
 pub fn require_patient_access(
@@ -289,7 +478,10 @@ pub fn require_patient_demographics_access(
     ctx: &impl AccessSubject,
     patient: &PatientRecord,
 ) -> Result<(), AccessError> {
-    require_permission(ctx, PermissionCode::PatientDemographicsView)?;
+    require_facility(ctx, patient.facility_id)?;
+    if !ctx.has_facility_permission(patient.facility_id, PermissionCode::PatientDemographicsView) {
+        return Err(AccessError::MissingPermission);
+    }
     require_patient_access(ctx, patient, PatientDataVisibility::Demographics)
 }
 
@@ -301,8 +493,14 @@ pub fn require_patient_workflow_access(
     if let Some(feature) = feature_for_permission(permission) {
         require_feature(ctx, feature)?;
     }
-    require_facility_permission(ctx, facility_id, permission)?;
-    require_permission(ctx, PermissionCode::PatientDemographicsView)?;
+    require_auth(ctx)?;
+    require_facility(ctx, facility_id)?;
+    if !ctx.has_facility_permission(facility_id, permission) {
+        return Err(AccessError::MissingPermission);
+    }
+    if !ctx.has_facility_permission(facility_id, PermissionCode::PatientDemographicsView) {
+        return Err(AccessError::MissingPermission);
+    }
     if ctx.has_patient_visibility(PatientDataVisibility::Demographics) {
         Ok(())
     } else {
@@ -523,6 +721,21 @@ pub fn require_high_risk_reauth(
     }
 }
 
+pub fn require_high_risk_facility_permission(
+    ctx: &RequestContext,
+    facility_id: Uuid,
+    permission: PermissionCode,
+    now: DateTime<Utc>,
+) -> Result<(), AccessError> {
+    evaluate_facility_permission(
+        ctx,
+        AccessRequirement::facility_permission(AccessDomain::HighRisk, facility_id, permission)
+            .high_risk_write(),
+    )?;
+    require_high_risk_reauth(ctx, now)?;
+    require_offsite_write_allowed(ctx)
+}
+
 pub fn require_offsite_write_allowed(ctx: &RequestContext) -> Result<(), AccessError> {
     if ctx.offsite.is_read_only() {
         Err(AccessError::OffsiteReadOnly)
@@ -602,6 +815,22 @@ mod tests {
             status: hms_domain::patients::PatientAdministrativeStatus::Active,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+        }
+    }
+
+    fn active_authority(
+        facility_id: Uuid,
+        permission_code: PermissionCode,
+        scope: AuthorityScope,
+    ) -> ActiveAuthority {
+        ActiveAuthority {
+            source: AuthoritySource::PermissionAssignment,
+            source_id: Uuid::new_v4(),
+            facility_id,
+            permission_code: Some(permission_code),
+            scope,
+            starts_at: Utc::now(),
+            ends_at: None,
         }
     }
 
@@ -685,6 +914,98 @@ mod tests {
         assert_eq!(
             require_high_risk_reauth(&ctx, now),
             Err(AccessError::ReauthRequired)
+        );
+    }
+
+    #[test]
+    fn authorizes_admin_access_from_active_authority_scope() {
+        let mut ctx = make_ctx();
+        ctx.permissions
+            .retain(|permission| *permission != PermissionCode::AdminAuthorityManage);
+        ctx.active_authorities.push(active_authority(
+            ctx.facility_id,
+            PermissionCode::AdminAuthorityManage,
+            AuthorityScope::facility(),
+        ));
+
+        assert_eq!(
+            require_admin_authority_access(&ctx, ctx.facility_id),
+            Ok(())
+        );
+        let decision = evaluate_facility_permission(
+            &ctx,
+            AccessRequirement::facility_permission(
+                AccessDomain::AdminAuthority,
+                ctx.facility_id,
+                PermissionCode::AdminAuthorityManage,
+            ),
+        )
+        .expect("authority grants admin permission");
+        assert!(matches!(
+            decision.grant,
+            Some(AccessGrant::ActiveAuthority { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_active_authority_from_wrong_facility() {
+        let mut ctx = make_ctx();
+        ctx.permissions
+            .retain(|permission| *permission != PermissionCode::AdminAuthorityManage);
+        ctx.active_authorities.push(active_authority(
+            Uuid::new_v4(),
+            PermissionCode::AdminAuthorityManage,
+            AuthorityScope::facility(),
+        ));
+
+        assert_eq!(
+            require_admin_authority_access(&ctx, ctx.facility_id),
+            Err(AccessError::AdminAuthorityAccessDenied)
+        );
+    }
+
+    #[test]
+    fn does_not_promote_org_unit_authority_to_facility_permission() {
+        let mut ctx = make_ctx();
+        ctx.permissions
+            .retain(|permission| *permission != PermissionCode::AdminAuthorityManage);
+        ctx.active_authorities.push(active_authority(
+            ctx.facility_id,
+            PermissionCode::AdminAuthorityManage,
+            AuthorityScope::organization_unit(Uuid::new_v4()),
+        ));
+
+        assert_eq!(
+            require_admin_authority_access(&ctx, ctx.facility_id),
+            Err(AccessError::AdminAuthorityAccessDenied)
+        );
+    }
+
+    #[test]
+    fn high_risk_facility_permission_requires_reauth_and_onsite_state() {
+        let mut ctx = make_ctx();
+        let now = Utc::now();
+        ctx.reauth = ReauthState::missing(now);
+        assert_eq!(
+            require_high_risk_facility_permission(
+                &ctx,
+                ctx.facility_id,
+                PermissionCode::AdminAuthorityManage,
+                now,
+            ),
+            Err(AccessError::ReauthRequired)
+        );
+
+        let mut ctx = make_ctx();
+        ctx.offsite = OffsiteState::OffsiteReadOnly;
+        assert_eq!(
+            require_high_risk_facility_permission(
+                &ctx,
+                ctx.facility_id,
+                PermissionCode::AdminAuthorityManage,
+                now,
+            ),
+            Err(AccessError::OffsiteReadOnly)
         );
     }
 }

@@ -171,19 +171,17 @@ pub async fn list_patient_validation_rules(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<PatientRegistrationValidationRule>>, ApiError> {
-    hms_access::require_facility(&user, state.facility_id())
-        .and_then(|_| {
-            hms_access::require_any_permission(
-                &user,
-                &[PermissionCode::PatientCreate, PermissionCode::PatientUpdate],
-            )
-        })
-        .map_err(|_| {
-            ApiError::forbidden(
-                "permission_denied",
-                "You do not have permission to use patient registration rules.",
-            )
-        })?;
+    hms_access::require_any_facility_permission(
+        &user,
+        state.facility_id(),
+        &[PermissionCode::PatientCreate, PermissionCode::PatientUpdate],
+    )
+    .map_err(|_| {
+        ApiError::forbidden(
+            "permission_denied",
+            "You do not have permission to use patient registration rules.",
+        )
+    })?;
 
     let rules = state
         .list_patient_registration_validation_rules()

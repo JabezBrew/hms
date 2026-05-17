@@ -51,7 +51,7 @@ use hms_domain::admin::{
     PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
     StaffDirectoryItem, StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
-use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
+use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
     BillingDashboardSummary, BillingRuleListItem, CashDrawerListItem, CashSessionListItem,
     ClaimListItem, CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
@@ -250,6 +250,11 @@ impl AppState {
         Ok(hms_db::auth::user_by_id(&self.inner.pool, user_id)
             .await?
             .map(|user| user.to_auth_user()))
+    }
+
+    pub async fn active_authorities_for_user(&self, user_id: Uuid) -> Result<Vec<ActiveAuthority>> {
+        hms_db::admin::active_authorities_for_user(&self.inner.pool, self.facility_id(), user_id)
+            .await
     }
 
     pub async fn update_auth_profile(

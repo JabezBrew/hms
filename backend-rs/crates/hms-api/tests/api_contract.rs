@@ -13,6 +13,7 @@ use hms_api::extractors::RequestContext;
 use hms_api::middleware::request_id;
 use hms_api::state::AppState;
 use hms_domain::deployment::DeploymentProfile;
+use jsonwebtoken::{encode, EncodingKey, Header};
 use serde_json::{json, Value};
 use std::convert::Infallible;
 use std::future::Future;
@@ -22,6 +23,8 @@ use std::task::{Context, Poll};
 use tower::util::ServiceExt;
 use tower::Service;
 use uuid::Uuid;
+
+const TEST_JWT_SECRET: &str = "test-only-hms-v2-jwt-secret";
 
 #[derive(Clone)]
 struct TestApp {
@@ -129,6 +132,7 @@ async fn request_context_probe(RequestContext(ctx): RequestContext) -> axum::Jso
         "enabled_features": enabled_features,
         "permissions": permissions,
         "patient_visibility": ctx.patient_visibility,
+        "active_authorities": ctx.active_authorities,
         "session_version": ctx.session_version,
         "permission_version": ctx.permission_version,
         "offsite": format!("{:?}", ctx.offsite),
@@ -194,6 +198,19 @@ async fn login_with_password_and_device(
         .to_owned();
 
     (access_token, cookie_header, csrf_token)
+}
+
+fn token_with_stale_reauth(access_token: &str) -> String {
+    let mut claims = hms_auth::verify_access_token(TEST_JWT_SECRET, access_token)
+        .expect("test access token verifies");
+    claims.iat = (Utc::now() - Duration::minutes(16)).timestamp() as usize;
+    claims.exp = (Utc::now() + Duration::minutes(5)).timestamp() as usize;
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
+    )
+    .expect("stale reauth test token encodes")
 }
 
 #[tokio::test]
@@ -794,6 +811,12 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
         .as_array()
         .expect("visibility is listed")
         .contains(&json!("demographics")));
+    assert!(body["active_authorities"]
+        .as_array()
+        .expect("active authorities are listed")
+        .iter()
+        .any(|authority| authority["source"] == "position_appointment"
+            && authority["permission_code"] == "admin.authority.manage"));
 }
 
 #[tokio::test]
@@ -841,6 +864,104 @@ async fn request_context_rejects_stale_permission_versions() {
         .await
         .expect("stale permission request succeeds");
     assert_eq!(stale_access.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn active_permission_assignments_are_resolved_into_request_context_policy() {
+    let app = app().await;
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+
+    let denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients/validation-rules")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("initial validation-rules denial succeeds");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let assignment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/permission-assignments")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "grantee_user_id": limited_id,
+                        "permission_code": "patient.create",
+                        "scope_type": "facility",
+                        "scope_id": null,
+                        "starts_at": null,
+                        "ends_at": null,
+                        "reason_code": "request_context_active_authority_test"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("permission assignment request succeeds");
+    assert_eq!(assignment.status(), StatusCode::OK);
+
+    let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let allowed = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients/validation-rules")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("authority-backed validation-rules request succeeds");
+    assert_eq!(allowed.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn high_risk_admin_actions_reject_stale_reauth_context() {
+    let app = app().await;
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let stale_reauth_token = token_with_stale_reauth(&owner_token);
+    let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/permission-assignments")
+                .header(AUTHORIZATION, format!("Bearer {stale_reauth_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "grantee_user_id": limited_id,
+                        "permission_code": "patient.create",
+                        "scope_type": "facility",
+                        "scope_id": null,
+                        "starts_at": null,
+                        "ends_at": null,
+                        "reason_code": "stale_reauth_rejected"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale reauth request succeeds");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = json_body(response).await;
+    assert_eq!(body["error"]["code"], "reauth_required");
 }
 
 #[tokio::test]

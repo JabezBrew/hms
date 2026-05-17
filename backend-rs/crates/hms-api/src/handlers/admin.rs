@@ -311,7 +311,11 @@ pub async fn create_authority_appointment(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateAuthorityAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AuthorityAppointmentListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::AdminAuthorityManage,
+    )?;
     validate_text(&payload.appointment_type, MAX_CODE_LEN, "appointment_type")?;
     validate_time_window(payload.starts_at, payload.ends_at)?;
     let appointment = state
@@ -354,7 +358,11 @@ pub async fn create_permission_assignment(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreatePermissionAssignmentRequest>,
 ) -> Result<Json<ObjectResponse<PermissionAssignmentListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::AdminAuthorityManage,
+    )?;
     validate_text(&payload.scope_type, MAX_CODE_LEN, "scope_type")?;
     validate_text(&payload.reason_code, MAX_CODE_LEN, "reason_code")?;
     validate_time_window(payload.starts_at, payload.ends_at)?;
@@ -400,7 +408,11 @@ pub async fn update_feature_entitlement(
     Path(key): Path<FeatureKey>,
     Json(payload): Json<UpdateFeatureEntitlementRequest>,
 ) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
-    require_feature_entitlement_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::AdminFeatureEntitlementsManage,
+    )?;
     let entitlement = state
         .update_feature_entitlement(key, payload.enabled, user.id, Some(current_request_id()))
         .await
@@ -420,7 +432,11 @@ pub async fn delete_feature_entitlement(
     RequestContext(user): RequestContext,
     Path(key): Path<FeatureKey>,
 ) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
-    require_feature_entitlement_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::AdminFeatureEntitlementsManage,
+    )?;
     let entitlement = state
         .delete_feature_entitlement(key, user.id, Some(current_request_id()))
         .await
@@ -542,7 +558,7 @@ pub async fn force_staff_password_reset(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(&user, state.facility_id(), PermissionCode::AdminStaffManage)?;
     let staff = state
         .force_staff_password_reset(id, user.id, Some(current_request_id()))
         .await
@@ -562,7 +578,7 @@ pub async fn deactivate_staff(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(&user, state.facility_id(), PermissionCode::AdminStaffManage)?;
     let staff = state
         .deactivate_staff_account(id, user.id, Some(current_request_id()))
         .await
@@ -582,7 +598,7 @@ pub async fn reactivate_staff(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(&user, state.facility_id(), PermissionCode::AdminStaffManage)?;
     let staff = state
         .reactivate_staff_account(id, user.id, Some(current_request_id()))
         .await
@@ -727,7 +743,11 @@ pub async fn create_delegation(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateDelegationRequest>,
 ) -> Result<Json<ObjectResponse<DelegationListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
+    require_high_risk_admin_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::AdminAuthorityManage,
+    )?;
     validate_text(&payload.reason, MAX_TEXT_LEN, "reason")?;
     validate_time_window(payload.starts_at, payload.ends_at)?;
     ensure_supported_permissions(&state, &[payload.permission_code]).await?;
@@ -777,6 +797,16 @@ fn require_admin_access(
     facility_id: Uuid,
 ) -> Result<(), ApiError> {
     hms_access::require_admin_authority_access(user, facility_id).map_err(ApiError::from)
+}
+
+fn require_high_risk_admin_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+    permission: PermissionCode,
+) -> Result<(), ApiError> {
+    hms_access::require_feature(user, FeatureKey::Admin).map_err(ApiError::from)?;
+    hms_access::require_high_risk_facility_permission(user, facility_id, permission, Utc::now())
+        .map_err(ApiError::from)
 }
 
 fn require_feature_entitlement_access(

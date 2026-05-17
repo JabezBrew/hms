@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use hms_db::admin::{NewAuditEvent, NewOrganizationUnit, NewPractitionerProfile, NewStaffAccount};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::admin::OrgUnitType;
-use hms_domain::deployment::{DeploymentProfile, FeatureKey};
+use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -91,6 +91,51 @@ async fn feature_entitlements_are_facility_scoped_and_override_profile_defaults(
         hms_db::admin::list_feature_entitlements(&pool, uuid::Uuid::new_v4())
             .await
             .expect("cross-facility list succeeds")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn active_authorities_are_resolved_for_request_context() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    let authorities = hms_db::admin::active_authorities_for_user(&pool, facility_id, owner_id)
+        .await
+        .expect("active authorities resolve");
+    assert!(authorities.iter().any(|authority| {
+        authority.facility_id == facility_id
+            && authority.permission_code == Some(PermissionCode::AdminAuthorityManage)
+            && authority.scope.scope_type == "organization_unit"
+            && authority.scope.scope_id.is_some()
+    }));
+    assert!(
+        hms_db::admin::active_authorities_for_user(&pool, Uuid::new_v4(), owner_id)
+            .await
+            .expect("cross-facility authority query succeeds")
             .is_empty()
     );
 }

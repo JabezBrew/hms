@@ -64,6 +64,10 @@ async fn resolve_request_context(
     reject_stale_claims(&user, &claims)?;
 
     let enabled_features = enabled_features(state, &user).await?;
+    let active_authorities = state
+        .active_authorities_for_user(user.id)
+        .await
+        .map_err(|_| ApiError::unauthorized())?;
     let request_id = parts
         .extensions
         .get::<RequestId>()
@@ -84,7 +88,8 @@ async fn resolve_request_context(
         enabled_features,
         offsite,
         reauth,
-    ))
+    )
+    .with_active_authorities(active_authorities))
 }
 
 fn access_claims(parts: &Parts, state: &AppState) -> Result<AccessClaims, ApiError> {
