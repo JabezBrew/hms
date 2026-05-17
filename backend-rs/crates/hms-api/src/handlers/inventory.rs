@@ -1,7 +1,6 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::require_patient_demographics_access;
 use hms_db::inventory::{InventoryCursor, StockBatchFilters};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
@@ -17,7 +16,6 @@ use hms_domain::inventory::{
     StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
     SupplierListQuery,
 };
-use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -845,24 +843,13 @@ pub async fn list_controlled_register(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<ControlledSubstanceRegisterItem>>, ApiError> {
-    require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::ControlledSubstanceManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_controlled_substance_register(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_register_list_failed",
-                "Controlled register could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .list_register(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}", operation_id = "getControlledSubstanceRegisterById", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -871,27 +858,13 @@ pub async fn get_controlled_register_entry(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
-    require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::ControlledSubstanceManage,
-    )?;
-    let entry = state
-        .get_controlled_substance_register_entry(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_register_load_failed",
-                "Controlled register entry could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "controlled_register_not_found",
-                "Controlled register entry could not be found.",
-            )
-        })?;
-    Ok(Json(object(entry)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .get_register_entry(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}/entries", operation_id = "getControlledSubstanceRegisterEntries", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID"), InventoryListQuery), responses((status = 200, body = ListResponse<ControlledSubstanceRegisterEntryItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -901,25 +874,13 @@ pub async fn list_controlled_register_entries(
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<ControlledSubstanceRegisterEntryItem>>, ApiError> {
-    require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::ControlledSubstanceManage,
-    )?;
-    ensure_controlled_entry_exists(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_controlled_substance_register_entries(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_register_entries_failed",
-                "Controlled register entries could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .list_register_entries(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}/balance-validation", operation_id = "getControlledSubstanceRegisterBalanceValidation", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), responses((status = 200, body = ObjectResponse<ControlledSubstanceBalanceValidation>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -928,27 +889,13 @@ pub async fn validate_controlled_register_balance(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceBalanceValidation>>, ApiError> {
-    require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::ControlledSubstanceManage,
-    )?;
-    let validation = state
-        .validate_controlled_substance_register_balance(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_balance_validation_failed",
-                "Controlled register balance could not be validated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "controlled_register_not_found",
-                "Controlled register entry could not be found.",
-            )
-        })?;
-    Ok(Json(object(validation)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .validate_register_balance(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/pharmacy/controlled-substances/register/{id}/counts", operation_id = "postControlledSubstanceRegisterCounts", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), request_body = CreateControlledSubstanceCountRequest, responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -958,31 +905,13 @@ pub async fn create_controlled_count(
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateControlledSubstanceCountRequest>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
-    require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::ControlledSubstanceManage,
-    )?;
-    if payload.actual_count < 0 {
-        return Err(validation_error(
-            "actual_count",
-            "This value must be zero or greater.",
-        ));
-    }
-    let witness_user_id = payload
-        .witness_user_id
-        .ok_or_else(|| validation_error("witness_user_id", "Witness is required."))?;
-    ensure_controlled_entry_exists(&state, id).await?;
-    let entry = state
-        .create_controlled_substance_count(id, payload.actual_count, witness_user_id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_count_create_failed",
-                "Controlled count could not be saved.",
-            )
-        })?;
-    Ok(Json(object(entry)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .create_count(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/pharmacy/controlled-substances/register", operation_id = "postControlledSubstanceRegister", tag = "pharmacy", security(("bearerAuth" = [])), request_body = CreateControlledSubstanceMovementRequest, responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -991,37 +920,13 @@ pub async fn create_controlled_movement(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateControlledSubstanceMovementRequest>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
-    require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::ControlledSubstanceManage,
-    )?;
-    if payload.quantity_delta == 0 {
-        return Err(validation_error(
-            "quantity_delta",
-            "This value cannot be zero.",
-        ));
-    }
-    if payload.quantity_delta < 0 && payload.witness_user_id.is_none() {
-        return Err(validation_error("witness_user_id", "Witness is required."));
-    }
-    let entry = state
-        .create_controlled_substance_movement(
-            payload.item_id,
-            payload.location_id,
-            payload.movement_type,
-            payload.quantity_delta,
-            payload.witness_user_id,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_register_create_failed",
-                "Controlled register entry could not be saved.",
-            )
-        })?;
-    Ok(Json(object(entry)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .create_movement(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/pharmacy/dispenses", operation_id = "getPharmacyDispenses", tag = "pharmacy", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PharmacyDispenseListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -1030,31 +935,13 @@ pub async fn list_dispenses(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<PharmacyDispenseListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    hms_access::require_inventory_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::PharmacyDispense,
-    )
-    .map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to view pharmacy dispenses.",
-        )
-    })?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_pharmacy_dispenses(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "pharmacy_dispense_list_failed",
-                "Dispenses could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.dispensed_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .pharmacy()
+            .list_dispenses(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/pharmacy/dispenses", operation_id = "postPharmacyDispenses", tag = "pharmacy", security(("bearerAuth" = [])), request_body = CreatePharmacyDispenseRequest, responses((status = 200, body = ObjectResponse<PharmacyDispenseListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -1063,44 +950,13 @@ pub async fn create_dispense(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreatePharmacyDispenseRequest>,
 ) -> Result<Json<ObjectResponse<PharmacyDispenseListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::PharmacyDispense)?;
-    require_positive(payload.quantity, "quantity")?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    let dispense = state
-        .create_pharmacy_dispense(
-            payload.patient_id,
-            payload.item_id,
-            payload.location_id,
-            payload.quantity,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "pharmacy_dispense_create_failed",
-                "Dispense could not be saved.",
-            )
-        })?;
-    Ok(Json(object(dispense)))
-}
-
-async fn load_patient_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    patient_id: Uuid,
-) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
-        .await
-        .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
-    require_patient_demographics_access(user, &patient).map_err(|_| {
-        ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to this patient.",
-        )
-    })?;
-    Ok(patient)
+    Ok(Json(
+        state
+            .inventory_services()
+            .pharmacy()
+            .create_dispense(&user, payload)
+            .await?,
+    ))
 }
 
 fn require_inventory_list_access(
@@ -1194,25 +1050,6 @@ async fn ensure_location_exists(state: &AppState, location_id: Uuid) -> Result<(
         })?
         .ok_or_else(|| {
             ApiError::not_found("storage_location_not_found", "Location could not be found.")
-        })?;
-    Ok(())
-}
-
-async fn ensure_controlled_entry_exists(state: &AppState, entry_id: Uuid) -> Result<(), ApiError> {
-    state
-        .get_controlled_substance_register_entry(entry_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "controlled_register_load_failed",
-                "Controlled register entry could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "controlled_register_not_found",
-                "Controlled register entry could not be found.",
-            )
         })?;
     Ok(())
 }

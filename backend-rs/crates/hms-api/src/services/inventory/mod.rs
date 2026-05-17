@@ -1,0 +1,33 @@
+mod common;
+mod controlled_substances;
+mod pharmacy;
+
+pub use controlled_substances::ControlledSubstancesService;
+pub use pharmacy::PharmacyService;
+
+use crate::state::AppState;
+
+#[derive(Clone)]
+pub struct InventoryServices {
+    state: AppState,
+}
+
+impl InventoryServices {
+    pub fn new(state: AppState) -> Self {
+        Self { state }
+    }
+
+    pub fn controlled_substances(&self) -> ControlledSubstancesService {
+        ControlledSubstancesService::new(self.state.clone())
+    }
+
+    pub fn pharmacy(&self) -> PharmacyService {
+        PharmacyService::new(self.state.clone())
+    }
+}
+
+impl AppState {
+    pub fn inventory_services(&self) -> InventoryServices {
+        InventoryServices::new(self.clone())
+    }
+}
