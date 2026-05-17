@@ -8,7 +8,6 @@ use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvi
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -528,10 +527,6 @@ impl AppState {
             &self.inner.config.facility_code,
             features,
         ))
-    }
-
-    pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
-        hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
     }
 
     async fn issue_session_for_user(

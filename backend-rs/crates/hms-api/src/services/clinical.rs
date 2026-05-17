@@ -797,8 +797,7 @@ async fn load_patient_for_access(
     ctx: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
+    let patient = hms_db::patients::get_patient(state.db_pool(), state.facility_id(), patient_id)
         .await
         .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
