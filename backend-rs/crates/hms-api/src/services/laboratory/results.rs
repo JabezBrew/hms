@@ -1,4 +1,4 @@
-use hms_db::laboratory::LabResultListFilters;
+use hms_db::laboratory::{LabResultListFilters, NewLabResult};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
     BulkCreateLabResultsRequest, BulkCreateLabResultsResponse, BulkVerifyLabResultsRequest,
@@ -22,27 +22,35 @@ impl LabResultsService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_results(
         &self,
         ctx: &hms_access::RequestContext,
         query: LaboratoryResultListQuery,
     ) -> Result<ListResponse<LabResultListItem>, ApiError> {
-        common::require_laboratory_list_access(ctx, self.state.facility_id())?;
+        common::require_laboratory_list_access(ctx, self.facility_id())?;
         let (cursor, page_size) = common::page_request(query.cursor, query.limit)?;
-        let rows = self
-            .state
-            .list_lab_results(
-                cursor,
-                page_size as i64 + 1,
-                LabResultListFilters {
-                    status: query.status,
-                    is_verified: query.is_verified,
-                },
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("lab_result_list_failed", "Lab results could not be loaded.")
-            })?;
+        let rows = hms_db::laboratory::list_results(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            LabResultListFilters {
+                status: query.status,
+                is_verified: query.is_verified,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("lab_result_list_failed", "Lab results could not be loaded.")
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.entered_at, item.id)
@@ -54,11 +62,9 @@ impl LabResultsService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<LabResultListItem>, ApiError> {
-        common::require_laboratory_list_access(ctx, self.state.facility_id())?;
+        common::require_laboratory_list_access(ctx, self.facility_id())?;
         let _context = common::load_result_for_access(&self.state, ctx, id).await?;
-        let result = self
-            .state
-            .get_lab_result(id)
+        let result = hms_db::laboratory::get_result_by_id(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict("lab_result_load_failed", "Lab result could not be loaded.")
@@ -77,20 +83,31 @@ impl LabResultsService {
     ) -> Result<ObjectResponse<LabResultListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         let specimen =
             common::load_specimen_for_access(&self.state, ctx, payload.specimen_id).await?;
         let value = common::normalize_text(payload.value, "value")?;
         let unit = common::normalize_optional_text(payload.unit, "unit")?;
-        let result = self
-            .state
-            .create_lab_result(&specimen, payload.test_id, value, unit, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("lab_result_create_failed", "Lab result could not be saved.")
-            })?;
+        let result = hms_db::laboratory::create_result(
+            self.pool(),
+            NewLabResult {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                specimen_id: specimen.id,
+                order_id: specimen.order_id,
+                patient_id: specimen.patient_id,
+                test_id: payload.test_id,
+                value,
+                unit,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("lab_result_create_failed", "Lab result could not be saved.")
+        })?;
 
         Ok(object(result))
     }
@@ -102,7 +119,7 @@ impl LabResultsService {
     ) -> Result<ObjectResponse<BulkCreateLabResultsResponse>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         if payload.results.is_empty() {
@@ -135,16 +152,33 @@ impl LabResultsService {
             results.push((test_id, value, unit));
         }
 
-        let created = self
-            .state
-            .create_lab_results(&specimen, results, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_results_bulk_create_failed",
-                    "Lab results could not be saved.",
-                )
-            })?;
+        let records = results
+            .into_iter()
+            .map(|(test_id, value, unit)| NewLabResult {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                specimen_id: specimen.id,
+                order_id: specimen.order_id,
+                patient_id: specimen.patient_id,
+                test_id,
+                value,
+                unit,
+                actor_user_id: ctx.user_id,
+            })
+            .collect();
+        let created = hms_db::laboratory::create_results(
+            self.pool(),
+            self.facility_id(),
+            specimen.order_id,
+            records,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_results_bulk_create_failed",
+                "Lab results could not be saved.",
+            )
+        })?;
         let created_count = created.len() as i64;
 
         Ok(object(BulkCreateLabResultsResponse {
@@ -161,23 +195,22 @@ impl LabResultsService {
     ) -> Result<ObjectResponse<LabResultListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryResultVerify,
         )?;
         let _result_context = common::load_result_for_access(&self.state, ctx, id).await?;
-        let result = self
-            .state
-            .verify_lab_result(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_result_verify_failed",
-                    "Lab result could not be verified.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("lab_result_not_found", "Lab result was not found.")
-            })?;
+        let result =
+            hms_db::laboratory::verify_result(self.pool(), self.facility_id(), id, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "lab_result_verify_failed",
+                        "Lab result could not be verified.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("lab_result_not_found", "Lab result was not found.")
+                })?;
 
         Ok(object(result))
     }
@@ -189,7 +222,7 @@ impl LabResultsService {
     ) -> Result<ObjectResponse<BulkVerifyLabResultsResponse>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryResultVerify,
         )?;
         let result_ids = common::unique_result_ids(payload.result_ids)?;
@@ -216,16 +249,20 @@ impl LabResultsService {
             }
         }
 
-        let verified_count = self
-            .state
-            .bulk_verify_lab_results(payload.order_id, result_ids, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_results_bulk_verify_failed",
-                    "Lab results could not be verified.",
-                )
-            })?;
+        let verified_count = hms_db::laboratory::verify_results(
+            self.pool(),
+            self.facility_id(),
+            payload.order_id,
+            &result_ids,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_results_bulk_verify_failed",
+                "Lab results could not be verified.",
+            )
+        })?;
 
         Ok(object(BulkVerifyLabResultsResponse {
             verified_count,

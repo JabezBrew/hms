@@ -56,13 +56,15 @@ pub(super) async fn load_result_for_access(
     ctx: &hms_access::RequestContext,
     result_id: Uuid,
 ) -> Result<ResultContext, ApiError> {
-    let result = state
-        .get_lab_result_context(result_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("lab_result_load_failed", "Lab result could not be loaded.")
-        })?
-        .ok_or_else(|| ApiError::not_found("lab_result_not_found", "Lab result was not found."))?;
+    let result =
+        hms_db::laboratory::get_result_context(state.db_pool(), state.facility_id(), result_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("lab_result_load_failed", "Lab result could not be loaded.")
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("lab_result_not_found", "Lab result was not found.")
+            })?;
     let _patient = load_patient_for_access(state, ctx, result.patient_id).await?;
     Ok(result)
 }

@@ -21,9 +21,6 @@ use hms_db::inventory::{
     InventoryCursor, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
     NewPharmacyDispense, NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
 };
-use hms_db::laboratory::{
-    LabCursor, LabResultListFilters, NewLabResult, ResultContext, SpecimenContext,
-};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -64,7 +61,6 @@ use hms_domain::inventory::{
     PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
     StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
 };
-use hms_domain::laboratory::LabResultListItem;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -1446,115 +1442,6 @@ impl AppState {
             self.facility_id(),
             patient_id,
             limit,
-        )
-        .await
-    }
-
-    pub async fn list_lab_results(
-        &self,
-        cursor: Option<LabCursor>,
-        limit: i64,
-        filters: LabResultListFilters,
-    ) -> Result<Vec<LabResultListItem>> {
-        hms_db::laboratory::list_results(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            filters,
-        )
-        .await
-    }
-
-    pub async fn get_lab_result(&self, result_id: Uuid) -> Result<Option<LabResultListItem>> {
-        hms_db::laboratory::get_result_by_id(&self.inner.pool, self.facility_id(), result_id).await
-    }
-
-    pub async fn create_lab_result(
-        &self,
-        specimen: &SpecimenContext,
-        test_id: Uuid,
-        value: String,
-        unit: Option<String>,
-        actor_user_id: Uuid,
-    ) -> Result<LabResultListItem> {
-        hms_db::laboratory::create_result(
-            &self.inner.pool,
-            NewLabResult {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                specimen_id: specimen.id,
-                order_id: specimen.order_id,
-                patient_id: specimen.patient_id,
-                test_id,
-                value,
-                unit,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn create_lab_results(
-        &self,
-        specimen: &SpecimenContext,
-        results: Vec<(Uuid, String, Option<String>)>,
-        actor_user_id: Uuid,
-    ) -> Result<Vec<LabResultListItem>> {
-        let records = results
-            .into_iter()
-            .map(|(test_id, value, unit)| NewLabResult {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                specimen_id: specimen.id,
-                order_id: specimen.order_id,
-                patient_id: specimen.patient_id,
-                test_id,
-                value,
-                unit,
-                actor_user_id,
-            })
-            .collect();
-        hms_db::laboratory::create_results(
-            &self.inner.pool,
-            self.facility_id(),
-            specimen.order_id,
-            records,
-        )
-        .await
-    }
-
-    pub async fn get_lab_result_context(&self, result_id: Uuid) -> Result<Option<ResultContext>> {
-        hms_db::laboratory::get_result_context(&self.inner.pool, self.facility_id(), result_id)
-            .await
-    }
-
-    pub async fn verify_lab_result(
-        &self,
-        result_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<LabResultListItem>> {
-        hms_db::laboratory::verify_result(
-            &self.inner.pool,
-            self.facility_id(),
-            result_id,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn bulk_verify_lab_results(
-        &self,
-        order_id: Option<Uuid>,
-        result_ids: Vec<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<i64> {
-        hms_db::laboratory::verify_results(
-            &self.inner.pool,
-            self.facility_id(),
-            order_id,
-            &result_ids,
-            actor_user_id,
         )
         .await
     }
