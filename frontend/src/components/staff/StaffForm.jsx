@@ -111,15 +111,11 @@ const StaffForm = ({ onSuccess }) => {
   }, [form]);
 
   const validateStep = useCallback(async (stepKey) => {
-    if (stepKey === 'credentials' && !isPractitioner) {
-      return true;
-    }
-
     const fields = stepFieldsByKey[stepKey] || [];
     if (!fields.length) return true;
 
     const fieldsToValidate = stepKey === 'credentials' && !isPractitioner
-      ? []
+      ? fields.filter((field) => field === 'temporary_password')
       : fields;
 
     if (!fieldsToValidate.length) return true;
@@ -425,6 +421,22 @@ const StaffForm = ({ onSuccess }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
+                    name="employee_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Employee ID <span className="text-rose-500">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="Employee ID" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="department"
                     render={({ field }) => (
                       <FormItem>
@@ -530,6 +542,29 @@ const StaffForm = ({ onSuccess }) => {
               </TabsContent>
 
               <TabsContent value="credentials" className="space-y-4 mt-4">
+                <div className="rounded-lg border border-border bg-card/40 p-4">
+                  <FormField
+                    control={form.control}
+                    name="temporary_password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Temporary Password <span className="text-rose-500">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder="Temporary password"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 {isPractitioner ? (
                   <div className="space-y-4">
                     <div className="rounded-lg border border-border bg-muted/20 p-4">
@@ -601,7 +636,7 @@ const StaffForm = ({ onSuccess }) => {
                       </p>
                     </div>
                     <p className="text-xs text-emerald-700/90 dark:text-emerald-300 mt-2 font-mono">
-                      Credentials are only required for doctors and nurses.
+                      Practitioner credentials are only required for doctors and nurses.
                     </p>
                   </div>
                 )}
@@ -736,6 +771,9 @@ const StaffForm = ({ onSuccess }) => {
                   <div className="p-4 rounded-lg border border-border bg-card/40">
                     <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Employment</p>
                     <p className="text-sm">
+                      <span className="font-medium">Employee ID:</span> {form.getValues('employee_id') || 'Not set'}
+                    </p>
+                    <p className="text-sm">
                       <span className="font-medium">Department:</span>{' '}
                       {departmentNameById.get(form.getValues('department')) || form.getValues('department') || 'Not set'}
                     </p>
@@ -750,6 +788,10 @@ const StaffForm = ({ onSuccess }) => {
 
                   <div className="p-4 rounded-lg border border-border bg-card/40">
                     <p className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">Credentials</p>
+                    <p className="text-sm">
+                      <span className="font-medium">Temporary Password:</span>{' '}
+                      {form.getValues('temporary_password') ? 'Set' : 'Not set'}
+                    </p>
                     {isPractitioner ? (
                       <>
                         <p className="text-sm">

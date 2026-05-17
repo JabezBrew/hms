@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -42,6 +41,9 @@ import {
   useRecordControlledCount,
   useRecordControlledWastage,
 } from '@/features/inventory/hooks';
+import { useStaff } from '@/features/staff/hooks';
+import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { toast } from 'sonner';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
@@ -50,7 +52,169 @@ import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/alert-triangle.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-2.js';
-import X from 'lucide-react/dist/esm/icons/x.js';
+
+function staffOptionsFromResponse(staffData) {
+  if (Array.isArray(staffData)) {
+    return staffData;
+  }
+  if (Array.isArray(staffData?.results)) {
+    return staffData.results;
+  }
+  return [];
+}
+
+function staffUserId(staff) {
+  return staff?.user_id || staff?.user?.id || staff?.id || '';
+}
+
+function staffDisplayName(staff) {
+  return staff?.name || staff?.display_name || staff?.email || staffUserId(staff);
+}
+
+function currentUserWitnessOption(user) {
+  if (!user?.id) {
+    return null;
+  }
+  const displayName = user.display_name
+    || [user.first_name, user.last_name].filter(Boolean).join(' ').trim()
+    || user.email
+    || user.id;
+  return {
+    user_id: user.id,
+    name: displayName,
+    display_name: displayName,
+    email: user.email || '',
+  };
+}
+
+function witnessOptionsFrom(staffData, user) {
+  const staffOptions = staffOptionsFromResponse(staffData);
+  if (staffOptions.length > 0) {
+    return staffOptions;
+  }
+  const currentUserOption = currentUserWitnessOption(user);
+  return currentUserOption ? [currentUserOption] : [];
+}
+
+function requireWitness(form, data, rustV2Mode) {
+  if (rustV2Mode) {
+    if (!data.witness_user_id) {
+      form.setError('witness_user_id', {
+        type: 'manual',
+        message: 'Witness is required',
+      });
+      return false;
+    }
+    return true;
+  }
+
+  if (!String(data.witness_name || '').trim()) {
+    form.setError('witness_name', {
+      type: 'manual',
+      message: 'Witness name is required',
+    });
+    return false;
+  }
+  return true;
+}
+
+function WitnessVerificationSection({
+  form,
+  rustV2Mode,
+  staffOptions,
+  staffLoading,
+  description,
+}) {
+  return (
+    <Card className="bg-amber-500/5 border-amber-500/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <User className="h-4 w-4 text-amber-500" />
+          Witness Verification
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {description}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {rustV2Mode ? (
+          <FormField
+            control={form.control}
+            name="witness_user_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Witness *</FormLabel>
+                <Select
+                  onValueChange={(value) => {
+                    const selectedStaff = staffOptions.find((staff) => (
+                      String(staffUserId(staff)) === String(value)
+                    ));
+                    field.onChange(value);
+                    form.setValue('witness_name', staffDisplayName(selectedStaff), {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                  }}
+                  value={field.value}
+                  disabled={staffLoading}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder={staffLoading ? 'Loading staff...' : 'Select witness'} />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {staffOptions.map((staff) => {
+                      const userId = staffUserId(staff);
+                      if (!userId) {
+                        return null;
+                      }
+                      return (
+                        <SelectItem key={userId} value={String(userId)}>
+                          {staffDisplayName(staff)}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : (
+          <>
+            <FormField
+              control={form.control}
+              name="witness_name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Witness Name *</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Full name of witness" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="witness_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Witness ID/Badge</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Staff ID" className="font-mono" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 // =========================================================================
 // Dispense Form
@@ -62,8 +226,9 @@ const dispenseSchema = z.object({
   patient_mrn: z.string().optional(),
   prescription_number: z.string().optional(),
   batch_number: z.string().optional(),
-  witness_name: z.string().min(2, 'Witness name is required'),
+  witness_name: z.string().optional(),
   witness_id: z.string().optional(),
+  witness_user_id: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -77,6 +242,13 @@ export function ControlledDispenseForm({
   onSuccess,
 }) {
   const dispenseMutation = useDispenseControlledSubstance();
+  const { user } = useAuth();
+  const rustV2Mode = isRustV2ApiMode();
+  const { data: staffData = [], isLoading: staffLoading } = useStaff(
+    { page_size: 100 },
+    { enabled: rustV2Mode && open },
+  );
+  const staffOptions = witnessOptionsFrom(staffData, user);
 
   const form = useForm({
     resolver: zodResolver(dispenseSchema),
@@ -88,14 +260,21 @@ export function ControlledDispenseForm({
       batch_number: '',
       witness_name: '',
       witness_id: '',
+      witness_user_id: '',
       notes: '',
     },
   });
 
   const onSubmit = async (data) => {
+    if (!requireWitness(form, data, rustV2Mode)) {
+      return;
+    }
+
     try {
       await dispenseMutation.mutateAsync({
         register: register.id,
+        item_id: register.item_id,
+        location_id: register.location_id,
         ...data,
       });
       toast.success('Controlled substance dispensed');
@@ -231,45 +410,13 @@ export function ControlledDispenseForm({
             />
 
             {/* Witness Section */}
-            <Card className="bg-amber-500/5 border-amber-500/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <User className="h-4 w-4 text-amber-500" />
-                  Witness Verification
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  A second authorized staff member must verify this transaction
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="witness_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Witness Name *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Full name of witness" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="witness_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Witness ID/Badge</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Staff ID" className="font-mono" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+            <WitnessVerificationSection
+              form={form}
+              rustV2Mode={rustV2Mode}
+              staffOptions={staffOptions}
+              staffLoading={staffLoading}
+              description="A second authorized staff member must verify this transaction"
+            />
 
             {/* Notes */}
             <FormField
@@ -316,8 +463,9 @@ export function ControlledDispenseForm({
 
 const countSchema = z.object({
   actual_count: z.coerce.number().min(0, 'Count must be 0 or greater'),
-  witness_name: z.string().min(2, 'Witness name is required'),
+  witness_name: z.string().optional(),
   witness_id: z.string().optional(),
+  witness_user_id: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -331,6 +479,13 @@ export function ControlledCountForm({
   onSuccess,
 }) {
   const countMutation = useRecordControlledCount();
+  const { user } = useAuth();
+  const rustV2Mode = isRustV2ApiMode();
+  const { data: staffData = [], isLoading: staffLoading } = useStaff(
+    { page_size: 100 },
+    { enabled: rustV2Mode && open },
+  );
+  const staffOptions = witnessOptionsFrom(staffData, user);
 
   const form = useForm({
     resolver: zodResolver(countSchema),
@@ -338,11 +493,16 @@ export function ControlledCountForm({
       actual_count: register?.current_balance || 0,
       witness_name: '',
       witness_id: '',
+      witness_user_id: '',
       notes: '',
     },
   });
 
   const onSubmit = async (data) => {
+    if (!requireWitness(form, data, rustV2Mode)) {
+      return;
+    }
+
     try {
       await countMutation.mutateAsync({
         register: register.id,
@@ -435,45 +595,13 @@ export function ControlledCountForm({
             />
 
             {/* Witness Section */}
-            <Card className="bg-amber-500/5 border-amber-500/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <User className="h-4 w-4 text-amber-500" />
-                  Witness Verification
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  A second authorized staff member must verify this count
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="witness_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Witness Name *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Full name of witness" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="witness_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Witness ID/Badge</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Staff ID" className="font-mono" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+            <WitnessVerificationSection
+              form={form}
+              rustV2Mode={rustV2Mode}
+              staffOptions={staffOptions}
+              staffLoading={staffLoading}
+              description="A second authorized staff member must verify this count"
+            />
 
             {/* Notes */}
             <FormField
@@ -518,8 +646,9 @@ const wastageSchema = z.object({
   quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
   reason: z.string().min(1, 'Reason is required'),
   batch_number: z.string().optional(),
-  witness_name: z.string().min(2, 'Witness name is required'),
+  witness_name: z.string().optional(),
   witness_id: z.string().optional(),
+  witness_user_id: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -543,6 +672,13 @@ export function WastageForm({
   onSuccess,
 }) {
   const wastageMutation = useRecordControlledWastage();
+  const { user } = useAuth();
+  const rustV2Mode = isRustV2ApiMode();
+  const { data: staffData = [], isLoading: staffLoading } = useStaff(
+    { page_size: 100 },
+    { enabled: rustV2Mode && open },
+  );
+  const staffOptions = witnessOptionsFrom(staffData, user);
 
   const form = useForm({
     resolver: zodResolver(wastageSchema),
@@ -552,14 +688,21 @@ export function WastageForm({
       batch_number: '',
       witness_name: '',
       witness_id: '',
+      witness_user_id: '',
       notes: '',
     },
   });
 
   const onSubmit = async (data) => {
+    if (!requireWitness(form, data, rustV2Mode)) {
+      return;
+    }
+
     try {
       await wastageMutation.mutateAsync({
         register: register.id,
+        item_id: register.item_id,
+        location_id: register.location_id,
         ...data,
       });
       toast.success('Wastage recorded');
@@ -676,45 +819,13 @@ export function WastageForm({
             />
 
             {/* Witness Section */}
-            <Card className="bg-amber-500/5 border-amber-500/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <User className="h-4 w-4 text-amber-500" />
-                  Witness Verification
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  A second authorized staff member must witness the destruction
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="witness_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Witness Name *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Full name of witness" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="witness_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Witness ID/Badge</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Staff ID" className="font-mono" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+            <WitnessVerificationSection
+              form={form}
+              rustV2Mode={rustV2Mode}
+              staffOptions={staffOptions}
+              staffLoading={staffLoading}
+              description="A second authorized staff member must witness the destruction"
+            />
 
             {/* Notes */}
             <FormField

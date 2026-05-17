@@ -36,7 +36,7 @@ export const patientRoutes = [
   {
     path: '/patients/my-patients',
     component: MyPatientsPage,
-    roles: ROLE_GROUPS.MY_PATIENTS,
+    roles: [ROLES.ADMIN, ...ROLE_GROUPS.MY_PATIENTS],
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.PATIENTS,
     title: 'My Patients | Hospital Management System',

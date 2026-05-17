@@ -715,6 +715,9 @@ describe('Rust V2 inventory bridge', () => {
         id: 'batch-1',
         batch_id: 'batch-1',
         item_id: 'item-1',
+        quantity: 100,
+        available_quantity: 100,
+        quantity_on_hand: 100,
         expiry_date: '2027-01-31',
       }),
     ]);
@@ -866,7 +869,7 @@ describe('Rust V2 inventory bridge', () => {
             quantity: -1,
             balance_before: 10,
             balance_after: 9,
-            witness_user_id: 'user-2',
+            witness_user_id: '00000000-0000-4000-8000-000000000002',
             created_at: '2026-05-12T08:25:00Z',
           },
         ],
@@ -892,7 +895,7 @@ describe('Rust V2 inventory bridge', () => {
           movement_type: 'count',
           quantity_delta: -1,
           balance_after: 8,
-          witness_user_id: 'user-2',
+          witness_user_id: '00000000-0000-4000-8000-000000000002',
           created_at: '2026-05-12T08:35:00Z',
         },
         meta: {},
@@ -917,7 +920,7 @@ describe('Rust V2 inventory bridge', () => {
             balance_before: 9,
             balance_after: 8,
             notes: 'count mismatch',
-            witness_user_id: 'user-2',
+            witness_user_id: '00000000-0000-4000-8000-000000000002',
             created_at: '2026-05-12T08:35:00Z',
           },
         ],
@@ -957,7 +960,7 @@ describe('Rust V2 inventory bridge', () => {
     await expect(inventoryApi.recordControlledCount({
       register: 'entry-2',
       actual_count: 8,
-      witness: 'user-2',
+      witness: '00000000-0000-4000-8000-000000000002',
     }, {
       signal: controller.signal,
     })).resolves.toMatchObject({
@@ -999,7 +1002,7 @@ describe('Rust V2 inventory bridge', () => {
         controller.signal,
         JSON.stringify({
           actual_count: 8,
-          witness_user_id: 'user-2',
+          witness_user_id: '00000000-0000-4000-8000-000000000002',
           notes: null,
         }),
       ],
@@ -1135,7 +1138,7 @@ describe('Rust V2 inventory bridge', () => {
           movement_type: 'dispense',
           quantity_delta: -1,
           balance_after: 9,
-          witness_user_id: 'user-2',
+          witness_user_id: '00000000-0000-4000-8000-000000000002',
           created_at: '2026-05-12T08:20:00Z',
         },
         meta: {},
@@ -1184,7 +1187,7 @@ describe('Rust V2 inventory bridge', () => {
       item: 'item-2',
       location: 'location-1',
       quantity: 1,
-      witness: 'user-2',
+      witness: '00000000-0000-4000-8000-000000000002',
     }, { signal })).resolves.toMatchObject({ id: 'register-1', quantity_delta: -1 });
 
     expect(globalThis.fetch.mock.calls.map(([url, init]) => [url, init.method, init.body, init.signal])).toEqual([
@@ -1261,7 +1264,7 @@ describe('Rust V2 inventory bridge', () => {
           location_id: 'location-1',
           movement_type: 'dispense',
           quantity_delta: -1,
-          witness_user_id: 'user-2',
+          witness_user_id: '00000000-0000-4000-8000-000000000002',
         }),
         signal,
       ],

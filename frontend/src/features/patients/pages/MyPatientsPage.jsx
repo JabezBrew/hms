@@ -366,7 +366,7 @@ const MyPatientsPage = () => {
               onRowClick={(patient) => {
                 const patientId = patient?.id || patient?.patient_profile || patient?.local_data?.id;
                 if (patientId) {
-                  navigate(`/patients/${patientId}/chronicle`);
+                  navigate(`/patients/${patientId}`);
                 }
               }}
               rowClassName="hover:bg-muted/30"

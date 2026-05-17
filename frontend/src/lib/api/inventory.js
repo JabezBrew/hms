@@ -46,6 +46,17 @@ function pickEntityId(value) {
   return value || null;
 }
 
+function uuidOrNull(value) {
+  const candidate = pickEntityId(value);
+  if (!candidate) {
+    return null;
+  }
+  const normalized = String(candidate).trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : null;
+}
+
 function positiveInteger(value, fieldName) {
   const parsed = Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -100,6 +111,8 @@ function adaptV2StockBatch(batch) {
     stock_level: quantity,
     total_stock: quantity,
     current_stock: quantity,
+    quantity,
+    available_quantity: quantity,
     quantity_on_hand: quantity,
     reorder_level: 0,
     shortfall: quantity <= 0 ? 1 : 0,
@@ -357,14 +370,14 @@ function buildV2ControlledMovementPayload(data = {}, movementType, direction) {
     location_id: pickEntityId(data.location_id ?? data.location),
     movement_type: movementType,
     quantity_delta: direction * quantity,
-    witness_user_id: pickEntityId(data.witness_user_id ?? data.witness) || null,
+    witness_user_id: uuidOrNull(data.witness_user_id ?? data.witness ?? data.witness_id),
   };
 }
 
 function buildV2ControlledCountPayload(data = {}) {
   return {
     actual_count: nonNegativeInteger(data.actual_count ?? data.count, 'actual_count'),
-    witness_user_id: pickEntityId(data.witness_user_id ?? data.witness ?? data.witness_id) || null,
+    witness_user_id: uuidOrNull(data.witness_user_id ?? data.witness ?? data.witness_id),
     notes: data.notes || null,
   };
 }
