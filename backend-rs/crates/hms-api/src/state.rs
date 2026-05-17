@@ -13,9 +13,7 @@ use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
-use hms_db::inventory::{
-    InventoryCursor, NewControlledCount, NewControlledMovement, NewPharmacyDispense,
-};
+use hms_db::inventory::{InventoryCursor, NewPharmacyDispense};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -42,11 +40,7 @@ use hms_domain::clinical::{
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::FeatureKey;
-use hms_domain::inventory::{
-    ControlledMovementType, ControlledSubstanceBalanceValidation,
-    ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
-    PharmacyDispenseListItem,
-};
+use hms_domain::inventory::PharmacyDispenseListItem;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -1428,106 +1422,6 @@ impl AppState {
             self.facility_id(),
             patient_id,
             limit,
-        )
-        .await
-    }
-
-    pub async fn list_controlled_substance_register(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-    ) -> Result<Vec<ControlledSubstanceRegisterItem>> {
-        hms_db::inventory::list_controlled_register(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn get_controlled_substance_register_entry(
-        &self,
-        entry_id: Uuid,
-    ) -> Result<Option<ControlledSubstanceRegisterItem>> {
-        hms_db::inventory::get_controlled_register_entry(
-            &self.inner.pool,
-            self.facility_id(),
-            entry_id,
-        )
-        .await
-    }
-
-    pub async fn list_controlled_substance_register_entries(
-        &self,
-        entry_id: Uuid,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-    ) -> Result<Vec<ControlledSubstanceRegisterEntryItem>> {
-        hms_db::inventory::list_controlled_register_entries(
-            &self.inner.pool,
-            self.facility_id(),
-            entry_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn validate_controlled_substance_register_balance(
-        &self,
-        entry_id: Uuid,
-    ) -> Result<Option<ControlledSubstanceBalanceValidation>> {
-        hms_db::inventory::validate_controlled_register_balance(
-            &self.inner.pool,
-            self.facility_id(),
-            entry_id,
-        )
-        .await
-    }
-
-    pub async fn create_controlled_substance_count(
-        &self,
-        entry_id: Uuid,
-        actual_count: i64,
-        witness_user_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<ControlledSubstanceRegisterItem> {
-        hms_db::inventory::create_controlled_count(
-            &self.inner.pool,
-            NewControlledCount {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                register_entry_id: entry_id,
-                actual_count,
-                witness_user_id,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn create_controlled_substance_movement(
-        &self,
-        item_id: Uuid,
-        location_id: Uuid,
-        movement_type: ControlledMovementType,
-        quantity_delta: i64,
-        witness_user_id: Option<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<ControlledSubstanceRegisterItem> {
-        hms_db::inventory::create_controlled_movement(
-            &self.inner.pool,
-            NewControlledMovement {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                item_id,
-                location_id,
-                movement_type,
-                quantity_delta,
-                witness_user_id,
-                actor_user_id,
-            },
         )
         .await
     }

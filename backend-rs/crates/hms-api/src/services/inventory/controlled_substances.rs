@@ -1,3 +1,5 @@
+use chrono::Utc;
+use hms_db::inventory::{NewControlledCount, NewControlledMovement};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     ControlledSubstanceBalanceValidation, ControlledSubstanceRegisterEntryItem,
@@ -24,23 +26,34 @@ impl ControlledSubstancesService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_register(
         &self,
         ctx: &hms_access::RequestContext,
         query: InventoryListQuery,
     ) -> Result<ListResponse<ControlledSubstanceRegisterItem>, ApiError> {
-        require_controlled_access(ctx, self.state.facility_id())?;
+        require_controlled_access(ctx, self.facility_id())?;
         let (cursor, page_size) = page_request(query)?;
-        let rows = self
-            .state
-            .list_controlled_substance_register(cursor, i64::from(page_size) + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "controlled_register_list_failed",
-                    "Controlled register could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::inventory::list_controlled_register(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            i64::from(page_size) + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_register_list_failed",
+                "Controlled register could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -51,8 +64,10 @@ impl ControlledSubstancesService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ControlledSubstanceRegisterItem>, ApiError> {
-        require_controlled_access(ctx, self.state.facility_id())?;
-        Ok(object(load_controlled_entry(&self.state, id).await?))
+        require_controlled_access(ctx, self.facility_id())?;
+        Ok(object(
+            load_controlled_entry(self.pool(), self.facility_id(), id).await?,
+        ))
     }
 
     pub async fn list_register_entries(
@@ -61,19 +76,23 @@ impl ControlledSubstancesService {
         id: Uuid,
         query: InventoryListQuery,
     ) -> Result<ListResponse<ControlledSubstanceRegisterEntryItem>, ApiError> {
-        require_controlled_access(ctx, self.state.facility_id())?;
-        let _entry = load_controlled_entry(&self.state, id).await?;
+        require_controlled_access(ctx, self.facility_id())?;
+        let _entry = load_controlled_entry(self.pool(), self.facility_id(), id).await?;
         let (cursor, page_size) = page_request(query)?;
-        let rows = self
-            .state
-            .list_controlled_substance_register_entries(id, cursor, i64::from(page_size) + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "controlled_register_entries_failed",
-                    "Controlled register entries could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::inventory::list_controlled_register_entries(
+            self.pool(),
+            self.facility_id(),
+            id,
+            cursor,
+            i64::from(page_size) + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_register_entries_failed",
+                "Controlled register entries could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -84,18 +103,20 @@ impl ControlledSubstancesService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ControlledSubstanceBalanceValidation>, ApiError> {
-        require_controlled_access(ctx, self.state.facility_id())?;
-        let validation = self
-            .state
-            .validate_controlled_substance_register_balance(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "controlled_balance_validation_failed",
-                    "Controlled register balance could not be validated.",
-                )
-            })?
-            .ok_or_else(controlled_not_found)?;
+        require_controlled_access(ctx, self.facility_id())?;
+        let validation = hms_db::inventory::validate_controlled_register_balance(
+            self.pool(),
+            self.facility_id(),
+            id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_balance_validation_failed",
+                "Controlled register balance could not be validated.",
+            )
+        })?
+        .ok_or_else(controlled_not_found)?;
         Ok(object(validation))
     }
 
@@ -105,27 +126,30 @@ impl ControlledSubstancesService {
         id: Uuid,
         payload: CreateControlledSubstanceCountRequest,
     ) -> Result<ObjectResponse<ControlledSubstanceRegisterItem>, ApiError> {
-        require_controlled_access(ctx, self.state.facility_id())?;
+        require_controlled_write_access(ctx, self.facility_id())?;
         require_non_negative(payload.actual_count, "actual_count")?;
         let witness_user_id = payload
             .witness_user_id
             .ok_or_else(|| validation_error("witness_user_id", "Witness is required."))?;
-        let _entry = load_controlled_entry(&self.state, id).await?;
-        let entry = self
-            .state
-            .create_controlled_substance_count(
-                id,
-                payload.actual_count,
+        let _entry = load_controlled_entry(self.pool(), self.facility_id(), id).await?;
+        let entry = hms_db::inventory::create_controlled_count(
+            self.pool(),
+            NewControlledCount {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                register_entry_id: id,
+                actual_count: payload.actual_count,
                 witness_user_id,
-                ctx.user_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_count_create_failed",
+                "Controlled count could not be saved.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "controlled_count_create_failed",
-                    "Controlled count could not be saved.",
-                )
-            })?;
+        })?;
         Ok(object(entry))
     }
 
@@ -134,7 +158,7 @@ impl ControlledSubstancesService {
         ctx: &hms_access::RequestContext,
         payload: CreateControlledSubstanceMovementRequest,
     ) -> Result<ObjectResponse<ControlledSubstanceRegisterItem>, ApiError> {
-        require_controlled_access(ctx, self.state.facility_id())?;
+        require_controlled_write_access(ctx, self.facility_id())?;
         if payload.quantity_delta == 0 {
             return Err(validation_error(
                 "quantity_delta",
@@ -144,23 +168,26 @@ impl ControlledSubstancesService {
         if payload.quantity_delta < 0 && payload.witness_user_id.is_none() {
             return Err(validation_error("witness_user_id", "Witness is required."));
         }
-        let entry = self
-            .state
-            .create_controlled_substance_movement(
-                payload.item_id,
-                payload.location_id,
-                payload.movement_type,
-                payload.quantity_delta,
-                payload.witness_user_id,
-                ctx.user_id,
+        let entry = hms_db::inventory::create_controlled_movement(
+            self.pool(),
+            NewControlledMovement {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                item_id: payload.item_id,
+                location_id: payload.location_id,
+                movement_type: payload.movement_type,
+                quantity_delta: payload.quantity_delta,
+                witness_user_id: payload.witness_user_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_register_create_failed",
+                "Controlled register entry could not be saved.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "controlled_register_create_failed",
-                    "Controlled register entry could not be saved.",
-                )
-            })?;
+        })?;
         Ok(object(entry))
     }
 }
@@ -172,12 +199,26 @@ fn require_controlled_access(
     require_inventory_access(ctx, facility_id, PermissionCode::ControlledSubstanceManage)
 }
 
+fn require_controlled_write_access(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    require_controlled_access(ctx, facility_id)?;
+    hms_access::require_high_risk_facility_permission(
+        ctx,
+        facility_id,
+        PermissionCode::ControlledSubstanceManage,
+        Utc::now(),
+    )
+    .map_err(ApiError::from)
+}
+
 async fn load_controlled_entry(
-    state: &AppState,
+    pool: &hms_db::PgPool,
+    facility_id: Uuid,
     id: Uuid,
 ) -> Result<ControlledSubstanceRegisterItem, ApiError> {
-    state
-        .get_controlled_substance_register_entry(id)
+    hms_db::inventory::get_controlled_register_entry(pool, facility_id, id)
         .await
         .map_err(|_| {
             ApiError::conflict(

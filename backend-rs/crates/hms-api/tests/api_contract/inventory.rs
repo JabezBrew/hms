@@ -5,6 +5,7 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
+    let stale_reauth_header = format!("Bearer {}", token_with_stale_reauth(&access_token));
     let owner_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
 
     let items_response = app
@@ -820,6 +821,35 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     let grn_accept_body = json_body(grn_accept_response).await;
     assert_eq!(grn_accept_body["data"]["id"], grn_id);
     assert_eq!(grn_accept_body["data"]["status"], "accepted");
+
+    let stale_controlled_receipt = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/pharmacy/controlled-substances/register")
+                .header(AUTHORIZATION, stale_reauth_header)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "item_id": morphine_id,
+                        "location_id": pharmacy_location_id,
+                        "movement_type": "receipt",
+                        "quantity_delta": 10,
+                        "witness_user_id": null
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale controlled receipt denial succeeds");
+    assert_eq!(stale_controlled_receipt.status(), StatusCode::FORBIDDEN);
+    let stale_controlled_receipt_body = json_body(stale_controlled_receipt).await;
+    assert_eq!(
+        stale_controlled_receipt_body["error"]["code"],
+        "reauth_required"
+    );
 
     let controlled_receipt = app
         .clone()
