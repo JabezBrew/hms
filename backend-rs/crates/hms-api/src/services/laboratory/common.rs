@@ -22,11 +22,15 @@ pub(super) async fn load_order_for_access(
     ctx: &hms_access::RequestContext,
     order_id: Uuid,
 ) -> Result<OrderContext, ApiError> {
-    let order = state
-        .get_lab_order_context(order_id)
-        .await
-        .map_err(|_| ApiError::conflict("lab_order_load_failed", "Lab order could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+    let order =
+        hms_db::laboratory::get_order_context(state.db_pool(), state.facility_id(), order_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("lab_order_load_failed", "Lab order could not be loaded.")
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("lab_order_not_found", "Lab order was not found.")
+            })?;
     let _patient = load_patient_for_access(state, ctx, order.patient_id).await?;
     Ok(order)
 }

@@ -1,4 +1,4 @@
-use hms_db::laboratory::LabOrderListFilters;
+use hms_db::laboratory::{LabOrderListFilters, NewLabOrder};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
     CancelLabOrderRequest, CreateLabOrderRequest, LabOrderListItem, LaboratoryOrderListQuery,
@@ -20,29 +20,37 @@ impl LabOrdersService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_orders(
         &self,
         ctx: &hms_access::RequestContext,
         query: LaboratoryOrderListQuery,
     ) -> Result<ListResponse<LabOrderListItem>, ApiError> {
-        common::require_laboratory_list_access(ctx, self.state.facility_id())?;
+        common::require_laboratory_list_access(ctx, self.facility_id())?;
         let (cursor, page_size) = common::page_request(query.cursor, query.limit)?;
-        let rows = self
-            .state
-            .list_lab_orders(
-                cursor,
-                page_size as i64 + 1,
-                LabOrderListFilters {
-                    status: query.status,
-                },
+        let rows = hms_db::laboratory::list_orders(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            LabOrderListFilters {
+                status: query.status,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_list_failed",
+                "Laboratory orders could not be loaded.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_order_list_failed",
-                    "Laboratory orders could not be loaded.",
-                )
-            })?;
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.ordered_at, item.id)
@@ -54,11 +62,9 @@ impl LabOrdersService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<LabOrderListItem>, ApiError> {
-        common::require_laboratory_list_access(ctx, self.state.facility_id())?;
+        common::require_laboratory_list_access(ctx, self.facility_id())?;
         let _context = common::load_order_for_access(&self.state, ctx, id).await?;
-        let order = self
-            .state
-            .get_lab_order(id)
+        let order = hms_db::laboratory::get_order_by_id(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict("lab_order_load_failed", "Lab order could not be loaded.")
@@ -77,7 +83,7 @@ impl LabOrdersService {
     ) -> Result<ObjectResponse<LabOrderListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         if payload.test_ids.is_empty() && payload.panel_ids.is_empty() {
@@ -88,22 +94,25 @@ impl LabOrdersService {
         }
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
-        let order = self
-            .state
-            .create_lab_order(
-                payload.patient_id,
-                payload.test_ids,
-                payload.panel_ids,
-                payload.priority,
-                ctx.user_id,
+        let order = hms_db::laboratory::create_order(
+            self.pool(),
+            NewLabOrder {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
+                test_ids: payload.test_ids,
+                panel_ids: payload.panel_ids,
+                priority: payload.priority,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_create_failed",
+                "Laboratory order could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_order_create_failed",
-                    "Laboratory order could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(order))
     }
@@ -115,13 +124,11 @@ impl LabOrdersService {
     ) -> Result<ObjectResponse<LabOrderListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         let _context = common::load_order_for_access(&self.state, ctx, id).await?;
-        let order = self
-            .state
-            .submit_lab_order(id)
+        let order = hms_db::laboratory::submit_order(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -143,13 +150,11 @@ impl LabOrdersService {
     ) -> Result<ObjectResponse<LabOrderListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         let _context = common::load_order_for_access(&self.state, ctx, id).await?;
-        let order = self
-            .state
-            .collect_lab_order(id)
+        let order = hms_db::laboratory::collect_order(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -171,13 +176,11 @@ impl LabOrdersService {
     ) -> Result<ObjectResponse<LabOrderListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         let _context = common::load_order_for_access(&self.state, ctx, id).await?;
-        let order = self
-            .state
-            .start_lab_order_processing(id)
+        let order = hms_db::laboratory::start_order_processing(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -200,25 +203,27 @@ impl LabOrdersService {
     ) -> Result<ObjectResponse<LabOrderListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
         let _context = common::load_order_for_access(&self.state, ctx, id).await?;
         let cancellation_reason =
             common::normalize_optional_text(payload.cancellation_reason, "cancellation_reason")?;
-        let order = self
-            .state
-            .cancel_lab_order(id, ctx.user_id, cancellation_reason)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "lab_order_cancel_failed",
-                    "Lab order could not be cancelled.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("lab_order_not_found", "Lab order was not found.")
-            })?;
+        let order = hms_db::laboratory::cancel_order(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            cancellation_reason,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "lab_order_cancel_failed",
+                "Lab order could not be cancelled.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
 
         Ok(object(order))
     }

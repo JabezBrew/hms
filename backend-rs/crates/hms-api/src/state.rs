@@ -22,8 +22,8 @@ use hms_db::inventory::{
     NewPharmacyDispense, NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
 };
 use hms_db::laboratory::{
-    LabCursor, LabOrderListFilters, LabResultListFilters, NewLabOrder, NewLabResult, NewSpecimen,
-    OrderContext, ResultContext, SpecimenContext,
+    LabCursor, LabResultListFilters, NewLabResult, NewSpecimen, OrderContext, ResultContext,
+    SpecimenContext,
 };
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -65,7 +65,7 @@ use hms_domain::inventory::{
     PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
     StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
 };
-use hms_domain::laboratory::{LabOrderListItem, LabPriority, LabResultListItem, SpecimenListItem};
+use hms_domain::laboratory::{LabResultListItem, SpecimenListItem};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -1447,85 +1447,6 @@ impl AppState {
             self.facility_id(),
             patient_id,
             limit,
-        )
-        .await
-    }
-
-    pub async fn list_lab_orders(
-        &self,
-        cursor: Option<LabCursor>,
-        limit: i64,
-        filters: LabOrderListFilters,
-    ) -> Result<Vec<LabOrderListItem>> {
-        hms_db::laboratory::list_orders(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            filters,
-        )
-        .await
-    }
-
-    pub async fn get_lab_order(&self, order_id: Uuid) -> Result<Option<LabOrderListItem>> {
-        hms_db::laboratory::get_order_by_id(&self.inner.pool, self.facility_id(), order_id).await
-    }
-
-    pub async fn create_lab_order(
-        &self,
-        patient_id: Uuid,
-        test_ids: Vec<Uuid>,
-        panel_ids: Vec<Uuid>,
-        priority: LabPriority,
-        actor_user_id: Uuid,
-    ) -> Result<LabOrderListItem> {
-        hms_db::laboratory::create_order(
-            &self.inner.pool,
-            NewLabOrder {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                test_ids,
-                panel_ids,
-                priority,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_lab_order_context(&self, order_id: Uuid) -> Result<Option<OrderContext>> {
-        hms_db::laboratory::get_order_context(&self.inner.pool, self.facility_id(), order_id).await
-    }
-
-    pub async fn submit_lab_order(&self, order_id: Uuid) -> Result<Option<LabOrderListItem>> {
-        hms_db::laboratory::submit_order(&self.inner.pool, self.facility_id(), order_id).await
-    }
-
-    pub async fn collect_lab_order(&self, order_id: Uuid) -> Result<Option<LabOrderListItem>> {
-        hms_db::laboratory::collect_order(&self.inner.pool, self.facility_id(), order_id).await
-    }
-
-    pub async fn start_lab_order_processing(
-        &self,
-        order_id: Uuid,
-    ) -> Result<Option<LabOrderListItem>> {
-        hms_db::laboratory::start_order_processing(&self.inner.pool, self.facility_id(), order_id)
-            .await
-    }
-
-    pub async fn cancel_lab_order(
-        &self,
-        order_id: Uuid,
-        actor_user_id: Uuid,
-        cancellation_reason: Option<String>,
-    ) -> Result<Option<LabOrderListItem>> {
-        hms_db::laboratory::cancel_order(
-            &self.inner.pool,
-            self.facility_id(),
-            order_id,
-            actor_user_id,
-            cancellation_reason,
         )
         .await
     }
