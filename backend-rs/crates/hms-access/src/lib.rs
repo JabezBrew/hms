@@ -705,9 +705,13 @@ pub fn require_clinical_write_access(
     )
 }
 
-pub fn require_chronicle_read_access(ctx: &RequestContext) -> Result<(), AccessError> {
-    require_permission(ctx, PermissionCode::PatientDemographicsView)?;
-    require_permission(ctx, PermissionCode::ClinicalDocumentationView)
+pub fn require_chronicle_read_access(
+    ctx: &RequestContext,
+    facility_id: Uuid,
+) -> Result<(), AccessError> {
+    require_feature(ctx, FeatureKey::Patients)?;
+    require_feature(ctx, FeatureKey::Encounters)?;
+    require_patient_workflow_access(ctx, facility_id, PermissionCode::ClinicalDocumentationView)
 }
 
 pub fn require_high_risk_reauth(
@@ -755,7 +759,7 @@ pub fn can_update_patient(
 ) -> Result<(), AccessError> {
     require_feature(ctx, FeatureKey::Patients)?;
     require_patient_demographics_access(ctx, patient)?;
-    require_permission(ctx, PermissionCode::PatientUpdate)
+    require_facility_permission(ctx, patient.facility_id, PermissionCode::PatientUpdate)
 }
 
 #[cfg(test)]
@@ -773,6 +777,8 @@ mod tests {
             active_profile: DeploymentProfile::Hospital,
             permissions: vec![
                 PermissionCode::PatientDemographicsView,
+                PermissionCode::PatientUpdate,
+                PermissionCode::ClinicalDocumentationView,
                 PermissionCode::BillingView,
                 PermissionCode::LaboratoryOrderManage,
                 PermissionCode::InventoryView,
@@ -793,6 +799,7 @@ mod tests {
             user,
             vec![
                 FeatureKey::Patients,
+                FeatureKey::Encounters,
                 FeatureKey::Billing,
                 FeatureKey::Laboratory,
                 FeatureKey::Inventory,
@@ -945,6 +952,50 @@ mod tests {
             decision.grant,
             Some(AccessGrant::ActiveAuthority { .. })
         ));
+    }
+
+    #[test]
+    fn patient_update_accepts_active_authority_scope() {
+        let mut ctx = make_ctx();
+        ctx.permissions
+            .retain(|permission| *permission != PermissionCode::PatientUpdate);
+        let patient = patient(ctx.facility_id);
+        assert_eq!(
+            can_update_patient(&ctx, &patient),
+            Err(AccessError::MissingPermission)
+        );
+
+        ctx.active_authorities.push(active_authority(
+            ctx.facility_id,
+            PermissionCode::PatientUpdate,
+            AuthorityScope::facility(),
+        ));
+
+        assert_eq!(can_update_patient(&ctx, &patient), Ok(()));
+    }
+
+    #[test]
+    fn chronicle_read_requires_patient_and_clinical_workflow_access() {
+        let ctx = make_ctx();
+        assert_eq!(require_chronicle_read_access(&ctx, ctx.facility_id), Ok(()));
+
+        let mut missing_feature = make_ctx();
+        missing_feature
+            .enabled_features
+            .retain(|feature| *feature != FeatureKey::Encounters);
+        assert_eq!(
+            require_chronicle_read_access(&missing_feature, missing_feature.facility_id),
+            Err(AccessError::FeatureDisabled)
+        );
+
+        let mut missing_permission = make_ctx();
+        missing_permission
+            .permissions
+            .retain(|permission| *permission != PermissionCode::ClinicalDocumentationView);
+        assert_eq!(
+            require_chronicle_read_access(&missing_permission, missing_permission.facility_id),
+            Err(AccessError::MissingPermission)
+        );
     }
 
     #[test]
