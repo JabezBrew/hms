@@ -67,11 +67,13 @@ function getV2BoardQuery(params = {}) {
   );
   const cursor = params.cursor ?? params.next_cursor;
   const wardId = params.ward_id ?? params.ward;
+  const patientId = params.patient_id ?? params.patient;
 
   return {
     limit,
     ...(cursor ? { cursor } : {}),
     ...(wardId && wardId !== 'all' ? { ward_id: wardId } : {}),
+    ...(patientId ? { patient_id: patientId } : {}),
   };
 }
 

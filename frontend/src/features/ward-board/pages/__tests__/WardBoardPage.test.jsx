@@ -117,6 +117,17 @@ describe('WardBoardPage', () => {
     expect(screen.getByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('passes patient-scoped board query params into the ward board query', () => {
+    renderPage('/ward-board?patient=patient-1');
+
+    expect(mockUseWardBoard).toHaveBeenCalledWith({
+      patient: 'patient-1',
+      view: 'by-patient',
+      page: 1,
+      page_size: 25,
+    });
+  });
+
   it('uses the route ward id ahead of the ward query param for ward-specific boards', () => {
     renderPage('/wards/ward-7/board?ward=ignored&view=by-urgency&page_size=30', '/wards/:wardId/board');
 

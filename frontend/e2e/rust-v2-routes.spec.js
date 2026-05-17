@@ -806,3 +806,58 @@ test('Rust V2 wards list, detail, section setup, and reports use the existing UI
 
   expect(failures).toEqual([]);
 });
+
+test('Rust V2 Ward board patient scope loads through the existing UI', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+
+  const patientName = uniquePatientName('Board');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  const wardSuffix = Date.now().toString(36).toUpperCase();
+  const wardPayload = await postV2FromBrowser(page, '/api/v2/wards', {
+    code: `PWB-${wardSuffix}`,
+    name: `Playwright Board Ward ${wardSuffix}`,
+  });
+  const wardId = wardPayload?.data?.id;
+  expect(wardId).toBeTruthy();
+
+  const admissionPayload = await postV2FromBrowser(page, '/api/v2/admissions', {
+    patient_id: patientId,
+    ward_id: wardId,
+    bed_id: null,
+  });
+  expect(admissionPayload?.data?.admission_id).toBeTruthy();
+
+  const boardResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith('/api/v2/wards/board')
+      && url.searchParams.get('patient_id') === patientId
+      && response.request().method() === 'GET';
+  });
+
+  await page.goto(`/ward-board?patient=${patientId}`);
+
+  const boardResponse = await boardResponsePromise;
+  expect(boardResponse.status()).toBeLessThan(300);
+  await expect(page.getByRole('heading', { name: 'Ward Board' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  expect(failures).toEqual([]);
+});

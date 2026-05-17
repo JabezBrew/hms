@@ -97,6 +97,31 @@ describe('Rust V2 ward-board bridge', () => {
     });
   });
 
+  it('passes patient-scoped board filters through to Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    await wardBoardApi.getBoard({ patient: 'patient-1', page_size: 25 });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/wards/board?limit=25&patient_id=patient-1',
+      expect.objectContaining({
+        method: 'GET',
+      }),
+    );
+  });
+
   it('preserves AbortError from Rust ward-board calls', async () => {
     const abortError = new DOMException('The operation was aborted.', 'AbortError');
     globalThis.fetch.mockRejectedValueOnce(abortError);

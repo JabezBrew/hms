@@ -11,6 +11,7 @@ import { BOARD_VIEWS, PAGE_SIZE_OPTIONS } from './wardBoardUtils';
 export function BoardToolbar({
   view,
   searchValue,
+  patientValue,
   wardValue,
   fixedWard,
   pageSize,
@@ -25,7 +26,7 @@ export function BoardToolbar({
   onOpenSummary,
   className,
 }) {
-  const hasFilters = Boolean(searchValue || (!fixedWard && wardValue));
+  const hasFilters = Boolean(searchValue || patientValue || (!fixedWard && wardValue));
 
   const viewCounts = {
     'results': summary?.pendingResults,

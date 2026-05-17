@@ -72,6 +72,7 @@ export default function WardBoardPage() {
   const page = parsePositiveInt(searchParams.get('page'), 1);
   const pageSize = parsePositiveInt(searchParams.get('page_size'), DEFAULT_PAGE_SIZE);
   const searchParam = searchParams.get('search') || '';
+  const queryPatient = searchParams.get('patient') || '';
   const [searchDraft, setSearchDraft] = useState(searchParam);
   const debouncedSearch = useDebounce(searchDraft, 300);
 
@@ -118,11 +119,12 @@ export default function WardBoardPage() {
 
   const queryFilters = useMemo(() => compactParams({
     ward: effectiveWard,
+    patient: queryPatient,
     view,
     search: debouncedSearch.trim(),
     page,
     page_size: pageSize,
-  }), [debouncedSearch, effectiveWard, page, pageSize, view]);
+  }), [debouncedSearch, effectiveWard, page, pageSize, queryPatient, view]);
 
   const {
     data: boardData,
@@ -168,7 +170,7 @@ export default function WardBoardPage() {
 
   const handleClearFilters = useCallback(() => {
     setSearchDraft('');
-    updateParams({ search: '', ward: '' }, { resetPage: true });
+    updateParams({ search: '', ward: '', patient: '' }, { resetPage: true });
   }, [updateParams]);
 
   if (isLoading && !boardData) {
@@ -219,6 +221,7 @@ export default function WardBoardPage() {
       <BoardToolbar
         view={view}
         searchValue={searchDraft}
+        patientValue={queryPatient}
         wardValue={effectiveWard}
         fixedWard={fixedWard}
         pageSize={pageSize}
