@@ -18,7 +18,6 @@ use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
-use hms_db::consent::{ConsentCursor, NewConsentGrant};
 use hms_db::dashboard::NotificationCursor;
 use hms_db::inventory::{
     InventoryCursor, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
@@ -60,7 +59,6 @@ use hms_domain::clinical::{
     PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
-use hms_domain::consent::{ConsentGrantListItem, ConsentScope};
 use hms_domain::dashboard::{
     AdminCapacitySummary, DashboardSnapshot, NotificationCounts, NotificationListItem,
     RealtimeChannelKind,
@@ -660,56 +658,6 @@ impl AppState {
             user_id,
             notification_id,
             read,
-        )
-        .await
-    }
-
-    pub async fn list_consent_grants(
-        &self,
-        cursor: Option<ConsentCursor>,
-        limit: i64,
-    ) -> Result<Vec<ConsentGrantListItem>> {
-        hms_db::consent::list_consent_grants(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn create_consent_grant(
-        &self,
-        patient_id: Uuid,
-        scope: ConsentScope,
-        purpose: String,
-        expires_at: Option<DateTime<Utc>>,
-        actor_user_id: Uuid,
-    ) -> Result<ConsentGrantListItem> {
-        hms_db::consent::create_consent_grant(
-            &self.inner.pool,
-            NewConsentGrant {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                scope,
-                purpose,
-                expires_at,
-                created_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_consent_grant(&self, grant_id: Uuid) -> Result<Option<ConsentGrantListItem>> {
-        hms_db::consent::get_consent_grant(&self.inner.pool, self.facility_id(), grant_id).await
-    }
-
-    pub async fn revoke_consent_grant(
-        &self,
-        grant_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<ConsentGrantListItem>> {
-        hms_db::consent::revoke_consent_grant(
-            &self.inner.pool,
-            self.facility_id(),
-            grant_id,
-            actor_user_id,
         )
         .await
     }

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
-use hms_db::consent::ConsentCursor;
+use hms_db::consent::{ConsentCursor, NewConsentGrant};
 use hms_domain::care::CursorListQuery;
 use hms_domain::consent::{ConsentGrantListItem, CreateConsentGrantRequest};
 use hms_domain::patients::PatientRecord;
@@ -25,20 +25,31 @@ impl ConsentService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_consent_grants(
         &self,
         ctx: &hms_access::RequestContext,
         query: CursorListQuery,
     ) -> Result<ListResponse<ConsentGrantListItem>, ApiError> {
-        require_consent_list_access(ctx, self.state.facility_id())?;
+        require_consent_list_access(ctx, self.facility_id())?;
         let (cursor, page_size) = page_request(query)?;
-        let rows = self
-            .state
-            .list_consent_grants(cursor, page_size as i64 + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("consent_list_failed", "Consent grants could not be loaded.")
-            })?;
+        let rows = hms_db::consent::list_consent_grants(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("consent_list_failed", "Consent grants could not be loaded.")
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -50,7 +61,7 @@ impl ConsentService {
         ctx: &hms_access::RequestContext,
         payload: CreateConsentGrantRequest,
     ) -> Result<ObjectResponse<ConsentGrantListItem>, ApiError> {
-        require_consent_permission(ctx, self.state.facility_id())?;
+        require_consent_permission(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         let purpose = required_text(payload.purpose, "purpose")?;
         if let Some(expires_at) = payload.expires_at {
@@ -62,22 +73,25 @@ impl ConsentService {
             }
         }
 
-        let grant = self
-            .state
-            .create_consent_grant(
-                payload.patient_id,
-                payload.scope,
+        let grant = hms_db::consent::create_consent_grant(
+            self.pool(),
+            NewConsentGrant {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
+                scope: payload.scope,
                 purpose,
-                payload.expires_at,
-                ctx.user_id,
+                expires_at: payload.expires_at,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "consent_create_failed",
+                "Consent grant could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "consent_create_failed",
-                    "Consent grant could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(grant))
     }
@@ -87,10 +101,8 @@ impl ConsentService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ConsentGrantListItem>, ApiError> {
-        require_consent_permission(ctx, self.state.facility_id())?;
-        let existing = self
-            .state
-            .get_consent_grant(id)
+        require_consent_permission(ctx, self.facility_id())?;
+        let existing = hms_db::consent::get_consent_grant(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict("consent_load_failed", "Consent grant could not be loaded.")
@@ -99,19 +111,18 @@ impl ConsentService {
                 ApiError::not_found("consent_not_found", "Consent grant was not found.")
             })?;
         let _patient = load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let grant = self
-            .state
-            .revoke_consent_grant(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "consent_revoke_failed",
-                    "Consent grant could not be revoked.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("consent_not_found", "Consent grant was not found.")
-            })?;
+        let grant =
+            hms_db::consent::revoke_consent_grant(self.pool(), self.facility_id(), id, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "consent_revoke_failed",
+                        "Consent grant could not be revoked.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("consent_not_found", "Consent grant was not found.")
+                })?;
 
         Ok(object(grant))
     }
