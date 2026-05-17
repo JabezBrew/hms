@@ -10,6 +10,12 @@ const EMPTY_GROUPS = {
   appointments: [],
   admissions: [],
   staff: [],
+  visits: [],
+  clinics: [],
+  laboratory: [],
+  billing: [],
+  inventory: [],
+  referrals: [],
 }
 
 function normalizeLimit(limit) {
@@ -20,7 +26,22 @@ function normalizeLimit(limit) {
 
 function normalizeTypes(types) {
   if (!Array.isArray(types)) return []
-  return types.map((type) => String(type || '').trim().toLowerCase()).filter(Boolean)
+  const aliases = {
+    patient: 'patients',
+    ward: 'wards',
+    encounter: 'encounters',
+    appointment: 'appointments',
+    admission: 'admissions',
+    visit: 'visits',
+    clinic: 'clinics',
+    lab: 'laboratory',
+    labs: 'laboratory',
+    referral: 'referrals',
+  }
+  return types
+    .map((type) => String(type || '').trim().toLowerCase())
+    .filter(Boolean)
+    .map((type) => aliases[type] || type)
 }
 
 function emptySearchResponse({ q, types, limit }) {
@@ -32,58 +53,133 @@ function emptySearchResponse({ q, types, limit }) {
   }
 }
 
-function shouldSearchPatients(types) {
-  const normalized = normalizeTypes(types)
-  return normalized.length === 0 || normalized.includes('patients') || normalized.includes('patient')
-}
-
-function dateFromBirthYear(value) {
-  if (!value) return null
-  return `${String(value).padStart(4, '0')}-01-01`
-}
-
-function adaptV2Patient(patient) {
+function adaptV2SearchItem(item) {
+  const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {}
   return {
-    id: patient.id,
-    name: patient.display_name,
-    medical_record_number: patient.patient_code,
-    date_of_birth: patient.date_of_birth || dateFromBirthYear(patient.birth_year),
-    gender: patient.sex,
-    admission_status: patient.status,
-    match_reason: 'rust_v2_patient_search',
+    id: item?.id,
+    resource_type: item?.resource_type,
+    title: item?.title,
+    subtitle: item?.subtitle,
+    route_path: item?.route_path,
+    status_label: item?.status_label,
+    occurred_at: item?.occurred_at,
+    metadata,
+    score: item?.score,
   }
 }
 
-async function searchRustV2Patients({ q, types, limit, signal } = {}) {
+function adaptV2Patient(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    name: item?.patient_name || item?.title,
+    medical_record_number: item?.patient_code,
+    date_of_birth: item?.patient_date_of_birth,
+    gender: item?.metadata?.sex,
+    admission_status: item?.status_label || item?.metadata?.status,
+    match_reason: 'rust_v2_omni_search',
+  }
+}
+
+function adaptV2Ward(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    name: item?.title,
+    ward_type: item?.metadata?.code || item?.status_label,
+  }
+}
+
+function adaptV2Encounter(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    patient_name: item?.patient_name || item?.title,
+    reason: item?.subtitle || item?.metadata?.encounter_type || item?.status_label,
+  }
+}
+
+function adaptV2Appointment(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    patient_name: item?.patient_name || item?.title,
+    practitioner_name: item?.metadata?.clinic_name,
+    start_time: item?.metadata?.starts_at || item?.occurred_at,
+  }
+}
+
+function adaptV2Admission(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    patient_name: item?.patient_name || item?.title,
+    ward_name: item?.metadata?.ward_name,
+    bed_number: item?.metadata?.bed_number,
+  }
+}
+
+function adaptV2Staff(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    name: item?.title,
+    employee_id: item?.metadata?.employee_id || item?.subtitle,
+  }
+}
+
+function adaptV2Generic(item) {
+  return {
+    ...adaptV2SearchItem(item),
+    label: item?.title,
+    description: item?.subtitle || item?.status_label,
+    href: item?.route_path,
+  }
+}
+
+function adaptV2Groups(groups = {}) {
+  return {
+    recent_patients: (groups.recent_patients || []).map(adaptV2Patient),
+    patients: (groups.patients || []).map(adaptV2Patient),
+    wards: (groups.wards || []).map(adaptV2Ward),
+    encounters: (groups.encounters || []).map(adaptV2Encounter),
+    appointments: (groups.appointments || []).map(adaptV2Appointment),
+    admissions: (groups.admissions || []).map(adaptV2Admission),
+    staff: (groups.staff || []).map(adaptV2Staff),
+    visits: (groups.visits || []).map(adaptV2Generic),
+    clinics: (groups.clinics || []).map(adaptV2Generic),
+    laboratory: (groups.laboratory || []).map(adaptV2Generic),
+    billing: (groups.billing || []).map(adaptV2Generic),
+    inventory: (groups.inventory || []).map(adaptV2Generic),
+    referrals: (groups.referrals || []).map(adaptV2Generic),
+  }
+}
+
+async function searchRustV2Omni({ q, types, limit, signal } = {}) {
   const query = String(q || '').trim()
   const pageLimit = normalizeLimit(limit)
-  if (query.length < 2 || !shouldSearchPatients(types)) {
+  if (query.length > 0 && query.length < 2) {
     return emptySearchResponse({ q, types, limit: pageLimit })
   }
 
-  const response = await v2Api.getPatients({
-    query: {
+  const response = await v2Api.postSearchOmni(
+    {
+      q: query,
+      types: normalizeTypes(types),
       limit: pageLimit,
-      search: query,
     },
-    signal,
-  })
+    { signal }
+  )
+  const data = response?.data || {}
 
   return {
-    query,
-    types: normalizeTypes(types),
-    limit: pageLimit,
-    groups: {
-      ...EMPTY_GROUPS,
-      patients: Array.isArray(response?.data) ? response.data.map(adaptV2Patient) : [],
-    },
+    query: data.query ?? query,
+    types: Array.isArray(data.types) ? data.types : normalizeTypes(types),
+    limit: data.limit ?? pageLimit,
+    groups: { ...EMPTY_GROUPS, ...adaptV2Groups(data.groups || {}) },
+    index_status: data.index_status || [],
+    took_ms: data.took_ms,
   }
 }
 
 export const omniSearchApi = {
   search: ({ q, types, limit, signal } = {}) => {
     if (isRustV2ApiMode()) {
-      return searchRustV2Patients({ q, types, limit, signal })
+      return searchRustV2Omni({ q, types, limit, signal })
     }
     const params = {}
     if (q !== undefined && q !== null) {

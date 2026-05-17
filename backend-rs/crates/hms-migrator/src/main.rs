@@ -35,6 +35,16 @@ async fn main() -> anyhow::Result<()> {
         provision_baseline(&pool, &baseline_from_env(profile)?).await?;
     }
 
+    if env::var("HMS_SEARCH_INDEX_REBUILD")
+        .ok()
+        .as_deref()
+        .map(|value| parse_bool(value, "HMS_SEARCH_INDEX_REBUILD"))
+        .transpose()?
+        .unwrap_or(true)
+    {
+        hms_db::search::rebuild_search_index_for_all_facilities(&pool).await?;
+    }
+
     Ok(())
 }
 

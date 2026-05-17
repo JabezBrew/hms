@@ -27,23 +27,36 @@ describe('Rust V2 omni search bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('searches patients through Rust /api/v2 without calling the legacy omni endpoint', async () => {
+  it('searches through Rust /api/v2/search/omni without putting PHI in the URL', async () => {
     const signal = new AbortController().signal;
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          data: [
-            {
-              id: 'patient-1',
-              patient_code: 'MRN-001',
-              display_name: 'Ama Mensah',
-              birth_year: 1990,
-              sex: 'female',
-              status: 'active',
-              created_at: '2026-05-12T09:00:00Z',
+          data: {
+            query: 'Ama',
+            types: ['patients'],
+            limit: 5,
+            took_ms: 4,
+            index_status: [],
+            groups: {
+              recent_patients: [],
+              patients: [{
+                id: 'patient-1',
+                resource_type: 'patients',
+                title: 'Ama Mensah',
+                subtitle: 'MRN MRN-001',
+                route_path: '/patients/patient-1',
+                patient_id: 'patient-1',
+                patient_code: 'MRN-001',
+                patient_name: 'Ama Mensah',
+                patient_date_of_birth: '1990-02-14',
+                status_label: 'active',
+                metadata: { sex: 'female', status: 'active' },
+                score: 201,
+              }],
+              staff: [],
             },
-          ],
-          page: { limit: 5, has_next: false, next_cursor: null },
+          },
           meta: {},
         }),
         {
@@ -61,13 +74,19 @@ describe('Rust V2 omni search bridge', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/patients?limit=5&search=Ama',
+      'http://localhost:8080/api/v2/search/omni',
       expect.objectContaining({
-        method: 'GET',
+        method: 'POST',
         credentials: 'include',
         signal,
+        body: JSON.stringify({
+          q: 'Ama',
+          types: ['patients'],
+          limit: 5,
+        }),
         headers: expect.objectContaining({
           Authorization: 'Bearer access-token-123',
+          'Content-Type': 'application/json',
           'X-Facility-Code': 'HMS',
         }),
       }),
@@ -76,6 +95,8 @@ describe('Rust V2 omni search bridge', () => {
       query: 'Ama',
       types: ['patients'],
       limit: 5,
+      index_status: [],
+      took_ms: 4,
       groups: expect.objectContaining({
         recent_patients: [],
         patients: [
@@ -83,7 +104,7 @@ describe('Rust V2 omni search bridge', () => {
             id: 'patient-1',
             name: 'Ama Mensah',
             medical_record_number: 'MRN-001',
-            date_of_birth: '1990-01-01',
+            date_of_birth: '1990-02-14',
             gender: 'female',
             admission_status: 'active',
           }),
@@ -94,15 +115,10 @@ describe('Rust V2 omni search bridge', () => {
     });
   });
 
-  it('does not fetch unbounded data for empty searches or unsupported type filters', async () => {
-    await expect(omniSearchApi.search({ q: '', limit: 8 })).resolves.toEqual(
+  it('does not fetch for one-character searches', async () => {
+    await expect(omniSearchApi.search({ q: 'A', limit: 8 })).resolves.toEqual(
       expect.objectContaining({
         groups: expect.objectContaining({ patients: [], recent_patients: [] }),
-      }),
-    );
-    await expect(omniSearchApi.search({ q: 'nurse', types: ['staff'], limit: 8 })).resolves.toEqual(
-      expect.objectContaining({
-        groups: expect.objectContaining({ patients: [], staff: [] }),
       }),
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();

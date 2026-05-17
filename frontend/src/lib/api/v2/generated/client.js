@@ -2527,6 +2527,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postSearchOmni": {
+    "operationId": "postSearchOmni",
+    "method": "POST",
+    "path": "/api/v2/search/omni",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postStockBatches": {
     "operationId": "postStockBatches",
     "method": "POST",
@@ -3036,6 +3044,7 @@ export function createGeneratedClient(request) {
     postReferralComplete: createOperation(request, operations.postReferralComplete),
     postReferralDecline: createOperation(request, operations.postReferralDecline),
     postReferrals: createOperation(request, operations.postReferrals),
+    postSearchOmni: createOperation(request, operations.postSearchOmni),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),
     postStockRequisitionCancel: createOperation(request, operations.postStockRequisitionCancel),

@@ -12699,6 +12699,57 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_OmniSearchResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "groups": {
+                "$ref": "#/components/schemas/OmniSearchGroups"
+              },
+              "index_status": {
+                "items": {
+                  "$ref": "#/components/schemas/SearchIndexStatus"
+                },
+                "type": "array"
+              },
+              "limit": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "query": {
+                "type": "string"
+              },
+              "took_ms": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "types": {
+                "items": {
+                  "$ref": "#/components/schemas/SearchResourceType"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "query",
+              "types",
+              "limit",
+              "groups",
+              "index_status",
+              "took_ms"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_OrganizationUnitListItem": {
         "properties": {
           "data": {
@@ -14567,6 +14618,249 @@
         ],
         "type": "object"
       },
+      "OmniSearchGroups": {
+        "properties": {
+          "admissions": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "appointments": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "billing": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "clinics": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "encounters": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "inventory": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "laboratory": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "patients": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "recent_patients": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "referrals": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "staff": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "visits": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          },
+          "wards": {
+            "items": {
+              "$ref": "#/components/schemas/OmniSearchItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recent_patients",
+          "patients",
+          "wards",
+          "encounters",
+          "appointments",
+          "admissions",
+          "staff",
+          "visits",
+          "clinics",
+          "laboratory",
+          "billing",
+          "inventory",
+          "referrals"
+        ],
+        "type": "object"
+      },
+      "OmniSearchItem": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "metadata": {},
+          "occurred_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_date_of_birth": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_type": {
+            "$ref": "#/components/schemas/SearchResourceType"
+          },
+          "route_path": {
+            "type": "string"
+          },
+          "score": {
+            "format": "double",
+            "type": "number"
+          },
+          "status_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "resource_type",
+          "title",
+          "route_path",
+          "metadata",
+          "score"
+        ],
+        "type": "object"
+      },
+      "OmniSearchRequest": {
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResourceType"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "OmniSearchResponse": {
+        "properties": {
+          "groups": {
+            "$ref": "#/components/schemas/OmniSearchGroups"
+          },
+          "index_status": {
+            "items": {
+              "$ref": "#/components/schemas/SearchIndexStatus"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "type": "string"
+          },
+          "took_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResourceType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "types",
+          "limit",
+          "groups",
+          "index_status",
+          "took_ms"
+        ],
+        "type": "object"
+      },
       "OpenCashSessionRequest": {
         "properties": {
           "drawer_id": {
@@ -16063,6 +16357,71 @@
           "scheduled_at"
         ],
         "type": "object"
+      },
+      "SearchIndexState": {
+        "enum": [
+          "ready",
+          "rebuilding",
+          "stale",
+          "failed",
+          "empty"
+        ],
+        "type": "string"
+      },
+      "SearchIndexStatus": {
+        "properties": {
+          "indexed_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_backfilled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_type": {
+            "$ref": "#/components/schemas/SearchResourceType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SearchIndexState"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "status",
+          "indexed_count",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "SearchResourceType": {
+        "enum": [
+          "patients",
+          "wards",
+          "encounters",
+          "appointments",
+          "admissions",
+          "staff",
+          "visits",
+          "clinics",
+          "laboratory",
+          "billing",
+          "inventory",
+          "referrals"
+        ],
+        "type": "string"
       },
       "ServiceCatalogItem": {
         "properties": {
@@ -35213,6 +35572,71 @@
         ]
       }
     },
+    "/api/v2/search/omni": {
+      "post": {
+        "operationId": "postSearchOmni",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OmniSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OmniSearchResponse"
+                }
+              }
+            },
+            "description": "Access-scoped OmniSearch results"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid search request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Search permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v2/staff/directory": {
       "get": {
         "operationId": "getStaffDirectory",
@@ -37615,6 +38039,10 @@
     {
       "description": "PHI-safe realtime subscription manifests and websocket channels",
       "name": "realtime"
+    },
+    {
+      "description": "Fast access-scoped OmniSearch projection workflows",
+      "name": "search"
     },
     {
       "description": "Deployment profile, features, and permissions",

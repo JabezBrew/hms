@@ -19,6 +19,7 @@ pub struct Config {
     pub deployment_profile: DeploymentProfile,
     pub auto_migrate: bool,
     pub provision_baseline: bool,
+    pub search_index_rebuild_on_start: bool,
 }
 
 impl Config {
@@ -64,6 +65,10 @@ impl Config {
             Ok(value) => parse_bool(&value, "HMS_PROVISION_BASELINE")?,
             Err(_) => false,
         };
+        let search_index_rebuild_on_start = match env::var("HMS_SEARCH_INDEX_REBUILD_ON_START") {
+            Ok(value) => parse_bool(&value, "HMS_SEARCH_INDEX_REBUILD_ON_START")?,
+            Err(_) => false,
+        };
 
         Ok(Self {
             environment,
@@ -78,6 +83,7 @@ impl Config {
             deployment_profile,
             auto_migrate,
             provision_baseline,
+            search_index_rebuild_on_start,
         })
     }
 
@@ -95,6 +101,7 @@ impl Config {
             deployment_profile: DeploymentProfile::Hospital,
             auto_migrate: true,
             provision_baseline: true,
+            search_index_rebuild_on_start: true,
         }
     }
 }

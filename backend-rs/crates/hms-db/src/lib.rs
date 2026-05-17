@@ -15,6 +15,7 @@ pub mod patients;
 pub mod pool;
 pub mod provision;
 pub mod referrals;
+pub mod search;
 pub mod test_support;
 pub mod transactions;
 pub mod ward;

@@ -35,6 +35,7 @@ use hms_db::laboratory::{
 use hms_db::patients::{NewPatient, PatientContextCursor, PatientCursor, PatientUpdate};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
+use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
     AdmissionContext, BedUpdate, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
     NewHandoff, NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
@@ -93,6 +94,7 @@ use hms_domain::patients::{
 };
 use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
 use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState, ReferralStatus};
+use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
     AdmissionCaseListItem, BedListItem, DischargeCaseListItem, FluidBalanceListItem,
     HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
@@ -178,6 +180,12 @@ impl AppState {
             .await?
             .with_context(|| format!("facility {} is not provisioned", config.facility_code))?;
 
+        if config.search_index_rebuild_on_start {
+            hms_db::search::rebuild_search_index_for_facility(&pool, facility_id)
+                .await
+                .context("failed to rebuild OmniSearch index")?;
+        }
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 config,
@@ -206,6 +214,29 @@ impl AppState {
 
     pub fn cookie_secure(&self) -> bool {
         self.inner.config.cookie_secure
+    }
+
+    pub async fn omni_search(
+        &self,
+        user: &AuthUser,
+        query: Option<String>,
+        types: Vec<SearchResourceType>,
+        limit_per_group: i64,
+    ) -> Result<OmniSearchResult> {
+        hms_db::search::omni_search(
+            &self.inner.pool,
+            OmniSearchFilters {
+                facility_id: self.inner.facility_id,
+                user_id: user.id,
+                query,
+                types,
+                limit_per_group,
+                permission_codes: user.permissions.clone(),
+                feature_keys: user.features.clone(),
+                patient_visibility: user.patient_visibility.clone(),
+            },
+        )
+        .await
     }
 
     pub fn verify_access_token(

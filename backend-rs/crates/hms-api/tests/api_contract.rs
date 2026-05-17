@@ -223,6 +223,50 @@ async fn baseline_supports_main_ui_patient_registration_prerequisites() {
     );
 }
 
+#[tokio::test]
+async fn omni_search_posts_access_scoped_projection_results() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/search/omni")
+                .header(AUTHORIZATION, auth_header)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "q": "Ama Mensah",
+                        "types": ["patients"],
+                        "limit": 5
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("omni search request succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["query"], "Ama Mensah");
+    assert_eq!(
+        body["data"]["groups"]["patients"][0]["patient_code"],
+        "P-0000000001"
+    );
+    assert_eq!(
+        body["data"]["groups"]["patients"][0]["patient_date_of_birth"],
+        "1990-02-14"
+    );
+    assert!(body["data"]["index_status"]
+        .as_array()
+        .expect("index status is an array")
+        .iter()
+        .any(|status| status["resource_type"] == "patients" && status["status"] == "ready"));
+}
+
 fn auth_cookies(headers: &HeaderMap) -> (String, String) {
     let mut refresh_cookie = None;
     let mut csrf_cookie = None;
@@ -449,6 +493,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/referrals/{id}/sla-state",
         "/api/v2/referrals/clinic-waitlist",
         "/api/v2/referrals/clinic-waitlist/offer-next",
+        "/api/v2/search/omni",
         "/api/v2/consents",
         "/api/v2/consents/{id}/revoke",
     ] {
@@ -457,6 +502,10 @@ async fn openapi_contains_foundation_paths() {
     assert!(
         paths["/api/v2/admin/features/{key}"]["delete"].is_object(),
         "feature override removal must be exposed as a DELETE operation"
+    );
+    assert!(
+        paths["/api/v2/search/omni"]["post"].is_object(),
+        "OmniSearch must use POST so PHI-bearing search text is not encoded into URLs"
     );
     let ward_board_parameters = paths["/api/v2/wards/board"]["get"]["parameters"]
         .as_array()
