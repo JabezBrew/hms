@@ -9,10 +9,7 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::clinical::{
-    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewPrescription, NewProblem,
-    NoteContext,
-};
+use hms_db::clinical::{ClinicalCursor, NewAllergy, NewChartEntry, NewPrescription, NewProblem};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -33,10 +30,9 @@ use hms_domain::admin::{
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
-    AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem,
-    ProblemListItem, ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest,
-    UpdateProblemRequest,
+    AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, PatientChronicleSummary,
+    PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
+    UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
@@ -1056,72 +1052,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_clinical_notes(
-        &self,
-        patient_id: Uuid,
-        cursor: Option<ClinicalCursor>,
-        limit: i64,
-    ) -> Result<Vec<ClinicalNoteListItem>> {
-        hms_db::clinical::list_notes(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_clinical_note(
-        &self,
-        patient_id: Uuid,
-        note_type: String,
-        title: String,
-        body: String,
-        actor_user_id: Uuid,
-    ) -> Result<ClinicalNoteListItem> {
-        hms_db::clinical::create_note(
-            &self.inner.pool,
-            NewClinicalNote {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                note_type,
-                title,
-                body,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_clinical_note_context(&self, note_id: Uuid) -> Result<Option<NoteContext>> {
-        hms_db::clinical::get_note_context(&self.inner.pool, self.facility_id(), note_id).await
-    }
-
-    pub async fn get_clinical_note_detail(
-        &self,
-        note_id: Uuid,
-    ) -> Result<Option<ClinicalNoteDetail>> {
-        hms_db::clinical::get_note_detail(&self.inner.pool, self.facility_id(), note_id).await
-    }
-
-    pub async fn list_clinical_note_versions(
-        &self,
-        note_id: Uuid,
-    ) -> Result<Vec<ClinicalNoteVersion>> {
-        hms_db::clinical::list_note_versions(&self.inner.pool, note_id).await
-    }
-
-    pub async fn create_clinical_note_version(
-        &self,
-        note_id: Uuid,
-        body: String,
-        actor_user_id: Uuid,
-    ) -> Result<ClinicalNoteVersion> {
-        hms_db::clinical::create_note_version(&self.inner.pool, note_id, body, actor_user_id).await
     }
 
     pub async fn list_problems(

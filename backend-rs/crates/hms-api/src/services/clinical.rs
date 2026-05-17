@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
-    ClinicalCursor, NewClinicalNoteTemplate, NoteContext, UpdateClinicalNoteTemplate,
+    ClinicalCursor, NewClinicalNote, NewClinicalNoteTemplate, NoteContext,
+    UpdateClinicalNoteTemplate,
 };
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
@@ -210,20 +211,24 @@ impl ClinicalService {
         patient_id: Uuid,
         query: CursorListQuery,
     ) -> Result<ListResponse<ClinicalNoteListItem>, ApiError> {
-        require_clinical_list_access(ctx, self.state.facility_id())?;
+        require_clinical_list_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_clinical_notes(patient_id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinical_note_list_failed",
-                    "Clinical notes could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::clinical::list_notes(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_note_list_failed",
+                "Clinical notes could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.updated_at, item.id)
@@ -236,21 +241,30 @@ impl ClinicalService {
         patient_id: Uuid,
         payload: CreateClinicalNoteRequest,
     ) -> Result<ObjectResponse<ClinicalNoteListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let note_type = normalize_text(payload.note_type, "note_type", MAX_SHORT_TEXT_LEN)?;
         let title = normalize_text(payload.title, "title", MAX_TITLE_LEN)?;
         let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
-        let note = self
-            .state
-            .create_clinical_note(patient_id, note_type, title, body, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinical_note_create_failed",
-                    "Clinical note could not be created.",
-                )
-            })?;
+        let note = hms_db::clinical::create_note(
+            self.pool(),
+            NewClinicalNote {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id,
+                note_type,
+                title,
+                body,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinical_note_create_failed",
+                "Clinical note could not be created.",
+            )
+        })?;
 
         Ok(object(note))
     }
@@ -267,9 +281,7 @@ impl ClinicalService {
             PermissionCode::ClinicalDocumentationView,
         )
         .await?;
-        let note = self
-            .state
-            .get_clinical_note_detail(note_id)
+        let note = hms_db::clinical::get_note_detail(self.pool(), self.facility_id(), note_id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -296,9 +308,7 @@ impl ClinicalService {
             PermissionCode::ClinicalDocumentationView,
         )
         .await?;
-        let versions = self
-            .state
-            .list_clinical_note_versions(note.id)
+        let versions = hms_db::clinical::list_note_versions(self.pool(), note.id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -324,16 +334,15 @@ impl ClinicalService {
         )
         .await?;
         let body = normalize_text(payload.body, "body", MAX_NOTE_BODY_LEN)?;
-        let version = self
-            .state
-            .create_clinical_note_version(note.id, body, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinical_note_version_create_failed",
-                    "Clinical note version could not be created.",
-                )
-            })?;
+        let version =
+            hms_db::clinical::create_note_version(self.pool(), note.id, body, ctx.user_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "clinical_note_version_create_failed",
+                        "Clinical note version could not be created.",
+                    )
+                })?;
 
         Ok(object(version))
     }
@@ -735,8 +744,7 @@ async fn load_note_for_access(
     permission: PermissionCode,
 ) -> Result<NoteContext, ApiError> {
     require_action_permission(ctx, state.facility_id(), permission)?;
-    let note = state
-        .get_clinical_note_context(note_id)
+    let note = hms_db::clinical::get_note_context(state.db_pool(), state.facility_id(), note_id)
         .await
         .map_err(|_| {
             ApiError::conflict(
