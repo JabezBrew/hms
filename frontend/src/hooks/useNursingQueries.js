@@ -23,6 +23,7 @@ const DEFAULT_FLUID_BALANCE_SETTINGS = {
   enable_output_alerts: true,
   enable_balance_alerts: true,
 };
+const RUST_V2_NURSING_TASK_TYPES = new Set(['ward_round', 'observation', 'medication', 'handoff']);
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -144,15 +145,18 @@ function rustTaskStatus(status) {
 }
 
 function rustTaskType(taskType) {
-  if (
-    taskType === 'ward_round' ||
-    taskType === 'observation' ||
-    taskType === 'medication' ||
-    taskType === 'handoff'
-  ) {
+  if (RUST_V2_NURSING_TASK_TYPES.has(taskType)) {
     return taskType;
   }
-  return 'observation';
+  return null;
+}
+
+function requireRustTaskType(taskType) {
+  const normalized = rustTaskType(taskType);
+  if (!normalized) {
+    throw new Error('Rust V2 nursing task type must be one of ward_round, observation, medication, or handoff.');
+  }
+  return normalized;
 }
 
 function adaptV2NursingTask(item = {}) {
@@ -388,7 +392,7 @@ function normalizeV2TaskPayload(data = {}) {
   const assignedTo = data.assigned_to_user_id || data.assigned_to || null;
   return {
     admission_case_id: admissionCaseId,
-    task_type: rustTaskType(data.task_type),
+    task_type: requireRustTaskType(data.task_type),
     due_at: new Date(dueAt).toISOString(),
     assigned_to_user_id: assignedTo || null,
   };
@@ -439,8 +443,11 @@ function taskMatchesFilters(task, filters = {}) {
     return false;
   }
   const taskType = filters.task_type;
-  if (taskType && taskType !== 'all' && rustTaskType(taskType) !== rustTaskType(task.task_type)) {
-    return false;
+  if (taskType && taskType !== 'all') {
+    const normalizedTaskType = rustTaskType(taskType);
+    if (!normalizedTaskType || normalizedTaskType !== task.task_type) {
+      return false;
+    }
   }
   const priority = filters.priority;
   if (priority && priority !== 'all' && task.priority !== priority) {

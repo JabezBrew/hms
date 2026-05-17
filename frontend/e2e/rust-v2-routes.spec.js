@@ -19,6 +19,7 @@ const rustV2Routes = [
   '/billing/catalog',
   '/nursing/dashboard',
   '/nursing/tasks',
+  '/nursing/shift-handoff',
   '/nursing/ward-stock-requests',
   '/laboratory/dashboard',
   '/laboratory/orders',
@@ -958,6 +959,114 @@ test('Rust V2 admission and discharge queues complete the inpatient movement flo
 
   const completeDischargeResponse = await completeDischargeResponsePromise;
   expect(completeDischargeResponse.status()).toBeLessThan(300);
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 nursing dashboard tasks and handoff use generated nursing contracts', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+
+  const patientName = uniquePatientName('Nursing');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  const suffix = Date.now().toString(36).toUpperCase();
+  const wardPayload = await postV2FromBrowser(page, '/api/v2/wards', {
+    code: `PWN-${suffix}`,
+    name: `Playwright Nursing Ward ${suffix}`,
+  });
+  const wardId = wardPayload?.data?.id;
+  expect(wardId).toBeTruthy();
+
+  const bedPayload = await postV2FromBrowser(page, `/api/v2/wards/${wardId}/beds`, {
+    section_id: null,
+    bed_code: `N-${suffix}`,
+  });
+  expect(bedPayload?.data?.id).toBeTruthy();
+
+  const admissionCasePayload = await postV2FromBrowser(page, '/api/v2/admissions/cases', {
+    patient_id: patientId,
+    ward_id: wardId,
+  });
+  const admissionCaseId = admissionCasePayload?.data?.id;
+  expect(admissionCaseId).toBeTruthy();
+
+  const activatePayload = await postV2FromBrowser(page, `/api/v2/admissions/cases/${admissionCaseId}/activate`, {});
+  expect(activatePayload?.data?.status).toBe('admitted');
+
+  const taskPayload = await postV2FromBrowser(page, '/api/v2/nursing/tasks', {
+    admission_case_id: admissionCaseId,
+    task_type: 'observation',
+    due_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    assigned_to_user_id: null,
+  });
+  const taskId = taskPayload?.data?.id;
+  expect(taskId).toBeTruthy();
+
+  await page.goto('/nursing/dashboard');
+  await expect(page.getByRole('heading', { name: 'Patient Monitoring Dashboard' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  await page.goto('/nursing/tasks');
+  await expect(page.getByRole('heading', { name: 'Nursing Tasks' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  const completeTaskResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/nursing/tasks/${taskId}/complete`) &&
+    response.request().method() === 'POST'
+  ));
+
+  const taskRow = page.getByRole('row').filter({ hasText: patientName });
+  await expect(taskRow).toContainText('Pending');
+  await taskRow.locator('.lucide-ellipsis').locator('xpath=ancestor::button[1]').click();
+  await page.getByRole('menuitem', { name: 'Complete Task' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /Complete Task/ }).click();
+
+  const completeTaskResponse = await completeTaskResponsePromise;
+  expect(completeTaskResponse.status()).toBeLessThan(300);
+
+  await page.goto('/nursing/shift-handoff');
+  await expect(page.getByRole('heading', { name: 'Shift Handoff' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+  await page.getByText(patientName).first().click();
+
+  await expect(page.getByText(/Ward-specific nurse assignments are not available for this deployment yet/i)).toBeVisible();
+  await page.getByPlaceholder("Describe the patient's current condition...").fill('Stable for nursing handoff.');
+
+  const nurseSelect = page.getByRole('combobox').filter({ hasText: /Select nurse/i });
+  await expect(nurseSelect).toBeEnabled();
+  await nurseSelect.click();
+  await page.getByRole('option').first().click();
+
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.getByPlaceholder('List pending tasks...').fill('Routine observations next shift.');
+  await page.getByRole('button', { name: /Continue/ }).click();
+
+  const handoffResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/nursing/handoffs') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: /Complete Handoff/ }).click();
+
+  const handoffResponse = await handoffResponsePromise;
+  expect(handoffResponse.status()).toBeLessThan(300);
 
   expect(failures).toEqual([]);
 });

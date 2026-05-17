@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import NursingTasksPage from '../NursingTasksPage';
+import NursingTasksPage, { getTaskTypeOptions } from '../NursingTasksPage';
 
 const updateTask = vi.fn();
 const completeTask = vi.fn();
@@ -92,8 +92,19 @@ describe('NursingTasksPage Rust V2 guards', () => {
     expect(screen.getByText('Complete Task')).toBeInTheDocument();
     expect(screen.getByText('Cancel Task')).toBeInTheDocument();
     expect(
-      screen.getByText(/general nursing task edits are not available in rust v2/i),
+      screen.getByText(/general nursing task edits are not available for this deployment yet/i),
     ).toBeInTheDocument();
+  });
+
+  it('limits task type choices to the generated Rust V2 task enum', () => {
+    expect(getTaskTypeOptions(true).map((option) => option.value)).toEqual([
+      'ward_round',
+      'observation',
+      'medication',
+      'handoff',
+    ]);
+    expect(getTaskTypeOptions(true).map((option) => option.value)).not.toContain('wound_care');
+    expect(getTaskTypeOptions(true).map((option) => option.value)).not.toContain('vitals');
   });
 
   it('keeps start-task edits available outside Rust V2 mode', async () => {
@@ -104,7 +115,7 @@ describe('NursingTasksPage Rust V2 guards', () => {
 
     expect(screen.getByText('Start Task')).toBeInTheDocument();
     expect(
-      screen.queryByText(/general nursing task edits are not available in rust v2/i),
+      screen.queryByText(/general nursing task edits are not available for this deployment yet/i),
     ).not.toBeInTheDocument();
   });
 });

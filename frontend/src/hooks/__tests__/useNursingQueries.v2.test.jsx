@@ -520,7 +520,7 @@ describe('Rust V2 nursing dashboard hooks', () => {
     await act(async () => {
       await result.current.mutateAsync({
         admission_case_id: 'admission-1',
-        task_type: 'assessment',
+        task_type: 'observation',
         scheduled_time: '2026-05-12T11:00:00.000Z',
         assigned_to: 'user-1',
         description: 'Check post-op observations',
@@ -539,6 +539,20 @@ describe('Rust V2 nursing dashboard hooks', () => {
         }),
       }),
     );
+  });
+
+  it('rejects unsupported legacy task types instead of silently remapping them', async () => {
+    const { result } = renderHook(() => useCreateNursingTask(), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync({
+      admission_case_id: 'admission-1',
+      task_type: 'wound_care',
+      scheduled_time: '2026-05-12T11:00:00.000Z',
+    })).rejects.toThrow('Rust V2 nursing task type must be one of');
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('completes nursing tasks through the Rust V2 complete action', async () => {

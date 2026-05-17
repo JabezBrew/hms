@@ -23,10 +23,11 @@ export const staffKeys = {
  * @param {Object} filters - Query parameters for filtering
  * @returns {Object} Query result
  */
-export function useStaff(filters = {}) {
+export function useStaff(filters = {}, options = {}) {
   return useQuery({
     queryKey: staffKeys.list(filters),
     queryFn: ({ signal }) => staffApi.getStaff(filters, { signal }),
+    ...options,
   });
 }
 
