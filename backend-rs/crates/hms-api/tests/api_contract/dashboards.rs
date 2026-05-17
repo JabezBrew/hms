@@ -1,0 +1,170 @@
+use super::*;
+
+#[tokio::test]
+async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() {
+    let app = app().await;
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+
+    let denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/dashboards/snapshot")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("dashboard denial succeeds");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let snapshot = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/dashboards/snapshot")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("dashboard snapshot succeeds");
+    assert_eq!(snapshot.status(), StatusCode::OK);
+    let snapshot_body = json_body(snapshot).await;
+    assert_eq!(snapshot_body["data"]["deployment_profile"], "hospital");
+    let metric_keys: Vec<_> = snapshot_body["data"]["metrics"]
+        .as_array()
+        .expect("metrics are array")
+        .iter()
+        .filter_map(|metric| metric["key"].as_str())
+        .collect();
+    assert!(metric_keys.contains(&"active_patients"));
+    assert!(snapshot_body["data"]["navigation"]["groups"].is_array());
+
+    let capacity = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/dashboards/admin-v2/capacity?limit=8")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("admin capacity summary succeeds");
+    assert_eq!(capacity.status(), StatusCode::OK);
+    let capacity_body = json_body(capacity).await;
+    assert!(
+        capacity_body["data"]["summary"]["ward_count"]
+            .as_i64()
+            .expect("ward count is numeric")
+            > 0
+    );
+    assert!(
+        capacity_body["data"]["summary"]["high_occupancy_wards"]
+            .as_i64()
+            .expect("high occupancy count is numeric")
+            >= 0
+    );
+    assert!(capacity_body["data"]["wait_time"]["median_minutes"].is_i64());
+    assert!(capacity_body["data"]["wards"]
+        .as_array()
+        .expect("ward capacity details are array")
+        .iter()
+        .all(|ward| ward["ward_id"].is_string()
+            && ward["ward_name"].is_string()
+            && ward["total_beds"].is_i64()
+            && ward["occupied_beds"].is_i64()
+            && ward["available_beds"].is_i64()
+            && ward["occupancy_pct"].is_number()));
+    assert!(!capacity_body.to_string().contains("P-10001"));
+
+    let notification_counts = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/notifications/counts")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("notification counts succeeds");
+    assert_eq!(notification_counts.status(), StatusCode::OK);
+    let notification_counts_body = json_body(notification_counts).await;
+    assert_eq!(notification_counts_body["data"]["unread"], 1);
+    assert_eq!(notification_counts_body["data"]["action_required"], 0);
+    assert_eq!(notification_counts_body["data"]["total"], 1);
+
+    let notifications = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/notifications?limit=5&unread_only=true")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("notification list succeeds");
+    assert_eq!(notifications.status(), StatusCode::OK);
+    let notifications_body = json_body(notifications).await;
+    let notification_id = notifications_body["data"][0]["id"]
+        .as_str()
+        .expect("seed notification exists");
+    assert_eq!(
+        notifications_body["data"][0]["title"],
+        "HMS V2 foundation ready"
+    );
+    assert!(!notifications_body.to_string().contains("P-10001"));
+
+    let read = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/notifications/{notification_id}/read"))
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "read": true }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("notification read succeeds");
+    assert_eq!(read.status(), StatusCode::OK);
+    let read_body = json_body(read).await;
+    assert!(read_body["data"]["read_at"].is_string());
+
+    let subscriptions = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/realtime/subscriptions")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("subscriptions list succeeds");
+    assert_eq!(subscriptions.status(), StatusCode::OK);
+    let subscriptions_body = json_body(subscriptions).await;
+    let channel_names: Vec<_> = subscriptions_body["data"]
+        .as_array()
+        .expect("subscriptions are array")
+        .iter()
+        .filter_map(|subscription| subscription["channel_name"].as_str())
+        .collect();
+    assert!(channel_names
+        .iter()
+        .any(|name| name.ends_with(":dashboard")));
+    let facility_id = Uuid::from_u128(hms_db::provision::FACILITY_ID).to_string();
+    assert!(channel_names
+        .iter()
+        .all(|name| !name.contains(&facility_id)));
+}
