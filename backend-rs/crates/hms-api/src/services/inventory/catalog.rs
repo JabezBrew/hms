@@ -1,3 +1,4 @@
+use hms_db::inventory::{InventoryItemFilters, SupplierFilters};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     InventoryCategoryListItem, InventoryDashboardSummary, InventoryDashboardSummaryQuery,
@@ -23,17 +24,27 @@ impl InventoryCatalogService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_categories(
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ListResponse<InventoryCategoryListItem>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
-        let rows = self.state.list_inventory_categories().await.map_err(|_| {
-            ApiError::conflict(
-                "inventory_category_list_failed",
-                "Categories could not be loaded.",
-            )
-        })?;
+        require_catalog_access(ctx, self.facility_id())?;
+        let rows = hms_db::inventory::list_categories(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "inventory_category_list_failed",
+                    "Categories could not be loaded.",
+                )
+            })?;
         Ok(static_list(rows))
     }
 
@@ -42,21 +53,25 @@ impl InventoryCatalogService {
         ctx: &hms_access::RequestContext,
         query: InventoryItemsQuery,
     ) -> Result<ListResponse<InventoryItemListItem>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
+        require_catalog_access(ctx, self.facility_id())?;
         let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
-        let filters = hms_db::inventory::InventoryItemFilters {
+        let filters = InventoryItemFilters {
             search: query.search,
             category_id: query.category,
             location_id: query.location,
             stock_status: query.status,
         };
-        let rows = self
-            .state
-            .list_inventory_items(cursor, i64::from(page_size) + 1, filters)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("inventory_item_list_failed", "Items could not be loaded.")
-            })?;
+        let rows = hms_db::inventory::list_items(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            i64::from(page_size) + 1,
+            filters,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("inventory_item_list_failed", "Items could not be loaded.")
+        })?;
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.updated_at, item.id)
         }))
@@ -67,18 +82,20 @@ impl InventoryCatalogService {
         ctx: &hms_access::RequestContext,
         query: InventoryDashboardSummaryQuery,
     ) -> Result<ObjectResponse<InventoryDashboardSummary>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
+        require_catalog_access(ctx, self.facility_id())?;
         let expiring_within_days = query.expiring_within_days.unwrap_or(30).clamp(1, 365) as i32;
-        let summary = self
-            .state
-            .inventory_dashboard_summary(expiring_within_days)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "inventory_dashboard_summary_failed",
-                    "Inventory dashboard summary could not be loaded.",
-                )
-            })?;
+        let summary = hms_db::inventory::inventory_dashboard_summary(
+            self.pool(),
+            self.facility_id(),
+            expiring_within_days,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "inventory_dashboard_summary_failed",
+                "Inventory dashboard summary could not be loaded.",
+            )
+        })?;
         Ok(object(summary))
     }
 
@@ -87,10 +104,8 @@ impl InventoryCatalogService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<InventoryItemListItem>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
-        let item = self
-            .state
-            .get_inventory_item(id)
+        require_catalog_access(ctx, self.facility_id())?;
+        let item = hms_db::inventory::get_item(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict("inventory_item_load_failed", "Item could not be loaded.")
@@ -106,18 +121,21 @@ impl InventoryCatalogService {
         ctx: &hms_access::RequestContext,
         query: InventoryListQuery,
     ) -> Result<ListResponse<StorageLocationListItem>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
+        require_catalog_access(ctx, self.facility_id())?;
         let (cursor, page_size) = page_request(query)?;
-        let rows = self
-            .state
-            .list_storage_locations(cursor, i64::from(page_size) + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "storage_location_list_failed",
-                    "Locations could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::inventory::list_locations(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            i64::from(page_size) + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "storage_location_list_failed",
+                "Locations could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -128,22 +146,22 @@ impl InventoryCatalogService {
         ctx: &hms_access::RequestContext,
         query: SupplierListQuery,
     ) -> Result<ListResponse<SupplierListItem>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
+        require_catalog_access(ctx, self.facility_id())?;
         let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
-        let rows = self
-            .state
-            .list_suppliers(
-                cursor,
-                i64::from(page_size) + 1,
-                hms_db::inventory::SupplierFilters {
-                    search: query.search,
-                    is_active: query.is_active,
-                },
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("supplier_list_failed", "Suppliers could not be loaded.")
-            })?;
+        let rows = hms_db::inventory::list_suppliers(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            i64::from(page_size) + 1,
+            SupplierFilters {
+                search: query.search,
+                is_active: query.is_active,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("supplier_list_failed", "Suppliers could not be loaded.")
+        })?;
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -154,10 +172,8 @@ impl InventoryCatalogService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<StorageLocationListItem>, ApiError> {
-        require_catalog_access(ctx, self.state.facility_id())?;
-        let location = self
-            .state
-            .get_storage_location(id)
+        require_catalog_access(ctx, self.facility_id())?;
+        let location = hms_db::inventory::get_location(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(

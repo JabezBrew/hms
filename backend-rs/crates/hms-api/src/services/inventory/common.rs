@@ -114,8 +114,7 @@ pub(super) fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
 }
 
 pub(super) async fn ensure_item_exists(state: &AppState, item_id: Uuid) -> Result<(), ApiError> {
-    state
-        .get_inventory_item(item_id)
+    hms_db::inventory::get_item(state.db_pool(), state.facility_id(), item_id)
         .await
         .map_err(|_| ApiError::conflict("inventory_item_load_failed", "Item could not be loaded."))?
         .ok_or_else(|| {
@@ -128,8 +127,7 @@ pub(super) async fn ensure_location_exists(
     state: &AppState,
     location_id: Uuid,
 ) -> Result<(), ApiError> {
-    state
-        .get_storage_location(location_id)
+    hms_db::inventory::get_location(state.db_pool(), state.facility_id(), location_id)
         .await
         .map_err(|_| {
             ApiError::conflict(

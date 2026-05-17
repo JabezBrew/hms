@@ -46,10 +46,9 @@ use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceBalanceValidation,
     ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
-    GoodsReceivedNoteListItem, InventoryCategoryListItem, InventoryDashboardSummary,
-    InventoryItemListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
+    GoodsReceivedNoteListItem, InventoryItemStockLocationItem, PharmacyDispenseListItem,
     PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
-    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
+    StockTransferListItem, StorageLocationStockItem,
 };
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
@@ -1432,67 +1431,6 @@ impl AppState {
             self.facility_id(),
             patient_id,
             limit,
-        )
-        .await
-    }
-
-    pub async fn list_inventory_categories(&self) -> Result<Vec<InventoryCategoryListItem>> {
-        hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_inventory_items(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-        filters: hms_db::inventory::InventoryItemFilters,
-    ) -> Result<Vec<InventoryItemListItem>> {
-        hms_db::inventory::list_items(&self.inner.pool, self.facility_id(), cursor, limit, filters)
-            .await
-    }
-
-    pub async fn get_inventory_item(&self, item_id: Uuid) -> Result<Option<InventoryItemListItem>> {
-        hms_db::inventory::get_item(&self.inner.pool, self.facility_id(), item_id).await
-    }
-
-    pub async fn list_storage_locations(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-    ) -> Result<Vec<StorageLocationListItem>> {
-        hms_db::inventory::list_locations(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn list_suppliers(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-        filters: hms_db::inventory::SupplierFilters,
-    ) -> Result<Vec<SupplierListItem>> {
-        hms_db::inventory::list_suppliers(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            filters,
-        )
-        .await
-    }
-
-    pub async fn get_storage_location(
-        &self,
-        location_id: Uuid,
-    ) -> Result<Option<StorageLocationListItem>> {
-        hms_db::inventory::get_location(&self.inner.pool, self.facility_id(), location_id).await
-    }
-
-    pub async fn inventory_dashboard_summary(
-        &self,
-        expiring_within_days: i32,
-    ) -> Result<InventoryDashboardSummary> {
-        hms_db::inventory::inventory_dashboard_summary(
-            &self.inner.pool,
-            self.facility_id(),
-            expiring_within_days,
         )
         .await
     }
