@@ -3,9 +3,8 @@ use std::collections::HashSet;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::billing::{BillingCursor, BillingRuleFilters, CashSessionFilters};
-use hms_domain::auth::AuthUser;
 use hms_domain::billing::{
     BillingDashboardSummary, BillingListQuery, BillingRuleListItem, BillingRuleListQuery,
     CashDrawerListItem, CashSessionListItem, CashSessionListQuery, ClaimListItem,
@@ -19,8 +18,9 @@ use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -31,7 +31,7 @@ const MAX_TEXT_LEN: usize = 160;
 #[utoipa::path(get, path = "/api/v2/billing/service-catalog", operation_id = "getBillingServiceCatalog", tag = "billing", security(("bearerAuth" = [])), params(ServiceCatalogQuery), responses((status = 200, body = ListResponse<ServiceCatalogItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_service_catalog(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<ServiceCatalogQuery>,
 ) -> Result<Json<ListResponse<ServiceCatalogItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -57,7 +57,7 @@ pub async fn list_service_catalog(
 #[utoipa::path(get, path = "/api/v2/billing/service-prices", operation_id = "getBillingServicePrices", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<ServicePriceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_service_prices(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<ServicePriceListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
     Ok(Json(static_list(
@@ -73,7 +73,7 @@ pub async fn list_service_prices(
 #[utoipa::path(get, path = "/api/v2/billing/rules", operation_id = "getBillingRules", tag = "billing", security(("bearerAuth" = [])), params(BillingRuleListQuery), responses((status = 200, body = ListResponse<BillingRuleListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_billing_rules(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingRuleListQuery>,
 ) -> Result<Json<ListResponse<BillingRuleListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -103,7 +103,7 @@ pub async fn list_billing_rules(
 #[utoipa::path(get, path = "/api/v2/billing/rules/{id}", operation_id = "getBillingRuleById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Billing rule ID")), responses((status = 200, body = ObjectResponse<BillingRuleListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_billing_rule(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<BillingRuleListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -125,7 +125,7 @@ pub async fn get_billing_rule(
 #[utoipa::path(get, path = "/api/v2/billing/dashboard-summary", operation_id = "getBillingDashboardSummary", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<BillingDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_summary(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<BillingDashboardSummary>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
     let summary = state.billing_dashboard_summary().await.map_err(|_| {
@@ -140,7 +140,7 @@ pub async fn dashboard_summary(
 #[utoipa::path(get, path = "/api/v2/billing/invoices", operation_id = "getBillingInvoices", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_invoices(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -161,7 +161,7 @@ pub async fn list_invoices(
 #[utoipa::path(get, path = "/api/v2/billing/invoices/{id}", operation_id = "getBillingInvoiceById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Invoice id")), responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_invoice(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<InvoiceListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -178,7 +178,7 @@ pub async fn get_invoice(
 #[utoipa::path(post, path = "/api/v2/billing/invoices", operation_id = "postBillingInvoices", tag = "billing", security(("bearerAuth" = [])), request_body = CreateInvoiceRequest, responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_invoice(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateInvoiceRequest>,
 ) -> Result<Json<ObjectResponse<InvoiceListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingManage)?;
@@ -199,7 +199,7 @@ pub async fn create_invoice(
 #[utoipa::path(get, path = "/api/v2/billing/payments", operation_id = "getBillingPayments", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<PaymentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_payments(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<PaymentListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -216,7 +216,7 @@ pub async fn list_payments(
 #[utoipa::path(post, path = "/api/v2/billing/payments", operation_id = "postBillingPayments", tag = "billing", security(("bearerAuth" = [])), request_body = CreatePaymentRequest, responses((status = 200, body = ObjectResponse<PaymentListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_payment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePaymentRequest>,
 ) -> Result<Json<ObjectResponse<PaymentListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingManage)?;
@@ -243,7 +243,7 @@ pub async fn create_payment(
 #[utoipa::path(get, path = "/api/v2/billing/receipts", operation_id = "getBillingReceipts", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_receipts(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<ReceiptListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -260,7 +260,7 @@ pub async fn list_receipts(
 #[utoipa::path(get, path = "/api/v2/billing/receipts/{id}", operation_id = "getBillingReceiptById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Receipt id")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_receipt(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -277,7 +277,7 @@ pub async fn get_receipt(
 #[utoipa::path(get, path = "/api/v2/billing/receipts/by-number/{receipt_number}", operation_id = "getBillingReceiptByNumber", tag = "billing", security(("bearerAuth" = [])), params(("receipt_number" = String, Path, description = "Receipt number")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_receipt_by_number(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(receipt_number): Path<String>,
 ) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -294,7 +294,7 @@ pub async fn get_receipt_by_number(
 #[utoipa::path(get, path = "/api/v2/billing/payments/{id}/receipt", operation_id = "getBillingReceiptByPaymentId", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Payment id")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_receipt_by_payment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -311,7 +311,7 @@ pub async fn get_receipt_by_payment(
 #[utoipa::path(get, path = "/api/v2/billing/cash-drawers", operation_id = "getCashDrawers", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<CashDrawerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_cash_drawers(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<CashDrawerListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
     Ok(Json(static_list(state.list_cash_drawers().await.map_err(
@@ -327,7 +327,7 @@ pub async fn list_cash_drawers(
 #[utoipa::path(get, path = "/api/v2/billing/cash-sessions", operation_id = "getCashSessions", tag = "billing", security(("bearerAuth" = [])), params(CashSessionListQuery), responses((status = 200, body = ListResponse<CashSessionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_cash_sessions(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CashSessionListQuery>,
 ) -> Result<Json<ListResponse<CashSessionListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -349,7 +349,7 @@ pub async fn list_cash_sessions(
 #[utoipa::path(get, path = "/api/v2/billing/cash-sessions/{id}", operation_id = "getCashSessionById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Cash session id")), responses((status = 200, body = ObjectResponse<CashSessionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_cash_session(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<CashSessionListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
@@ -371,7 +371,7 @@ pub async fn get_cash_session(
 #[utoipa::path(post, path = "/api/v2/billing/cash-sessions", operation_id = "postCashSessions", tag = "billing", security(("bearerAuth" = [])), request_body = OpenCashSessionRequest, responses((status = 200, body = ObjectResponse<CashSessionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn open_cash_session(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<OpenCashSessionRequest>,
 ) -> Result<Json<ObjectResponse<CashSessionListItem>>, ApiError> {
     require_billing_access(&user, state.facility_id(), PermissionCode::BillingManage)?;
@@ -391,7 +391,7 @@ pub async fn open_cash_session(
 #[utoipa::path(post, path = "/api/v2/billing/cash-sessions/{id}/close", operation_id = "postCashSessionClose", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Cash session id")), request_body = CloseCashSessionRequest, responses((status = 200, body = ObjectResponse<CashSessionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn close_cash_session(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CloseCashSessionRequest>,
 ) -> Result<Json<ObjectResponse<CashSessionListItem>>, ApiError> {
@@ -415,7 +415,7 @@ pub async fn close_cash_session(
 #[utoipa::path(get, path = "/api/v2/nhis/claims", operation_id = "getNhisClaims", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_claims(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<ClaimListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -432,7 +432,7 @@ pub async fn list_claims(
 #[utoipa::path(get, path = "/api/v2/nhis/claims/{id}", operation_id = "getNhisClaimById", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS claim id")), responses((status = 200, body = ObjectResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_claim(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClaimListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -449,7 +449,7 @@ pub async fn get_claim(
 #[utoipa::path(post, path = "/api/v2/nhis/claims", operation_id = "postNhisClaims", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateClaimRequest, responses((status = 200, body = ObjectResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_claim(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateClaimRequest>,
 ) -> Result<Json<ObjectResponse<ClaimListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -469,7 +469,7 @@ pub async fn create_claim(
 #[utoipa::path(get, path = "/api/v2/nhis/batches", operation_id = "getNhisBatches", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<NhisBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_batches(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<NhisBatchListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -491,7 +491,7 @@ pub async fn list_batches(
 #[utoipa::path(post, path = "/api/v2/nhis/batches", operation_id = "postNhisBatches", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateNhisBatchRequest, responses((status = 200, body = ObjectResponse<NhisBatchListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_batch(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateNhisBatchRequest>,
 ) -> Result<Json<ObjectResponse<NhisBatchListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -521,7 +521,7 @@ pub async fn create_batch(
 #[utoipa::path(post, path = "/api/v2/nhis/batches/{id}/export", operation_id = "postNhisBatchExport", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS batch id")), responses((status = 200, body = ObjectResponse<NhisBatchExport>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn export_batch(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NhisBatchExport>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -541,7 +541,7 @@ pub async fn export_batch(
 #[utoipa::path(get, path = "/api/v2/nhis/remittance-imports", operation_id = "getNhisRemittanceImports", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<RemittanceImportListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_remittance_imports(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<RemittanceImportListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -563,7 +563,7 @@ pub async fn list_remittance_imports(
 #[utoipa::path(post, path = "/api/v2/nhis/remittance-imports", operation_id = "postNhisRemittanceImports", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateRemittanceImportRequest, responses((status = 200, body = ObjectResponse<RemittanceImportListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_remittance_import(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateRemittanceImportRequest>,
 ) -> Result<Json<ObjectResponse<RemittanceImportListItem>>, ApiError> {
     require_nhis_access(&user, state.facility_id())?;
@@ -588,7 +588,7 @@ pub async fn create_remittance_import(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -606,35 +606,33 @@ async fn load_patient_for_access(
 }
 
 fn require_billing_access(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_permission(user, permission)
-        .and_then(|_| require_permission(user, PermissionCode::PatientDemographicsView))
-        .map_err(|_| {
-            ApiError::forbidden(
-                "permission_denied",
-                "You do not have permission for this billing action.",
-            )
-        })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+    hms_access::require_billing_access(user, facility_id, permission).map_err(|_| {
+        ApiError::forbidden(
             "permission_denied",
             "You do not have permission for this billing action.",
-        ))
-    }
+        )
+    })
 }
 
-fn require_nhis_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_billing_access(user, facility_id, PermissionCode::NhisClaimManage)
+fn require_nhis_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_nhis_access(user, facility_id).map_err(|_| {
+        ApiError::forbidden(
+            "permission_denied",
+            "You do not have permission for this billing action.",
+        )
+    })
 }
 
 async fn require_receipt_patient_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     invoice_id: Uuid,
 ) -> Result<(), ApiError> {
     let invoice = state
@@ -667,66 +665,29 @@ fn decode_page(
     cursor: Option<&str>,
     limit: Option<u8>,
 ) -> Result<(Option<BillingCursor>, u8), ApiError> {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = cursor
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        cursor,
+        limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| BillingCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
 fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
-    list(
-        items,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: MAX_LIMIT,
-        },
-    )
+    cursor_list::static_list(items, MAX_LIMIT)
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<BillingCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(BillingCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn validate_claim_ids(claim_ids: &[Uuid]) -> Result<(), ApiError> {

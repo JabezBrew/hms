@@ -1,9 +1,8 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::ward::{AdmissionContext, BedUpdate, WardCursor, WardSectionUpdate, WardUpdate};
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -24,9 +23,10 @@ use hms_domain::ward::{
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::extractors::RequestContext;
+use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
@@ -51,7 +51,7 @@ const MAX_BED_CODE_LEN: usize = 64;
 )]
 pub async fn list_wards(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<WardListQuery>,
 ) -> Result<Json<ListResponse<WardListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
@@ -86,7 +86,7 @@ pub async fn list_wards(
 )]
 pub async fn create_ward(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateWardRequest>,
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
@@ -130,7 +130,7 @@ pub async fn create_ward(
 )]
 pub async fn get_ward(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
@@ -157,7 +157,7 @@ pub async fn get_ward(
 )]
 pub async fn update_ward(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateWardRequest>,
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
@@ -204,7 +204,7 @@ pub async fn update_ward(
 )]
 pub async fn list_ward_sections(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<WardSectionListItem>>, ApiError> {
@@ -239,7 +239,7 @@ pub async fn list_ward_sections(
 )]
 pub async fn get_ward_section(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
@@ -266,7 +266,7 @@ pub async fn get_ward_section(
 )]
 pub async fn update_ward_section(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateWardSectionRequest>,
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
@@ -320,7 +320,7 @@ pub async fn update_ward_section(
 )]
 pub async fn list_section_beds(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<BedListItem>>, ApiError> {
@@ -357,7 +357,7 @@ pub async fn list_section_beds(
 )]
 pub async fn create_ward_section(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateWardSectionRequest>,
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
@@ -401,7 +401,7 @@ pub async fn create_ward_section(
 )]
 pub async fn list_ward_beds(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<BedListItem>>, ApiError> {
@@ -434,7 +434,7 @@ pub async fn list_ward_beds(
 )]
 pub async fn get_bed(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
@@ -461,7 +461,7 @@ pub async fn get_bed(
 )]
 pub async fn update_bed(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateBedRequest>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
@@ -519,7 +519,7 @@ pub async fn update_bed(
 )]
 pub async fn create_bed(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateBedRequest>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
@@ -556,7 +556,7 @@ pub async fn create_bed(
 )]
 pub async fn ward_board(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<WardBoardQuery>,
 ) -> Result<Json<ListResponse<WardBoardItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::WardView)?;
@@ -595,7 +595,7 @@ pub async fn ward_board(
 )]
 pub async fn get_admission(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardBoardItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -623,7 +623,7 @@ pub async fn get_admission(
 )]
 pub async fn list_admission_cases(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<AdmissionCaseListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -659,7 +659,7 @@ pub async fn list_admission_cases(
 )]
 pub async fn get_admission_case(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -683,7 +683,7 @@ pub async fn get_admission_case(
 )]
 pub async fn create_admission_case(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateAdmissionCaseRequest>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -720,7 +720,7 @@ pub async fn create_admission_case(
 )]
 pub async fn reserve_admission_bed(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<ReserveAdmissionBedRequest>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
@@ -762,7 +762,7 @@ pub async fn reserve_admission_bed(
 )]
 pub async fn activate_admission_case(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -803,7 +803,7 @@ pub async fn activate_admission_case(
 )]
 pub async fn cancel_admission_case(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -842,7 +842,7 @@ pub async fn cancel_admission_case(
 )]
 pub async fn admit_patient(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<AdmitPatientRequest>,
 ) -> Result<Json<ObjectResponse<WardBoardItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -872,7 +872,7 @@ pub async fn admit_patient(
 )]
 pub async fn list_discharges(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<DischargeCaseListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -905,7 +905,7 @@ pub async fn list_discharges(
 )]
 pub async fn get_discharge(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -934,7 +934,7 @@ pub async fn get_discharge(
 )]
 pub async fn request_discharge(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateDischargeRequest>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -971,7 +971,7 @@ pub async fn request_discharge(
 )]
 pub async fn cancel_discharge(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CancelDischargeRequest>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
@@ -1024,7 +1024,7 @@ pub async fn cancel_discharge(
 )]
 pub async fn complete_discharge(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
     require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
@@ -1063,7 +1063,7 @@ pub async fn complete_discharge(
 )]
 pub async fn list_nursing_tasks(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<NursingTaskListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1103,7 +1103,7 @@ pub async fn list_nursing_tasks(
 )]
 pub async fn create_nursing_task(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateNursingTaskRequest>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
     require_facility_permission(
@@ -1147,7 +1147,7 @@ pub async fn create_nursing_task(
 )]
 pub async fn complete_nursing_task(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
     require_facility_permission(
@@ -1201,7 +1201,7 @@ pub async fn complete_nursing_task(
 )]
 pub async fn cancel_nursing_task(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
     require_facility_permission(
@@ -1260,7 +1260,7 @@ pub async fn cancel_nursing_task(
 )]
 pub async fn list_medication_administrations(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<MedicationAdministrationListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1301,7 +1301,7 @@ pub async fn list_medication_administrations(
 )]
 pub async fn schedule_medication_administration(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<ScheduleMedicationAdministrationRequest>,
 ) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
     require_facility_permission(
@@ -1346,7 +1346,7 @@ pub async fn schedule_medication_administration(
 )]
 pub async fn administer_medication(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<AdministerMedicationRequest>,
 ) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
@@ -1405,7 +1405,7 @@ pub async fn administer_medication(
 )]
 pub async fn list_handoffs(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<HandoffListItem>>, ApiError> {
     require_facility_permission(
@@ -1440,7 +1440,7 @@ pub async fn list_handoffs(
 )]
 pub async fn create_handoff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateHandoffRequest>,
 ) -> Result<Json<ObjectResponse<HandoffListItem>>, ApiError> {
     require_facility_permission(
@@ -1475,7 +1475,7 @@ pub async fn create_handoff(
 )]
 pub async fn complete_handoff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<HandoffListItem>>, ApiError> {
     require_facility_permission(
@@ -1514,7 +1514,7 @@ pub async fn complete_handoff(
 )]
 pub async fn list_treatment_sheets(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<TreatmentSheetListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1554,7 +1554,7 @@ pub async fn list_treatment_sheets(
 )]
 pub async fn create_treatment_sheet(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateTreatmentSheetRequest>,
 ) -> Result<Json<ObjectResponse<TreatmentSheetListItem>>, ApiError> {
     require_facility_permission(
@@ -1591,7 +1591,7 @@ pub async fn create_treatment_sheet(
 )]
 pub async fn list_patient_vitals(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<PatientVitalsListQuery>,
 ) -> Result<Json<ListResponse<PatientVitalsListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1655,7 +1655,7 @@ pub async fn list_patient_vitals(
 )]
 pub async fn create_patient_vitals(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePatientVitalsRequest>,
 ) -> Result<Json<ObjectResponse<PatientVitalsListItem>>, ApiError> {
     require_facility_permission(
@@ -1698,7 +1698,7 @@ pub async fn create_patient_vitals(
 )]
 pub async fn list_nursing_alerts(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<NursingAlertListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1734,7 +1734,7 @@ pub async fn list_nursing_alerts(
 )]
 pub async fn create_nursing_alert(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateNursingAlertRequest>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
     require_facility_permission(
@@ -1768,7 +1768,7 @@ pub async fn create_nursing_alert(
 )]
 pub async fn acknowledge_nursing_alert(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
     require_facility_permission(
@@ -1811,7 +1811,7 @@ pub async fn acknowledge_nursing_alert(
 )]
 pub async fn list_monitoring_events(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<MonitoringEventListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1852,7 +1852,7 @@ pub async fn list_monitoring_events(
 )]
 pub async fn create_monitoring_event(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateMonitoringEventRequest>,
 ) -> Result<Json<ObjectResponse<MonitoringEventListItem>>, ApiError> {
     require_facility_permission(
@@ -1896,7 +1896,7 @@ pub async fn create_monitoring_event(
 )]
 pub async fn list_fluid_balance_entries(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<FluidBalanceListItem>>, ApiError> {
     require_patient_workflow_access(
@@ -1937,7 +1937,7 @@ pub async fn list_fluid_balance_entries(
 )]
 pub async fn create_fluid_balance_entry(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateFluidBalanceEntryRequest>,
 ) -> Result<Json<ObjectResponse<FluidBalanceListItem>>, ApiError> {
     require_facility_permission(
@@ -1986,7 +1986,7 @@ pub async fn create_fluid_balance_entry(
 )]
 pub async fn list_ward_stock_requests(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<WardStockRequestListItem>>, ApiError> {
     require_facility_permission(
@@ -2027,7 +2027,7 @@ pub async fn list_ward_stock_requests(
 )]
 pub async fn create_ward_stock_request(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateWardStockRequestRequest>,
 ) -> Result<Json<ObjectResponse<WardStockRequestListItem>>, ApiError> {
     require_facility_permission(
@@ -2078,7 +2078,7 @@ pub async fn create_ward_stock_request(
 )]
 pub async fn approve_ward_stock_request(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardStockRequestListItem>>, ApiError> {
     require_facility_permission(
@@ -2122,7 +2122,7 @@ pub async fn approve_ward_stock_request(
 )]
 pub async fn fulfill_ward_stock_request(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardStockRequestListItem>>, ApiError> {
     require_facility_permission(
@@ -2151,7 +2151,7 @@ pub async fn fulfill_ward_stock_request(
 
 async fn load_admission_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     admission_case_id: Uuid,
 ) -> Result<AdmissionContext, ApiError> {
     let admission = state
@@ -2165,7 +2165,7 @@ async fn load_admission_for_access(
 
 async fn load_admission_case_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     admission_case_id: Uuid,
 ) -> Result<AdmissionCaseListItem, ApiError> {
     let admission_case = state
@@ -2211,7 +2211,7 @@ async fn load_bed(state: &AppState, bed_id: Uuid) -> Result<BedListItem, ApiErro
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -2230,43 +2230,32 @@ async fn load_patient_for_access(
 }
 
 fn require_patient_workflow_access(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_facility_permission(user, facility_id, permission)?;
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to patient workflow lists.",
-        ))
-    }
+    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|error| {
+        match error {
+            hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have access to patient workflow lists.",
+            ),
+            other => ApiError::from(other),
+        }
+    })
 }
 
 fn require_facility_permission(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_permission(user, permission).map_err(|_| {
+    hms_access::require_facility_permission(user, facility_id, permission).map_err(|_| {
         ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this action.",
         )
-    })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to perform this action.",
-        ))
-    }
+    })
 }
 
 fn normalize_ward_text(value: Option<String>, max_len: usize) -> Result<Option<String>, ApiError> {
@@ -2312,58 +2301,25 @@ fn normalize_bed_code(value: Option<String>) -> Result<Option<String>, ApiError>
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<WardCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| WardCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<WardCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(WardCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn required_text(value: String, field: &'static str) -> Result<String, ApiError> {

@@ -1,7 +1,6 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::require_permission;
 use hms_db::admin::AdminCursor;
 use hms_domain::admin::{
     AdminLimitQuery, AdminListQuery, AuditEventListItem, AuditEventListQuery,
@@ -14,12 +13,12 @@ use hms_domain::admin::{
     StaffListItem, StaffListQuery, UpdateFeatureEntitlementRequest, UpdateStaffRequest,
     UpsertPractitionerProfileRequest,
 };
-use hms_domain::auth::AuthUser;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::middleware::request_id::current_request_id;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
@@ -34,7 +33,7 @@ const MAX_EMAIL_LEN: usize = 254;
 #[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(OrganizationUnitListQuery), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_org_units(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<OrganizationUnitListQuery>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -61,7 +60,7 @@ pub async fn list_org_units(
 #[utoipa::path(post, path = "/api/v2/admin/org-units", operation_id = "postAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), request_body = CreateOrganizationUnitRequest, responses((status = 200, body = ObjectResponse<OrganizationUnitListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_org_unit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateOrganizationUnitRequest>,
 ) -> Result<Json<ObjectResponse<OrganizationUnitListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -79,7 +78,7 @@ pub async fn create_org_unit(
 #[utoipa::path(get, path = "/api/v2/admin/org-units/{id}", operation_id = "getAdminOrgUnitById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ObjectResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_org_unit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<OrganizationUnitListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -101,7 +100,7 @@ pub async fn get_org_unit(
 #[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/children", operation_id = "getAdminOrgUnitChildren", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_org_unit_children(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
@@ -136,7 +135,7 @@ pub async fn list_org_unit_children(
 #[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/ancestors", operation_id = "getAdminOrgUnitAncestors", tag = "admin", security(("bearerAuth" = [])), params(AdminLimitQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_org_unit_ancestors(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<AdminLimitQuery>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
@@ -176,7 +175,7 @@ pub async fn list_org_unit_ancestors(
 #[utoipa::path(get, path = "/api/v2/admin/org-units/{id}/descendants", operation_id = "getAdminOrgUnitDescendants", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery, ("id" = Uuid, Path, description = "Organization unit ID")), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_org_unit_descendants(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<OrganizationUnitListItem>>, ApiError> {
@@ -211,7 +210,7 @@ pub async fn list_org_unit_descendants(
 #[utoipa::path(get, path = "/api/v2/admin/position-templates", operation_id = "getAdminPositionTemplates", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<PositionTemplateListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_position_templates(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<PositionTemplateListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -233,7 +232,7 @@ pub async fn list_position_templates(
 #[utoipa::path(post, path = "/api/v2/admin/position-templates", operation_id = "postAdminPositionTemplates", tag = "admin", security(("bearerAuth" = [])), request_body = CreatePositionTemplateRequest, responses((status = 200, body = ObjectResponse<PositionTemplateListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_position_template(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePositionTemplateRequest>,
 ) -> Result<Json<ObjectResponse<PositionTemplateListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -253,7 +252,7 @@ pub async fn create_position_template(
 #[utoipa::path(get, path = "/api/v2/admin/positions", operation_id = "getAdminPositions", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<PositionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_positions(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<PositionListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -272,7 +271,7 @@ pub async fn list_positions(
 #[utoipa::path(post, path = "/api/v2/admin/positions", operation_id = "postAdminPositions", tag = "admin", security(("bearerAuth" = [])), request_body = CreatePositionRequest, responses((status = 200, body = ObjectResponse<PositionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_position(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePositionRequest>,
 ) -> Result<Json<ObjectResponse<PositionListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -287,7 +286,7 @@ pub async fn create_position(
 #[utoipa::path(get, path = "/api/v2/admin/authority-appointments", operation_id = "getAdminAuthorityAppointments", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<AuthorityAppointmentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_authority_appointments(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<AuthorityAppointmentListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -309,7 +308,7 @@ pub async fn list_authority_appointments(
 #[utoipa::path(post, path = "/api/v2/admin/authority-appointments", operation_id = "postAdminAuthorityAppointments", tag = "admin", security(("bearerAuth" = [])), request_body = CreateAuthorityAppointmentRequest, responses((status = 200, body = ObjectResponse<AuthorityAppointmentListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_authority_appointment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateAuthorityAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AuthorityAppointmentListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -330,7 +329,7 @@ pub async fn create_authority_appointment(
 #[utoipa::path(get, path = "/api/v2/admin/permission-assignments", operation_id = "getAdminPermissionAssignments", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<PermissionAssignmentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_permission_assignments(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<PermissionAssignmentListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -352,7 +351,7 @@ pub async fn list_permission_assignments(
 #[utoipa::path(post, path = "/api/v2/admin/permission-assignments", operation_id = "postAdminPermissionAssignments", tag = "admin", security(("bearerAuth" = [])), request_body = CreatePermissionAssignmentRequest, responses((status = 200, body = ObjectResponse<PermissionAssignmentListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_permission_assignment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePermissionAssignmentRequest>,
 ) -> Result<Json<ObjectResponse<PermissionAssignmentListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -375,7 +374,7 @@ pub async fn create_permission_assignment(
 #[utoipa::path(get, path = "/api/v2/admin/features", operation_id = "getAdminFeatures", tag = "admin", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_feature_entitlements(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<FeatureEntitlementListItem>>, ApiError> {
     require_feature_entitlement_access(&user, state.facility_id())?;
     let rows = state.list_feature_entitlements().await.map_err(|_| {
@@ -397,7 +396,7 @@ pub async fn list_feature_entitlements(
 #[utoipa::path(patch, path = "/api/v2/admin/features/{key}", operation_id = "patchAdminFeature", tag = "admin", security(("bearerAuth" = [])), params(("key" = FeatureKey, Path, description = "Feature key")), request_body = UpdateFeatureEntitlementRequest, responses((status = 200, body = ObjectResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn update_feature_entitlement(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(key): Path<FeatureKey>,
     Json(payload): Json<UpdateFeatureEntitlementRequest>,
 ) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
@@ -418,7 +417,7 @@ pub async fn update_feature_entitlement(
 #[utoipa::path(delete, path = "/api/v2/admin/features/{key}", operation_id = "deleteAdminFeature", tag = "admin", security(("bearerAuth" = [])), params(("key" = FeatureKey, Path, description = "Feature key")), responses((status = 200, body = ObjectResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn delete_feature_entitlement(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(key): Path<FeatureKey>,
 ) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
     require_feature_entitlement_access(&user, state.facility_id())?;
@@ -438,7 +437,7 @@ pub async fn delete_feature_entitlement(
 #[utoipa::path(get, path = "/api/v2/admin/staff", operation_id = "getAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(StaffListQuery), responses((status = 200, body = ListResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_staff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<StaffListQuery>,
 ) -> Result<Json<ListResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -467,7 +466,7 @@ pub async fn list_staff(
 #[utoipa::path(get, path = "/api/v2/staff/directory", operation_id = "getStaffDirectory", tag = "staff", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<StaffDirectoryItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_staff_directory(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<StaffDirectoryItem>>, ApiError> {
     require_staff_directory_access(&user, state.facility_id())?;
@@ -489,7 +488,7 @@ pub async fn list_staff_directory(
 #[utoipa::path(post, path = "/api/v2/admin/staff", operation_id = "postAdminStaff", tag = "admin", security(("bearerAuth" = [])), request_body = CreateStaffRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn create_staff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateStaffRequest>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -506,7 +505,7 @@ pub async fn create_staff(
 #[utoipa::path(get, path = "/api/v2/admin/staff/{id}", operation_id = "getAdminStaffById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_staff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -521,7 +520,7 @@ pub async fn get_staff(
 #[utoipa::path(patch, path = "/api/v2/admin/staff/{id}", operation_id = "patchAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), request_body = UpdateStaffRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn update_staff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
@@ -540,7 +539,7 @@ pub async fn update_staff(
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/force-password-reset", operation_id = "postAdminStaffForcePasswordReset", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn force_staff_password_reset(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -560,7 +559,7 @@ pub async fn force_staff_password_reset(
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/deactivate", operation_id = "postAdminStaffDeactivate", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn deactivate_staff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -580,7 +579,7 @@ pub async fn deactivate_staff(
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/reactivate", operation_id = "postAdminStaffReactivate", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn reactivate_staff(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -600,7 +599,7 @@ pub async fn reactivate_staff(
 #[utoipa::path(put, path = "/api/v2/admin/staff/{id}/practitioner-profile", operation_id = "putAdminStaffPractitionerProfile", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), request_body = UpsertPractitionerProfileRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
 pub async fn upsert_staff_practitioner_profile(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpsertPractitionerProfileRequest>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
@@ -622,7 +621,7 @@ pub async fn upsert_staff_practitioner_profile(
 #[utoipa::path(get, path = "/api/v2/admin/practitioners", operation_id = "getAdminPractitioners", tag = "admin", security(("bearerAuth" = [])), params(PractitionerListQuery), responses((status = 200, body = ListResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_practitioners(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<PractitionerListQuery>,
 ) -> Result<Json<ListResponse<PractitionerListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -649,7 +648,7 @@ pub async fn list_practitioners(
 #[utoipa::path(get, path = "/api/v2/admin/practitioners/{id}", operation_id = "getAdminPractitionerById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Practitioner profile or staff id")), responses((status = 200, body = ObjectResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_practitioner(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PractitionerListItem>>, ApiError> {
     require_staff_access(&user, state.facility_id())?;
@@ -671,7 +670,7 @@ pub async fn get_practitioner(
 #[utoipa::path(get, path = "/api/v2/admin/committees", operation_id = "getAdminCommittees", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<CommitteeListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_committees(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<CommitteeListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -690,7 +689,7 @@ pub async fn list_committees(
 #[utoipa::path(post, path = "/api/v2/admin/committees", operation_id = "postAdminCommittees", tag = "admin", security(("bearerAuth" = [])), request_body = CreateCommitteeRequest, responses((status = 200, body = ObjectResponse<CommitteeListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_committee(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateCommitteeRequest>,
 ) -> Result<Json<ObjectResponse<CommitteeListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -706,7 +705,7 @@ pub async fn create_committee(
 #[utoipa::path(get, path = "/api/v2/admin/delegations", operation_id = "getAdminDelegations", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<DelegationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_delegations(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<DelegationListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -725,7 +724,7 @@ pub async fn list_delegations(
 #[utoipa::path(post, path = "/api/v2/admin/delegations", operation_id = "postAdminDelegations", tag = "admin", security(("bearerAuth" = [])), request_body = CreateDelegationRequest, responses((status = 200, body = ObjectResponse<DelegationListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_delegation(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateDelegationRequest>,
 ) -> Result<Json<ObjectResponse<DelegationListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -744,7 +743,7 @@ pub async fn create_delegation(
 #[utoipa::path(get, path = "/api/v2/admin/audit-events", operation_id = "getAdminAuditEvents", tag = "admin", security(("bearerAuth" = [])), params(AuditEventListQuery), responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_audit_events(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AuditEventListQuery>,
 ) -> Result<Json<ListResponse<AuditEventListItem>>, ApiError> {
     require_admin_access(&user, state.facility_id())?;
@@ -773,78 +772,50 @@ pub async fn list_audit_events(
     })))
 }
 
-fn require_admin_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::AdminAuthorityManage).map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to manage HMS authority.",
-        )
-    })?;
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have access to this facility.",
-        ));
-    }
-    Ok(())
+fn require_admin_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_admin_authority_access(user, facility_id).map_err(ApiError::from)
 }
 
-fn require_feature_entitlement_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::AdminFeatureEntitlementsManage).map_err(|_| {
-        ApiError::forbidden(
+fn require_feature_entitlement_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_feature_entitlement_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::AdminAuthorityAccessDenied => ApiError::forbidden(
             "permission_denied",
             "You do not have permission to manage feature entitlements.",
-        )
-    })?;
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have access to this facility.",
-        ));
-    }
-    Ok(())
+        ),
+        other => ApiError::from(other),
+    })
 }
 
-fn require_staff_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::AdminStaffManage).map_err(|_| {
-        ApiError::forbidden(
+fn require_staff_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_staff_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::AdminAuthorityAccessDenied => ApiError::forbidden(
             "permission_denied",
             "You do not have permission to manage staff.",
-        )
-    })?;
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have access to this facility.",
-        ));
-    }
-    Ok(())
+        ),
+        other => ApiError::from(other),
+    })
 }
 
-fn require_staff_directory_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    let allowed = [
-        PermissionCode::AdminStaffManage,
-        PermissionCode::EncounterManage,
-        PermissionCode::NursingTaskManage,
-        PermissionCode::ControlledSubstanceManage,
-        PermissionCode::PharmacyDispense,
-    ]
-    .iter()
-    .any(|permission| user.permissions.contains(permission));
-
-    if !allowed {
-        return Err(ApiError::forbidden(
+fn require_staff_directory_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_staff_directory_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::MissingPermission => ApiError::forbidden(
             "permission_denied",
             "You do not have permission to view the staff directory.",
-        ));
-    }
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have access to this facility.",
-        ));
-    }
-    Ok(())
+        ),
+        other => ApiError::from(other),
+    })
 }
 
 async fn ensure_supported_permissions(
@@ -975,50 +946,24 @@ fn validate_time_window(
 }
 
 fn page_request(query: AdminListQuery) -> Result<(Option<AdminCursor>, u8), ApiError> {
-    let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query.cursor.map(decode_cursor).transpose()?;
-    Ok((cursor, page_size))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| AdminCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
 fn page_response<T>(
-    mut rows: Vec<T>,
+    rows: Vec<T>,
     page_size: u8,
     cursor_for: impl Fn(&T) -> String,
 ) -> ListResponse<T> {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: String) -> Result<AdminCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(AdminCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }

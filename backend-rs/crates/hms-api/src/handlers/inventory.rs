@@ -1,9 +1,8 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::inventory::{InventoryCursor, StockBatchFilters};
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     ControlledSubstanceBalanceValidation, ControlledSubstanceRegisterEntryItem,
@@ -22,9 +21,10 @@ use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::extractors::RequestContext;
+use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
@@ -34,7 +34,7 @@ const MAX_TEXT_LEN: usize = 120;
 #[utoipa::path(get, path = "/api/v2/inventory/categories", operation_id = "getInventoryCategories", tag = "inventory", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<InventoryCategoryListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_categories(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<InventoryCategoryListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
     Ok(Json(static_list(
@@ -50,7 +50,7 @@ pub async fn list_categories(
 #[utoipa::path(get, path = "/api/v2/inventory/items", operation_id = "getInventoryItems", tag = "inventory", security(("bearerAuth" = [])), params(InventoryItemsQuery), responses((status = 200, body = ListResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_items(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryItemsQuery>,
 ) -> Result<Json<ListResponse<InventoryItemListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
@@ -75,7 +75,7 @@ pub async fn list_items(
 #[utoipa::path(get, path = "/api/v2/inventory/dashboard-summary", operation_id = "getInventoryDashboardSummary", tag = "inventory", security(("bearerAuth" = [])), params(InventoryDashboardSummaryQuery), responses((status = 200, body = ObjectResponse<InventoryDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_summary(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryDashboardSummaryQuery>,
 ) -> Result<Json<ObjectResponse<InventoryDashboardSummary>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
@@ -95,7 +95,7 @@ pub async fn dashboard_summary(
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}", operation_id = "getInventoryItemById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ObjectResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_item(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<InventoryItemListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
@@ -112,7 +112,7 @@ pub async fn get_item(
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}/stock-batches", operation_id = "getInventoryItemStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_item_batches(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockBatchListItem>>, ApiError> {
@@ -136,7 +136,7 @@ pub async fn list_item_batches(
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}/stock-movements", operation_id = "getInventoryItemStockMovements", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StockMovementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_item_movements(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockMovementListItem>>, ApiError> {
@@ -160,7 +160,7 @@ pub async fn list_item_movements(
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}/stock-by-location", operation_id = "getInventoryItemStockByLocation", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ListResponse<InventoryItemStockLocationItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_item_stock_by_location(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ListResponse<InventoryItemStockLocationItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -180,7 +180,7 @@ pub async fn list_item_stock_by_location(
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations", operation_id = "getStorageLocations", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_locations(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StorageLocationListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
@@ -202,7 +202,7 @@ pub async fn list_locations(
 #[utoipa::path(get, path = "/api/v2/inventory/suppliers", operation_id = "getInventorySuppliers", tag = "inventory", security(("bearerAuth" = [])), params(SupplierListQuery), responses((status = 200, body = ListResponse<SupplierListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_suppliers(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<SupplierListQuery>,
 ) -> Result<Json<ListResponse<SupplierListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
@@ -228,7 +228,7 @@ pub async fn list_suppliers(
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}", operation_id = "getStorageLocationById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID")), responses((status = 200, body = ObjectResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_location(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StorageLocationListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
@@ -250,7 +250,7 @@ pub async fn get_location(
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}/stock", operation_id = "getStorageLocationStock", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StorageLocationStockItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_location_stock(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StorageLocationStockItem>>, ApiError> {
@@ -274,7 +274,7 @@ pub async fn list_location_stock(
 #[utoipa::path(get, path = "/api/v2/inventory/stock-batches", operation_id = "getStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(StockBatchListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_batches(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<StockBatchListQuery>,
 ) -> Result<Json<ListResponse<StockBatchListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -296,7 +296,7 @@ pub async fn list_batches(
 #[utoipa::path(post, path = "/api/v2/inventory/stock-batches", operation_id = "postStockBatches", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockBatchRequest, responses((status = 200, body = ObjectResponse<StockBatchListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_batch(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateStockBatchRequest>,
 ) -> Result<Json<ObjectResponse<StockBatchListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -324,7 +324,7 @@ pub async fn create_batch(
 #[utoipa::path(get, path = "/api/v2/inventory/stock-movements", operation_id = "getStockMovements", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockMovementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_movements(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockMovementListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -346,7 +346,7 @@ pub async fn list_movements(
 #[utoipa::path(get, path = "/api/v2/inventory/transfers", operation_id = "getStockTransfers", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockTransferListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_transfers(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockTransferListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -368,7 +368,7 @@ pub async fn list_transfers(
 #[utoipa::path(get, path = "/api/v2/inventory/transfers/{id}", operation_id = "getStockTransferById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock transfer ID")), responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_transfer(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockTransferListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -390,7 +390,7 @@ pub async fn get_transfer(
 #[utoipa::path(post, path = "/api/v2/inventory/transfers", operation_id = "postStockTransfers", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockTransferRequest, responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_transfer(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateStockTransferRequest>,
 ) -> Result<Json<ObjectResponse<StockTransferListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -416,7 +416,7 @@ pub async fn create_transfer(
 #[utoipa::path(get, path = "/api/v2/inventory/requisitions", operation_id = "getStockRequisitions", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_requisitions(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -438,7 +438,7 @@ pub async fn list_requisitions(
 #[utoipa::path(get, path = "/api/v2/inventory/requisitions/{id}", operation_id = "getStockRequisitionById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -463,7 +463,7 @@ pub async fn get_requisition(
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions", operation_id = "postStockRequisitions", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockRequisitionRequest, responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateStockRequisitionRequest>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -482,7 +482,7 @@ pub async fn create_requisition(
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/submit", operation_id = "postStockRequisitionSubmit", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn submit_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -507,7 +507,7 @@ pub async fn submit_requisition(
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/approve", operation_id = "postStockRequisitionApprove", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn approve_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -532,7 +532,7 @@ pub async fn approve_requisition(
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/fulfill", operation_id = "postStockRequisitionFulfill", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn fulfill_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -557,7 +557,7 @@ pub async fn fulfill_requisition(
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/reject", operation_id = "postStockRequisitionReject", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), request_body = RejectStockRequisitionRequest, responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn reject_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<RejectStockRequisitionRequest>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
@@ -584,7 +584,7 @@ pub async fn reject_requisition(
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/cancel", operation_id = "postStockRequisitionCancel", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn cancel_requisition(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -609,7 +609,7 @@ pub async fn cancel_requisition(
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders", operation_id = "getPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_purchase_orders(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<PurchaseOrderListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -631,7 +631,7 @@ pub async fn list_purchase_orders(
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders/{id}", operation_id = "getPurchaseOrderById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_purchase_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -656,7 +656,7 @@ pub async fn get_purchase_order(
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders", operation_id = "postPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), request_body = CreatePurchaseOrderRequest, responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_purchase_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePurchaseOrderRequest>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -676,7 +676,7 @@ pub async fn create_purchase_order(
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders/{id}/approve", operation_id = "postPurchaseOrderApprove", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn approve_purchase_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -701,7 +701,7 @@ pub async fn approve_purchase_order(
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders/{id}/send", operation_id = "postPurchaseOrderSend", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn send_purchase_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -726,7 +726,7 @@ pub async fn send_purchase_order(
 #[utoipa::path(get, path = "/api/v2/inventory/goods-received-notes", operation_id = "getGoodsReceivedNotes", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_grns(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<GoodsReceivedNoteListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -748,7 +748,7 @@ pub async fn list_grns(
 #[utoipa::path(get, path = "/api/v2/inventory/goods-received-notes/{id}", operation_id = "getGoodsReceivedNoteById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_grn(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
@@ -773,7 +773,7 @@ pub async fn get_grn(
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes", operation_id = "postGoodsReceivedNotes", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateGoodsReceivedNoteRequest, responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_grn(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateGoodsReceivedNoteRequest>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -792,7 +792,7 @@ pub async fn create_grn(
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes/{id}/inspect", operation_id = "postGoodsReceivedNoteInspect", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn inspect_grn(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -817,7 +817,7 @@ pub async fn inspect_grn(
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes/{id}/accept", operation_id = "postGoodsReceivedNoteAccept", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn accept_grn(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
@@ -842,7 +842,7 @@ pub async fn accept_grn(
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register", operation_id = "getControlledSubstanceRegister", tag = "pharmacy", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<ControlledSubstanceRegisterItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_controlled_register(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<ControlledSubstanceRegisterItem>>, ApiError> {
     require_inventory_access(
@@ -868,7 +868,7 @@ pub async fn list_controlled_register(
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}", operation_id = "getControlledSubstanceRegisterById", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn get_controlled_register_entry(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
     require_inventory_access(
@@ -897,7 +897,7 @@ pub async fn get_controlled_register_entry(
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}/entries", operation_id = "getControlledSubstanceRegisterEntries", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID"), InventoryListQuery), responses((status = 200, body = ListResponse<ControlledSubstanceRegisterEntryItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn list_controlled_register_entries(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<ControlledSubstanceRegisterEntryItem>>, ApiError> {
@@ -925,7 +925,7 @@ pub async fn list_controlled_register_entries(
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register/{id}/balance-validation", operation_id = "getControlledSubstanceRegisterBalanceValidation", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), responses((status = 200, body = ObjectResponse<ControlledSubstanceBalanceValidation>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn validate_controlled_register_balance(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceBalanceValidation>>, ApiError> {
     require_inventory_access(
@@ -954,7 +954,7 @@ pub async fn validate_controlled_register_balance(
 #[utoipa::path(post, path = "/api/v2/pharmacy/controlled-substances/register/{id}/counts", operation_id = "postControlledSubstanceRegisterCounts", tag = "pharmacy", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Controlled substance register entry ID")), request_body = CreateControlledSubstanceCountRequest, responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_controlled_count(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateControlledSubstanceCountRequest>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
@@ -988,7 +988,7 @@ pub async fn create_controlled_count(
 #[utoipa::path(post, path = "/api/v2/pharmacy/controlled-substances/register", operation_id = "postControlledSubstanceRegister", tag = "pharmacy", security(("bearerAuth" = [])), request_body = CreateControlledSubstanceMovementRequest, responses((status = 200, body = ObjectResponse<ControlledSubstanceRegisterItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn create_controlled_movement(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateControlledSubstanceMovementRequest>,
 ) -> Result<Json<ObjectResponse<ControlledSubstanceRegisterItem>>, ApiError> {
     require_inventory_access(
@@ -1027,11 +1027,16 @@ pub async fn create_controlled_movement(
 #[utoipa::path(get, path = "/api/v2/pharmacy/dispenses", operation_id = "getPharmacyDispenses", tag = "pharmacy", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PharmacyDispenseListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_dispenses(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<PharmacyDispenseListItem>>, ApiError> {
     require_inventory_list_access(&user, state.facility_id())?;
-    require_permission(&user, PermissionCode::PharmacyDispense).map_err(|_| {
+    hms_access::require_inventory_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::PharmacyDispense,
+    )
+    .map_err(|_| {
         ApiError::forbidden(
             "permission_denied",
             "You do not have permission to view pharmacy dispenses.",
@@ -1055,7 +1060,7 @@ pub async fn list_dispenses(
 #[utoipa::path(post, path = "/api/v2/pharmacy/dispenses", operation_id = "postPharmacyDispenses", tag = "pharmacy", security(("bearerAuth" = [])), request_body = CreatePharmacyDispenseRequest, responses((status = 200, body = ObjectResponse<PharmacyDispenseListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn create_dispense(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePharmacyDispenseRequest>,
 ) -> Result<Json<ObjectResponse<PharmacyDispenseListItem>>, ApiError> {
     require_inventory_access(&user, state.facility_id(), PermissionCode::PharmacyDispense)?;
@@ -1081,7 +1086,7 @@ pub async fn create_dispense(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -1098,61 +1103,33 @@ async fn load_patient_for_access(
     Ok(patient)
 }
 
-fn require_inventory_list_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    if !has_permission(user, PermissionCode::InventoryView)
-        && !has_permission(user, PermissionCode::InventoryManage)
-        && !has_permission(user, PermissionCode::PharmacyDispense)
-        && !has_permission(user, PermissionCode::ControlledSubstanceManage)
-    {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have inventory access.",
-        ));
-    }
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have inventory access.",
-        ));
-    }
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+fn require_inventory_list_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_inventory_list_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
             "patient_access_denied",
             "You do not have patient workflow access.",
-        ))
-    }
+        ),
+        hms_access::AccessError::InventoryAccessDenied => {
+            ApiError::forbidden("permission_denied", "You do not have inventory access.")
+        }
+        other => ApiError::from(other),
+    })
 }
 
 fn require_inventory_access(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_permission(user, permission)
-        .and_then(|_| require_permission(user, PermissionCode::PatientDemographicsView))
-        .map_err(|_| {
-            ApiError::forbidden(
-                "permission_denied",
-                "You do not have permission for this action.",
-            )
-        })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+    hms_access::require_inventory_access(user, facility_id, permission).map_err(|_| {
+        ApiError::forbidden(
             "permission_denied",
             "You do not have permission for this action.",
-        ))
-    }
-}
-
-fn has_permission(user: &AuthUser, permission: PermissionCode) -> bool {
-    user.permissions.contains(&permission)
+        )
+    })
 }
 
 fn page_request(query: InventoryListQuery) -> Result<(Option<InventoryCursor>, u8), ApiError> {
@@ -1174,38 +1151,24 @@ fn decode_page(
     cursor: Option<&str>,
     limit: Option<u8>,
 ) -> Result<(Option<InventoryCursor>, u8), ApiError> {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = cursor
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        cursor,
+        limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| InventoryCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
 fn inventory_items_page_request(
     query: &InventoryItemsQuery,
 ) -> Result<(Option<InventoryCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    decode_page(query.cursor.as_deref(), query.limit)
 }
 
 fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
-    list(
-        items,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: MAX_LIMIT,
-        },
-    )
+    cursor_list::static_list(items, MAX_LIMIT)
 }
 
 async fn ensure_item_exists(state: &AppState, item_id: Uuid) -> Result<(), ApiError> {
@@ -1254,46 +1217,15 @@ async fn ensure_controlled_entry_exists(state: &AppState, entry_id: Uuid) -> Res
     Ok(())
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<InventoryCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(InventoryCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn normalize_text(value: String, field: &'static str) -> Result<String, ApiError> {

@@ -1,9 +1,8 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::clinical::ClinicalCursor;
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
     AllergyListItem, ChangeProblemStatusRequest, ChartEntryListItem, ClinicalNoteDetail,
@@ -18,8 +17,9 @@ use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -44,7 +44,7 @@ const MAX_NOTE_BODY_LEN: usize = 20_000;
 )]
 pub async fn list_note_templates(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<ClinicalNoteTemplateListQuery>,
 ) -> Result<Json<ListResponse<ClinicalNoteTemplate>>, ApiError> {
     require_clinical_list_access(&user, state.facility_id())?;
@@ -85,7 +85,7 @@ pub async fn list_note_templates(
 )]
 pub async fn create_note_template(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateClinicalNoteTemplateRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
     require_clinical_write_access(&user, state.facility_id())?;
@@ -121,7 +121,7 @@ pub async fn create_note_template(
 )]
 pub async fn get_note_template(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
     require_action_permission(
@@ -166,7 +166,7 @@ pub async fn get_note_template(
 )]
 pub async fn update_note_template(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<UpdateClinicalNoteTemplateRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
@@ -222,7 +222,7 @@ pub async fn update_note_template(
 )]
 pub async fn delete_note_template(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteTemplate>>, ApiError> {
     require_clinical_write_access(&user, state.facility_id())?;
@@ -264,7 +264,7 @@ pub async fn delete_note_template(
 )]
 pub async fn list_notes(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ClinicalNoteListItem>>, ApiError> {
@@ -304,7 +304,7 @@ pub async fn list_notes(
 )]
 pub async fn create_note(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateClinicalNoteRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteListItem>>, ApiError> {
@@ -342,7 +342,7 @@ pub async fn create_note(
 )]
 pub async fn get_note(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(note_id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteDetail>>, ApiError> {
     let _note_context = load_note_for_access(
@@ -384,7 +384,7 @@ pub async fn get_note(
 )]
 pub async fn list_note_versions(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(note_id): Path<Uuid>,
 ) -> Result<Json<ListResponse<ClinicalNoteVersion>>, ApiError> {
     let note = load_note_for_access(
@@ -432,7 +432,7 @@ pub async fn list_note_versions(
 )]
 pub async fn create_note_version(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(note_id): Path<Uuid>,
     Json(payload): Json<CreateClinicalNoteVersionRequest>,
 ) -> Result<Json<ObjectResponse<ClinicalNoteVersion>>, ApiError> {
@@ -476,7 +476,7 @@ pub async fn create_note_version(
 )]
 pub async fn list_problems(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ProblemListItem>>, ApiError> {
@@ -511,7 +511,7 @@ pub async fn list_problems(
 )]
 pub async fn create_problem(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateProblemRequest>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
@@ -542,7 +542,7 @@ pub async fn create_problem(
 )]
 pub async fn get_problem(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
     require_clinical_list_access(&user, state.facility_id())?;
@@ -574,7 +574,7 @@ pub async fn get_problem(
 )]
 pub async fn update_problem(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<UpdateProblemRequest>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
@@ -615,7 +615,7 @@ pub async fn update_problem(
 )]
 pub async fn change_problem_status(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<ChangeProblemStatusRequest>,
 ) -> Result<Json<ObjectResponse<ProblemListItem>>, ApiError> {
@@ -659,7 +659,7 @@ pub async fn change_problem_status(
 )]
 pub async fn list_allergies(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<AllergyListItem>>, ApiError> {
@@ -694,7 +694,7 @@ pub async fn list_allergies(
 )]
 pub async fn create_allergy(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateAllergyRequest>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
@@ -726,7 +726,7 @@ pub async fn create_allergy(
 )]
 pub async fn get_allergy(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
     require_action_permission(
@@ -762,7 +762,7 @@ pub async fn get_allergy(
 )]
 pub async fn update_allergy(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<UpdateAllergyRequest>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
@@ -812,7 +812,7 @@ pub async fn update_allergy(
 )]
 pub async fn delete_allergy(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AllergyListItem>>, ApiError> {
     require_clinical_write_access(&user, state.facility_id())?;
@@ -855,7 +855,7 @@ pub async fn delete_allergy(
 )]
 pub async fn list_prescriptions(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<PrescriptionListItem>>, ApiError> {
@@ -895,7 +895,7 @@ pub async fn list_prescriptions(
 )]
 pub async fn create_prescription(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreatePrescriptionRequest>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
@@ -934,7 +934,7 @@ pub async fn create_prescription(
 )]
 pub async fn get_prescription(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
     require_action_permission(
@@ -977,7 +977,7 @@ pub async fn get_prescription(
 )]
 pub async fn update_prescription(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<UpdatePrescriptionRequest>,
 ) -> Result<Json<ObjectResponse<PrescriptionListItem>>, ApiError> {
@@ -1047,7 +1047,7 @@ pub async fn update_prescription(
 )]
 pub async fn list_chart_entries(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ChartEntryListItem>>, ApiError> {
@@ -1087,7 +1087,7 @@ pub async fn list_chart_entries(
 )]
 pub async fn create_chart_entry(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(patient_id): Path<Uuid>,
     Json(payload): Json<CreateChartEntryRequest>,
 ) -> Result<Json<ObjectResponse<ChartEntryListItem>>, ApiError> {
@@ -1117,7 +1117,7 @@ pub async fn create_chart_entry(
 
 async fn load_note_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     note_id: Uuid,
     permission: PermissionCode,
 ) -> Result<hms_db::clinical::NoteContext, ApiError> {
@@ -1140,7 +1140,7 @@ async fn load_note_for_access(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -1159,106 +1159,59 @@ async fn load_patient_for_access(
     Ok(patient)
 }
 
-fn require_clinical_list_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_action_permission(user, facility_id, PermissionCode::ClinicalDocumentationView)?;
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+fn require_clinical_list_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_clinical_list_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
             "patient_access_denied",
             "You do not have access to patient clinical documentation.",
-        ))
-    }
+        ),
+        other => ApiError::from(other),
+    })
 }
 
-fn require_clinical_write_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_action_permission(
-        user,
-        facility_id,
-        PermissionCode::ClinicalDocumentationManage,
-    )
+fn require_clinical_write_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_clinical_write_access(user, facility_id).map_err(ApiError::from)
 }
 
 fn require_action_permission(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_permission(user, permission)
-        .and_then(|_| require_permission(user, PermissionCode::PatientDemographicsView))
-        .map_err(|_| {
-            ApiError::forbidden(
-                "permission_denied",
-                "You do not have permission to perform this action.",
-            )
-        })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|_| {
+        ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this action.",
-        ))
-    }
+        )
+    })
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<ClinicalCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| ClinicalCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<ClinicalCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-
-    Ok(ClinicalCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn normalize_text(value: String, field: &'static str, max_len: usize) -> Result<String, ApiError> {

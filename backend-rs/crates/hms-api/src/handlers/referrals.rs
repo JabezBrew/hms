@@ -1,11 +1,9 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::referrals::ReferralCursor;
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
-use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use hms_domain::referrals::{
     AcceptReferralRequest, ClinicWaitlistEntryListItem, CompleteReferralRequest,
@@ -16,9 +14,10 @@ use hms_domain::referrals::{
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::extractors::RequestContext;
+use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
@@ -39,7 +38,7 @@ const MAX_LIMIT: u8 = 100;
 )]
 pub async fn list_referrals(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<ReferralListQuery>,
 ) -> Result<Json<ListResponse<ReferralListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id())?;
@@ -77,7 +76,7 @@ pub async fn list_referrals(
 )]
 pub async fn create_referral(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateReferralRequest>,
 ) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
     require_referral_permission(&user, state.facility_id())?;
@@ -119,7 +118,7 @@ pub async fn create_referral(
 )]
 pub async fn get_referral(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
     require_referral_permission(&user, state.facility_id())?;
@@ -144,7 +143,7 @@ pub async fn get_referral(
 )]
 pub async fn accept_referral(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<AcceptReferralRequest>,
 ) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
@@ -179,7 +178,7 @@ pub async fn accept_referral(
 )]
 pub async fn decline_referral(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<DeclineReferralRequest>,
 ) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
@@ -215,7 +214,7 @@ pub async fn decline_referral(
 )]
 pub async fn complete_referral(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CompleteReferralRequest>,
 ) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
@@ -252,7 +251,7 @@ pub async fn complete_referral(
 )]
 pub async fn get_referral_sla_state(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ReferralSlaState>>, ApiError> {
     require_referral_permission(&user, state.facility_id())?;
@@ -285,7 +284,7 @@ pub async fn get_referral_sla_state(
 )]
 pub async fn get_referral_sla_dashboard(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<ReferralSlaDashboard>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id())?;
     let dashboard = state.referral_sla_dashboard().await.map_err(|_| {
@@ -313,7 +312,7 @@ pub async fn get_referral_sla_dashboard(
 )]
 pub async fn list_clinic_waitlist_entries(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ClinicWaitlistEntryListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id())?;
@@ -350,7 +349,7 @@ pub async fn list_clinic_waitlist_entries(
 )]
 pub async fn create_clinic_waitlist_entry(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateClinicWaitlistEntryRequest>,
 ) -> Result<Json<ObjectResponse<ClinicWaitlistEntryListItem>>, ApiError> {
     require_referral_permission(&user, state.facility_id())?;
@@ -386,7 +385,7 @@ pub async fn create_clinic_waitlist_entry(
 )]
 pub async fn offer_next_clinic_waitlist_entry(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<OfferNextClinicWaitlistEntryRequest>,
 ) -> Result<Json<ObjectResponse<ClinicWaitlistEntryListItem>>, ApiError> {
     require_patient_workflow_access(&user, state.facility_id())?;
@@ -409,7 +408,7 @@ pub async fn offer_next_clinic_waitlist_entry(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -429,7 +428,7 @@ async fn load_patient_for_access(
 
 async fn load_referral_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     referral_id: Uuid,
 ) -> Result<ReferralListItem, ApiError> {
     let referral = state
@@ -441,91 +440,51 @@ async fn load_referral_for_access(
     Ok(referral)
 }
 
-fn require_patient_workflow_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_referral_permission(user, facility_id)?;
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+fn require_patient_workflow_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_referral_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
             "patient_access_denied",
             "You do not have access to patient workflow lists.",
-        ))
-    }
+        ),
+        other => ApiError::from(other),
+    })
 }
 
-fn require_referral_permission(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::ReferralManage).map_err(|_| {
+fn require_referral_permission(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_referral_access(user, facility_id).map_err(|_| {
         ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this action.",
         )
-    })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to perform this action.",
-        ))
-    }
+    })
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<ReferralCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| ReferralCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<ReferralCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(ReferralCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn required_text(value: String, field: &'static str) -> Result<String, ApiError> {

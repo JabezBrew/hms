@@ -75,6 +75,57 @@ impl ApiError {
     }
 }
 
+impl From<hms_access::AccessError> for ApiError {
+    fn from(error: hms_access::AccessError) -> Self {
+        match error {
+            hms_access::AccessError::MissingFacility
+            | hms_access::AccessError::WrongFacility
+            | hms_access::AccessError::MissingPermission => ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission to perform this action.",
+            ),
+            hms_access::AccessError::FeatureDisabled => {
+                ApiError::forbidden("feature_disabled", "This feature is not enabled.")
+            }
+            hms_access::AccessError::PatientAccessDenied
+            | hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have access to this patient workflow.",
+            ),
+            hms_access::AccessError::BillingAccessDenied => ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission for this billing action.",
+            ),
+            hms_access::AccessError::LaboratoryAccessDenied => ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission to perform this laboratory action.",
+            ),
+            hms_access::AccessError::InventoryAccessDenied => ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission for this inventory action.",
+            ),
+            hms_access::AccessError::AdminAuthorityAccessDenied => ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission to manage HMS authority.",
+            ),
+            hms_access::AccessError::ReauthRequired => ApiError::forbidden(
+                "reauth_required",
+                "Fresh reauthentication is required for this action.",
+            ),
+            hms_access::AccessError::OffsiteReadOnly => ApiError::forbidden(
+                "offsite_read_only",
+                "This action is not allowed from an offsite context.",
+            ),
+        }
+    }
+}
+
+impl From<crate::cursor_list::CursorListError> for ApiError {
+    fn from(_: crate::cursor_list::CursorListError) -> Self {
+        ApiError::bad_request("invalid_cursor", "Cursor is invalid.")
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let body = ApiErrorResponse {

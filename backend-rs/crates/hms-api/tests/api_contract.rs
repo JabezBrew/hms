@@ -3,10 +3,14 @@ use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
 use axum::http::HeaderMap;
 use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
+use axum::routing::get;
+use axum::Router;
 use chrono::{Duration, Utc};
 use cookie::Cookie;
 use hms_api::app::build_app;
 use hms_api::config::Config;
+use hms_api::extractors::RequestContext;
+use hms_api::middleware::request_id;
 use hms_api::state::AppState;
 use hms_domain::deployment::DeploymentProfile;
 use serde_json::{json, Value};
@@ -80,6 +84,56 @@ async fn app_with_config(
         router: build_app(state),
         _database: database,
     }
+}
+
+async fn app_with_request_context_probe() -> TestApp {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let state = AppState::new(Config::for_tests_with_database_url(
+        database.database_url().to_owned(),
+    ))
+    .await
+    .expect("test state initializes");
+    let probe = Router::new()
+        .route("/__test/request-context", get(request_context_probe))
+        .with_state(state.clone());
+    TestApp {
+        router: build_app(state.clone())
+            .merge(probe)
+            .layer(axum::middleware::from_fn_with_state(
+                state,
+                request_id::layer,
+            )),
+        _database: database,
+    }
+}
+
+async fn request_context_probe(RequestContext(ctx): RequestContext) -> axum::Json<Value> {
+    let permissions = ctx
+        .permissions
+        .iter()
+        .map(|permission| serde_json::to_value(permission).expect("permission serializes"))
+        .collect::<Vec<_>>();
+    let enabled_features = ctx
+        .enabled_features
+        .iter()
+        .map(|feature| serde_json::to_value(feature).expect("feature serializes"))
+        .collect::<Vec<_>>();
+    axum::Json(json!({
+        "request_id": ctx.request_id,
+        "user_id": ctx.user_id,
+        "session_id": ctx.session_id,
+        "facility_id": ctx.facility_id,
+        "facility_code": ctx.facility_code,
+        "active_profile": ctx.active_profile,
+        "enabled_features": enabled_features,
+        "permissions": permissions,
+        "patient_visibility": ctx.patient_visibility,
+        "session_version": ctx.session_version,
+        "permission_version": ctx.permission_version,
+        "offsite": format!("{:?}", ctx.offsite),
+        "reauth_fresh": ctx.reauth.is_fresh_at(Utc::now()),
+    }))
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
@@ -700,6 +754,96 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
 }
 
 #[tokio::test]
+async fn request_context_extractor_resolves_policy_state_before_handler() {
+    let app = app_with_request_context_probe().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/__test/request-context")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .header("x-request-id", "request-context-test")
+                .header("x-hms-offsite", "true")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("request context probe succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["request_id"], "request-context-test");
+    assert_eq!(body["facility_code"], "HMS");
+    assert_eq!(body["active_profile"], "hospital");
+    assert_eq!(body["offsite"], "OffsiteReadOnly");
+    assert_eq!(body["reauth_fresh"], true);
+    assert!(body["session_id"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+    assert!(body["enabled_features"]
+        .as_array()
+        .expect("features are listed")
+        .contains(&json!("patients")));
+    assert!(body["permissions"]
+        .as_array()
+        .expect("permissions are listed")
+        .contains(&json!("patient.demographics.view")));
+    assert!(body["patient_visibility"]
+        .as_array()
+        .expect("visibility is listed")
+        .contains(&json!("demographics")));
+}
+
+#[tokio::test]
+async fn request_context_rejects_stale_permission_versions() {
+    let app = app().await;
+    let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+
+    let assignment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/permission-assignments")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "grantee_user_id": limited_id,
+                        "permission_code": "dashboard.view",
+                        "scope_type": "facility",
+                        "scope_id": null,
+                        "starts_at": null,
+                        "ends_at": null,
+                        "reason_code": "request_context_stale_permission_test"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("permission assignment request succeeds");
+    assert_eq!(assignment.status(), StatusCode::OK);
+
+    let stale_access = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale permission request succeeds");
+    assert_eq!(stale_access.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn auth_sessions_can_be_listed_and_revoked_by_owner() {
     let app = app().await;
     let (current_access_token, current_cookie, current_csrf) = login_with_password_and_device(
@@ -1287,6 +1431,22 @@ async fn feature_entitlements_are_admin_scoped_and_reflected_in_capabilities() {
     assert_eq!(capabilities_response.status(), StatusCode::OK);
     let capabilities_body = json_body(capabilities_response).await;
     assert_eq!(capabilities_body["data"]["features"]["nursing"], false);
+
+    let disabled_feature_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/nursing/tasks?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("disabled feature request succeeds");
+    assert_eq!(disabled_feature_response.status(), StatusCode::FORBIDDEN);
+    let disabled_feature_body = json_body(disabled_feature_response).await;
+    assert_eq!(disabled_feature_body["error"]["code"], "feature_disabled");
 
     let delete_response = app
         .clone()

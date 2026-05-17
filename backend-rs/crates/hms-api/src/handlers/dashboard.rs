@@ -3,9 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::require_permission;
 use hms_db::dashboard::NotificationCursor;
-use hms_domain::auth::AuthUser;
 use hms_domain::dashboard::{
     AdminCapacityQuery, AdminCapacitySummary, DashboardSnapshot, MarkNotificationReadRequest,
     NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeChannelKind,
@@ -15,8 +13,9 @@ use hms_domain::deployment::{FeatureKey, PermissionCode};
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -28,7 +27,7 @@ const MAX_CAPACITY_LIMIT: u8 = 25;
 #[utoipa::path(get, path = "/api/v2/dashboards/snapshot", operation_id = "getDashboardSnapshot", tag = "dashboards", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<DashboardSnapshot>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_snapshot(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<DashboardSnapshot>>, ApiError> {
     require_dashboard_access(&user, state.facility_id())?;
     let snapshot = state.dashboard_snapshot().await.map_err(|_| {
@@ -43,7 +42,7 @@ pub async fn dashboard_snapshot(
 #[utoipa::path(get, path = "/api/v2/dashboards/admin-v2/capacity", operation_id = "getAdminDashboardV2Capacity", tag = "dashboards", security(("bearerAuth" = [])), params(AdminCapacityQuery), responses((status = 200, body = ObjectResponse<AdminCapacitySummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn admin_capacity_summary(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AdminCapacityQuery>,
 ) -> Result<Json<ObjectResponse<AdminCapacitySummary>>, ApiError> {
     require_dashboard_access(&user, state.facility_id())?;
@@ -63,7 +62,7 @@ pub async fn admin_capacity_summary(
 #[utoipa::path(get, path = "/api/v2/notifications", operation_id = "getNotifications", tag = "notifications", security(("bearerAuth" = [])), params(NotificationListQuery), responses((status = 200, body = ListResponse<NotificationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_notifications(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<NotificationListQuery>,
 ) -> Result<Json<ListResponse<NotificationListItem>>, ApiError> {
     require_notification_access(&user, state.facility_id())?;
@@ -85,7 +84,7 @@ pub async fn list_notifications(
 #[utoipa::path(get, path = "/api/v2/notifications/counts", operation_id = "getNotificationCounts", tag = "notifications", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<NotificationCounts>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn notification_counts(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<NotificationCounts>>, ApiError> {
     require_notification_access(&user, state.facility_id())?;
     let counts = state.notification_counts(user.id).await.map_err(|_| {
@@ -100,7 +99,7 @@ pub async fn notification_counts(
 #[utoipa::path(post, path = "/api/v2/notifications/{id}/read", operation_id = "postNotificationRead", tag = "notifications", security(("bearerAuth" = [])), request_body = MarkNotificationReadRequest, responses((status = 200, body = ObjectResponse<NotificationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
 pub async fn mark_notification_read(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<MarkNotificationReadRequest>,
 ) -> Result<Json<ObjectResponse<NotificationListItem>>, ApiError> {
@@ -123,7 +122,7 @@ pub async fn mark_notification_read(
 #[utoipa::path(get, path = "/api/v2/realtime/subscriptions", operation_id = "getRealtimeSubscriptions", tag = "realtime", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<RealtimeSubscription>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_realtime_subscriptions(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<RealtimeSubscription>>, ApiError> {
     let mut subscriptions = Vec::new();
     if require_dashboard_access(&user, state.facility_id()).is_ok() {
@@ -144,7 +143,7 @@ pub async fn list_realtime_subscriptions(
 
 pub async fn realtime_ws(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<RealtimeSubscribeQuery>,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -191,7 +190,7 @@ fn subscription(state: &AppState, channel_kind: RealtimeChannelKind) -> Realtime
 }
 
 fn require_realtime_access(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     channel_kind: RealtimeChannelKind,
 ) -> Result<(), ApiError> {
@@ -201,83 +200,53 @@ fn require_realtime_access(
     }
 }
 
-fn require_dashboard_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::DashboardView).map_err(|_| {
-        ApiError::forbidden(
+fn require_dashboard_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_dashboard_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::MissingPermission => ApiError::forbidden(
             "permission_denied",
             "You do not have permission to view dashboards.",
-        )
-    })?;
-    require_facility(user, facility_id)
+        ),
+        other => ApiError::from(other),
+    })
 }
 
-fn require_notification_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::NotificationView).map_err(|_| {
-        ApiError::forbidden(
+fn require_notification_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_notification_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::MissingPermission => ApiError::forbidden(
             "permission_denied",
             "You do not have permission to view notifications.",
-        )
-    })?;
-    require_facility(user, facility_id)
-}
-
-fn require_facility(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have access to this facility.",
-        ));
-    }
-    Ok(())
+        ),
+        other => ApiError::from(other),
+    })
 }
 
 fn notification_page_request(
     query: NotificationListQuery,
 ) -> Result<(Option<NotificationCursor>, u8, bool), ApiError> {
-    let page_size = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query.cursor.map(decode_cursor).transpose()?;
-    Ok((cursor, page_size, query.unread_only.unwrap_or(false)))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| NotificationCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit, query.unread_only.unwrap_or(false)))
 }
 
 fn page_response<T>(
-    mut rows: Vec<T>,
+    rows: Vec<T>,
     page_size: u8,
     cursor_for: impl Fn(&T) -> String,
 ) -> ListResponse<T> {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: String) -> Result<NotificationCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(NotificationCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }

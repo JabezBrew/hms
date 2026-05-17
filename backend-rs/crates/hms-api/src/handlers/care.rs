@@ -1,9 +1,8 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::care::CareCursor;
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::{
     AppointmentListItem, AppointmentListQuery, CareTeamAssignment, CheckInVisitRequest,
     ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
@@ -16,8 +15,9 @@ use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -42,7 +42,7 @@ const MAX_CLINIC_NAME_LEN: usize = 160;
 )]
 pub async fn list_appointments(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<AppointmentListQuery>,
 ) -> Result<Json<ListResponse<AppointmentListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
@@ -82,7 +82,7 @@ pub async fn list_appointments(
 )]
 pub async fn list_clinics(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ClinicListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
@@ -113,7 +113,7 @@ pub async fn list_clinics(
 )]
 pub async fn get_clinic(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
@@ -143,7 +143,7 @@ pub async fn get_clinic(
 )]
 pub async fn create_clinic(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateClinicRequest>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
     require_action_permission(
@@ -182,7 +182,7 @@ pub async fn create_clinic(
 )]
 pub async fn update_clinic(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateClinicRequest>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
@@ -223,7 +223,7 @@ pub async fn update_clinic(
 )]
 pub async fn delete_clinic(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
     require_action_permission(
@@ -258,7 +258,7 @@ pub async fn delete_clinic(
 )]
 pub async fn create_appointment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
     require_action_permission(
@@ -308,7 +308,7 @@ pub async fn create_appointment(
 )]
 pub async fn get_appointment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
     let appointment =
@@ -334,7 +334,7 @@ pub async fn get_appointment(
 )]
 pub async fn update_appointment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
@@ -392,7 +392,7 @@ pub async fn update_appointment(
 )]
 pub async fn cancel_appointment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
     let _existing =
@@ -431,7 +431,7 @@ pub async fn cancel_appointment(
 )]
 pub async fn list_visits(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<VisitListQuery>,
 ) -> Result<Json<ListResponse<VisitListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
@@ -466,7 +466,7 @@ pub async fn list_visits(
 )]
 pub async fn get_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     require_action_permission(&user, state.facility_id(), PermissionCode::AppointmentView)?;
@@ -489,7 +489,7 @@ pub async fn get_visit(
 )]
 pub async fn check_in_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CheckInVisitRequest>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     require_action_permission(
@@ -529,7 +529,7 @@ pub async fn check_in_visit(
 )]
 pub async fn call_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     update_visit_with_access(
@@ -558,7 +558,7 @@ pub async fn call_visit(
 )]
 pub async fn start_visit_consultation(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     update_visit_with_access(
@@ -587,7 +587,7 @@ pub async fn start_visit_consultation(
 )]
 pub async fn hold_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     update_visit_with_access(
@@ -616,7 +616,7 @@ pub async fn hold_visit(
 )]
 pub async fn ready_checkout_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     update_visit_with_access(
@@ -645,7 +645,7 @@ pub async fn ready_checkout_visit(
 )]
 pub async fn checkout_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     update_visit_with_access(
@@ -674,7 +674,7 @@ pub async fn checkout_visit(
 )]
 pub async fn no_show_visit(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
     update_visit_with_access(
@@ -702,7 +702,7 @@ pub async fn no_show_visit(
 )]
 pub async fn list_triage(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<TriageListQuery>,
 ) -> Result<Json<ListResponse<TriageListItem>>, ApiError> {
     require_workflow_list_access(
@@ -742,7 +742,7 @@ pub async fn list_triage(
 )]
 pub async fn create_triage(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateTriageRequest>,
 ) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
     require_action_permission(
@@ -777,7 +777,7 @@ pub async fn create_triage(
 )]
 pub async fn get_triage(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
     require_action_permission(
@@ -813,7 +813,7 @@ pub async fn get_triage(
 )]
 pub async fn assess_triage(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<TriageAssessmentRequest>,
 ) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
@@ -869,7 +869,7 @@ pub async fn assess_triage(
 )]
 pub async fn assign_triage(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<hms_domain::care::AssignTriageRequest>,
 ) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
@@ -912,7 +912,7 @@ pub async fn assign_triage(
 )]
 pub async fn cancel_triage(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<TriageListItem>>, ApiError> {
     require_action_permission(
@@ -962,7 +962,7 @@ pub async fn cancel_triage(
 )]
 pub async fn list_encounters(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<EncounterListQuery>,
 ) -> Result<Json<ListResponse<EncounterListItem>>, ApiError> {
     require_workflow_list_access(&user, state.facility_id(), PermissionCode::EncounterView)?;
@@ -1000,7 +1000,7 @@ pub async fn list_encounters(
 )]
 pub async fn create_encounter(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateEncounterRequest>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
     require_action_permission(&user, state.facility_id(), PermissionCode::EncounterManage)?;
@@ -1045,7 +1045,7 @@ pub async fn create_encounter(
 )]
 pub async fn get_encounter(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
     let encounter =
@@ -1072,7 +1072,7 @@ pub async fn get_encounter(
 )]
 pub async fn update_encounter(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateEncounterRequest>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
@@ -1127,7 +1127,7 @@ pub async fn update_encounter(
 )]
 pub async fn complete_encounter(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
     update_encounter_with_access(&state, &user, id, EncounterStatus::Completed).await
@@ -1149,7 +1149,7 @@ pub async fn complete_encounter(
 )]
 pub async fn cancel_encounter(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
     update_encounter_with_access(&state, &user, id, EncounterStatus::Cancelled).await
@@ -1171,7 +1171,7 @@ pub async fn cancel_encounter(
 )]
 pub async fn list_care_team(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ListResponse<CareTeamAssignment>>, ApiError> {
     let encounter =
@@ -1210,7 +1210,7 @@ pub async fn list_care_team(
 )]
 pub async fn create_care_team_assignment(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateCareTeamAssignmentRequest>,
 ) -> Result<Json<ObjectResponse<CareTeamAssignment>>, ApiError> {
@@ -1231,7 +1231,7 @@ pub async fn create_care_team_assignment(
 
 async fn update_visit_with_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     visit_id: Uuid,
     status: VisitStatus,
     permission: PermissionCode,
@@ -1249,7 +1249,7 @@ async fn update_visit_with_access(
 
 async fn update_encounter_with_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     encounter_id: Uuid,
     status: EncounterStatus,
 ) -> Result<Json<ObjectResponse<EncounterListItem>>, ApiError> {
@@ -1269,7 +1269,7 @@ async fn update_encounter_with_access(
 
 async fn load_visit_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     visit_id: Uuid,
 ) -> Result<VisitListItem, ApiError> {
     let visit = state
@@ -1283,7 +1283,7 @@ async fn load_visit_for_access(
 
 async fn load_appointment_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     appointment_id: Uuid,
     permission: PermissionCode,
 ) -> Result<AppointmentListItem, ApiError> {
@@ -1306,7 +1306,7 @@ async fn load_appointment_for_access(
 
 async fn load_encounter_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     encounter_id: Uuid,
     permission: PermissionCode,
 ) -> Result<EncounterListItem, ApiError> {
@@ -1322,7 +1322,7 @@ async fn load_encounter_for_access(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -1342,45 +1342,32 @@ async fn load_patient_for_access(
 }
 
 fn require_workflow_list_access(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_action_permission(user, facility_id, permission)?;
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to patient workflow lists.",
-        ))
-    }
+    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|error| {
+        match error {
+            hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have access to patient workflow lists.",
+            ),
+            other => ApiError::from(other),
+        }
+    })
 }
 
 fn require_action_permission(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_permission(user, permission)
-        .and_then(|_| require_permission(user, PermissionCode::PatientDemographicsView))
-        .map_err(|_| {
-            ApiError::forbidden(
-                "permission_denied",
-                "You do not have permission to perform this action.",
-            )
-        })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|_| {
+        ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this action.",
-        ))
-    }
+        )
+    })
 }
 
 fn validate_required_text(
@@ -1422,57 +1409,23 @@ fn validate_optional_text(
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<CareCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| CareCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<CareCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-
-    Ok(CareCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }

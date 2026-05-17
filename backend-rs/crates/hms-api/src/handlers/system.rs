@@ -4,7 +4,7 @@ use hms_domain::capabilities::DeploymentCapabilities;
 use hms_domain::deployment::PermissionCode;
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::response::{object, ObjectResponse};
 use crate::state::AppState;
 use axum::extract::State;
@@ -23,7 +23,7 @@ use axum::extract::State;
 )]
 pub async fn deployment_capabilities(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<DeploymentCapabilities>>, ApiError> {
     require_permission(&user, PermissionCode::SystemDeploymentCapabilitiesView).map_err(|_| {
         ApiError::forbidden(

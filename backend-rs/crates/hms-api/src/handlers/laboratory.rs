@@ -1,12 +1,11 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::laboratory::{
     LabCursor, LabOrderListFilters, LabResultListFilters, OrderContext, ResultContext,
     SpecimenContext,
 };
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::laboratory::{
     BulkCreateLabResultsRequest, BulkCreateLabResultsResponse, BulkVerifyLabResultsRequest,
@@ -19,9 +18,10 @@ use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::extractors::RequestContext;
+use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
@@ -44,7 +44,7 @@ const MAX_BULK_VERIFY_RESULTS: usize = 50;
 )]
 pub async fn list_test_catalog(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<LabTestCatalogItem>>, ApiError> {
     require_laboratory_access(
         &user,
@@ -77,7 +77,7 @@ pub async fn list_test_catalog(
 )]
 pub async fn get_test_catalog_item(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabTestCatalogItem>>, ApiError> {
     require_laboratory_access(
@@ -118,7 +118,7 @@ pub async fn get_test_catalog_item(
 )]
 pub async fn list_panels(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<LabPanelListItem>>, ApiError> {
     require_laboratory_access(
         &user,
@@ -151,7 +151,7 @@ pub async fn list_panels(
 )]
 pub async fn get_panel(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabPanelListItem>>, ApiError> {
     require_laboratory_access(
@@ -190,7 +190,7 @@ pub async fn get_panel(
 )]
 pub async fn list_orders(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<LaboratoryOrderListQuery>,
 ) -> Result<Json<ListResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
@@ -232,7 +232,7 @@ pub async fn list_orders(
 )]
 pub async fn get_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
@@ -263,7 +263,7 @@ pub async fn get_order(
 )]
 pub async fn create_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateLabOrderRequest>,
 ) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_access(
@@ -314,7 +314,7 @@ pub async fn create_order(
 )]
 pub async fn submit_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_access(
@@ -354,7 +354,7 @@ pub async fn submit_order(
 )]
 pub async fn collect_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_access(
@@ -394,7 +394,7 @@ pub async fn collect_order(
 )]
 pub async fn start_order_processing(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
     require_laboratory_access(
@@ -436,7 +436,7 @@ pub async fn start_order_processing(
 )]
 pub async fn cancel_order(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<CancelLabOrderRequest>,
 ) -> Result<Json<ObjectResponse<LabOrderListItem>>, ApiError> {
@@ -477,7 +477,7 @@ pub async fn cancel_order(
 )]
 pub async fn list_specimens(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<LaboratoryListQuery>,
 ) -> Result<Json<ListResponse<SpecimenListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
@@ -510,7 +510,7 @@ pub async fn list_specimens(
 )]
 pub async fn get_specimen(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<SpecimenListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
@@ -541,7 +541,7 @@ pub async fn get_specimen(
 )]
 pub async fn create_specimen(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateSpecimenRequest>,
 ) -> Result<Json<ObjectResponse<SpecimenListItem>>, ApiError> {
     require_laboratory_access(
@@ -578,7 +578,7 @@ pub async fn create_specimen(
 )]
 pub async fn receive_specimen(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<SpecimenListItem>>, ApiError> {
     require_laboratory_access(
@@ -613,7 +613,7 @@ pub async fn receive_specimen(
 )]
 pub async fn list_results(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<LaboratoryResultListQuery>,
 ) -> Result<Json<ListResponse<LabResultListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
@@ -653,7 +653,7 @@ pub async fn list_results(
 )]
 pub async fn get_result(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabResultListItem>>, ApiError> {
     require_laboratory_list_access(&user, state.facility_id())?;
@@ -686,7 +686,7 @@ pub async fn get_result(
 )]
 pub async fn create_result(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateLabResultRequest>,
 ) -> Result<Json<ObjectResponse<LabResultListItem>>, ApiError> {
     require_laboratory_access(
@@ -725,7 +725,7 @@ pub async fn create_result(
 )]
 pub async fn bulk_create_results(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<BulkCreateLabResultsRequest>,
 ) -> Result<Json<ObjectResponse<BulkCreateLabResultsResponse>>, ApiError> {
     require_laboratory_access(
@@ -796,7 +796,7 @@ pub async fn bulk_create_results(
 )]
 pub async fn verify_result(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<LabResultListItem>>, ApiError> {
     require_laboratory_access(
@@ -836,7 +836,7 @@ pub async fn verify_result(
 )]
 pub async fn bulk_verify_results(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<BulkVerifyLabResultsRequest>,
 ) -> Result<Json<ObjectResponse<BulkVerifyLabResultsResponse>>, ApiError> {
     require_laboratory_access(
@@ -886,7 +886,7 @@ pub async fn bulk_verify_results(
 
 async fn load_order_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     order_id: Uuid,
 ) -> Result<OrderContext, ApiError> {
     let order = state
@@ -900,7 +900,7 @@ async fn load_order_for_access(
 
 async fn load_specimen_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     specimen_id: Uuid,
 ) -> Result<SpecimenContext, ApiError> {
     let specimen = state
@@ -914,7 +914,7 @@ async fn load_specimen_for_access(
 
 async fn load_result_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     result_id: Uuid,
 ) -> Result<ResultContext, ApiError> {
     let result = state
@@ -930,7 +930,7 @@ async fn load_result_for_access(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -949,128 +949,63 @@ async fn load_patient_for_access(
     Ok(patient)
 }
 
-fn require_laboratory_list_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    if !has_permission(user, PermissionCode::LaboratoryOrderManage)
-        && !has_permission(user, PermissionCode::LaboratoryResultVerify)
-    {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to view laboratory workflows.",
-        ));
-    }
-    if user.facility_id != facility_id {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to view laboratory workflows.",
-        ));
-    }
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+fn require_laboratory_list_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_lab_list_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
             "patient_access_denied",
             "You do not have access to patient laboratory workflows.",
-        ))
-    }
+        ),
+        hms_access::AccessError::LaboratoryAccessDenied => ApiError::forbidden(
+            "permission_denied",
+            "You do not have permission to view laboratory workflows.",
+        ),
+        other => ApiError::from(other),
+    })
 }
 
 fn require_laboratory_access(
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     facility_id: Uuid,
     permission: PermissionCode,
 ) -> Result<(), ApiError> {
-    require_permission(user, permission)
-        .and_then(|_| require_permission(user, PermissionCode::PatientDemographicsView))
-        .map_err(|_| {
-            ApiError::forbidden(
-                "permission_denied",
-                "You do not have permission to perform this laboratory action.",
-            )
-        })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+    hms_access::require_lab_access(user, facility_id, permission).map_err(|_| {
+        ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this laboratory action.",
-        ))
-    }
-}
-
-fn has_permission(user: &AuthUser, permission: PermissionCode) -> bool {
-    user.permissions.contains(&permission)
+        )
+    })
 }
 
 fn page_request(
     cursor: Option<String>,
     limit: Option<u8>,
 ) -> Result<(Option<LabCursor>, u8), ApiError> {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        cursor.as_deref(),
+        limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| LabCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
 fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
-    list(
-        items,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: MAX_LIMIT,
-        },
-    )
+    cursor_list::static_list(items, MAX_LIMIT)
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<LabCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-
-    Ok(LabCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn normalize_text(value: String, field: &'static str) -> Result<String, ApiError> {

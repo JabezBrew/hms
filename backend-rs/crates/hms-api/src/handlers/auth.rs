@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::{AuthenticatedSession, AuthenticatedUser};
+use crate::extractors::{AuthenticatedSession, RequestContext};
 use crate::response::{object, ObjectResponse};
 use crate::state::{AppState, ChangePasswordOutcome, LoginOutcome};
 
@@ -203,8 +203,8 @@ pub async fn logout(
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
 )]
-pub async fn me(AuthenticatedUser(user): AuthenticatedUser) -> Json<ObjectResponse<AuthUser>> {
-    Json(object(user))
+pub async fn me(RequestContext(user): RequestContext) -> Json<ObjectResponse<AuthUser>> {
+    Json(object(user.auth_user().clone()))
 }
 
 #[utoipa::path(
@@ -223,7 +223,7 @@ pub async fn me(AuthenticatedUser(user): AuthenticatedUser) -> Json<ObjectRespon
 )]
 pub async fn update_me(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<UpdateAuthProfileRequest>,
 ) -> Result<Json<ObjectResponse<AuthUser>>, ApiError> {
     validate_profile_update(&payload)?;
@@ -306,7 +306,7 @@ pub async fn complete_password_reset(
 )]
 pub async fn change_password(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<ChangePasswordRequest>,
 ) -> Result<Json<ObjectResponse<ChangePasswordResponse>>, ApiError> {
     let outcome = state
@@ -354,10 +354,13 @@ pub async fn change_password(
 )]
 pub async fn list_sessions(
     State(state): State<AppState>,
-    AuthenticatedSession { user, session_id }: AuthenticatedSession,
+    AuthenticatedSession {
+        context,
+        session_id,
+    }: AuthenticatedSession,
 ) -> Result<Json<ObjectResponse<AuthSessionListResponse>>, ApiError> {
     let sessions = state
-        .list_auth_sessions(user.id, user.facility_id, session_id)
+        .list_auth_sessions(context.user_id, context.facility_id, session_id)
         .await
         .map_err(|_| {
             ApiError::bad_request("sessions_load_failed", "Sessions could not be loaded.")
@@ -390,11 +393,11 @@ pub async fn list_sessions(
 )]
 pub async fn revoke_session(
     State(state): State<AppState>,
-    AuthenticatedSession { user, .. }: AuthenticatedSession,
+    AuthenticatedSession { context, .. }: AuthenticatedSession,
     Path(session_id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<RevokeSessionResponse>>, ApiError> {
     let revoked = state
-        .revoke_auth_session(user.id, user.facility_id, session_id)
+        .revoke_auth_session(context.user_id, context.facility_id, session_id)
         .await
         .map_err(|_| {
             ApiError::bad_request("session_revoke_failed", "Session could not be revoked.")
@@ -418,12 +421,15 @@ pub async fn revoke_session(
 )]
 pub async fn revoke_all_sessions(
     State(state): State<AppState>,
-    AuthenticatedSession { user, session_id }: AuthenticatedSession,
+    AuthenticatedSession {
+        context,
+        session_id,
+    }: AuthenticatedSession,
     Json(payload): Json<RevokeAllSessionsRequest>,
 ) -> Result<Json<ObjectResponse<RevokeAllSessionsResponse>>, ApiError> {
     if payload.exclude_current == Some(false) {
         let sessions = state
-            .list_auth_sessions(user.id, user.facility_id, session_id)
+            .list_auth_sessions(context.user_id, context.facility_id, session_id)
             .await
             .map_err(|_| {
                 ApiError::bad_request("sessions_load_failed", "Sessions could not be loaded.")
@@ -431,7 +437,7 @@ pub async fn revoke_all_sessions(
         let mut revoked_count = 0;
         for session in sessions {
             if state
-                .revoke_auth_session(user.id, user.facility_id, session.id)
+                .revoke_auth_session(context.user_id, context.facility_id, session.id)
                 .await
                 .map_err(|_| {
                     ApiError::bad_request("session_revoke_failed", "Session could not be revoked.")
@@ -444,7 +450,7 @@ pub async fn revoke_all_sessions(
     }
 
     let revoked_count = state
-        .revoke_other_auth_sessions(user.id, user.facility_id, session_id)
+        .revoke_other_auth_sessions(context.user_id, context.facility_id, session_id)
         .await
         .map_err(|_| {
             ApiError::bad_request("session_revoke_failed", "Sessions could not be revoked.")

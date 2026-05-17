@@ -1,22 +1,21 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::{DateTime, Utc};
 use hms_access::{
     can_create_patient, can_update_patient, require_patient_demographics_access, require_permission,
 };
 use hms_db::patients::{PatientContextCursor, PatientCursor};
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::{
     CreatePatientRequest, PatientContextListItem, PatientDetail, PatientListItem, PatientListQuery,
-    PatientRecord, PatientRegistrationValidationRule, UpdatePatientRequest,
+    PatientRegistrationValidationRule, UpdatePatientRequest,
 };
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::middleware::request_id::current_request_id;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
@@ -40,21 +39,21 @@ const CHRONICLE_SUMMARY_LIMIT: i64 = 25;
 )]
 pub async fn list_patients(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<PatientListQuery>,
 ) -> Result<Json<ListResponse<PatientListItem>>, ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let search = query
         .search
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let cursor_value = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let cursor = cursor_value.map(decode_cursor).transpose()?;
+    let page_request = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |created_at, id| PatientCursor { created_at, id },
+    )?;
 
     require_permission(&user, PermissionCode::PatientDemographicsView).map_err(|_| {
         ApiError::forbidden(
@@ -63,9 +62,13 @@ pub async fn list_patients(
         )
     })?;
 
-    let page_size = limit as usize;
     let patients = state
-        .list_patients(cursor, page_size as i64 + 1, search, query.status)
+        .list_patients(
+            page_request.cursor,
+            i64::from(page_request.limit) + 1,
+            search,
+            query.status,
+        )
         .await
         .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
 
@@ -77,24 +80,13 @@ pub async fn list_patients(
         visible.push(patient);
     }
 
-    let mut page = visible;
-    let has_next = page.len() > page_size;
-    if has_next {
-        page.truncate(page_size);
-    }
-    let next_cursor = if has_next {
-        page.last().map(encode_cursor)
-    } else {
-        None
-    };
+    let page = cursor_list::page_response(visible, page_request.limit, |patient| {
+        cursor_list::encode_cursor(patient.created_at, patient.id)
+    });
 
     Ok(Json(list(
-        page.iter().map(PatientListItem::from).collect(),
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit,
-        },
+        page.data.iter().map(PatientListItem::from).collect(),
+        page.page,
     )))
 }
 
@@ -113,38 +105,36 @@ pub async fn list_patients(
 )]
 pub async fn list_context_patients(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<PatientListQuery>,
 ) -> Result<Json<ListResponse<PatientContextListItem>>, ApiError> {
-    let limit = query.limit.unwrap_or(10).clamp(1, MAX_LIMIT);
-    require_permission(&user, PermissionCode::PatientDemographicsView).map_err(|_| {
+    hms_access::require_patient_workflow_access(
+        &user,
+        state.facility_id(),
+        PermissionCode::PatientDemographicsView,
+    )
+    .map_err(|_| {
         ApiError::forbidden(
             "patient_access_denied",
             "You do not have access to patient context lists.",
         )
     })?;
-    if !user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        return Err(ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to patient context lists.",
-        ));
-    }
 
-    let cursor_value = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let cursor = cursor_value.map(decode_context_cursor).transpose()?;
-    let page_size = limit as usize;
+    let page_request = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        10,
+        MAX_LIMIT,
+        |updated_at, patient_id| PatientContextCursor {
+            updated_at,
+            patient_id,
+        },
+    )?;
     let patients = state
         .list_context_patients(
             user.id,
-            cursor,
-            page_size as i64 + 1,
+            page_request.cursor,
+            i64::from(page_request.limit) + 1,
             hms_db::patients::PatientContextFilters {
                 patient_id: query.patient_id,
                 search: query.search.clone(),
@@ -158,24 +148,10 @@ pub async fn list_context_patients(
             )
         })?;
 
-    let mut page = patients;
-    let has_next = page.len() > page_size;
-    if has_next {
-        page.truncate(page_size);
-    }
-    let next_cursor = if has_next {
-        page.last().map(encode_context_cursor)
-    } else {
-        None
-    };
-
-    Ok(Json(list(
-        page,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit,
-        },
+    Ok(Json(cursor_list::page_response(
+        patients,
+        page_request.limit,
+        |patient| cursor_list::encode_cursor(patient.updated_at, patient.id),
     )))
 }
 
@@ -193,16 +169,21 @@ pub async fn list_context_patients(
 )]
 pub async fn list_patient_validation_rules(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<PatientRegistrationValidationRule>>, ApiError> {
-    if require_permission(&user, PermissionCode::PatientCreate).is_err()
-        && require_permission(&user, PermissionCode::PatientUpdate).is_err()
-    {
-        return Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to use patient registration rules.",
-        ));
-    }
+    hms_access::require_facility(&user, state.facility_id())
+        .and_then(|_| {
+            hms_access::require_any_permission(
+                &user,
+                &[PermissionCode::PatientCreate, PermissionCode::PatientUpdate],
+            )
+        })
+        .map_err(|_| {
+            ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission to use patient registration rules.",
+            )
+        })?;
 
     let rules = state
         .list_patient_registration_validation_rules()
@@ -240,7 +221,7 @@ pub async fn list_patient_validation_rules(
 )]
 pub async fn create_patient(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreatePatientRequest>,
 ) -> Result<Json<ObjectResponse<PatientDetail>>, ApiError> {
     can_create_patient(&user, state.facility_id()).map_err(|_| {
@@ -278,7 +259,7 @@ pub async fn create_patient(
 )]
 pub async fn get_patient(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PatientDetail>>, ApiError> {
     let patient = state
@@ -313,7 +294,7 @@ pub async fn get_patient(
 )]
 pub async fn get_patient_chronicle(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PatientChronicleSummary>>, ApiError> {
     patient_chronicle_response(state, user, id).await
@@ -335,7 +316,7 @@ pub async fn get_patient_chronicle(
 )]
 pub async fn get_patient_chronicle_print(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PatientChronicleSummary>>, ApiError> {
     patient_chronicle_response(state, user, id).await
@@ -359,7 +340,7 @@ pub async fn get_patient_chronicle_print(
 )]
 pub async fn update_patient(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdatePatientRequest>,
 ) -> Result<Json<ObjectResponse<PatientDetail>>, ApiError> {
@@ -424,10 +405,10 @@ pub async fn update_patient(
 
 async fn patient_chronicle_response(
     state: AppState,
-    user: AuthUser,
+    user: hms_access::RequestContext,
     id: Uuid,
 ) -> Result<Json<ObjectResponse<PatientChronicleSummary>>, ApiError> {
-    require_chronicle_read_access(&user).map_err(|_| {
+    hms_access::require_chronicle_read_access(&user).map_err(|_| {
         ApiError::forbidden(
             "patient_access_denied",
             "You do not have access to this patient Chronicle.",
@@ -458,62 +439,6 @@ async fn patient_chronicle_response(
         .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
 
     Ok(Json(object(summary)))
-}
-
-fn require_chronicle_read_access(user: &AuthUser) -> Result<(), hms_access::AccessError> {
-    require_permission(user, PermissionCode::PatientDemographicsView)?;
-    require_permission(user, PermissionCode::ClinicalDocumentationView)?;
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(hms_access::AccessError::PatientAccessDenied)
-    }
-}
-
-fn encode_cursor(patient: &PatientRecord) -> String {
-    format!("{}:{}", patient.created_at.timestamp_micros(), patient.id)
-}
-
-fn encode_context_cursor(patient: &PatientContextListItem) -> String {
-    format!("{}:{}", patient.updated_at.timestamp_micros(), patient.id)
-}
-
-fn decode_cursor(value: &str) -> Result<PatientCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let created_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-
-    Ok(PatientCursor { created_at, id })
-}
-
-fn decode_context_cursor(value: &str) -> Result<PatientContextCursor, ApiError> {
-    let (micros, patient_id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let updated_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let patient_id = patient_id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-
-    Ok(PatientContextCursor {
-        updated_at,
-        patient_id,
-    })
 }
 
 fn normalize_name(value: String, field: &'static str) -> Result<String, ApiError> {

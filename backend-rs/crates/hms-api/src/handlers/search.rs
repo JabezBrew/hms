@@ -6,7 +6,7 @@ use hms_domain::deployment::PermissionCode;
 use hms_domain::search::{OmniSearchRequest, OmniSearchResponse};
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::RequestContext;
 use crate::response::{object, ObjectResponse};
 use crate::state::AppState;
 
@@ -30,15 +30,17 @@ const MAX_QUERY_CHARS: usize = 120;
 )]
 pub async fn omni_search(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<OmniSearchRequest>,
 ) -> Result<Json<ObjectResponse<OmniSearchResponse>>, ApiError> {
-    if user.facility_id != state.facility_id() || !can_search_anything(&user.permissions) {
-        return Err(ApiError::forbidden(
-            "search_permission_denied",
-            "You do not have permission to search this facility.",
-        ));
-    }
+    hms_access::require_facility(&user, state.facility_id())
+        .and_then(|_| hms_access::require_any_permission(&user, &SEARCH_PERMISSIONS))
+        .map_err(|_| {
+            ApiError::forbidden(
+                "search_permission_denied",
+                "You do not have permission to search this facility.",
+            )
+        })?;
 
     let started = Instant::now();
     let limit = payload.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
@@ -77,24 +79,18 @@ fn normalize_query(query: Option<String>) -> String {
         .collect()
 }
 
-fn can_search_anything(permissions: &[PermissionCode]) -> bool {
-    const SEARCH_PERMISSIONS: [PermissionCode; 12] = [
-        PermissionCode::PatientDemographicsView,
-        PermissionCode::AppointmentView,
-        PermissionCode::EncounterView,
-        PermissionCode::WardView,
-        PermissionCode::AdmissionManage,
-        PermissionCode::LaboratoryOrderManage,
-        PermissionCode::LaboratoryResultVerify,
-        PermissionCode::InventoryView,
-        PermissionCode::ControlledSubstanceManage,
-        PermissionCode::BillingView,
-        PermissionCode::NhisClaimManage,
-        PermissionCode::ReferralManage,
-    ];
-
-    permissions.contains(&PermissionCode::AdminStaffManage)
-        || SEARCH_PERMISSIONS
-            .iter()
-            .any(|permission| permissions.contains(permission))
-}
+const SEARCH_PERMISSIONS: [PermissionCode; 13] = [
+    PermissionCode::PatientDemographicsView,
+    PermissionCode::AppointmentView,
+    PermissionCode::EncounterView,
+    PermissionCode::WardView,
+    PermissionCode::AdmissionManage,
+    PermissionCode::LaboratoryOrderManage,
+    PermissionCode::LaboratoryResultVerify,
+    PermissionCode::InventoryView,
+    PermissionCode::ControlledSubstanceManage,
+    PermissionCode::BillingView,
+    PermissionCode::NhisClaimManage,
+    PermissionCode::ReferralManage,
+    PermissionCode::AdminStaffManage,
+];

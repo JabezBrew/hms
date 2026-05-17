@@ -1,19 +1,18 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::{require_patient_demographics_access, require_permission};
+use hms_access::require_patient_demographics_access;
 use hms_db::consent::ConsentCursor;
-use hms_domain::auth::{AuthUser, PatientDataVisibility};
 use hms_domain::care::CursorListQuery;
 use hms_domain::consent::{ConsentGrantListItem, CreateConsentGrantRequest};
-use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::AuthenticatedUser;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::extractors::RequestContext;
+use crate::response::{object, ListResponse, ObjectResponse};
 use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
@@ -34,7 +33,7 @@ const MAX_LIMIT: u8 = 100;
 )]
 pub async fn list_consent_grants(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ConsentGrantListItem>>, ApiError> {
     require_consent_list_access(&user, state.facility_id())?;
@@ -68,7 +67,7 @@ pub async fn list_consent_grants(
 )]
 pub async fn create_consent_grant(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Json(payload): Json<CreateConsentGrantRequest>,
 ) -> Result<Json<ObjectResponse<ConsentGrantListItem>>, ApiError> {
     require_consent_permission(&user, state.facility_id())?;
@@ -117,7 +116,7 @@ pub async fn create_consent_grant(
 )]
 pub async fn revoke_consent_grant(
     State(state): State<AppState>,
-    AuthenticatedUser(user): AuthenticatedUser,
+    RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ConsentGrantListItem>>, ApiError> {
     require_consent_permission(&user, state.facility_id())?;
@@ -145,7 +144,7 @@ pub async fn revoke_consent_grant(
 
 async fn load_patient_for_access(
     state: &AppState,
-    user: &AuthUser,
+    user: &hms_access::RequestContext,
     patient_id: Uuid,
 ) -> Result<PatientRecord, ApiError> {
     let patient = state
@@ -163,91 +162,51 @@ async fn load_patient_for_access(
     Ok(patient)
 }
 
-fn require_consent_list_access(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_consent_permission(user, facility_id)?;
-    if user
-        .patient_visibility
-        .contains(&PatientDataVisibility::Demographics)
-    {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
+fn require_consent_list_access(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_consent_access(user, facility_id).map_err(|error| match error {
+        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
             "patient_access_denied",
             "You do not have access to consent lists.",
-        ))
-    }
+        ),
+        other => ApiError::from(other),
+    })
 }
 
-fn require_consent_permission(user: &AuthUser, facility_id: Uuid) -> Result<(), ApiError> {
-    require_permission(user, PermissionCode::ConsentManage).map_err(|_| {
+fn require_consent_permission(
+    user: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_consent_access(user, facility_id).map_err(|_| {
         ApiError::forbidden(
             "permission_denied",
             "You do not have permission to perform this action.",
         )
-    })?;
-    if user.facility_id == facility_id {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to perform this action.",
-        ))
-    }
+    })
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<ConsentCursor>, u8), ApiError> {
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let cursor = query
-        .cursor
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(decode_cursor)
-        .transpose()?;
-    Ok((cursor, limit))
+    let page = cursor_list::page_request(
+        query.cursor.as_deref(),
+        query.limit,
+        DEFAULT_LIMIT,
+        MAX_LIMIT,
+        |occurred_at, id| ConsentCursor { occurred_at, id },
+    )?;
+    Ok((page.cursor, page.limit))
 }
 
-fn page_response<T, F>(mut rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
+fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
 where
     F: Fn(&T) -> String,
 {
-    let has_next = rows.len() > page_size as usize;
-    if has_next {
-        rows.truncate(page_size as usize);
-    }
-    let next_cursor = if has_next {
-        rows.last().map(cursor_for)
-    } else {
-        None
-    };
-
-    list(
-        rows,
-        PageInfo {
-            next_cursor,
-            has_next,
-            limit: page_size,
-        },
-    )
+    cursor_list::page_response(rows, page_size, cursor_for)
 }
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    format!("{}:{}", occurred_at.timestamp_micros(), id)
-}
-
-fn decode_cursor(value: &str) -> Result<ConsentCursor, ApiError> {
-    let (micros, id) = value
-        .split_once(':')
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let micros = micros
-        .parse::<i64>()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    let id = id
-        .parse()
-        .map_err(|_| ApiError::bad_request("invalid_cursor", "Cursor is invalid."))?;
-    Ok(ConsentCursor { occurred_at, id })
+    cursor_list::encode_cursor(occurred_at, id)
 }
 
 fn required_text(value: String, field: &'static str) -> Result<String, ApiError> {
