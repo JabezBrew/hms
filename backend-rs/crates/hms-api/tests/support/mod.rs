@@ -1,71 +1,40 @@
-use axum::body::{to_bytes, Body};
-use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
-use axum::http::HeaderMap;
-use axum::http::{Method, Request, StatusCode};
+#![allow(dead_code, unused_imports)]
+
+pub use axum::body::{to_bytes, Body};
+pub use axum::http::header::{AUTHORIZATION, COOKIE, SET_COOKIE};
+pub use axum::http::HeaderMap;
+pub use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
-use chrono::{Duration, Utc};
+pub use chrono::{Duration, Utc};
 use cookie::Cookie;
 use hms_api::app::build_app;
-use hms_api::config::Config;
+pub use hms_api::config::Config;
 use hms_api::extractors::RequestContext;
 use hms_api::middleware::request_id;
 use hms_api::state::AppState;
-use hms_domain::deployment::DeploymentProfile;
-use jsonwebtoken::{encode, EncodingKey, Header};
-use serde_json::{json, Value};
+pub use hms_domain::deployment::DeploymentProfile;
+pub use jsonwebtoken::{encode, EncodingKey, Header};
+pub use serde_json::{json, Value};
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+pub use std::sync::Arc;
 use std::task::{Context, Poll};
-use tower::util::ServiceExt;
+pub use tower::util::ServiceExt;
 use tower::Service;
-use uuid::Uuid;
-
-#[path = "api_contract/admin_authority.rs"]
-mod admin_authority_contract;
-#[path = "api_contract/admin.rs"]
-mod admin_contract;
-#[path = "api_contract/auth.rs"]
-mod auth_contract;
-#[path = "api_contract/baseline.rs"]
-mod baseline_contract;
-#[path = "api_contract/billing.rs"]
-mod billing_contract;
-#[path = "api_contract/care.rs"]
-mod care_contract;
-#[path = "api_contract/clinical.rs"]
-mod clinical_contract;
-#[path = "api_contract/consent.rs"]
-mod consent_contract;
-#[path = "api_contract/dashboards.rs"]
-mod dashboards_contract;
-#[path = "api_contract/foundation.rs"]
-mod foundation;
-#[path = "api_contract/inventory.rs"]
-mod inventory_contract;
-#[path = "api_contract/laboratory.rs"]
-mod laboratory_contract;
-#[path = "api_contract/nursing.rs"]
-mod nursing_contract;
-#[path = "api_contract/patients.rs"]
-mod patients_contract;
-#[path = "api_contract/referrals.rs"]
-mod referrals_contract;
-#[path = "api_contract/ward.rs"]
-mod ward_contract;
+pub use uuid::Uuid;
 
 const TEST_JWT_SECRET: &str = "test-only-hms-v2-jwt-secret";
 
 #[derive(Clone)]
-struct TestApp {
+pub(crate) struct TestApp {
     router: axum::Router,
     _database: Arc<hms_db::test_support::TestDatabase>,
 }
 
-struct TestAppFuture<F> {
+pub(crate) struct TestAppFuture<F> {
     inner: Pin<Box<F>>,
     _database: Arc<hms_db::test_support::TestDatabase>,
 }
@@ -101,7 +70,7 @@ impl Service<Request<Body>> for TestApp {
     }
 }
 
-async fn app() -> TestApp {
+pub(crate) async fn app() -> TestApp {
     let database =
         Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
     app_with_config(
@@ -111,7 +80,7 @@ async fn app() -> TestApp {
     .await
 }
 
-async fn app_with_config(
+pub(crate) async fn app_with_config(
     config: Config,
     database: Arc<hms_db::test_support::TestDatabase>,
 ) -> TestApp {
@@ -122,7 +91,7 @@ async fn app_with_config(
     }
 }
 
-async fn app_with_request_context_probe() -> TestApp {
+pub(crate) async fn app_with_request_context_probe() -> TestApp {
     let database =
         Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
     let state = AppState::new(Config::for_tests_with_database_url(
@@ -173,18 +142,18 @@ async fn request_context_probe(RequestContext(ctx): RequestContext) -> axum::Jso
     }))
 }
 
-async fn json_body(response: axum::response::Response) -> Value {
+pub(crate) async fn json_body(response: axum::response::Response) -> Value {
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body reads");
     serde_json::from_slice(&bytes).expect("response body is json")
 }
 
-async fn login(app: TestApp, email: &str) -> (String, String, String) {
+pub(crate) async fn login(app: TestApp, email: &str) -> (String, String, String) {
     login_with_password(app, email, "ChangeMe123!").await
 }
 
-async fn login_with_password(
+pub(crate) async fn login_with_password(
     app: TestApp,
     email: &str,
     password: &str,
@@ -192,7 +161,7 @@ async fn login_with_password(
     login_with_password_and_device(app, email, password, None).await
 }
 
-async fn login_with_password_and_device(
+pub(crate) async fn login_with_password_and_device(
     app: TestApp,
     email: &str,
     password: &str,
@@ -233,7 +202,7 @@ async fn login_with_password_and_device(
     (access_token, cookie_header, csrf_token)
 }
 
-fn token_with_stale_reauth(access_token: &str) -> String {
+pub(crate) fn token_with_stale_reauth(access_token: &str) -> String {
     let mut claims = hms_auth::verify_access_token(TEST_JWT_SECRET, access_token)
         .expect("test access token verifies");
     claims.iat = (Utc::now() - Duration::minutes(16)).timestamp() as usize;
@@ -246,7 +215,7 @@ fn token_with_stale_reauth(access_token: &str) -> String {
     .expect("stale reauth test token encodes")
 }
 
-fn auth_cookies(headers: &HeaderMap) -> (String, String) {
+pub(crate) fn auth_cookies(headers: &HeaderMap) -> (String, String) {
     let mut refresh_cookie = None;
     let mut csrf_cookie = None;
 
