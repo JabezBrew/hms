@@ -9,10 +9,7 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::billing::{
-    BillingCursor, ClaimContext, InvoiceContext, NewClaim, NewInvoice, NewNhisBatch, NewPayment,
-    NewRemittanceImport,
-};
+use hms_db::billing::{BillingCursor, ClaimContext, NewClaim, NewNhisBatch, NewRemittanceImport};
 use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
@@ -40,8 +37,7 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
-    ClaimListItem, InvoiceListItem, NhisBatchExport, NhisBatchListItem, PaymentListItem,
-    PaymentMethod, ReceiptListItem, RemittanceImportListItem,
+    ClaimListItem, NhisBatchExport, NhisBatchListItem, RemittanceImportListItem,
 };
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
@@ -1446,118 +1442,6 @@ impl AppState {
 
     pub async fn list_inventory_categories(&self) -> Result<Vec<InventoryCategoryListItem>> {
         hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_billing_invoices(
-        &self,
-        patient_id: Option<Uuid>,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-    ) -> Result<Vec<InvoiceListItem>> {
-        hms_db::billing::list_invoices(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_billing_invoice(
-        &self,
-        patient_id: Uuid,
-        service_price_id: Uuid,
-        quantity: i64,
-        actor_user_id: Uuid,
-    ) -> Result<InvoiceListItem> {
-        let id = Uuid::new_v4();
-        hms_db::billing::create_invoice(
-            &self.inner.pool,
-            NewInvoice {
-                id,
-                facility_id: self.facility_id(),
-                patient_id,
-                service_price_id,
-                quantity,
-                invoice_number: format!("INV-{}", &id.simple().to_string()[..10].to_uppercase()),
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_billing_invoice(&self, invoice_id: Uuid) -> Result<Option<InvoiceListItem>> {
-        hms_db::billing::get_invoice(&self.inner.pool, self.facility_id(), invoice_id).await
-    }
-
-    pub async fn billing_invoice_context(
-        &self,
-        invoice_id: Uuid,
-    ) -> Result<Option<InvoiceContext>> {
-        hms_db::billing::invoice_context(&self.inner.pool, self.facility_id(), invoice_id).await
-    }
-
-    pub async fn list_billing_payments(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-    ) -> Result<Vec<PaymentListItem>> {
-        hms_db::billing::list_payments(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_billing_payment(
-        &self,
-        invoice_id: Uuid,
-        amount_minor: i64,
-        method: PaymentMethod,
-        cash_session_id: Option<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<PaymentListItem> {
-        let id = Uuid::new_v4();
-        hms_db::billing::create_payment(
-            &self.inner.pool,
-            NewPayment {
-                id,
-                facility_id: self.facility_id(),
-                invoice_id,
-                receipt_id: Uuid::new_v4(),
-                receipt_number: format!("RCT-{}", &id.simple().to_string()[..10].to_uppercase()),
-                amount_minor,
-                method,
-                cash_session_id,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn list_billing_receipts(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-    ) -> Result<Vec<ReceiptListItem>> {
-        hms_db::billing::list_receipts(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn get_billing_receipt(&self, receipt_id: Uuid) -> Result<Option<ReceiptListItem>> {
-        hms_db::billing::get_receipt(&self.inner.pool, self.facility_id(), receipt_id).await
-    }
-
-    pub async fn get_billing_receipt_by_number(
-        &self,
-        receipt_number: &str,
-    ) -> Result<Option<ReceiptListItem>> {
-        hms_db::billing::get_receipt_by_number(&self.inner.pool, self.facility_id(), receipt_number)
-            .await
-    }
-
-    pub async fn get_billing_receipt_by_payment(
-        &self,
-        payment_id: Uuid,
-    ) -> Result<Option<ReceiptListItem>> {
-        hms_db::billing::get_receipt_by_payment(&self.inner.pool, self.facility_id(), payment_id)
-            .await
     }
 
     pub async fn list_nhis_claims(

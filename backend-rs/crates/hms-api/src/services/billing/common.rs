@@ -67,11 +67,11 @@ pub(super) async fn require_invoice_patient_access(
     ctx: &hms_access::RequestContext,
     invoice_id: Uuid,
 ) -> Result<(), ApiError> {
-    let invoice = state
-        .billing_invoice_context(invoice_id)
-        .await
-        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
+    let invoice =
+        hms_db::billing::invoice_context(state.db_pool(), state.facility_id(), invoice_id)
+            .await
+            .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
     let _patient = load_patient_for_access(state, ctx, invoice.patient_id).await?;
     Ok(())
 }
