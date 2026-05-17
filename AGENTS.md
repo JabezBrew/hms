@@ -8,6 +8,24 @@ favor correctness, least privilege, and predictable performance.
 - Read `claude.md` and this `agents.md` before making changes. It consolidates current
   security, systems, and DB reliability findings.
 
+## Architecture Mode
+- Current HMS maintenance uses the existing Django/DRF/Celery backend under
+  `backend/`. For that work, follow the Django-specific commands, ORM guidance,
+  serializers, viewsets, Celery task rules, and pytest instructions below.
+- HMS Rust V2 rewrite work uses the planned Rust backend under `backend-rs/`.
+  For that work, follow `docs/rust-v2-backend-spec.md` as the implementation
+  architecture. When Django-specific guidance conflicts with the Rust V2 spec,
+  the Rust V2 spec wins for files under `backend-rs/`.
+- Shared non-negotiables apply to both architectures: PHI safety, least
+  privilege, patient access enforcement, facility scoping, p99 performance,
+  paginated lists, scoped cache keys, no PHI logs, no unbounded clinical lists,
+  and no external I/O inside open DB transactions.
+- Translate current-system concepts into Rust equivalents during V2 work:
+  `apps/core/security.py` becomes `hms-access`, DRF serializers become explicit
+  DTOs, Django ORM query hygiene becomes SQL/query-plan hygiene, Celery tasks
+  become `hms-worker` jobs, and Django migrations become `hms-migrator`
+  migrations and seed/provisioning commands.
+
 ## Project Structure
 - Backend: `backend/` with domain apps under `backend/apps/`.
 - Shared backend settings: `backend/hms_backend/`.

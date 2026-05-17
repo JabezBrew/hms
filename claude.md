@@ -7,6 +7,28 @@
 **FROM:** Data-centric CRUD → **TO:** Workflow-centric clinical tool
 **Guiding Question:** "What are you trying to accomplish right now?"
 
+## Architecture Mode
+
+This file contains current HMS guidance written around the existing
+Django/DRF/Celery backend. Keep using that guidance for maintenance work under
+`backend/`.
+
+For the Rust V2 rewrite under `backend-rs/`, use
+`docs/rust-v2-backend-spec.md` as the implementation architecture. When
+Django-specific guidance here conflicts with the Rust V2 spec, the Rust V2 spec
+wins for `backend-rs/`.
+
+Shared principles remain mandatory in both architectures: workflow-first UX,
+PHI safety, least privilege, patient access enforcement, facility scoping,
+pagination, scoped cache keys, no PHI logs, query-count discipline, and no
+external I/O inside open DB transactions.
+
+During Rust V2 work, translate current concepts into Rust equivalents:
+DRF serializers become explicit DTOs, Django ORM guidance becomes SQL/query-plan
+guidance, `apps/core/security.py` becomes `hms-access`, Celery becomes
+`hms-worker`, and Django migrations become `hms-migrator` migrations plus
+seed/provisioning commands.
+
 | Data-Oriented (Bad) | Workflow-Oriented (Good) |
 |---------------------|--------------------------|
 | Navigation mimics DB structure | Navigation mirrors clinical processes |
