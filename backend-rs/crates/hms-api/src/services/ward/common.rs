@@ -99,8 +99,7 @@ pub(super) async fn load_ward_section(
 }
 
 pub(super) async fn load_bed(state: &AppState, bed_id: Uuid) -> Result<BedListItem, ApiError> {
-    state
-        .get_bed(bed_id)
+    hms_db::ward::get_bed_by_id(state.db_pool(), state.facility_id(), bed_id)
         .await
         .map_err(|_| ApiError::conflict("bed_load_failed", "Bed could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("bed_not_found", "Bed was not found."))
