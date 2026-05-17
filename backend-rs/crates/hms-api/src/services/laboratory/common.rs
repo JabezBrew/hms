@@ -40,11 +40,13 @@ pub(super) async fn load_specimen_for_access(
     ctx: &hms_access::RequestContext,
     specimen_id: Uuid,
 ) -> Result<SpecimenContext, ApiError> {
-    let specimen = state
-        .get_lab_specimen_context(specimen_id)
-        .await
-        .map_err(|_| ApiError::conflict("specimen_load_failed", "Specimen could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("specimen_not_found", "Specimen was not found."))?;
+    let specimen =
+        hms_db::laboratory::get_specimen_context(state.db_pool(), state.facility_id(), specimen_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("specimen_load_failed", "Specimen could not be loaded.")
+            })?
+            .ok_or_else(|| ApiError::not_found("specimen_not_found", "Specimen was not found."))?;
     let _patient = load_patient_for_access(state, ctx, specimen.patient_id).await?;
     Ok(specimen)
 }

@@ -22,8 +22,7 @@ use hms_db::inventory::{
     NewPharmacyDispense, NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
 };
 use hms_db::laboratory::{
-    LabCursor, LabResultListFilters, NewLabResult, NewSpecimen, OrderContext, ResultContext,
-    SpecimenContext,
+    LabCursor, LabResultListFilters, NewLabResult, ResultContext, SpecimenContext,
 };
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -65,7 +64,7 @@ use hms_domain::inventory::{
     PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
     StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
 };
-use hms_domain::laboratory::{LabResultListItem, SpecimenListItem};
+use hms_domain::laboratory::LabResultListItem;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -1449,56 +1448,6 @@ impl AppState {
             limit,
         )
         .await
-    }
-
-    pub async fn list_lab_specimens(
-        &self,
-        cursor: Option<LabCursor>,
-        limit: i64,
-    ) -> Result<Vec<SpecimenListItem>> {
-        hms_db::laboratory::list_specimens(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn get_lab_specimen(&self, specimen_id: Uuid) -> Result<Option<SpecimenListItem>> {
-        hms_db::laboratory::get_specimen_by_id(&self.inner.pool, self.facility_id(), specimen_id)
-            .await
-    }
-
-    pub async fn create_lab_specimen(
-        &self,
-        order: &OrderContext,
-        specimen_type: String,
-        actor_user_id: Uuid,
-    ) -> Result<SpecimenListItem> {
-        hms_db::laboratory::create_specimen(
-            &self.inner.pool,
-            NewSpecimen {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                order_id: order.id,
-                patient_id: order.patient_id,
-                specimen_type,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_lab_specimen_context(
-        &self,
-        specimen_id: Uuid,
-    ) -> Result<Option<SpecimenContext>> {
-        hms_db::laboratory::get_specimen_context(&self.inner.pool, self.facility_id(), specimen_id)
-            .await
-    }
-
-    pub async fn receive_lab_specimen(
-        &self,
-        specimen_id: Uuid,
-    ) -> Result<Option<SpecimenListItem>> {
-        hms_db::laboratory::receive_specimen(&self.inner.pool, self.facility_id(), specimen_id)
-            .await
     }
 
     pub async fn list_lab_results(
