@@ -3,6 +3,7 @@ use hms_domain::patients::{
     PatientAdministrativeStatus, PatientContextKind, PatientContextListItem, PatientRecord,
     PatientRegistrationValidationRule, Sex,
 };
+use hms_observability::observe_db_query;
 use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -146,7 +147,11 @@ pub async fn list_patients(
     query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
     query.push_bind(limit);
 
-    let rows = query.build_query_as::<PatientRow>().fetch_all(pool).await?;
+    let rows = observe_db_query(
+        "patient.registry.list",
+        query.build_query_as::<PatientRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(patient_from_row).collect()
 }
 
@@ -155,8 +160,10 @@ pub async fn get_patient(
     facility_id: Uuid,
     patient_id: Uuid,
 ) -> anyhow::Result<Option<PatientRecord>> {
-    let row = sqlx::query_as::<_, PatientRow>(
-        r#"
+    let row = observe_db_query(
+        "patient.registry.get",
+        sqlx::query_as::<_, PatientRow>(
+            r#"
         SELECT id,
                facility_id,
                patient_code,
@@ -170,10 +177,11 @@ pub async fn get_patient(
         FROM patients
         WHERE facility_id = $1 AND id = $2
         "#,
+        )
+        .bind(facility_id)
+        .bind(patient_id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(patient_id)
-    .fetch_optional(pool)
     .await?;
 
     row.map(patient_from_row).transpose()
@@ -184,8 +192,10 @@ pub async fn list_patient_registration_validation_rules(
     facility_id: Uuid,
     limit: i64,
 ) -> anyhow::Result<Vec<PatientRegistrationValidationRule>> {
-    let rows = sqlx::query_as::<_, PatientRegistrationValidationRuleRow>(
-        r#"
+    let rows = observe_db_query(
+        "patient.validation_rules.list",
+        sqlx::query_as::<_, PatientRegistrationValidationRuleRow>(
+            r#"
         SELECT id,
                field_name,
                validation_regex,
@@ -200,10 +210,11 @@ pub async fn list_patient_registration_validation_rules(
         ORDER BY field_name ASC
         LIMIT $2
         "#,
+        )
+        .bind(facility_id)
+        .bind(limit.clamp(1, 100))
+        .fetch_all(pool),
     )
-    .bind(facility_id)
-    .bind(limit.clamp(1, 100))
-    .fetch_all(pool)
     .await?;
 
     Ok(rows
@@ -243,8 +254,10 @@ pub async fn update_patient(
         changed_fields.push("status");
     }
 
-    let row = sqlx::query_as::<_, PatientRow>(
-        r#"
+    let row = observe_db_query(
+        "patient.registry.update",
+        sqlx::query_as::<_, PatientRow>(
+            r#"
         UPDATE patients
         SET first_name = COALESCE($3, first_name),
             last_name = COALESCE($4, last_name),
@@ -264,15 +277,16 @@ pub async fn update_patient(
                   created_at,
                   updated_at
         "#,
+        )
+        .bind(patient.facility_id)
+        .bind(patient.id)
+        .bind(patient.first_name)
+        .bind(patient.last_name)
+        .bind(patient.date_of_birth)
+        .bind(patient.sex.map(codec::encode).transpose()?)
+        .bind(patient.status.map(codec::encode).transpose()?)
+        .fetch_optional(&mut *transaction),
     )
-    .bind(patient.facility_id)
-    .bind(patient.id)
-    .bind(patient.first_name)
-    .bind(patient.last_name)
-    .bind(patient.date_of_birth)
-    .bind(patient.sex.map(codec::encode).transpose()?)
-    .bind(patient.status.map(codec::encode).transpose()?)
-    .fetch_optional(&mut *transaction)
     .await?;
 
     let Some(row) = row else {
@@ -290,8 +304,10 @@ pub async fn update_patient(
     )
     .await?;
 
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "patient.audit_events.demographics_update",
+        sqlx::query(
+            r#"
         INSERT INTO audit_events (
             id,
             facility_id,
@@ -304,14 +320,15 @@ pub async fn update_patient(
         )
         VALUES ($1, $2, $3, $4, 'patient.demographics.updated', 'patient', $5, $6)
         "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(patient.facility_id)
+        .bind(patient.actor_user_id)
+        .bind(patient.request_id)
+        .bind(row.id)
+        .bind(json!({ "changed_fields": changed_fields }))
+        .execute(&mut *transaction),
     )
-    .bind(Uuid::new_v4())
-    .bind(patient.facility_id)
-    .bind(patient.actor_user_id)
-    .bind(patient.request_id)
-    .bind(row.id)
-    .bind(json!({ "changed_fields": changed_fields }))
-    .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
@@ -320,8 +337,10 @@ pub async fn update_patient(
 
 pub async fn create_patient(pool: &PgPool, patient: NewPatient) -> anyhow::Result<PatientRecord> {
     let mut transaction = pool.begin().await?;
-    let row = sqlx::query_as::<_, PatientRow>(
-        r#"
+    let row = observe_db_query(
+        "patient.registry.create",
+        sqlx::query_as::<_, PatientRow>(
+            r#"
         INSERT INTO patients (
             id,
             facility_id,
@@ -344,27 +363,31 @@ pub async fn create_patient(pool: &PgPool, patient: NewPatient) -> anyhow::Resul
                   created_at,
                   updated_at
         "#,
+        )
+        .bind(patient.id)
+        .bind(patient.facility_id)
+        .bind(&patient.patient_code)
+        .bind(&patient.first_name)
+        .bind(&patient.last_name)
+        .bind(patient.date_of_birth)
+        .bind(codec::encode(patient.sex)?)
+        .fetch_one(&mut *transaction),
     )
-    .bind(patient.id)
-    .bind(patient.facility_id)
-    .bind(&patient.patient_code)
-    .bind(&patient.first_name)
-    .bind(&patient.last_name)
-    .bind(patient.date_of_birth)
-    .bind(codec::encode(patient.sex)?)
-    .fetch_one(&mut *transaction)
     .await?;
 
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "patient.chronicle_read_model.ensure",
+        sqlx::query(
+            r#"
         INSERT INTO patient_chronicle_read_models (patient_id, facility_id, summary_status)
         VALUES ($1, $2, 'empty')
         ON CONFLICT (patient_id) DO NOTHING
         "#,
+        )
+        .bind(row.id)
+        .bind(row.facility_id)
+        .execute(&mut *transaction),
     )
-    .bind(row.id)
-    .bind(row.facility_id)
-    .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
@@ -437,10 +460,11 @@ pub async fn list_context_patients(
     );
     query.push_bind(limit);
 
-    let rows = query
-        .build_query_as::<PatientContextRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = observe_db_query(
+        "patient.context.list",
+        query.build_query_as::<PatientContextRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(patient_context_from_row).collect()
 }
 
@@ -474,8 +498,10 @@ async fn upsert_patient_context_tx(
     context_kind: PatientContextKind,
     label: Option<String>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
+    observe_db_query(
+        "patient.context.upsert",
+        sqlx::query(
+            r#"
         INSERT INTO patient_contexts (
             id,
             facility_id,
@@ -489,14 +515,15 @@ async fn upsert_patient_context_tx(
         DO UPDATE SET label = EXCLUDED.label,
                       updated_at = now()
         "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(facility_id)
+        .bind(user_id)
+        .bind(patient_id)
+        .bind(codec::encode(context_kind)?)
+        .bind(label)
+        .execute(&mut **transaction),
     )
-    .bind(Uuid::new_v4())
-    .bind(facility_id)
-    .bind(user_id)
-    .bind(patient_id)
-    .bind(codec::encode(context_kind)?)
-    .bind(label)
-    .execute(&mut **transaction)
     .await?;
     Ok(())
 }

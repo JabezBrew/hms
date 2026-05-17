@@ -80,6 +80,48 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
 }
 
 #[tokio::test]
+async fn patient_list_records_stable_query_metrics_without_phi_labels() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1&search=Ama%20Mensah")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient list succeeds");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let metrics = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/metrics")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("metrics request succeeds");
+    assert_eq!(metrics.status(), StatusCode::OK);
+    let bytes = to_bytes(metrics.into_body(), usize::MAX)
+        .await
+        .expect("metrics body reads");
+    let body = String::from_utf8(bytes.to_vec()).expect("metrics body is utf-8");
+
+    assert!(body.contains("query=\"patient.registry.list\""));
+    assert!(body.contains("route=\"/api/v2/patients\""));
+    assert!(!body.contains("Ama"));
+    assert!(!body.contains("Mensah"));
+    assert!(!body.contains("P-0000000001"));
+}
+
+#[tokio::test]
 async fn patient_validation_rules_are_available_from_v2_contract() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
