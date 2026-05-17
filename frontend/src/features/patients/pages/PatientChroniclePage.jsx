@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
+import { usePatientDetail as useNursingPatientDetail } from "@/features/nursing/hooks";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
@@ -212,10 +213,47 @@ const PatientChroniclePage = ({ defaultAction }) => {
     ],
   });
 
-  // Check if user has clinical access (from patient endpoint response)
-  const hasClinicalAccess = patient?.access?.clinical === true;
+  // Check if user has clinical access (from patient endpoint response).
+  // Rust V2 enforces patient access server-side and does not expose the legacy
+  // access envelope yet, so only an explicit false blocks clinical reads.
+  const hasClinicalAccess = rustV2Mode
+    ? patient?.access?.clinical !== false
+    : patient?.access?.clinical === true;
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+  const { data: nursingPatientDetail } = useNursingPatientDetail(patientLocalId, {
+    enabled: rustV2Mode && hasClinicalAccess && !!patientLocalId,
+  });
+  const rustV2ActiveAdmissionId = rustV2Mode
+    ? nursingPatientDetail?.admission_id || nursingPatientDetail?.admission?.id || null
+    : null;
+  const patientForChronicle = useMemo(() => {
+    if (!patient || !rustV2ActiveAdmissionId) {
+      return patient;
+    }
+
+    const localData = patient.local_data || {};
+    return {
+      ...patient,
+      current_admission_id: patient.current_admission_id || rustV2ActiveAdmissionId,
+      current_ward_id: patient.current_ward_id || nursingPatientDetail?.ward_id || null,
+      current_ward: patient.current_ward || nursingPatientDetail?.ward_name || null,
+      current_bed: patient.current_bed || nursingPatientDetail?.bed_number || null,
+      local_data: {
+        ...localData,
+        current_admission_id: localData.current_admission_id || rustV2ActiveAdmissionId,
+        current_ward_id: localData.current_ward_id || nursingPatientDetail?.ward_id || null,
+        current_ward: localData.current_ward || nursingPatientDetail?.ward_name || null,
+        current_bed: localData.current_bed || nursingPatientDetail?.bed_number || null,
+      },
+    };
+  }, [
+    nursingPatientDetail?.bed_number,
+    nursingPatientDetail?.ward_id,
+    nursingPatientDetail?.ward_name,
+    patient,
+    rustV2ActiveAdmissionId,
+  ]);
   const prefetchWorkspaceForOpen = useCallback((workspaceId) => {
     prefetchChronicleWorkspaceResources(workspaceId, { patientLocalId, queryClient });
   }, [patientLocalId, queryClient]);
@@ -374,6 +412,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const hasWardBoardContext = Boolean(
     patient?.local_data?.current_admission_id
     || patient?.current_admission_id
+    || rustV2ActiveAdmissionId
     || (
       activeEncounter
       && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(activeEncounter))
@@ -422,6 +461,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [activeEncounter, isAllVisitsScope, selectedEncounter]);
   const chartContextAdmissionId = chartContextEncounter?.admission_id
     || chartContextEncounter?.admission?.id
+    || rustV2ActiveAdmissionId
     || null;
   const visitScopeOptions = useMemo(() => {
     const options = [{
@@ -707,6 +747,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     requestedDischargeAdmissionId
     || patient?.local_data?.current_admission_id
     || patient?.current_admission_id
+    || rustV2ActiveAdmissionId
     || activeEncounter?.admission_id
     || null
   ), [
@@ -714,6 +755,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     patient?.current_admission_id,
     patient?.local_data?.current_admission_id,
     requestedDischargeAdmissionId,
+    rustV2ActiveAdmissionId,
   ]);
 
   // Group entries by encounter
@@ -958,6 +1000,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const handleStartDischarge = useCallback(() => {
     const admissionId = patient?.local_data?.current_admission_id
       || patient?.current_admission_id
+      || rustV2ActiveAdmissionId
       || activeEncounter?.admission_id;
 
     if (!admissionId) {
@@ -970,7 +1013,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return;
     }
     openChronicleWorkspace('discharge');
-  }, [patient, activeEncounter, canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
+  }, [patient, activeEncounter, rustV2ActiveAdmissionId, canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -1125,7 +1168,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   const workspaceContext = useMemo(() => ({
     patientId: id,
-    patient,
+    patient: patientForChronicle,
     activeEncounter,
     selectedEncounter: chartContextEncounter,
     selectedEncounterId: chartContextEncounter?.id || null,
@@ -1151,7 +1194,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     onDischargeCompleted: handleDischargeCompleted,
   }), [
     id,
-    patient,
+    patientForChronicle,
     activeEncounter,
     chartContextEncounter,
     chartContextAdmissionId,
@@ -1187,7 +1230,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     const admissionId = activeEncounter?.admission_id ||
                         activeEncounter?.id || // Use encounter ID as fallback
                         patient?.local_data?.current_admission_id ||
-                        patient?.current_admission_id;
+                        patient?.current_admission_id ||
+                        rustV2ActiveAdmissionId;
 
     if (admissionId) {
       setRequestedTreatmentSheetAdmissionId(String(admissionId));
@@ -1195,7 +1239,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     } else {
       toast.error('No active admission found for this patient');
     }
-  }, [activeEncounter, patient, openChronicleWorkspace]);
+  }, [activeEncounter, patient, rustV2ActiveAdmissionId, openChronicleWorkspace]);
 
   const userRole = user?.role || user?.user_type;
   const canRequestBreakGlass = !rustV2Mode && ['admin', 'doctor', 'nurse'].includes(userRole);
@@ -1407,7 +1451,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
       <div className="min-h-screen bg-background">
         {/* Patient Identity Hero */}
         <PatientIdentityHero
-          patient={patient}
+          patient={patientForChronicle}
+          allergies={allergies}
           onActionIntent={prefetchActionResources}
           onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
           onAddNote={handleAddNote}
@@ -1472,7 +1517,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               <ProblemListSidebar patientId={id} />
             </div>
             <ClinicalSummarySidebar
-              patient={patient}
+              patient={patientForChronicle}
               problems={[]}
               medications={medications}
               allergies={allergies}

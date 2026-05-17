@@ -141,7 +141,7 @@ describe('Rust V2 problems bridge', () => {
 
     const signal = new AbortController().signal;
     const response = await problemsApi.changeStatus('problem-1', {
-      status: 'resolved',
+      to_status: 'resolved',
     }, { signal });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(

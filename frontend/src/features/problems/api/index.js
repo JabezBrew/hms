@@ -165,9 +165,13 @@ export const problemsApi = {
   changeStatus: async (id, payload, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
+        const status = payload?.status || payload?.clinical_status || payload?.to_status;
+        if (!status) {
+          throw new Error('Problem status is required.');
+        }
         const response = await v2Api.postClinicalProblemStatus(
           { id },
-          { status: payload?.status || payload?.clinical_status },
+          { status },
           { signal: options.signal || payload?.signal },
         );
         return adaptV2Problem(response?.data);

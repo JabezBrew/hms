@@ -1182,3 +1182,145 @@ test('Rust V2 clinical note templates and encounter notes use generated clinical
 
   expect(failures).toEqual([]);
 });
+
+test('Rust V2 patient Chronicle clinical actions stay patient-scoped', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+
+  const patientName = uniquePatientName('Chronicle');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  const suffix = Date.now().toString(36).toUpperCase();
+  const wardPayload = await postV2FromBrowser(page, '/api/v2/wards', {
+    code: `PWC-${suffix}`,
+    name: `Playwright Chronicle Ward ${suffix}`,
+  });
+  const wardId = wardPayload?.data?.id;
+  expect(wardId).toBeTruthy();
+
+  const bedPayload = await postV2FromBrowser(page, `/api/v2/wards/${wardId}/beds`, {
+    section_id: null,
+    bed_code: `C-${suffix}`,
+  });
+  expect(bedPayload?.data?.id).toBeTruthy();
+
+  const admissionCasePayload = await postV2FromBrowser(page, '/api/v2/admissions/cases', {
+    patient_id: patientId,
+    ward_id: wardId,
+  });
+  const admissionCaseId = admissionCasePayload?.data?.id;
+  expect(admissionCaseId).toBeTruthy();
+
+  const activatePayload = await postV2FromBrowser(page, `/api/v2/admissions/cases/${admissionCaseId}/activate`, {});
+  expect(activatePayload?.data?.status).toBe('admitted');
+
+  const allergyPayload = await postV2FromBrowser(page, `/api/v2/patients/${patientId}/clinical/allergies`, {
+    substance: `Latex ${suffix}`,
+    reaction: 'Rash',
+    severity: 'severe',
+  });
+  expect(allergyPayload?.data?.id).toBeTruthy();
+
+  await page.goto(`/patients/${patientId}`);
+  await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
+  await expect(page.getByText(`Latex ${suffix}`).first()).toBeVisible();
+  await expect(page.getByText('Fluid Balance (Today)')).toBeVisible();
+
+  await page.getByTitle('Add problem').click();
+  await expect(page.getByRole('heading', { name: 'Add problem' })).toBeVisible();
+  await page.getByPlaceholder(/Search by ICD-10 code/i).fill(`Asthma ${suffix}`);
+  await page.getByRole('button', { name: /Add as free text/i }).click();
+
+  const createProblemResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/patients/${patientId}/clinical/problems`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Add problem' }).click();
+
+  const createProblemResponse = await createProblemResponsePromise;
+  expect(createProblemResponse.status()).toBeLessThan(300);
+  expect(createProblemResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    label: `Asthma ${suffix}`,
+  }));
+  await expect(page.getByText(`Asthma ${suffix}`).first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Prescribe' }).click();
+  await expect(page.getByRole('heading', { name: 'Prescribe Medication' })).toBeVisible();
+  await expect(page.getByText(/Patient Allergies/i)).toBeVisible();
+  await page.getByLabel('Medication').fill(`Amoxicillin ${suffix}`);
+  await page.getByPlaceholder('e.g., 500 MG, 10 ML, 2 tablets').fill('500 MG');
+
+  const createPrescriptionResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/patients/${patientId}/clinical/prescriptions`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Create Prescription' }).click();
+
+  const createPrescriptionResponse = await createPrescriptionResponsePromise;
+  expect(createPrescriptionResponse.status()).toBeLessThan(300);
+  expect(createPrescriptionResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    medication_name: `Amoxicillin ${suffix}`,
+    dose: '500 MG',
+    frequency: 'daily',
+  }));
+
+  await page.getByRole('button', { name: 'Vitals' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Record Vital Signs' })).toBeVisible();
+  await page.getByPlaceholder('36.5').fill('37.2');
+
+  const createVitalsResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/nursing/vitals') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Record Vitals' }).click();
+
+  const createVitalsResponse = await createVitalsResponsePromise;
+  expect(createVitalsResponse.status()).toBeLessThan(300);
+  expect(createVitalsResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    admission_case_id: admissionCaseId,
+    temperature_c: 37.2,
+  }));
+
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Fluid Balance' }).click();
+  await expect(page.getByRole('heading', { name: 'Fluid Balance' })).toBeVisible();
+  await page.getByRole('combobox').filter({ hasText: /Select\.\.\./ }).first().click();
+  await page.getByRole('option', { name: 'Oral' }).click();
+  await page.getByPlaceholder('Enter amount').fill('100');
+
+  const createFluidResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/nursing/fluid-balance') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Record Intake' }).click();
+
+  const createFluidResponse = await createFluidResponsePromise;
+  expect(createFluidResponse.status()).toBeLessThan(300);
+  expect(createFluidResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    admission_case_id: admissionCaseId,
+    intake_ml: 100,
+    output_ml: 0,
+  }));
+
+  expect(failures).toEqual([]);
+});

@@ -20,12 +20,38 @@ const patientHookState = vi.hoisted(() => ({
   },
 }))
 
+const chronicleHookState = vi.hoisted(() => ({
+  calls: [],
+  data: {
+    active_medications: [],
+    allergies: [],
+    active_encounter: {
+      id: 'encounter-1',
+      admission_id: 'admission-1',
+    },
+  },
+}))
+
+const nursingPatientDetailState = vi.hoisted(() => ({
+  data: {},
+}))
+
+const workspaceHostState = vi.hoisted(() => ({
+  lastProps: null,
+}))
+
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
   usePatient: () => ({
     data: patientHookState.data,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
+  }),
+}))
+
+vi.mock('@/features/nursing/hooks', () => ({
+  usePatientDetail: () => ({
+    data: nursingPatientDetailState.data,
   }),
 }))
 
@@ -63,19 +89,15 @@ vi.mock('@/features/encounters/hooks/useEncounterQueries', () => ({
 }))
 
 vi.mock('@/hooks/useChronicleContext', () => ({
-  useChronicleContext: () => ({
-    data: {
-      active_medications: [],
-      allergies: [],
-      active_encounter: {
-        id: 'encounter-1',
-        admission_id: 'admission-1',
-      },
-    },
-    isLoading: false,
-    error: null,
-    refetch: vi.fn(),
-  }),
+  useChronicleContext: (patientId, options) => {
+    chronicleHookState.calls.push({ patientId, options })
+    return {
+      data: chronicleHookState.data,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    }
+  },
 }))
 
 vi.mock('@/features/billing/hooks', () => ({
@@ -108,9 +130,10 @@ vi.mock('@/components/chronicle/PatientIdentityHero', () => ({
 }))
 
 vi.mock('@/features/patients/components/ChronicleWorkspaceHost', () => ({
-  default: ({ activeWorkspace }) => (
-    <div data-testid="active-workspace">{activeWorkspace || 'none'}</div>
-  ),
+  default: (props) => {
+    workspaceHostState.lastProps = props
+    return <div data-testid="active-workspace">{props.activeWorkspace || 'none'}</div>
+  },
 }))
 
 vi.mock('@/components/chronicle/ClinicalSummarySidebar', () => ({
@@ -178,6 +201,17 @@ function renderPage(initialEntry = '/patients/patient-1') {
 describe('PatientChroniclePage Rust V2 workflow guards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    chronicleHookState.calls = []
+    chronicleHookState.data = {
+      active_medications: [],
+      allergies: [],
+      active_encounter: {
+        id: 'encounter-1',
+        admission_id: 'admission-1',
+      },
+    }
+    nursingPatientDetailState.data = {}
+    workspaceHostState.lastProps = null
     patientHookState.data = {
       id: 'patient-1',
       name: 'Ama Mensah',
@@ -210,6 +244,59 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     renderPage()
 
     expect(screen.getByTestId('ask-chronicle-action')).toHaveTextContent('false')
+  })
+
+  it('allows Rust V2 clinical reads when the legacy access envelope is absent', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    patientHookState.data = {
+      id: 'patient-1',
+      name: 'Ama Mensah',
+      local_data: {
+        id: 'patient-1',
+        medical_record_number: 'MRN-001',
+      },
+    }
+
+    renderPage()
+
+    expect(chronicleHookState.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        patientId: 'patient-1',
+        options: expect.objectContaining({ enabled: true }),
+      }),
+    )
+  })
+
+  it('threads the Rust V2 active admission into Chronicle workspace patient context', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    patientHookState.data = {
+      id: 'patient-1',
+      name: 'Ama Mensah',
+      local_data: {
+        id: 'patient-1',
+        medical_record_number: 'MRN-001',
+      },
+    }
+    nursingPatientDetailState.data = {
+      admission_id: 'admission-v2',
+      ward_id: 'ward-v2',
+      ward_name: 'V2 Ward',
+      bed_number: 'B12',
+    }
+
+    renderPage('/patients/patient-1?action=add_prescription')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('prescription')
+    })
+    expect(workspaceHostState.lastProps.workspaceContext.patient.local_data).toEqual(
+      expect.objectContaining({
+        current_admission_id: 'admission-v2',
+        current_ward_id: 'ward-v2',
+        current_ward: 'V2 Ward',
+        current_bed: 'B12',
+      }),
+    )
   })
 
   it('does not auto-open the unsupported ward-round workflow from URL actions in Rust V2 mode', async () => {

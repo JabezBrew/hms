@@ -1067,7 +1067,9 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
   });
 };
 
-export const usePatientDetail = (patientId) => {
+export const usePatientDetail = (patientId, options = {}) => {
+  const { enabled = true, ...queryOptions } = options;
+
   return useQuery({
     queryKey: nursingKeys.patientDetail(patientId),
     queryFn: async ({ signal }) => {
@@ -1091,12 +1093,13 @@ export const usePatientDetail = (patientId) => {
       const data = response?.data ?? response;
       return data || {};
     },
-    enabled: !!patientId,
+    enabled: !!patientId && enabled,
     placeholderData: {},
     refetchInterval: () => !document.hidden ? 60000 : false,
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
     staleTime: 30000,
+    ...queryOptions,
   });
 };
 
