@@ -156,26 +156,29 @@ async fn insert_movement(
     reason: &'static str,
     actor_user_id: Uuid,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
+    hms_observability::observe_db_query(
+        "inventory.stock_movements.insert",
+        sqlx::query(
+            r#"
         INSERT INTO stock_movements (
             id, facility_id, item_id, batch_id, location_id, movement_type, quantity,
             balance_after, reason, created_by_user_id
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(facility_id)
+        .bind(item_id)
+        .bind(batch_id)
+        .bind(location_id)
+        .bind(codec::encode(movement_type)?)
+        .bind(quantity)
+        .bind(balance_after)
+        .bind(reason)
+        .bind(actor_user_id)
+        .execute(&mut **transaction),
     )
-    .bind(Uuid::new_v4())
-    .bind(facility_id)
-    .bind(item_id)
-    .bind(batch_id)
-    .bind(location_id)
-    .bind(codec::encode(movement_type)?)
-    .bind(quantity)
-    .bind(balance_after)
-    .bind(reason)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
     .await?;
     Ok(())
 }
@@ -185,12 +188,15 @@ async fn item_context(
     facility_id: Uuid,
     item_id: Uuid,
 ) -> anyhow::Result<ItemContextRow> {
-    sqlx::query_as::<_, ItemContextRow>(
-        "SELECT controlled FROM inventory_items WHERE facility_id = $1 AND id = $2",
+    hms_observability::observe_db_query(
+        "inventory.items.context",
+        sqlx::query_as::<_, ItemContextRow>(
+            "SELECT controlled FROM inventory_items WHERE facility_id = $1 AND id = $2",
+        )
+        .bind(facility_id)
+        .bind(item_id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(item_id)
-    .fetch_optional(pool)
     .await?
     .ok_or_else(|| anyhow::anyhow!("inventory item was not found"))
 }

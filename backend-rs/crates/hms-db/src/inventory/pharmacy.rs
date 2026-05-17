@@ -37,10 +37,11 @@ pub async fn list_dispenses(
     );
     query.push(" ORDER BY pharmacy_dispenses.dispensed_at DESC, pharmacy_dispenses.id DESC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<DispenseRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = hms_observability::observe_db_query(
+        "inventory.pharmacy.dispenses.list",
+        query.build_query_as::<DispenseRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(dispense_from_row).collect()
 }
 
@@ -53,8 +54,10 @@ pub async fn create_dispense(
         anyhow::bail!("controlled items require controlled-substance register workflow");
     }
     let mut transaction = pool.begin().await?;
-    let batch = sqlx::query_as::<_, (Uuid, i64)>(
-        r#"
+    let batch = hms_observability::observe_db_query(
+        "inventory.pharmacy.dispenses.select_batch",
+        sqlx::query_as::<_, (Uuid, i64)>(
+            r#"
         SELECT id, quantity_on_hand
         FROM stock_batches
         WHERE facility_id = $1
@@ -65,22 +68,28 @@ pub async fn create_dispense(
         LIMIT 1
         FOR UPDATE
         "#,
+        )
+        .bind(dispense.facility_id)
+        .bind(dispense.item_id)
+        .bind(dispense.location_id)
+        .bind(dispense.quantity)
+        .fetch_optional(&mut *transaction),
     )
-    .bind(dispense.facility_id)
-    .bind(dispense.item_id)
-    .bind(dispense.location_id)
-    .bind(dispense.quantity)
-    .fetch_optional(&mut *transaction)
     .await?;
     let Some((batch_id, quantity_on_hand)) = batch else {
         anyhow::bail!("insufficient stock for dispense");
     };
     let balance_after = quantity_on_hand - dispense.quantity;
-    sqlx::query("UPDATE stock_batches SET quantity_on_hand = $1, updated_at = now() WHERE id = $2")
+    hms_observability::observe_db_query(
+        "inventory.pharmacy.dispenses.update_batch",
+        sqlx::query(
+            "UPDATE stock_batches SET quantity_on_hand = $1, updated_at = now() WHERE id = $2",
+        )
         .bind(balance_after)
         .bind(batch_id)
-        .execute(&mut *transaction)
-        .await?;
+        .execute(&mut *transaction),
+    )
+    .await?;
 
     insert_movement(
         &mut transaction,
@@ -96,23 +105,26 @@ pub async fn create_dispense(
     )
     .await?;
 
-    sqlx::query(
-        r#"
+    hms_observability::observe_db_query(
+        "inventory.pharmacy.dispenses.insert",
+        sqlx::query(
+            r#"
         INSERT INTO pharmacy_dispenses (
             id, facility_id, patient_id, item_id, location_id, quantity, status, dispensed_by_user_id
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
+        )
+        .bind(dispense.id)
+        .bind(dispense.facility_id)
+        .bind(dispense.patient_id)
+        .bind(dispense.item_id)
+        .bind(dispense.location_id)
+        .bind(dispense.quantity)
+        .bind(codec::encode(DispenseStatus::Dispensed)?)
+        .bind(dispense.actor_user_id)
+        .execute(&mut *transaction),
     )
-    .bind(dispense.id)
-    .bind(dispense.facility_id)
-    .bind(dispense.patient_id)
-    .bind(dispense.item_id)
-    .bind(dispense.location_id)
-    .bind(dispense.quantity)
-    .bind(codec::encode(DispenseStatus::Dispensed)?)
-    .bind(dispense.actor_user_id)
-    .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
@@ -131,12 +143,13 @@ async fn fetch_dispense_by_id(
     query.push_bind(facility_id);
     query.push(" AND pharmacy_dispenses.id = ");
     query.push_bind(id);
-    query
-        .build_query_as::<DispenseRow>()
-        .fetch_optional(pool)
-        .await?
-        .map(dispense_from_row)
-        .transpose()
+    hms_observability::observe_db_query(
+        "inventory.pharmacy.dispenses.fetch_by_id",
+        query.build_query_as::<DispenseRow>().fetch_optional(pool),
+    )
+    .await?
+    .map(dispense_from_row)
+    .transpose()
 }
 
 fn dispense_query() -> QueryBuilder<'static, Postgres> {

@@ -2,7 +2,7 @@ use axum::middleware;
 use axum::routing::get;
 use axum::{Json, Router};
 
-use crate::middleware::request_id;
+use crate::middleware::{request_id, telemetry};
 use crate::openapi::openapi_value;
 use crate::routes;
 use crate::state::AppState;
@@ -26,6 +26,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::search::routes())
         .route("/api/v2/metrics", get(crate::handlers::health::metrics))
         .route("/api/v2/openapi.json", get(openapi_handler))
+        .route_layer(middleware::from_fn(telemetry::layer))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             request_id::layer,

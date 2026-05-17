@@ -56,7 +56,7 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let started_at = state.started_at().timestamp();
     let pool_size = state.postgres_pool_size();
     let pool_idle = state.postgres_pool_idle();
-    let body = format!(
+    let mut body = format!(
         "# HELP hms_api_up API process availability.\n\
          # TYPE hms_api_up gauge\n\
          hms_api_up 1\n\
@@ -70,6 +70,7 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
          # TYPE hms_api_postgres_pool_idle gauge\n\
          hms_api_postgres_pool_idle {pool_idle}\n"
     );
+    body.push_str(&hms_observability::prometheus_metrics());
 
     ([(CONTENT_TYPE, "text/plain; version=0.0.4")], body)
 }

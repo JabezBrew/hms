@@ -13,6 +13,7 @@ base64.workspace = true
 chrono.workspace = true
 hms-domain = { path = "../hms-domain" }
 hms-events = { path = "../hms-events" }
+hms-observability = { path = "../hms-observability" }
 password-hash.workspace = true
 rand_core.workspace = true
 serde.workspace = true

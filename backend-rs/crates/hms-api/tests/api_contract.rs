@@ -671,6 +671,10 @@ async fn metrics_endpoint_is_phi_safe_prometheus_text() {
     let body = String::from_utf8(bytes.to_vec()).expect("metrics text is utf-8");
     assert!(body.contains("hms_api_up 1"));
     assert!(body.contains("hms_api_postgres_pool_size"));
+    assert!(body.contains("hms_api_http_requests_total"));
+    assert!(body.contains("hms_api_http_request_duration_seconds_sum"));
+    assert!(body.contains("hms_api_http_db_query_count_sum"));
+    assert!(body.contains("hms_db_query_duration_seconds_count"));
     assert!(!body.contains("Ama"));
     assert!(!body.contains("Mensah"));
     assert!(!body.contains("P-0000000001"));

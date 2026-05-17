@@ -133,10 +133,11 @@ pub async fn list_controlled_register(
     apply_cursor(&mut query, "latest.created_at", "latest.id", cursor);
     query.push(" ORDER BY latest.created_at DESC, latest.id DESC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<ControlledRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = hms_observability::observe_db_query(
+        "inventory.controlled_register.list",
+        query.build_query_as::<ControlledRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(controlled_from_row).collect()
 }
 
@@ -193,10 +194,11 @@ pub async fn list_controlled_register_entries(
     apply_forward_cursor(&mut query, "created_at", "id", cursor);
     query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
     query.push_bind(limit);
-    let rows = query
-        .build_query_as::<ControlledEntryRow>()
-        .fetch_all(pool)
-        .await?;
+    let rows = hms_observability::observe_db_query(
+        "inventory.controlled_register.entries",
+        query.build_query_as::<ControlledEntryRow>().fetch_all(pool),
+    )
+    .await?;
     rows.into_iter().map(controlled_entry_from_row).collect()
 }
 
@@ -209,8 +211,10 @@ pub async fn validate_controlled_register_balance(
     else {
         return Ok(None);
     };
-    let row = sqlx::query_as::<_, ControlledBalanceRow>(
-        r#"
+    let row = hms_observability::observe_db_query(
+        "inventory.controlled_register.validate_balance",
+        sqlx::query_as::<_, ControlledBalanceRow>(
+            r#"
         WITH ledger AS (
             SELECT quantity_delta, balance_after, created_at, id
             FROM controlled_substance_register
@@ -225,11 +229,12 @@ pub async fn validate_controlled_register_balance(
         SELECT coalesce((SELECT current_balance FROM current_row), 0)::bigint AS current_balance,
                coalesce((SELECT sum(quantity_delta) FROM ledger), 0)::bigint AS computed_balance
         "#,
+        )
+        .bind(facility_id)
+        .bind(context.item_id)
+        .bind(context.location_id)
+        .fetch_one(pool),
     )
-    .bind(facility_id)
-    .bind(context.item_id)
-    .bind(context.location_id)
-    .fetch_one(pool)
     .await?;
 
     Ok(Some(ControlledSubstanceBalanceValidation {
@@ -297,25 +302,28 @@ pub async fn create_controlled_movement(
         anyhow::bail!("controlled balance cannot become negative");
     }
 
-    sqlx::query(
-        r#"
+    hms_observability::observe_db_query(
+        "inventory.controlled_register.insert_movement",
+        sqlx::query(
+            r#"
         INSERT INTO controlled_substance_register (
             id, facility_id, item_id, location_id, movement_type, quantity_delta, balance_after,
             witness_user_id, created_by_user_id
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
+        )
+        .bind(movement.id)
+        .bind(movement.facility_id)
+        .bind(movement.item_id)
+        .bind(movement.location_id)
+        .bind(codec::encode(movement.movement_type)?)
+        .bind(movement.quantity_delta)
+        .bind(next_balance)
+        .bind(movement.witness_user_id)
+        .bind(movement.actor_user_id)
+        .execute(pool),
     )
-    .bind(movement.id)
-    .bind(movement.facility_id)
-    .bind(movement.item_id)
-    .bind(movement.location_id)
-    .bind(codec::encode(movement.movement_type)?)
-    .bind(movement.quantity_delta)
-    .bind(next_balance)
-    .bind(movement.witness_user_id)
-    .bind(movement.actor_user_id)
-    .execute(pool)
     .await?;
     fetch_controlled_by_id(pool, movement.facility_id, movement.id)
         .await?
@@ -328,19 +336,22 @@ async fn current_controlled_balance(
     item_id: Uuid,
     location_id: Uuid,
 ) -> anyhow::Result<i64> {
-    Ok(sqlx::query_scalar::<_, i64>(
-        r#"
+    Ok(hms_observability::observe_db_query(
+        "inventory.controlled_register.current_balance",
+        sqlx::query_scalar::<_, i64>(
+            r#"
         SELECT balance_after
         FROM controlled_substance_register
         WHERE facility_id = $1 AND item_id = $2 AND location_id = $3
         ORDER BY created_at DESC, id DESC
         LIMIT 1
         "#,
+        )
+        .bind(facility_id)
+        .bind(item_id)
+        .bind(location_id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(item_id)
-    .bind(location_id)
-    .fetch_optional(pool)
     .await?
     .unwrap_or(0))
 }
@@ -355,12 +366,13 @@ async fn fetch_controlled_by_id(
     query.push_bind(facility_id);
     query.push(" AND controlled_substance_register.id = ");
     query.push_bind(id);
-    query
-        .build_query_as::<ControlledRow>()
-        .fetch_optional(pool)
-        .await?
-        .map(controlled_from_row)
-        .transpose()
+    hms_observability::observe_db_query(
+        "inventory.controlled_register.fetch_by_id",
+        query.build_query_as::<ControlledRow>().fetch_optional(pool),
+    )
+    .await?
+    .map(controlled_from_row)
+    .transpose()
 }
 
 async fn controlled_context_by_id(
@@ -368,16 +380,19 @@ async fn controlled_context_by_id(
     facility_id: Uuid,
     id: Uuid,
 ) -> anyhow::Result<Option<ControlledContextRow>> {
-    sqlx::query_as::<_, ControlledContextRow>(
-        r#"
+    hms_observability::observe_db_query(
+        "inventory.controlled_register.context_by_id",
+        sqlx::query_as::<_, ControlledContextRow>(
+            r#"
         SELECT item_id, location_id
         FROM controlled_substance_register
         WHERE facility_id = $1 AND id = $2
         "#,
+        )
+        .bind(facility_id)
+        .bind(id)
+        .fetch_optional(pool),
     )
-    .bind(facility_id)
-    .bind(id)
-    .fetch_optional(pool)
     .await
     .map_err(Into::into)
 }

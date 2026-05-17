@@ -673,6 +673,7 @@ dependencies = [
  "chrono",
  "hms-domain",
  "hms-events",
+ "hms-observability",
  "password-hash",
  "rand_core",
  "serde",
@@ -716,6 +717,7 @@ dependencies = [
 name = "hms-observability"
 version = "0.1.0"
 dependencies = [
+ "tokio",
  "tracing-subscriber",
 ]
 
