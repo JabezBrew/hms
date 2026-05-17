@@ -1,4 +1,6 @@
-use hms_db::patients::{PatientContextCursor, PatientContextFilters, PatientCursor};
+use hms_db::patients::{
+    NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientUpdate,
+};
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use hms_domain::patients::{
@@ -29,12 +31,20 @@ impl PatientsService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_patients(
         &self,
         ctx: &hms_access::RequestContext,
         query: PatientListQuery,
     ) -> Result<ListResponse<PatientListItem>, ApiError> {
-        require_patient_registry_access(ctx, self.state.facility_id())?;
+        require_patient_registry_access(ctx, self.facility_id())?;
         let search = query
             .search
             .as_deref()
@@ -42,13 +52,16 @@ impl PatientsService {
             .filter(|value| !value.is_empty());
         let page = patient_page_request(&query)?;
         let fetch_limit = page.fetch_limit();
-        let patients = self
-            .state
-            .list_patients(page.cursor, fetch_limit, search, query.status)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("patient_list_failed", "Patients could not be loaded.")
-            })?;
+        let patients = hms_db::patients::list_patients(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+            search,
+            query.status,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("patient_list_failed", "Patients could not be loaded."))?;
 
         let mut visible = Vec::with_capacity(patients.len());
         for patient in patients {
@@ -72,27 +85,27 @@ impl PatientsService {
         ctx: &hms_access::RequestContext,
         query: PatientListQuery,
     ) -> Result<ListResponse<PatientContextListItem>, ApiError> {
-        require_patient_context_list_access(ctx, self.state.facility_id())?;
+        require_patient_context_list_access(ctx, self.facility_id())?;
         let page = patient_context_page_request(&query)?;
         let fetch_limit = page.fetch_limit();
-        let patients = self
-            .state
-            .list_context_patients(
-                ctx.user_id,
-                page.cursor,
-                fetch_limit,
-                PatientContextFilters {
-                    patient_id: query.patient_id,
-                    search: query.search.clone(),
-                },
+        let patients = hms_db::patients::list_context_patients(
+            self.pool(),
+            self.facility_id(),
+            ctx.user_id,
+            page.cursor,
+            fetch_limit,
+            PatientContextFilters {
+                patient_id: query.patient_id,
+                search: query.search.clone(),
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_context_list_failed",
+                "Context patients could not be loaded.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "patient_context_list_failed",
-                    "Context patients could not be loaded.",
-                )
-            })?;
+        })?;
 
         Ok(cursor_list::page_response(
             patients,
@@ -105,17 +118,19 @@ impl PatientsService {
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ListResponse<PatientRegistrationValidationRule>, ApiError> {
-        require_patient_validation_rule_access(ctx, self.state.facility_id())?;
-        let rules = self
-            .state
-            .list_patient_registration_validation_rules()
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "patient_validation_rules_failed",
-                    "Patient validation rules could not be loaded.",
-                )
-            })?;
+        require_patient_validation_rule_access(ctx, self.facility_id())?;
+        let rules = hms_db::patients::list_patient_registration_validation_rules(
+            self.pool(),
+            self.facility_id(),
+            VALIDATION_RULE_LIMIT as i64,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_validation_rules_failed",
+                "Patient validation rules could not be loaded.",
+            )
+        })?;
 
         Ok(list(
             rules,
@@ -132,7 +147,7 @@ impl PatientsService {
         ctx: &hms_access::RequestContext,
         payload: CreatePatientRequest,
     ) -> Result<ObjectResponse<PatientDetail>, ApiError> {
-        hms_access::can_create_patient(ctx, self.state.facility_id()).map_err(|_| {
+        hms_access::can_create_patient(ctx, self.facility_id()).map_err(|_| {
             ApiError::forbidden(
                 "permission_denied",
                 "You do not have permission to register patients.",
@@ -141,13 +156,24 @@ impl PatientsService {
 
         let first_name = normalize_name(payload.first_name, "first_name")?;
         let last_name = normalize_name(payload.last_name, "last_name")?;
-        let patient = self
-            .state
-            .create_patient(first_name, last_name, payload.date_of_birth, payload.sex)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("patient_create_failed", "Patient could not be created.")
-            })?;
+        let id = Uuid::new_v4();
+        let patient_code = format!("P-{}", &id.simple().to_string()[..10].to_uppercase());
+        let patient = hms_db::patients::create_patient(
+            self.pool(),
+            NewPatient {
+                id,
+                facility_id: self.facility_id(),
+                patient_code,
+                first_name,
+                last_name,
+                date_of_birth: payload.date_of_birth,
+                sex: payload.sex,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("patient_create_failed", "Patient could not be created.")
+        })?;
 
         Ok(object(PatientDetail::from(&patient)))
     }
@@ -173,7 +199,7 @@ impl PatientsService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<PatientChronicleSummary>, ApiError> {
-        require_chronicle_read_access(ctx, self.state.facility_id())?;
+        require_chronicle_read_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(
             &self.state,
             ctx,
@@ -228,23 +254,23 @@ impl PatientsService {
             .map(|value| normalize_name(value, "last_name"))
             .transpose()?;
 
-        let patient = self
-            .state
-            .update_patient(
+        let patient = hms_db::patients::update_patient(
+            self.pool(),
+            PatientUpdate {
                 id,
+                facility_id: self.facility_id(),
                 first_name,
                 last_name,
-                payload.date_of_birth,
-                payload.sex,
-                payload.status,
-                ctx.user_id,
-                Some(ctx.request_id.clone()),
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("patient_update_failed", "Patient could not be updated.")
-            })?
-            .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
+                date_of_birth: payload.date_of_birth,
+                sex: payload.sex,
+                status: payload.status,
+                actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("patient_update_failed", "Patient could not be updated."))?
+        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
 
         hms_access::require_patient_demographics_access(ctx, &patient).map_err(|_| {
             ApiError::forbidden(
@@ -269,8 +295,7 @@ async fn load_patient_for_access(
     patient_id: Uuid,
     denied_message: &'static str,
 ) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
+    let patient = hms_db::patients::get_patient(state.db_pool(), state.facility_id(), patient_id)
         .await
         .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;

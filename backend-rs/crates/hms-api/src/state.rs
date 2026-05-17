@@ -28,7 +28,6 @@ use hms_db::laboratory::{
     LabCursor, LabOrderListFilters, LabResultListFilters, NewLabOrder, NewLabResult, NewSpecimen,
     OrderContext, ResultContext, SpecimenContext,
 };
-use hms_db::patients::{NewPatient, PatientContextCursor, PatientCursor, PatientUpdate};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -79,10 +78,7 @@ use hms_domain::laboratory::{
     LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
     SpecimenListItem,
 };
-use hms_domain::patients::{
-    PatientAdministrativeStatus, PatientContextListItem, PatientRecord,
-    PatientRegistrationValidationRule, Sex,
-};
+use hms_domain::patients::PatientRecord;
 use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
 use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState, ReferralStatus};
 use hms_domain::search::SearchResourceType;
@@ -1385,108 +1381,8 @@ impl AppState {
         .await
     }
 
-    pub async fn list_patients(
-        &self,
-        cursor: Option<PatientCursor>,
-        limit: i64,
-        search: Option<&str>,
-        status: Option<PatientAdministrativeStatus>,
-    ) -> Result<Vec<PatientRecord>> {
-        hms_db::patients::list_patients(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            search,
-            status,
-        )
-        .await
-    }
-
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_patient_registration_validation_rules(
-        &self,
-    ) -> Result<Vec<PatientRegistrationValidationRule>> {
-        hms_db::patients::list_patient_registration_validation_rules(
-            &self.inner.pool,
-            self.facility_id(),
-            50,
-        )
-        .await
-    }
-
-    pub async fn list_context_patients(
-        &self,
-        user_id: Uuid,
-        cursor: Option<PatientContextCursor>,
-        limit: i64,
-        filters: hms_db::patients::PatientContextFilters,
-    ) -> Result<Vec<PatientContextListItem>> {
-        hms_db::patients::list_context_patients(
-            &self.inner.pool,
-            self.facility_id(),
-            user_id,
-            cursor,
-            limit,
-            filters,
-        )
-        .await
-    }
-
-    pub async fn create_patient(
-        &self,
-        first_name: String,
-        last_name: String,
-        date_of_birth: NaiveDate,
-        sex: Sex,
-    ) -> Result<PatientRecord> {
-        let id = Uuid::new_v4();
-        let patient_code = format!("P-{}", &id.simple().to_string()[..10].to_uppercase());
-
-        hms_db::patients::create_patient(
-            &self.inner.pool,
-            NewPatient {
-                id,
-                facility_id: self.facility_id(),
-                patient_code,
-                first_name,
-                last_name,
-                date_of_birth,
-                sex,
-            },
-        )
-        .await
-    }
-
-    pub async fn update_patient(
-        &self,
-        id: Uuid,
-        first_name: Option<String>,
-        last_name: Option<String>,
-        date_of_birth: Option<NaiveDate>,
-        sex: Option<Sex>,
-        status: Option<hms_domain::patients::PatientAdministrativeStatus>,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<PatientRecord>> {
-        hms_db::patients::update_patient(
-            &self.inner.pool,
-            PatientUpdate {
-                id,
-                facility_id: self.facility_id(),
-                first_name,
-                last_name,
-                date_of_birth,
-                sex,
-                status,
-                actor_user_id,
-                request_id,
-            },
-        )
-        .await
     }
 
     pub async fn list_clinical_note_templates(
