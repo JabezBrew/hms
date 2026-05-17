@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
-    ClinicalCursor, NewAllergy, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
-    NewProblem, NoteContext, UpdateClinicalNoteTemplate,
+    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
+    NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
@@ -705,20 +705,24 @@ impl ClinicalService {
         patient_id: Uuid,
         query: CursorListQuery,
     ) -> Result<ListResponse<ChartEntryListItem>, ApiError> {
-        require_clinical_list_access(ctx, self.state.facility_id())?;
+        require_clinical_list_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_chart_entries(patient_id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "chart_entry_list_failed",
-                    "Chart entries could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::clinical::list_chart_entries(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "chart_entry_list_failed",
+                "Chart entries could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.measured_at, item.id)
@@ -731,27 +735,30 @@ impl ClinicalService {
         patient_id: Uuid,
         payload: CreateChartEntryRequest,
     ) -> Result<ObjectResponse<ChartEntryListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let value = normalize_text(payload.value, "value", MAX_SHORT_TEXT_LEN)?;
         let unit = normalize_optional_text(payload.unit, "unit", MAX_SHORT_TEXT_LEN)?;
-        let entry = self
-            .state
-            .create_chart_entry(
+        let entry = hms_db::clinical::create_chart_entry(
+            self.pool(),
+            NewChartEntry {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
                 patient_id,
-                payload.entry_type,
-                payload.measured_at,
+                entry_type: payload.entry_type,
+                measured_at: payload.measured_at,
                 value,
                 unit,
-                ctx.user_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "chart_entry_create_failed",
+                "Chart entry could not be saved.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "chart_entry_create_failed",
-                    "Chart entry could not be saved.",
-                )
-            })?;
+        })?;
 
         Ok(object(entry))
     }

@@ -9,7 +9,6 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::clinical::{ClinicalCursor, NewChartEntry};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -29,7 +28,7 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::clinical::{ChartEntryListItem, ChartEntryType, PatientChronicleSummary};
+use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
@@ -1048,47 +1047,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_chart_entries(
-        &self,
-        patient_id: Uuid,
-        cursor: Option<ClinicalCursor>,
-        limit: i64,
-    ) -> Result<Vec<ChartEntryListItem>> {
-        hms_db::clinical::list_chart_entries(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_chart_entry(
-        &self,
-        patient_id: Uuid,
-        entry_type: ChartEntryType,
-        measured_at: DateTime<Utc>,
-        value: String,
-        unit: Option<String>,
-        actor_user_id: Uuid,
-    ) -> Result<ChartEntryListItem> {
-        hms_db::clinical::create_chart_entry(
-            &self.inner.pool,
-            NewChartEntry {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                entry_type,
-                measured_at,
-                value,
-                unit,
-                actor_user_id,
-            },
-        )
-        .await
     }
 
     pub async fn patient_chronicle_summary(
