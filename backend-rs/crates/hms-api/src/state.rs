@@ -9,7 +9,7 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::clinical::{ClinicalCursor, NewAllergy, NewChartEntry, NewPrescription};
+use hms_db::clinical::{ClinicalCursor, NewChartEntry, NewPrescription};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -30,8 +30,8 @@ use hms_domain::admin::{
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
-    AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, PatientChronicleSummary,
-    PrescriptionListItem, UpdateAllergyRequest, UpdatePrescriptionRequest,
+    ChartEntryListItem, ChartEntryType, PatientChronicleSummary, PrescriptionListItem,
+    UpdatePrescriptionRequest,
 };
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
@@ -1051,62 +1051,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_allergies(
-        &self,
-        patient_id: Uuid,
-        cursor: Option<ClinicalCursor>,
-        limit: i64,
-    ) -> Result<Vec<AllergyListItem>> {
-        hms_db::clinical::list_allergies(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_allergy(
-        &self,
-        patient_id: Uuid,
-        substance: String,
-        reaction: Option<String>,
-        severity: AllergySeverity,
-        actor_user_id: Uuid,
-    ) -> Result<AllergyListItem> {
-        hms_db::clinical::create_allergy(
-            &self.inner.pool,
-            NewAllergy {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                substance,
-                reaction,
-                severity,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_allergy(&self, allergy_id: Uuid) -> Result<Option<AllergyListItem>> {
-        hms_db::clinical::get_allergy(&self.inner.pool, self.facility_id(), allergy_id).await
-    }
-
-    pub async fn update_allergy(
-        &self,
-        allergy_id: Uuid,
-        update: UpdateAllergyRequest,
-    ) -> Result<Option<AllergyListItem>> {
-        hms_db::clinical::update_allergy(&self.inner.pool, self.facility_id(), allergy_id, update)
-            .await
-    }
-
-    pub async fn deactivate_allergy(&self, allergy_id: Uuid) -> Result<Option<AllergyListItem>> {
-        hms_db::clinical::deactivate_allergy(&self.inner.pool, self.facility_id(), allergy_id).await
     }
 
     pub async fn list_prescriptions(

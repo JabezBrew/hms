@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
-    ClinicalCursor, NewClinicalNote, NewClinicalNoteTemplate, NewProblem, NoteContext,
+    ClinicalCursor, NewAllergy, NewClinicalNote, NewClinicalNoteTemplate, NewProblem, NoteContext,
     UpdateClinicalNoteTemplate,
 };
 use hms_domain::care::CursorListQuery;
@@ -463,17 +463,19 @@ impl ClinicalService {
         patient_id: Uuid,
         query: CursorListQuery,
     ) -> Result<ListResponse<AllergyListItem>, ApiError> {
-        require_clinical_list_access(ctx, self.state.facility_id())?;
+        require_clinical_list_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_allergies(patient_id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("allergy_list_failed", "Allergies could not be loaded.")
-            })?;
+        let rows = hms_db::clinical::list_allergies(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("allergy_list_failed", "Allergies could not be loaded."))?;
 
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
@@ -486,23 +488,24 @@ impl ClinicalService {
         patient_id: Uuid,
         payload: CreateAllergyRequest,
     ) -> Result<ObjectResponse<AllergyListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
         let substance = normalize_text(payload.substance, "substance", MAX_TITLE_LEN)?;
         let reaction = normalize_optional_text(payload.reaction, "reaction", MAX_TITLE_LEN)?;
-        let allergy = self
-            .state
-            .create_allergy(
+        let allergy = hms_db::clinical::create_allergy(
+            self.pool(),
+            NewAllergy {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
                 patient_id,
                 substance,
                 reaction,
-                payload.severity,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("allergy_create_failed", "Allergy could not be saved.")
-            })?;
+                severity: payload.severity,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("allergy_create_failed", "Allergy could not be saved."))?;
 
         Ok(object(allergy))
     }
@@ -514,7 +517,7 @@ impl ClinicalService {
     ) -> Result<ObjectResponse<AllergyListItem>, ApiError> {
         require_action_permission(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::ClinicalDocumentationView,
         )?;
         Ok(object(load_allergy_for_access(&self.state, ctx, id).await?))
@@ -526,7 +529,7 @@ impl ClinicalService {
         id: Uuid,
         mut payload: UpdateAllergyRequest,
     ) -> Result<ObjectResponse<AllergyListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _current = load_allergy_for_access(&self.state, ctx, id).await?;
 
         payload.substance = normalize_optional_text(payload.substance, "substance", MAX_TITLE_LEN)?;
@@ -542,14 +545,15 @@ impl ClinicalService {
             ));
         }
 
-        let allergy = self
-            .state
-            .update_allergy(id, payload)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("allergy_update_failed", "Allergy could not be updated.")
-            })?
-            .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
+        let allergy =
+            hms_db::clinical::update_allergy(self.pool(), self.facility_id(), id, payload)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("allergy_update_failed", "Allergy could not be updated.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("allergy_not_found", "Allergy was not found.")
+                })?;
 
         Ok(object(allergy))
     }
@@ -559,11 +563,9 @@ impl ClinicalService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<AllergyListItem>, ApiError> {
-        require_clinical_write_access(ctx, self.state.facility_id())?;
+        require_clinical_write_access(ctx, self.facility_id())?;
         let _current = load_allergy_for_access(&self.state, ctx, id).await?;
-        let allergy = self
-            .state
-            .deactivate_allergy(id)
+        let allergy = hms_db::clinical::deactivate_allergy(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -810,8 +812,7 @@ async fn load_allergy_for_access(
     ctx: &hms_access::RequestContext,
     id: Uuid,
 ) -> Result<AllergyListItem, ApiError> {
-    let allergy = state
-        .get_allergy(id)
+    let allergy = hms_db::clinical::get_allergy(state.db_pool(), state.facility_id(), id)
         .await
         .map_err(|_| ApiError::conflict("allergy_load_failed", "Allergy could not be loaded."))?
         .ok_or_else(|| ApiError::not_found("allergy_not_found", "Allergy was not found."))?;
