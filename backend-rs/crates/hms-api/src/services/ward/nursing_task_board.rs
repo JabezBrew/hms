@@ -1,3 +1,4 @@
+use hms_db::ward::NewNursingTask;
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{CreateNursingTaskRequest, NursingTaskListItem, NursingTaskStatus};
@@ -31,16 +32,19 @@ impl NursingTaskBoardService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_nursing_tasks(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nursing_task_list_failed",
-                    "Nursing tasks could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::ward::list_nursing_tasks(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nursing_task_list_failed",
+                "Nursing tasks could not be loaded.",
+            )
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.due_at, item.id)
@@ -59,22 +63,27 @@ impl NursingTaskBoardService {
         )?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
-        let task = self
-            .state
-            .create_nursing_task(
-                &admission,
-                payload.task_type,
-                payload.due_at,
-                payload.assigned_to_user_id,
-                ctx.user_id,
+        let task = hms_db::ward::create_nursing_task(
+            self.state.db_pool(),
+            NewNursingTask {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                admission_case_id: admission.id,
+                patient_id: admission.patient_id,
+                ward_id: admission.ward_id,
+                task_type: payload.task_type,
+                due_at: payload.due_at,
+                assigned_to_user_id: payload.assigned_to_user_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nursing_task_create_failed",
+                "Nursing task could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nursing_task_create_failed",
-                    "Nursing task could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(task))
     }
@@ -89,34 +98,32 @@ impl NursingTaskBoardService {
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let existing = self
-            .state
-            .get_nursing_task(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nursing_task_load_failed",
-                    "Nursing task could not be loaded.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-            })?;
+        let existing =
+            hms_db::ward::get_nursing_task(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "nursing_task_load_failed",
+                        "Nursing task could not be loaded.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
+                })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let task = self
-            .state
-            .complete_nursing_task(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nursing_task_complete_failed",
-                    "Nursing task could not be completed.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-            })?;
+        let task =
+            hms_db::ward::complete_nursing_task(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "nursing_task_complete_failed",
+                        "Nursing task could not be completed.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
+                })?;
 
         Ok(object(task))
     }
@@ -131,19 +138,18 @@ impl NursingTaskBoardService {
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let existing = self
-            .state
-            .get_nursing_task(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nursing_task_load_failed",
-                    "Nursing task could not be loaded.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-            })?;
+        let existing =
+            hms_db::ward::get_nursing_task(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "nursing_task_load_failed",
+                        "Nursing task could not be loaded.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
+                })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
         if existing.status == NursingTaskStatus::Completed {
@@ -153,19 +159,18 @@ impl NursingTaskBoardService {
             ));
         }
 
-        let task = self
-            .state
-            .cancel_nursing_task(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "nursing_task_cancel_failed",
-                    "Nursing task could not be cancelled.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-            })?;
+        let task =
+            hms_db::ward::cancel_nursing_task(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "nursing_task_cancel_failed",
+                        "Nursing task could not be cancelled.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
+                })?;
 
         Ok(object(task))
     }

@@ -8,8 +8,8 @@ use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvi
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
     AdmissionContext, NewFluidBalanceEntry, NewHandoff, NewMedicationAdministration,
-    NewMonitoringEvent, NewNursingAlert, NewNursingTask, NewPatientVitals, NewTreatmentSheet,
-    NewWardStockRequest, WardCursor,
+    NewMonitoringEvent, NewNursingAlert, NewPatientVitals, NewTreatmentSheet, NewWardStockRequest,
+    WardCursor,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -17,8 +17,8 @@ use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
     FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
-    MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity, NursingTaskListItem,
-    NursingTaskType, PatientVitalsListItem, TreatmentSheetListItem, WardStockRequestListItem,
+    MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity, PatientVitalsListItem,
+    TreatmentSheetListItem, WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -542,54 +542,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_nursing_tasks(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<NursingTaskListItem>> {
-        hms_db::ward::list_nursing_tasks(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_nursing_task(
-        &self,
-        admission: &AdmissionContext,
-        task_type: NursingTaskType,
-        due_at: DateTime<Utc>,
-        assigned_to_user_id: Option<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<NursingTaskListItem> {
-        hms_db::ward::create_nursing_task(
-            &self.inner.pool,
-            NewNursingTask {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                ward_id: admission.ward_id,
-                task_type,
-                due_at,
-                assigned_to_user_id,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn complete_nursing_task(
-        &self,
-        task_id: Uuid,
-    ) -> Result<Option<NursingTaskListItem>> {
-        hms_db::ward::complete_nursing_task(&self.inner.pool, self.facility_id(), task_id).await
-    }
-
-    pub async fn cancel_nursing_task(&self, task_id: Uuid) -> Result<Option<NursingTaskListItem>> {
-        hms_db::ward::cancel_nursing_task(&self.inner.pool, self.facility_id(), task_id).await
-    }
-
-    pub async fn get_nursing_task(&self, task_id: Uuid) -> Result<Option<NursingTaskListItem>> {
-        hms_db::ward::get_nursing_task(&self.inner.pool, self.facility_id(), task_id).await
     }
 
     pub async fn list_medication_administrations(
