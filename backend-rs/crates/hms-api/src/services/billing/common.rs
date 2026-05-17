@@ -103,6 +103,10 @@ where
     cursor_list::page_response(rows, page_size, cursor_for)
 }
 
+pub(super) fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
+    cursor_list::static_list(items, MAX_LIMIT)
+}
+
 pub(super) fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
     cursor_list::encode_cursor(occurred_at, id)
 }
@@ -147,6 +151,13 @@ pub(super) fn require_positive(value: i64, field: &'static str) -> Result<(), Ap
             field,
             "This value must be greater than zero.",
         ));
+    }
+    Ok(())
+}
+
+pub(super) fn require_non_negative(value: i64, field: &'static str) -> Result<(), ApiError> {
+    if value < 0 {
+        return Err(validation_error(field, "This value cannot be negative."));
     }
     Ok(())
 }
