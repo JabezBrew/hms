@@ -28,7 +28,6 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
@@ -1047,20 +1046,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn patient_chronicle_summary(
-        &self,
-        patient_id: Uuid,
-        limit: i64,
-    ) -> Result<Option<PatientChronicleSummary>> {
-        hms_db::clinical::patient_chronicle_summary(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            limit,
-        )
-        .await
     }
 
     pub async fn list_wards(

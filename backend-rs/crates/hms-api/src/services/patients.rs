@@ -208,17 +208,20 @@ impl PatientsService {
         )
         .await?;
 
-        let summary = self
-            .state
-            .patient_chronicle_summary(id, CHRONICLE_SUMMARY_LIMIT)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "patient_chronicle_load_failed",
-                    "Patient Chronicle could not be loaded.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
+        let summary = hms_db::clinical::patient_chronicle_summary(
+            self.pool(),
+            self.facility_id(),
+            id,
+            CHRONICLE_SUMMARY_LIMIT,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_chronicle_load_failed",
+                "Patient Chronicle could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
 
         Ok(object(summary))
     }
