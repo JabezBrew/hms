@@ -19,7 +19,6 @@ use uuid::Uuid;
 use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::middleware::request_id::current_request_id;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -28,7 +27,6 @@ const MAX_LIMIT: u8 = 100;
 const MAX_CODE_LEN: usize = 48;
 const MAX_NAME_LEN: usize = 160;
 const MAX_TEXT_LEN: usize = 240;
-const MAX_EMAIL_LEN: usize = 254;
 
 #[utoipa::path(get, path = "/api/v2/admin/org-units", operation_id = "getAdminOrgUnits", tag = "admin", security(("bearerAuth" = [])), params(OrganizationUnitListQuery), responses((status = 200, body = ListResponse<OrganizationUnitListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_org_units(
@@ -289,20 +287,12 @@ pub async fn list_authority_appointments(
     RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<AuthorityAppointmentListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_authority_appointments(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "authority_appointment_list_failed",
-                "Authority appointments could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .admin_service()
+            .list_authority_appointments(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/authority-appointments", operation_id = "postAdminAuthorityAppointments", tag = "admin", security(("bearerAuth" = [])), request_body = CreateAuthorityAppointmentRequest, responses((status = 200, body = ObjectResponse<AuthorityAppointmentListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -311,23 +301,12 @@ pub async fn create_authority_appointment(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateAuthorityAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AuthorityAppointmentListItem>>, ApiError> {
-    require_high_risk_admin_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::AdminAuthorityManage,
-    )?;
-    validate_text(&payload.appointment_type, MAX_CODE_LEN, "appointment_type")?;
-    validate_time_window(payload.starts_at, payload.ends_at)?;
-    let appointment = state
-        .create_authority_appointment(payload, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "authority_appointment_create_failed",
-                "Authority appointment could not be saved.",
-            )
-        })?;
-    Ok(Json(object(appointment)))
+    Ok(Json(
+        state
+            .admin_service()
+            .create_authority_appointment(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/permission-assignments", operation_id = "getAdminPermissionAssignments", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<PermissionAssignmentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -336,20 +315,12 @@ pub async fn list_permission_assignments(
     RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<PermissionAssignmentListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_permission_assignments(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "permission_assignment_list_failed",
-                "Permission assignments could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .admin_service()
+            .list_permission_assignments(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/permission-assignments", operation_id = "postAdminPermissionAssignments", tag = "admin", security(("bearerAuth" = [])), request_body = CreatePermissionAssignmentRequest, responses((status = 200, body = ObjectResponse<PermissionAssignmentListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -358,25 +329,12 @@ pub async fn create_permission_assignment(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreatePermissionAssignmentRequest>,
 ) -> Result<Json<ObjectResponse<PermissionAssignmentListItem>>, ApiError> {
-    require_high_risk_admin_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::AdminAuthorityManage,
-    )?;
-    validate_text(&payload.scope_type, MAX_CODE_LEN, "scope_type")?;
-    validate_text(&payload.reason_code, MAX_CODE_LEN, "reason_code")?;
-    validate_time_window(payload.starts_at, payload.ends_at)?;
-    ensure_supported_permissions(&state, &[payload.permission_code]).await?;
-    let assignment = state
-        .create_permission_assignment(payload, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "permission_assignment_create_failed",
-                "Permission assignment could not be saved.",
-            )
-        })?;
-    Ok(Json(object(assignment)))
+    Ok(Json(
+        state
+            .admin_service()
+            .create_permission_assignment(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/features", operation_id = "getAdminFeatures", tag = "admin", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -384,21 +342,12 @@ pub async fn list_feature_entitlements(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<FeatureEntitlementListItem>>, ApiError> {
-    require_feature_entitlement_access(&user, state.facility_id())?;
-    let rows = state.list_feature_entitlements().await.map_err(|_| {
-        ApiError::conflict(
-            "feature_entitlement_list_failed",
-            "Feature entitlements could not be loaded.",
-        )
-    })?;
-    Ok(Json(list(
-        rows,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: 25,
-        },
-    )))
+    Ok(Json(
+        state
+            .admin_service()
+            .list_feature_entitlements(&user)
+            .await?,
+    ))
 }
 
 #[utoipa::path(patch, path = "/api/v2/admin/features/{key}", operation_id = "patchAdminFeature", tag = "admin", security(("bearerAuth" = [])), params(("key" = FeatureKey, Path, description = "Feature key")), request_body = UpdateFeatureEntitlementRequest, responses((status = 200, body = ObjectResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -408,22 +357,12 @@ pub async fn update_feature_entitlement(
     Path(key): Path<FeatureKey>,
     Json(payload): Json<UpdateFeatureEntitlementRequest>,
 ) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
-    require_high_risk_admin_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::AdminFeatureEntitlementsManage,
-    )?;
-    let entitlement = state
-        .update_feature_entitlement(key, payload.enabled, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "feature_entitlement_update_failed",
-                "Feature entitlement could not be updated.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
-    Ok(Json(object(entitlement)))
+    Ok(Json(
+        state
+            .admin_service()
+            .update_feature_entitlement(&user, key, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(delete, path = "/api/v2/admin/features/{key}", operation_id = "deleteAdminFeature", tag = "admin", security(("bearerAuth" = [])), params(("key" = FeatureKey, Path, description = "Feature key")), responses((status = 200, body = ObjectResponse<FeatureEntitlementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -432,22 +371,12 @@ pub async fn delete_feature_entitlement(
     RequestContext(user): RequestContext,
     Path(key): Path<FeatureKey>,
 ) -> Result<Json<ObjectResponse<FeatureEntitlementListItem>>, ApiError> {
-    require_high_risk_admin_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::AdminFeatureEntitlementsManage,
-    )?;
-    let entitlement = state
-        .delete_feature_entitlement(key, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "feature_entitlement_delete_failed",
-                "Feature entitlement override could not be removed.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
-    Ok(Json(object(entitlement)))
+    Ok(Json(
+        state
+            .admin_service()
+            .delete_feature_entitlement(&user, key)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/staff", operation_id = "getAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(StaffListQuery), responses((status = 200, body = ListResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -456,27 +385,7 @@ pub async fn list_staff(
     RequestContext(user): RequestContext,
     Query(query): Query<StaffListQuery>,
 ) -> Result<Json<ListResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    let search = query.search;
-    let is_active = query.is_active;
-    let practitioners_only = query.practitioners_only;
-    let (cursor, page_size) = page_request(AdminListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_staff_accounts(
-            cursor,
-            page_size as i64 + 1,
-            search,
-            is_active,
-            practitioners_only,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("staff_list_failed", "Staff could not be loaded."))?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(state.admin_service().list_staff(&user, query).await?))
 }
 
 #[utoipa::path(get, path = "/api/v2/staff/directory", operation_id = "getStaffDirectory", tag = "staff", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<StaffDirectoryItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -485,20 +394,12 @@ pub async fn list_staff_directory(
     RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<StaffDirectoryItem>>, ApiError> {
-    require_staff_directory_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_staff_directory(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "staff_directory_failed",
-                "Staff directory could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.user_id)
-    })))
+    Ok(Json(
+        state
+            .admin_service()
+            .list_staff_directory(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/staff", operation_id = "postAdminStaff", tag = "admin", security(("bearerAuth" = [])), request_body = CreateStaffRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
@@ -507,15 +408,9 @@ pub async fn create_staff(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateStaffRequest>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    validate_staff_payload(&payload)?;
-    let staff = state
-        .create_staff_account(payload, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
-        })?;
-    Ok(Json(object(staff)))
+    Ok(Json(
+        state.admin_service().create_staff(&user, payload).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/staff/{id}", operation_id = "getAdminStaffById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -524,13 +419,7 @@ pub async fn get_staff(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    let staff = state
-        .get_staff_account(id)
-        .await
-        .map_err(|_| ApiError::conflict("staff_load_failed", "Staff account could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
-    Ok(Json(object(staff)))
+    Ok(Json(state.admin_service().get_staff(&user, id).await?))
 }
 
 #[utoipa::path(patch, path = "/api/v2/admin/staff/{id}", operation_id = "patchAdminStaff", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), request_body = UpdateStaffRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
@@ -540,16 +429,12 @@ pub async fn update_staff(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    validate_staff_update_payload(&payload)?;
-    let staff = state
-        .update_staff_account(id, payload, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict("staff_update_failed", "Staff account could not be updated.")
-        })?
-        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
-    Ok(Json(object(staff)))
+    Ok(Json(
+        state
+            .admin_service()
+            .update_staff(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/force-password-reset", operation_id = "postAdminStaffForcePasswordReset", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -558,18 +443,12 @@ pub async fn force_staff_password_reset(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_high_risk_admin_access(&user, state.facility_id(), PermissionCode::AdminStaffManage)?;
-    let staff = state
-        .force_staff_password_reset(id, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "staff_reset_failed",
-                "Staff password reset could not be forced.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
-    Ok(Json(object(staff)))
+    Ok(Json(
+        state
+            .admin_service()
+            .force_staff_password_reset(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/deactivate", operation_id = "postAdminStaffDeactivate", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -578,18 +457,9 @@ pub async fn deactivate_staff(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_high_risk_admin_access(&user, state.facility_id(), PermissionCode::AdminStaffManage)?;
-    let staff = state
-        .deactivate_staff_account(id, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "staff_deactivate_failed",
-                "Staff account could not be deactivated.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
-    Ok(Json(object(staff)))
+    Ok(Json(
+        state.admin_service().deactivate_staff(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/staff/{id}/reactivate", operation_id = "postAdminStaffReactivate", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -598,18 +468,9 @@ pub async fn reactivate_staff(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_high_risk_admin_access(&user, state.facility_id(), PermissionCode::AdminStaffManage)?;
-    let staff = state
-        .reactivate_staff_account(id, user.id, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "staff_reactivate_failed",
-                "Staff account could not be reactivated.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
-    Ok(Json(object(staff)))
+    Ok(Json(
+        state.admin_service().reactivate_staff(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(put, path = "/api/v2/admin/staff/{id}/practitioner-profile", operation_id = "putAdminStaffPractitionerProfile", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Staff profile ID")), request_body = UpsertPractitionerProfileRequest, responses((status = 200, body = ObjectResponse<StaffListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
@@ -619,19 +480,12 @@ pub async fn upsert_staff_practitioner_profile(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpsertPractitionerProfileRequest>,
 ) -> Result<Json<ObjectResponse<StaffListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    validate_practitioner_profile(&payload)?;
-    let staff = state
-        .upsert_practitioner_profile(id, user.id, payload, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "practitioner_profile_save_failed",
-                "Practitioner profile could not be saved.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
-    Ok(Json(object(staff)))
+    Ok(Json(
+        state
+            .admin_service()
+            .upsert_staff_practitioner_profile(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/practitioners", operation_id = "getAdminPractitioners", tag = "admin", security(("bearerAuth" = [])), params(PractitionerListQuery), responses((status = 200, body = ListResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -640,25 +494,12 @@ pub async fn list_practitioners(
     RequestContext(user): RequestContext,
     Query(query): Query<PractitionerListQuery>,
 ) -> Result<Json<ListResponse<PractitionerListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    let search = query.search;
-    let is_active = query.is_active;
-    let (cursor, page_size) = page_request(AdminListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_practitioners(cursor, page_size as i64 + 1, search, is_active)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "practitioner_list_failed",
-                "Practitioners could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .admin_service()
+            .list_practitioners(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/practitioners/{id}", operation_id = "getAdminPractitionerById", tag = "admin", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Practitioner profile or staff id")), responses((status = 200, body = ObjectResponse<PractitionerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -667,20 +508,9 @@ pub async fn get_practitioner(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PractitionerListItem>>, ApiError> {
-    require_staff_access(&user, state.facility_id())?;
-    let practitioner = state
-        .get_practitioner(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "practitioner_load_failed",
-                "Practitioner could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("practitioner_not_found", "Practitioner was not found.")
-        })?;
-    Ok(Json(object(practitioner)))
+    Ok(Json(
+        state.admin_service().get_practitioner(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/committees", operation_id = "getAdminCommittees", tag = "admin", security(("bearerAuth" = [])), params(AdminListQuery), responses((status = 200, body = ListResponse<CommitteeListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -724,17 +554,9 @@ pub async fn list_delegations(
     RequestContext(user): RequestContext,
     Query(query): Query<AdminListQuery>,
 ) -> Result<Json<ListResponse<DelegationListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_delegations(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("delegation_list_failed", "Delegations could not be loaded.")
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state.admin_service().list_delegations(&user, query).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/admin/delegations", operation_id = "postAdminDelegations", tag = "admin", security(("bearerAuth" = [])), request_body = CreateDelegationRequest, responses((status = 200, body = ObjectResponse<DelegationListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -743,21 +565,12 @@ pub async fn create_delegation(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateDelegationRequest>,
 ) -> Result<Json<ObjectResponse<DelegationListItem>>, ApiError> {
-    require_high_risk_admin_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::AdminAuthorityManage,
-    )?;
-    validate_text(&payload.reason, MAX_TEXT_LEN, "reason")?;
-    validate_time_window(payload.starts_at, payload.ends_at)?;
-    ensure_supported_permissions(&state, &[payload.permission_code]).await?;
-    let delegation = state
-        .create_delegation(payload, Some(current_request_id()))
-        .await
-        .map_err(|_| {
-            ApiError::conflict("delegation_create_failed", "Delegation could not be saved.")
-        })?;
-    Ok(Json(object(delegation)))
+    Ok(Json(
+        state
+            .admin_service()
+            .create_delegation(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/admin/audit-events", operation_id = "getAdminAuditEvents", tag = "admin", security(("bearerAuth" = [])), params(AuditEventListQuery), responses((status = 200, body = ListResponse<AuditEventListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -766,30 +579,12 @@ pub async fn list_audit_events(
     RequestContext(user): RequestContext,
     Query(query): Query<AuditEventListQuery>,
 ) -> Result<Json<ListResponse<AuditEventListItem>>, ApiError> {
-    require_admin_access(&user, state.facility_id())?;
-    let filters = hms_db::admin::AuditEventFilters {
-        search: query.search,
-        category: query.category,
-        action: query.action,
-        start_date: query.start_date,
-        end_date: query.end_date,
-    };
-    let (cursor, page_size) = page_request(AdminListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_audit_events(cursor, page_size as i64 + 1, filters)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "audit_event_list_failed",
-                "Audit events could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.occurred_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .admin_service()
+            .list_audit_events(&user, query)
+            .await?,
+    ))
 }
 
 fn require_admin_access(
@@ -797,55 +592,6 @@ fn require_admin_access(
     facility_id: Uuid,
 ) -> Result<(), ApiError> {
     hms_access::require_admin_authority_access(user, facility_id).map_err(ApiError::from)
-}
-
-fn require_high_risk_admin_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_feature(user, FeatureKey::Admin).map_err(ApiError::from)?;
-    hms_access::require_high_risk_facility_permission(user, facility_id, permission, Utc::now())
-        .map_err(ApiError::from)
-}
-
-fn require_feature_entitlement_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_feature_entitlement_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::AdminAuthorityAccessDenied => ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to manage feature entitlements.",
-        ),
-        other => ApiError::from(other),
-    })
-}
-
-fn require_staff_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_staff_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::AdminAuthorityAccessDenied => ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to manage staff.",
-        ),
-        other => ApiError::from(other),
-    })
-}
-
-fn require_staff_directory_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_staff_directory_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::MissingPermission => ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to view the staff directory.",
-        ),
-        other => ApiError::from(other),
-    })
 }
 
 async fn ensure_supported_permissions(
@@ -883,94 +629,9 @@ fn validate_code(value: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn validate_staff_payload(payload: &CreateStaffRequest) -> Result<(), ApiError> {
-    validate_email(&payload.email)?;
-    validate_text(&payload.display_name, MAX_NAME_LEN, "display_name")?;
-    validate_code(&payload.employee_id)?;
-    validate_text(&payload.department, MAX_NAME_LEN, "department")?;
-    validate_text(&payload.position, MAX_NAME_LEN, "position")?;
-    validate_password_policy(&payload.temporary_password)?;
-    if let Some(profile) = payload.practitioner_profile.as_ref() {
-        validate_practitioner_profile(profile)?;
-    }
-    Ok(())
-}
-
-fn validate_staff_update_payload(payload: &UpdateStaffRequest) -> Result<(), ApiError> {
-    if let Some(value) = payload.display_name.as_ref() {
-        validate_text(value, MAX_NAME_LEN, "display_name")?;
-    }
-    if let Some(value) = payload.department.as_ref() {
-        validate_text(value, MAX_NAME_LEN, "department")?;
-    }
-    if let Some(value) = payload.position.as_ref() {
-        validate_text(value, MAX_NAME_LEN, "position")?;
-    }
-    Ok(())
-}
-
-fn validate_practitioner_profile(
-    payload: &UpsertPractitionerProfileRequest,
-) -> Result<(), ApiError> {
-    validate_text(&payload.license_number, MAX_CODE_LEN, "license_number")?;
-    validate_text(&payload.specialization, MAX_NAME_LEN, "specialization")?;
-    validate_text(&payload.qualification, MAX_NAME_LEN, "qualification")?;
-    if let Some(value) = payload.fhir_practitioner_id.as_ref() {
-        validate_text(value, MAX_TEXT_LEN, "fhir_practitioner_id")?;
-    }
-    Ok(())
-}
-
-fn validate_email(value: &str) -> Result<(), ApiError> {
-    let value = value.trim();
-    if value.len() > MAX_EMAIL_LEN
-        || !value.contains('@')
-        || value.starts_with('@')
-        || value.ends_with('@')
-    {
-        return Err(ApiError::bad_request(
-            "invalid_email",
-            "Email address is invalid.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_password_policy(value: &str) -> Result<(), ApiError> {
-    let meets_policy = value.len() >= 12
-        && value.chars().any(char::is_uppercase)
-        && value.chars().any(char::is_lowercase)
-        && value.chars().any(|character| character.is_ascii_digit())
-        && value
-            .chars()
-            .any(|character| !character.is_ascii_alphanumeric());
-    if !meets_policy {
-        return Err(ApiError::bad_request(
-            "weak_password",
-            "Temporary password does not meet policy.",
-        ));
-    }
-    Ok(())
-}
-
 fn validate_text(value: &str, max_len: usize, field: &'static str) -> Result<(), ApiError> {
     if value.trim().is_empty() || value.len() > max_len {
         return Err(ApiError::bad_request("invalid_text", field));
-    }
-    Ok(())
-}
-
-fn validate_time_window(
-    starts_at: Option<DateTime<Utc>>,
-    ends_at: Option<DateTime<Utc>>,
-) -> Result<(), ApiError> {
-    if let (Some(starts_at), Some(ends_at)) = (starts_at, ends_at) {
-        if ends_at <= starts_at {
-            return Err(ApiError::bad_request(
-                "invalid_time_window",
-                "End time must be after start time.",
-            ));
-        }
     }
     Ok(())
 }

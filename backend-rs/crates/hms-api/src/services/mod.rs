@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod billing;
 pub mod consent;
 pub mod dashboard;
