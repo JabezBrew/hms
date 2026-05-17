@@ -10,8 +10,8 @@ use hms_db::admin::{
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::clinical::{
-    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
-    NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
+    ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewPrescription, NewProblem,
+    NoteContext,
 };
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -34,9 +34,9 @@ use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
-    ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteVersion, PatientChronicleSummary,
-    PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
-    UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
+    ClinicalNoteListItem, ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem,
+    ProblemListItem, ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest,
+    UpdateProblemRequest,
 };
 use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
@@ -1056,70 +1056,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_clinical_note_templates(
-        &self,
-        limit: i64,
-    ) -> Result<Vec<ClinicalNoteTemplate>> {
-        hms_db::clinical::list_note_templates(&self.inner.pool, self.facility_id(), limit).await
-    }
-
-    pub async fn get_clinical_note_template(
-        &self,
-        template_id: Uuid,
-    ) -> Result<Option<ClinicalNoteTemplate>> {
-        hms_db::clinical::get_note_template(&self.inner.pool, self.facility_id(), template_id).await
-    }
-
-    pub async fn create_clinical_note_template(
-        &self,
-        title: String,
-        note_type: String,
-        body_template: String,
-    ) -> Result<ClinicalNoteTemplate> {
-        hms_db::clinical::create_note_template(
-            &self.inner.pool,
-            NewClinicalNoteTemplate {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                title,
-                note_type,
-                body_template,
-            },
-        )
-        .await
-    }
-
-    pub async fn update_clinical_note_template(
-        &self,
-        template_id: Uuid,
-        payload: UpdateClinicalNoteTemplateRequest,
-    ) -> Result<Option<ClinicalNoteTemplate>> {
-        hms_db::clinical::update_note_template(
-            &self.inner.pool,
-            self.facility_id(),
-            template_id,
-            UpdateClinicalNoteTemplate {
-                title: payload.title,
-                note_type: payload.note_type,
-                body_template: payload.body_template,
-                is_active: payload.is_active,
-            },
-        )
-        .await
-    }
-
-    pub async fn deactivate_clinical_note_template(
-        &self,
-        template_id: Uuid,
-    ) -> Result<Option<ClinicalNoteTemplate>> {
-        hms_db::clinical::deactivate_note_template(
-            &self.inner.pool,
-            self.facility_id(),
-            template_id,
-        )
-        .await
     }
 
     pub async fn list_clinical_notes(
