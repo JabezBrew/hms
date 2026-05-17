@@ -1,3 +1,4 @@
+use hms_db::ward::{NewAdmission, NewAdmissionCase};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
@@ -37,13 +38,16 @@ impl AdmissionCasesService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_ward_board(query.ward_id, query.patient_id, page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("ward_board_failed", "Ward board could not be loaded.")
-            })?;
+        let rows = hms_db::ward::list_ward_board(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            query.ward_id,
+            query.patient_id,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("ward_board_failed", "Ward board could not be loaded."))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.admitted_at, item.admission_id)
@@ -60,16 +64,14 @@ impl AdmissionCasesService {
             self.state.facility_id(),
             PermissionCode::AdmissionManage,
         )?;
-        let admission = self
-            .state
-            .get_ward_board_admission(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("admission_load_failed", "Admission could not be loaded.")
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("admission_not_found", "Admission was not found.")
-            })?;
+        let admission = hms_db::ward::get_ward_board_admission(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, admission.patient_id).await?;
         Ok(object(admission))
@@ -88,16 +90,19 @@ impl AdmissionCasesService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_admission_cases(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "admission_case_list_failed",
-                    "Admission cases could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::ward::list_admission_cases(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "admission_case_list_failed",
+                "Admission cases could not be loaded.",
+            )
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
@@ -131,16 +136,23 @@ impl AdmissionCasesService {
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         let _ward = common::load_ward(&self.state, payload.ward_id).await?;
-        let admission_case = self
-            .state
-            .create_admission_case(payload.patient_id, payload.ward_id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "admission_case_create_failed",
-                    "Admission case could not be created.",
-                )
-            })?;
+        let admission_case = hms_db::ward::create_admission_case(
+            self.state.db_pool(),
+            NewAdmissionCase {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                patient_id: payload.patient_id,
+                ward_id: payload.ward_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "admission_case_create_failed",
+                "Admission case could not be created.",
+            )
+        })?;
 
         Ok(object(admission_case))
     }
@@ -157,22 +169,26 @@ impl AdmissionCasesService {
             PermissionCode::AdmissionManage,
         )?;
         let _existing = common::load_admission_case_for_access(&self.state, ctx, id).await?;
-        let admission_case = self
-            .state
-            .reserve_admission_bed(id, payload.bed_id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "admission_case_reserve_failed",
-                    "Admission bed could not be reserved.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "admission_case_reserve_failed",
-                    "Admission bed could not be reserved.",
-                )
-            })?;
+        let admission_case = hms_db::ward::reserve_admission_bed(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            payload.bed_id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "admission_case_reserve_failed",
+                "Admission bed could not be reserved.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "admission_case_reserve_failed",
+                "Admission bed could not be reserved.",
+            )
+        })?;
 
         Ok(object(admission_case))
     }
@@ -188,22 +204,25 @@ impl AdmissionCasesService {
             PermissionCode::AdmissionManage,
         )?;
         let _existing = common::load_admission_case_for_access(&self.state, ctx, id).await?;
-        let admission_case = self
-            .state
-            .activate_admission_case(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "admission_case_activate_failed",
-                    "Admission case could not be activated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "admission_case_activate_failed",
-                    "Admission case could not be activated.",
-                )
-            })?;
+        let admission_case = hms_db::ward::activate_admission_case(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "admission_case_activate_failed",
+                "Admission case could not be activated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "admission_case_activate_failed",
+                "Admission case could not be activated.",
+            )
+        })?;
 
         Ok(object(admission_case))
     }
@@ -219,22 +238,25 @@ impl AdmissionCasesService {
             PermissionCode::AdmissionManage,
         )?;
         let _existing = common::load_admission_case_for_access(&self.state, ctx, id).await?;
-        let admission_case = self
-            .state
-            .cancel_admission_case(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "admission_case_cancel_failed",
-                    "Admission case could not be cancelled.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "admission_case_cancel_failed",
-                    "Admission case could not be cancelled.",
-                )
-            })?;
+        let admission_case = hms_db::ward::cancel_admission_case(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "admission_case_cancel_failed",
+                "Admission case could not be cancelled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "admission_case_cancel_failed",
+                "Admission case could not be cancelled.",
+            )
+        })?;
 
         Ok(object(admission_case))
     }
@@ -251,18 +273,21 @@ impl AdmissionCasesService {
         )?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
-        let admission = self
-            .state
-            .admit_patient(
-                payload.patient_id,
-                payload.ward_id,
-                payload.bed_id,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("admission_create_failed", "Admission could not be created.")
-            })?;
+        let admission = hms_db::ward::admit_patient(
+            self.state.db_pool(),
+            NewAdmission {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                patient_id: payload.patient_id,
+                ward_id: payload.ward_id,
+                bed_id: payload.bed_id,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("admission_create_failed", "Admission could not be created.")
+        })?;
 
         Ok(object(admission))
     }

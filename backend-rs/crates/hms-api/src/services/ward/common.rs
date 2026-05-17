@@ -53,11 +53,14 @@ pub(super) async fn load_admission_for_access(
     ctx: &hms_access::RequestContext,
     admission_case_id: Uuid,
 ) -> Result<AdmissionContext, ApiError> {
-    let admission = state
-        .get_admission_context(admission_case_id)
-        .await
-        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
+    let admission = hms_db::ward::get_admission_context(
+        state.db_pool(),
+        state.facility_id(),
+        admission_case_id,
+    )
+    .await
+    .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
+    .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
     let _patient = load_patient_for_access(state, ctx, admission.patient_id).await?;
     Ok(admission)
 }
@@ -67,11 +70,15 @@ pub(super) async fn load_admission_case_for_access(
     ctx: &hms_access::RequestContext,
     admission_case_id: Uuid,
 ) -> Result<AdmissionCaseListItem, ApiError> {
-    let admission_case = state
-        .get_admission_case(admission_case_id)
-        .await
-        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
+    let admission_case =
+        hms_db::ward::get_admission_case(state.db_pool(), state.facility_id(), admission_case_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("admission_load_failed", "Admission could not be loaded.")
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("admission_not_found", "Admission was not found.")
+            })?;
     let _patient = load_patient_for_access(state, ctx, admission_case.patient_id).await?;
     Ok(admission_case)
 }

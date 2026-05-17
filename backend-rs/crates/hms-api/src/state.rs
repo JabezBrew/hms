@@ -7,19 +7,19 @@ use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
-    AdmissionContext, NewAdmission, NewAdmissionCase, NewFluidBalanceEntry, NewHandoff,
-    NewMedicationAdministration, NewMonitoringEvent, NewNursingAlert, NewNursingTask,
-    NewPatientVitals, NewTreatmentSheet, NewWardStockRequest, WardCursor,
+    AdmissionContext, NewFluidBalanceEntry, NewHandoff, NewMedicationAdministration,
+    NewMonitoringEvent, NewNursingAlert, NewNursingTask, NewPatientVitals, NewTreatmentSheet,
+    NewWardStockRequest, WardCursor,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
-    AdmissionCaseListItem, DischargeCaseListItem, FluidBalanceListItem, HandoffListItem,
-    MedicationAdministrationListItem, MonitoringEventKind, MonitoringEventListItem,
-    NursingAlertListItem, NursingAlertSeverity, NursingTaskListItem, NursingTaskType,
-    PatientVitalsListItem, TreatmentSheetListItem, WardBoardItem, WardStockRequestListItem,
+    DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
+    MonitoringEventKind, MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity,
+    NursingTaskListItem, NursingTaskType, PatientVitalsListItem, TreatmentSheetListItem,
+    WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -543,141 +543,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_ward_board(
-        &self,
-        ward_id: Option<Uuid>,
-        patient_id: Option<Uuid>,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<WardBoardItem>> {
-        hms_db::ward::list_ward_board(
-            &self.inner.pool,
-            self.facility_id(),
-            ward_id,
-            patient_id,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn get_ward_board_admission(
-        &self,
-        admission_id: Uuid,
-    ) -> Result<Option<WardBoardItem>> {
-        hms_db::ward::get_ward_board_admission(&self.inner.pool, self.facility_id(), admission_id)
-            .await
-    }
-
-    pub async fn get_admission_context(
-        &self,
-        admission_case_id: Uuid,
-    ) -> Result<Option<AdmissionContext>> {
-        hms_db::ward::get_admission_context(&self.inner.pool, self.facility_id(), admission_case_id)
-            .await
-    }
-
-    pub async fn list_admission_cases(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<AdmissionCaseListItem>> {
-        hms_db::ward::list_admission_cases(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn get_admission_case(
-        &self,
-        admission_case_id: Uuid,
-    ) -> Result<Option<AdmissionCaseListItem>> {
-        hms_db::ward::get_admission_case(&self.inner.pool, self.facility_id(), admission_case_id)
-            .await
-    }
-
-    pub async fn create_admission_case(
-        &self,
-        patient_id: Uuid,
-        ward_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<AdmissionCaseListItem> {
-        hms_db::ward::create_admission_case(
-            &self.inner.pool,
-            NewAdmissionCase {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                ward_id,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn reserve_admission_bed(
-        &self,
-        admission_case_id: Uuid,
-        bed_id: Option<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<Option<AdmissionCaseListItem>> {
-        hms_db::ward::reserve_admission_bed(
-            &self.inner.pool,
-            self.facility_id(),
-            admission_case_id,
-            bed_id,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn activate_admission_case(
-        &self,
-        admission_case_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<AdmissionCaseListItem>> {
-        hms_db::ward::activate_admission_case(
-            &self.inner.pool,
-            self.facility_id(),
-            admission_case_id,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn cancel_admission_case(
-        &self,
-        admission_case_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<AdmissionCaseListItem>> {
-        hms_db::ward::cancel_admission_case(
-            &self.inner.pool,
-            self.facility_id(),
-            admission_case_id,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn admit_patient(
-        &self,
-        patient_id: Uuid,
-        ward_id: Uuid,
-        bed_id: Option<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<WardBoardItem> {
-        hms_db::ward::admit_patient(
-            &self.inner.pool,
-            NewAdmission {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                ward_id,
-                bed_id,
-                actor_user_id,
-            },
-        )
-        .await
     }
 
     pub async fn list_discharge_cases(
