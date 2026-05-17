@@ -17,21 +17,31 @@ impl LabCatalogService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_test_catalog(
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ListResponse<LabTestCatalogItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
-        let tests = self.state.list_lab_test_catalog().await.map_err(|_| {
-            ApiError::conflict(
-                "lab_catalog_list_failed",
-                "Laboratory test catalog could not be loaded.",
-            )
-        })?;
+        let tests = hms_db::laboratory::list_test_catalog(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "lab_catalog_list_failed",
+                    "Laboratory test catalog could not be loaded.",
+                )
+            })?;
 
         Ok(common::static_list(tests))
     }
@@ -43,12 +53,10 @@ impl LabCatalogService {
     ) -> Result<ObjectResponse<LabTestCatalogItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
-        let test = self
-            .state
-            .get_lab_test_catalog_item(id)
+        let test = hms_db::laboratory::get_test_catalog_item(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -72,15 +80,17 @@ impl LabCatalogService {
     ) -> Result<ListResponse<LabPanelListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
-        let panels = self.state.list_lab_panels().await.map_err(|_| {
-            ApiError::conflict(
-                "lab_panel_list_failed",
-                "Laboratory panels could not be loaded.",
-            )
-        })?;
+        let panels = hms_db::laboratory::list_panels(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "lab_panel_list_failed",
+                    "Laboratory panels could not be loaded.",
+                )
+            })?;
 
         Ok(common::static_list(panels))
     }
@@ -92,12 +102,10 @@ impl LabCatalogService {
     ) -> Result<ObjectResponse<LabPanelListItem>, ApiError> {
         common::require_laboratory_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::LaboratoryOrderManage,
         )?;
-        let panel = self
-            .state
-            .get_lab_panel(id)
+        let panel = hms_db::laboratory::get_panel_by_id(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(

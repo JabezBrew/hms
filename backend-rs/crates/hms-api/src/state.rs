@@ -71,10 +71,7 @@ use hms_domain::inventory::{
     PurchaseOrderListItem, StockBatchListItem, StockMovementListItem, StockRequisitionListItem,
     StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
 };
-use hms_domain::laboratory::{
-    LabOrderListItem, LabPanelListItem, LabPriority, LabResultListItem, LabTestCatalogItem,
-    SpecimenListItem,
-};
+use hms_domain::laboratory::{LabOrderListItem, LabPriority, LabResultListItem, SpecimenListItem};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -1546,26 +1543,6 @@ impl AppState {
             limit,
         )
         .await
-    }
-
-    pub async fn list_lab_test_catalog(&self) -> Result<Vec<LabTestCatalogItem>> {
-        hms_db::laboratory::list_test_catalog(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn get_lab_test_catalog_item(
-        &self,
-        test_id: Uuid,
-    ) -> Result<Option<LabTestCatalogItem>> {
-        hms_db::laboratory::get_test_catalog_item(&self.inner.pool, self.facility_id(), test_id)
-            .await
-    }
-
-    pub async fn list_lab_panels(&self) -> Result<Vec<LabPanelListItem>> {
-        hms_db::laboratory::list_panels(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn get_lab_panel(&self, panel_id: Uuid) -> Result<Option<LabPanelListItem>> {
-        hms_db::laboratory::get_panel_by_id(&self.inner.pool, self.facility_id(), panel_id).await
     }
 
     pub async fn list_lab_orders(
