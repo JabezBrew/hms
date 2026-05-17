@@ -24,8 +24,6 @@ use crate::state::AppState;
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
 const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
-const MAX_CLINIC_CODE_LEN: usize = 48;
-const MAX_CLINIC_NAME_LEN: usize = 160;
 
 #[utoipa::path(
     get,
@@ -45,26 +43,9 @@ pub async fn list_appointments(
     RequestContext(user): RequestContext,
     Query(query): Query<AppointmentListQuery>,
 ) -> Result<Json<ListResponse<AppointmentListItem>>, ApiError> {
-    require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let date = query.date;
-    let clinic_id = query.clinic_id;
-    let (cursor, page_size) = page_request(CursorListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_appointments(cursor, date, clinic_id, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_list_failed",
-                "Appointments could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.starts_at, item.id)
-    })))
+    Ok(Json(
+        state.care_service().list_appointments(&user, query).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -85,16 +66,7 @@ pub async fn list_clinics(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ClinicListItem>>, ApiError> {
-    require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_clinics(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("clinic_list_failed", "Clinics could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(state.care_service().list_clinics(&user, query).await?))
 }
 
 #[utoipa::path(
@@ -116,14 +88,7 @@ pub async fn get_clinic(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
-    require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let clinic = state
-        .get_clinic(id)
-        .await
-        .map_err(|_| ApiError::conflict("clinic_load_failed", "Clinic could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
-
-    Ok(Json(object(clinic)))
+    Ok(Json(state.care_service().get_clinic(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -146,21 +111,9 @@ pub async fn create_clinic(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateClinicRequest>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::AppointmentManage,
-    )?;
-    let clinic = state
-        .create_clinic(
-            validate_required_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
-            validate_required_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
-            user.id,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("clinic_create_failed", "Clinic could not be created."))?;
-
-    Ok(Json(object(clinic)))
+    Ok(Json(
+        state.care_service().create_clinic(&user, payload).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -186,24 +139,12 @@ pub async fn update_clinic(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateClinicRequest>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::AppointmentManage,
-    )?;
-    let clinic = state
-        .update_clinic(
-            id,
-            validate_optional_text(payload.code, MAX_CLINIC_CODE_LEN, "clinic_code")?,
-            validate_optional_text(payload.name, MAX_CLINIC_NAME_LEN, "clinic_name")?,
-            payload.is_active,
-            user.id,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("clinic_update_failed", "Clinic could not be updated."))?
-        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
-
-    Ok(Json(object(clinic)))
+    Ok(Json(
+        state
+            .care_service()
+            .update_clinic(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -226,20 +167,7 @@ pub async fn delete_clinic(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClinicListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::AppointmentManage,
-    )?;
-    let clinic = state
-        .deactivate_clinic(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("clinic_delete_failed", "Clinic could not be deactivated.")
-        })?
-        .ok_or_else(|| ApiError::not_found("clinic_not_found", "Clinic was not found."))?;
-
-    Ok(Json(object(clinic)))
+    Ok(Json(state.care_service().delete_clinic(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -261,35 +189,12 @@ pub async fn create_appointment(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::AppointmentManage,
-    )?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    if payload.ends_at <= payload.starts_at {
-        return Err(ApiError::bad_request(
-            "invalid_appointment",
-            "Appointment end time must be after start time.",
-        ));
-    }
-
-    let appointment = state
-        .create_appointment(
-            payload.patient_id,
-            payload.starts_at,
-            payload.ends_at,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_create_failed",
-                "Appointment could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(appointment)))
+    Ok(Json(
+        state
+            .care_service()
+            .create_appointment(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -311,9 +216,7 @@ pub async fn get_appointment(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
-    let appointment =
-        load_appointment_for_access(&state, &user, id, PermissionCode::AppointmentView).await?;
-    Ok(Json(object(appointment)))
+    Ok(Json(state.care_service().get_appointment(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -338,42 +241,12 @@ pub async fn update_appointment(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
-    let existing =
-        load_appointment_for_access(&state, &user, id, PermissionCode::AppointmentManage).await?;
-
-    if payload.starts_at.is_none() && payload.ends_at.is_none() {
-        return Err(ApiError::bad_request(
-            "invalid_appointment",
-            "At least one appointment time field must be supplied.",
-        ));
-    }
-
-    let starts_at = payload.starts_at.unwrap_or(existing.starts_at);
-    let ends_at = payload.ends_at.unwrap_or(existing.ends_at);
-    if ends_at <= starts_at {
-        return Err(ApiError::bad_request(
-            "invalid_appointment",
-            "Appointment end time must be after start time.",
-        ));
-    }
-
-    let appointment = state
-        .update_appointment(id, Some(starts_at), Some(ends_at), user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_update_failed",
-                "Appointment could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "appointment_update_failed",
-                "Only scheduled appointments can be updated.",
-            )
-        })?;
-
-    Ok(Json(object(appointment)))
+    Ok(Json(
+        state
+            .care_service()
+            .update_appointment(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -395,25 +268,9 @@ pub async fn cancel_appointment(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
-    let _existing =
-        load_appointment_for_access(&state, &user, id, PermissionCode::AppointmentManage).await?;
-    let appointment = state
-        .cancel_appointment(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_cancel_failed",
-                "Appointment could not be cancelled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "appointment_cancel_failed",
-                "Only scheduled appointments can be cancelled.",
-            )
-        })?;
-
-    Ok(Json(object(appointment)))
+    Ok(Json(
+        state.care_service().cancel_appointment(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1281,29 +1138,6 @@ async fn load_visit_for_access(
     Ok(visit)
 }
 
-async fn load_appointment_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    appointment_id: Uuid,
-    permission: PermissionCode,
-) -> Result<AppointmentListItem, ApiError> {
-    require_action_permission(user, state.facility_id(), permission)?;
-    let appointment = state
-        .get_appointment(appointment_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_load_failed",
-                "Appointment could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("appointment_not_found", "Appointment was not found.")
-        })?;
-    let _patient = load_patient_for_access(state, user, appointment.patient_id).await?;
-    Ok(appointment)
-}
-
 async fn load_encounter_for_access(
     state: &AppState,
     user: &hms_access::RequestContext,
@@ -1368,44 +1202,6 @@ fn require_action_permission(
             "You do not have permission to perform this action.",
         )
     })
-}
-
-fn validate_required_text(
-    value: String,
-    max_len: usize,
-    field_name: &'static str,
-) -> Result<String, ApiError> {
-    validate_optional_text(Some(value), max_len, field_name)?.ok_or_else(|| {
-        ApiError::bad_request("invalid_clinic", "Clinic code and name are required.")
-    })
-}
-
-fn validate_optional_text(
-    value: Option<String>,
-    max_len: usize,
-    field_name: &'static str,
-) -> Result<Option<String>, ApiError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let value = value.trim().to_owned();
-    if value.is_empty() {
-        return Err(ApiError::bad_request(
-            "invalid_clinic",
-            "Clinic code and name cannot be blank.",
-        ));
-    }
-    if value.len() > max_len {
-        return Err(ApiError::bad_request(
-            "invalid_clinic",
-            match field_name {
-                "clinic_code" => "Clinic code is too long.",
-                "clinic_name" => "Clinic name is too long.",
-                _ => "Clinic field is too long.",
-            },
-        ));
-    }
-    Ok(Some(value))
 }
 
 fn page_request(query: CursorListQuery) -> Result<(Option<CareCursor>, u8), ApiError> {
