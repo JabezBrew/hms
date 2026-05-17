@@ -1,40 +1,25 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::{DateTime, Utc};
-use hms_access::require_patient_demographics_access;
-use hms_db::ward::{AdmissionContext, BedUpdate, WardCursor, WardSectionUpdate, WardUpdate};
 use hms_domain::care::CursorListQuery;
-use hms_domain::deployment::PermissionCode;
-use hms_domain::patients::PatientRecord;
 use hms_domain::ward::{
     AdministerMedicationRequest, AdmissionCaseListItem, AdmitPatientRequest, BedListItem,
     CancelDischargeRequest, CreateAdmissionCaseRequest, CreateBedRequest, CreateDischargeRequest,
     CreateFluidBalanceEntryRequest, CreateHandoffRequest, CreateMonitoringEventRequest,
     CreateNursingAlertRequest, CreateNursingTaskRequest, CreatePatientVitalsRequest,
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
-    CreateWardStockRequestRequest, DischargeCaseListItem, DischargeStatus, FluidBalanceListItem,
-    HandoffListItem, MedicationAdministrationListItem, MonitoringEventListItem,
-    NursingAlertListItem, NursingTaskListItem, NursingTaskStatus, PatientVitalsListItem,
-    PatientVitalsListQuery, ReserveAdmissionBedRequest, ScheduleMedicationAdministrationRequest,
-    TreatmentSheetListItem, UpdateBedRequest, UpdateWardRequest, UpdateWardSectionRequest,
-    WardBoardItem, WardBoardQuery, WardListItem, WardListQuery, WardSectionListItem,
-    WardStockRequestListItem,
+    CreateWardStockRequestRequest, DischargeCaseListItem, FluidBalanceListItem, HandoffListItem,
+    MedicationAdministrationListItem, MonitoringEventListItem, NursingAlertListItem,
+    NursingTaskListItem, PatientVitalsListItem, PatientVitalsListQuery, ReserveAdmissionBedRequest,
+    ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
+    UpdateWardRequest, UpdateWardSectionRequest, WardBoardItem, WardBoardQuery, WardListItem,
+    WardListQuery, WardSectionListItem, WardStockRequestListItem,
 };
-use serde_json::json;
 use uuid::Uuid;
 
-use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::response::{object, ListResponse, ObjectResponse};
+use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: u8 = 25;
-const MAX_LIMIT: u8 = 100;
-const MAX_DISCHARGE_REASON_LEN: usize = 240;
-const MAX_WARD_CODE_LEN: usize = 64;
-const MAX_WARD_NAME_LEN: usize = 160;
-const MAX_BED_CODE_LEN: usize = 64;
 
 #[utoipa::path(
     get,
@@ -54,19 +39,13 @@ pub async fn list_wards(
     RequestContext(user): RequestContext,
     Query(query): Query<WardListQuery>,
 ) -> Result<Json<ListResponse<WardListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let (cursor, page_size) = page_request(CursorListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_wards(cursor, page_size as i64 + 1, query.search)
-        .await
-        .map_err(|_| ApiError::conflict("ward_list_failed", "Wards could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .list_wards(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -89,29 +68,13 @@ pub async fn create_ward(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateWardRequest>,
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
-
-    let code = payload.code.trim();
-    let name = payload.name.trim();
-    if code.is_empty() || name.is_empty() {
-        return Err(ApiError::bad_request(
-            "invalid_ward",
-            "Ward code and name are required.",
-        ));
-    }
-    if code.len() > MAX_WARD_CODE_LEN || name.len() > MAX_WARD_NAME_LEN {
-        return Err(ApiError::bad_request(
-            "invalid_ward",
-            "Ward code or name is too long.",
-        ));
-    }
-
-    let ward = state
-        .create_ward(code.to_owned(), name.to_owned())
-        .await
-        .map_err(|_| ApiError::conflict("ward_create_failed", "Ward could not be created."))?;
-
-    Ok(Json(object(ward)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .create_ward(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -133,9 +96,9 @@ pub async fn get_ward(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let ward = load_ward(&state, id).await?;
-    Ok(Json(object(ward)))
+    Ok(Json(
+        state.ward_services().admin().get_ward(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -161,31 +124,13 @@ pub async fn update_ward(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateWardRequest>,
 ) -> Result<Json<ObjectResponse<WardListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
-
-    let code = normalize_ward_text(payload.code, MAX_WARD_CODE_LEN)?;
-    let name = normalize_ward_text(payload.name, MAX_WARD_NAME_LEN)?;
-    if code.is_none() && name.is_none() && payload.status.is_none() {
-        return Err(ApiError::bad_request(
-            "invalid_ward",
-            "At least one ward field is required.",
-        ));
-    }
-
-    let ward = state
-        .update_ward(
-            id,
-            WardUpdate {
-                code,
-                name,
-                status: payload.status,
-            },
-        )
-        .await
-        .map_err(|_| ApiError::conflict("ward_update_failed", "Ward could not be updated."))?
-        .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))?;
-
-    Ok(Json(object(ward)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .update_ward(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -208,19 +153,13 @@ pub async fn list_ward_sections(
     Path(id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<WardSectionListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let _ward = load_ward(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_ward_sections(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("ward_sections_failed", "Ward sections could not be loaded.")
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .list_ward_sections(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -242,9 +181,13 @@ pub async fn get_ward_section(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let section = load_ward_section(&state, id).await?;
-    Ok(Json(object(section)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .get_ward_section(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -270,38 +213,13 @@ pub async fn update_ward_section(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateWardSectionRequest>,
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
-
-    let code = normalize_ward_text(payload.code, MAX_WARD_CODE_LEN)?;
-    let name = normalize_ward_text(payload.name, MAX_WARD_NAME_LEN)?;
-    if code.is_none() && name.is_none() && payload.status.is_none() {
-        return Err(ApiError::bad_request(
-            "invalid_ward_section",
-            "At least one ward section field is required.",
-        ));
-    }
-
-    let section = state
-        .update_ward_section(
-            id,
-            WardSectionUpdate {
-                code,
-                name,
-                status: payload.status,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_section_update_failed",
-                "Ward section could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("ward_section_not_found", "Ward section was not found.")
-        })?;
-
-    Ok(Json(object(section)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .update_ward_section(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -324,19 +242,13 @@ pub async fn list_section_beds(
     Path(id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<BedListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let _section = load_ward_section(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_section_beds(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("section_beds_failed", "Section beds could not be loaded.")
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .bed_management()
+            .list_section_beds(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -361,28 +273,13 @@ pub async fn create_ward_section(
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateWardSectionRequest>,
 ) -> Result<Json<ObjectResponse<WardSectionListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
-    let _ward = load_ward(&state, id).await?;
-    let code = payload.code.trim();
-    let name = payload.name.trim();
-    if code.is_empty() || name.is_empty() {
-        return Err(ApiError::bad_request(
-            "invalid_ward_section",
-            "Section code and name are required.",
-        ));
-    }
-
-    let section = state
-        .create_ward_section(id, code.to_owned(), name.to_owned(), user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_section_create_failed",
-                "Ward section could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(section)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admin()
+            .create_ward_section(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -405,17 +302,13 @@ pub async fn list_ward_beds(
     Path(id): Path<Uuid>,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<BedListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let _ward = load_ward(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_ward_beds(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("ward_beds_failed", "Ward beds could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .bed_management()
+            .list_ward_beds(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -437,9 +330,13 @@ pub async fn get_bed(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardView)?;
-    let bed = load_bed(&state, id).await?;
-    Ok(Json(object(bed)))
+    Ok(Json(
+        state
+            .ward_services()
+            .bed_management()
+            .get_bed(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -465,40 +362,13 @@ pub async fn update_bed(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateBedRequest>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
-
-    let bed_code = normalize_bed_code(payload.bed_code)?;
-    if payload.section_id.is_none() && bed_code.is_none() && payload.status.is_none() {
-        return Err(ApiError::bad_request(
-            "invalid_bed",
-            "At least one bed field is required.",
-        ));
-    }
-    if let Some(section_id) = payload.section_id {
-        let bed = load_bed(&state, id).await?;
-        let section = load_ward_section(&state, section_id).await?;
-        if section.ward_id != bed.ward_id {
-            return Err(ApiError::bad_request(
-                "invalid_bed_section",
-                "Bed section must belong to the same ward.",
-            ));
-        }
-    }
-
-    let bed = state
-        .update_bed(
-            id,
-            BedUpdate {
-                section_id: payload.section_id,
-                bed_code,
-                status: payload.status,
-            },
-        )
-        .await
-        .map_err(|_| ApiError::conflict("bed_update_failed", "Bed could not be updated."))?
-        .ok_or_else(|| ApiError::not_found("bed_not_found", "Bed was not found."))?;
-
-    Ok(Json(object(bed)))
+    Ok(Json(
+        state
+            .ward_services()
+            .bed_management()
+            .update_bed(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -523,22 +393,13 @@ pub async fn create_bed(
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateBedRequest>,
 ) -> Result<Json<ObjectResponse<BedListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::WardManageBeds)?;
-    let _ward = load_ward(&state, id).await?;
-    let bed_code = payload.bed_code.trim();
-    if bed_code.is_empty() {
-        return Err(ApiError::bad_request(
-            "invalid_bed",
-            "Bed code is required.",
-        ));
-    }
-
-    let bed = state
-        .create_bed(id, payload.section_id, bed_code.to_owned(), user.id)
-        .await
-        .map_err(|_| ApiError::conflict("bed_create_failed", "Bed could not be created."))?;
-
-    Ok(Json(object(bed)))
+    Ok(Json(
+        state
+            .ward_services()
+            .bed_management()
+            .create_bed(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -559,24 +420,13 @@ pub async fn ward_board(
     RequestContext(user): RequestContext,
     Query(query): Query<WardBoardQuery>,
 ) -> Result<Json<ListResponse<WardBoardItem>>, ApiError> {
-    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::WardView)?;
-    let (cursor, page_size) = page_request(CursorListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_ward_board(
-            query.ward_id,
-            query.patient_id,
-            cursor,
-            page_size as i64 + 1,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("ward_board_failed", "Ward board could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.admitted_at, item.admission_id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .ward_board(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -598,14 +448,13 @@ pub async fn get_admission(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardBoardItem>>, ApiError> {
-    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let admission = state
-        .get_ward_board_admission(id)
-        .await
-        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, admission.patient_id).await?;
-    Ok(Json(object(admission)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .get_admission(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -626,21 +475,13 @@ pub async fn list_admission_cases(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<AdmissionCaseListItem>>, ApiError> {
-    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_admission_cases(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_list_failed",
-                "Admission cases could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .list_admission_cases(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -662,9 +503,13 @@ pub async fn get_admission_case(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
-    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let admission_case = load_admission_case_for_access(&state, &user, id).await?;
-    Ok(Json(object(admission_case)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .get_admission_case(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -686,20 +531,13 @@ pub async fn create_admission_case(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateAdmissionCaseRequest>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    let _ward = load_ward(&state, payload.ward_id).await?;
-    let admission_case = state
-        .create_admission_case(payload.patient_id, payload.ward_id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_create_failed",
-                "Admission case could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(admission_case)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .create_admission_case(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -724,25 +562,13 @@ pub async fn reserve_admission_bed(
     Path(id): Path<Uuid>,
     Json(payload): Json<ReserveAdmissionBedRequest>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let _existing = load_admission_case_for_access(&state, &user, id).await?;
-    let admission_case = state
-        .reserve_admission_bed(id, payload.bed_id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_reserve_failed",
-                "Admission bed could not be reserved.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "admission_case_reserve_failed",
-                "Admission bed could not be reserved.",
-            )
-        })?;
-
-    Ok(Json(object(admission_case)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .reserve_admission_bed(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -765,25 +591,13 @@ pub async fn activate_admission_case(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let _existing = load_admission_case_for_access(&state, &user, id).await?;
-    let admission_case = state
-        .activate_admission_case(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_activate_failed",
-                "Admission case could not be activated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "admission_case_activate_failed",
-                "Admission case could not be activated.",
-            )
-        })?;
-
-    Ok(Json(object(admission_case)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .activate_admission_case(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -806,25 +620,13 @@ pub async fn cancel_admission_case(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<AdmissionCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let _existing = load_admission_case_for_access(&state, &user, id).await?;
-    let admission_case = state
-        .cancel_admission_case(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "admission_case_cancel_failed",
-                "Admission case could not be cancelled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "admission_case_cancel_failed",
-                "Admission case could not be cancelled.",
-            )
-        })?;
-
-    Ok(Json(object(admission_case)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .cancel_admission_case(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -845,16 +647,13 @@ pub async fn admit_patient(
     RequestContext(user): RequestContext,
     Json(payload): Json<AdmitPatientRequest>,
 ) -> Result<Json<ObjectResponse<WardBoardItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    let admission = state
-        .admit_patient(payload.patient_id, payload.ward_id, payload.bed_id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("admission_create_failed", "Admission could not be created.")
-        })?;
-
-    Ok(Json(object(admission)))
+    Ok(Json(
+        state
+            .ward_services()
+            .admission_cases()
+            .admit_patient(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -875,18 +674,13 @@ pub async fn list_discharges(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<DischargeCaseListItem>>, ApiError> {
-    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_discharge_cases(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("discharge_list_failed", "Discharges could not be loaded.")
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.requested_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .list_discharges(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -908,14 +702,13 @@ pub async fn get_discharge(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
-    require_patient_workflow_access(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let discharge = state
-        .get_discharge_case(id)
-        .await
-        .map_err(|_| ApiError::conflict("discharge_load_failed", "Discharge could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, discharge.patient_id).await?;
-    Ok(Json(object(discharge)))
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .get_discharge(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -937,19 +730,13 @@ pub async fn request_discharge(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateDischargeRequest>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let discharge = state
-        .request_discharge(&admission, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "discharge_create_failed",
-                "Discharge could not be requested.",
-            )
-        })?;
-
-    Ok(Json(object(discharge)))
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .request_discharge(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -975,37 +762,13 @@ pub async fn cancel_discharge(
     Path(id): Path<Uuid>,
     Json(payload): Json<CancelDischargeRequest>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    validate_optional_text(payload.reason.as_deref(), MAX_DISCHARGE_REASON_LEN)?;
-    let existing = state
-        .get_discharge_case(id)
-        .await
-        .map_err(|_| ApiError::conflict("discharge_load_failed", "Discharge could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    if existing.status == DischargeStatus::Completed {
-        return Err(ApiError::conflict(
-            "discharge_cancel_invalid_status",
-            "Completed discharges cannot be cancelled.",
-        ));
-    }
-    let discharge = state
-        .cancel_discharge(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "discharge_cancel_failed",
-                "Discharge could not be cancelled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::conflict(
-                "discharge_cancel_invalid_status",
-                "Discharge could not be cancelled in its current state.",
-            )
-        })?;
-
-    Ok(Json(object(discharge)))
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .cancel_discharge(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1027,25 +790,13 @@ pub async fn complete_discharge(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
-    require_facility_permission(&user, state.facility_id(), PermissionCode::AdmissionManage)?;
-    let existing = state
-        .get_discharge_case(id)
-        .await
-        .map_err(|_| ApiError::conflict("discharge_load_failed", "Discharge could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    let discharge = state
-        .complete_discharge(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "discharge_complete_failed",
-                "Discharge could not be completed.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("discharge_not_found", "Discharge was not found."))?;
-
-    Ok(Json(object(discharge)))
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .complete_discharge(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1066,25 +817,13 @@ pub async fn list_nursing_tasks(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<NursingTaskListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_nursing_tasks(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nursing_task_list_failed",
-                "Nursing tasks could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.due_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .nursing_task_board()
+            .list_nursing_tasks(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1106,29 +845,13 @@ pub async fn create_nursing_task(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateNursingTaskRequest>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let task = state
-        .create_nursing_task(
-            &admission,
-            payload.task_type,
-            payload.due_at,
-            payload.assigned_to_user_id,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nursing_task_create_failed",
-                "Nursing task could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(task)))
+    Ok(Json(
+        state
+            .ward_services()
+            .nursing_task_board()
+            .create_nursing_task(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1150,38 +873,13 @@ pub async fn complete_nursing_task(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let existing = state
-        .get_nursing_task(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nursing_task_load_failed",
-                "Nursing task could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-        })?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    let task = state
-        .complete_nursing_task(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nursing_task_complete_failed",
-                "Nursing task could not be completed.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-        })?;
-
-    Ok(Json(object(task)))
+    Ok(Json(
+        state
+            .ward_services()
+            .nursing_task_board()
+            .complete_nursing_task(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1204,45 +902,13 @@ pub async fn cancel_nursing_task(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingTaskListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let existing = state
-        .get_nursing_task(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nursing_task_load_failed",
-                "Nursing task could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-        })?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    if existing.status == NursingTaskStatus::Completed {
-        return Err(ApiError::conflict(
-            "nursing_task_cancel_invalid_status",
-            "Completed nursing tasks cannot be cancelled.",
-        ));
-    }
-
-    let task = state
-        .cancel_nursing_task(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nursing_task_cancel_failed",
-                "Nursing task could not be cancelled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("nursing_task_not_found", "Nursing task was not found.")
-        })?;
-
-    Ok(Json(object(task)))
+    Ok(Json(
+        state
+            .ward_services()
+            .nursing_task_board()
+            .cancel_nursing_task(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1263,25 +929,13 @@ pub async fn list_medication_administrations(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<MedicationAdministrationListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_medication_administrations(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "med_admin_list_failed",
-                "Medication administrations could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.scheduled_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .list_medication_administrations(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1304,29 +958,13 @@ pub async fn schedule_medication_administration(
     RequestContext(user): RequestContext,
     Json(payload): Json<ScheduleMedicationAdministrationRequest>,
 ) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let medication_name = required_text(payload.medication_name, "medication_name")?;
-    let medication = state
-        .schedule_medication_administration(
-            &admission,
-            medication_name,
-            payload.scheduled_at,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "med_admin_create_failed",
-                "Medication administration could not be scheduled.",
-            )
-        })?;
-
-    Ok(Json(object(medication)))
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .schedule_medication_administration(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1350,44 +988,13 @@ pub async fn administer_medication(
     Path(id): Path<Uuid>,
     Json(payload): Json<AdministerMedicationRequest>,
 ) -> Result<Json<ObjectResponse<MedicationAdministrationListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let existing = state
-        .get_medication_administration(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "med_admin_load_failed",
-                "Medication administration could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "med_admin_not_found",
-                "Medication administration was not found.",
-            )
-        })?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    let medication = state
-        .administer_medication(id, user.id, payload.witness_user_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "med_admin_update_failed",
-                "Medication administration could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "med_admin_not_found",
-                "Medication administration was not found.",
-            )
-        })?;
-
-    Ok(Json(object(medication)))
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .administer_medication(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1408,20 +1015,13 @@ pub async fn list_handoffs(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<HandoffListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_handoffs(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("handoff_list_failed", "Handoffs could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .handoff()
+            .list_handoffs(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1443,20 +1043,13 @@ pub async fn create_handoff(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateHandoffRequest>,
 ) -> Result<Json<ObjectResponse<HandoffListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let shift_label = required_text(payload.shift_label, "shift_label")?;
-    let handoff = state
-        .create_handoff(payload.ward_id, payload.to_user_id, shift_label, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("handoff_create_failed", "Handoff could not be created.")
-        })?;
-
-    Ok(Json(object(handoff)))
+    Ok(Json(
+        state
+            .ward_services()
+            .handoff()
+            .create_handoff(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1478,25 +1071,13 @@ pub async fn complete_handoff(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<HandoffListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    state
-        .get_handoff(id)
-        .await
-        .map_err(|_| ApiError::conflict("handoff_load_failed", "Handoff could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("handoff_not_found", "Handoff was not found."))?;
-    let handoff = state
-        .complete_handoff(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("handoff_complete_failed", "Handoff could not be completed.")
-        })?
-        .ok_or_else(|| ApiError::not_found("handoff_not_found", "Handoff was not found."))?;
-
-    Ok(Json(object(handoff)))
+    Ok(Json(
+        state
+            .ward_services()
+            .handoff()
+            .complete_handoff(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1517,25 +1098,13 @@ pub async fn list_treatment_sheets(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<TreatmentSheetListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_treatment_sheets(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "treatment_sheet_list_failed",
-                "Treatment sheets could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.updated_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .list_treatment_sheets(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1557,23 +1126,13 @@ pub async fn create_treatment_sheet(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateTreatmentSheetRequest>,
 ) -> Result<Json<ObjectResponse<TreatmentSheetListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let sheet = state
-        .create_treatment_sheet(&admission, payload.sheet_date, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "treatment_sheet_create_failed",
-                "Treatment sheet could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(sheet)))
+    Ok(Json(
+        state
+            .ward_services()
+            .mar()
+            .create_treatment_sheet(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1594,48 +1153,13 @@ pub async fn list_patient_vitals(
     RequestContext(user): RequestContext,
     Query(query): Query<PatientVitalsListQuery>,
 ) -> Result<Json<ListResponse<PatientVitalsListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    if let Some(admission_case_id) = query.admission_case_id {
-        let admission = load_admission_for_access(&state, &user, admission_case_id).await?;
-        if query
-            .patient_id
-            .is_some_and(|patient_id| patient_id != admission.patient_id)
-        {
-            return Err(ApiError::bad_request(
-                "invalid_vitals_query",
-                "Admission does not belong to the requested patient.",
-            ));
-        }
-    } else if let Some(patient_id) = query.patient_id {
-        let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    }
-    let recorded_since = match query.hours {
-        Some(0) => Some(Utc::now()),
-        Some(hours) => Some(Utc::now() - chrono::Duration::hours(i64::from(hours))),
-        None => None,
-    };
-    let (cursor, page_size) = page_request(CursorListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_patient_vitals(
-            query.patient_id,
-            query.admission_case_id,
-            recorded_since,
-            cursor,
-            page_size as i64 + 1,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("vitals_list_failed", "Vitals could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.recorded_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .list_patient_vitals(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1658,29 +1182,13 @@ pub async fn create_patient_vitals(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreatePatientVitalsRequest>,
 ) -> Result<Json<ObjectResponse<PatientVitalsListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    validate_vitals_payload(&payload)?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let vitals = state
-        .create_patient_vitals(
-            &admission,
-            payload.recorded_at,
-            payload.temperature_c,
-            payload.systolic_bp,
-            payload.diastolic_bp,
-            payload.pulse,
-            payload.respiratory_rate,
-            payload.oxygen_saturation,
-            user.id,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("vitals_create_failed", "Vitals could not be recorded."))?;
-
-    Ok(Json(object(vitals)))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .create_patient_vitals(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1701,20 +1209,13 @@ pub async fn list_nursing_alerts(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<NursingAlertListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_nursing_alerts(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("alert_list_failed", "Alerts could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .list_nursing_alerts(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1737,19 +1238,13 @@ pub async fn create_nursing_alert(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateNursingAlertRequest>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let title = required_text(payload.title, "title")?;
-    let alert = state
-        .create_nursing_alert(&admission, payload.severity, title, user.id)
-        .await
-        .map_err(|_| ApiError::conflict("alert_create_failed", "Alert could not be created."))?;
-
-    Ok(Json(object(alert)))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .create_nursing_alert(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1771,29 +1266,13 @@ pub async fn acknowledge_nursing_alert(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NursingAlertListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let existing = state
-        .get_nursing_alert(id)
-        .await
-        .map_err(|_| ApiError::conflict("alert_load_failed", "Alert could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, existing.patient_id).await?;
-    let alert = state
-        .acknowledge_nursing_alert(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "alert_acknowledge_failed",
-                "Alert could not be acknowledged.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
-
-    Ok(Json(object(alert)))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .acknowledge_nursing_alert(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1814,25 +1293,13 @@ pub async fn list_monitoring_events(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<MonitoringEventListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_monitoring_events(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "monitoring_event_list_failed",
-                "Monitoring events could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.recorded_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .list_monitoring_events(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1855,30 +1322,13 @@ pub async fn create_monitoring_event(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateMonitoringEventRequest>,
 ) -> Result<Json<ObjectResponse<MonitoringEventListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let summary = required_text(payload.summary, "summary")?;
-    let event = state
-        .create_monitoring_event(
-            &admission,
-            payload.event_kind,
-            summary,
-            payload.recorded_at,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "monitoring_event_create_failed",
-                "Monitoring event could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(event)))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .create_monitoring_event(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1899,25 +1349,13 @@ pub async fn list_fluid_balance_entries(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<FluidBalanceListItem>>, ApiError> {
-    require_patient_workflow_access(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_fluid_balance_entries(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "fluid_balance_list_failed",
-                "Fluid balance entries could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.recorded_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .list_fluid_balance_entries(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1940,35 +1378,13 @@ pub async fn create_fluid_balance_entry(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateFluidBalanceEntryRequest>,
 ) -> Result<Json<ObjectResponse<FluidBalanceListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    if payload.intake_ml < 0 || payload.output_ml < 0 {
-        return Err(ApiError::bad_request(
-            "invalid_fluid_balance",
-            "Fluid intake and output must be non-negative.",
-        ));
-    }
-    let admission = load_admission_for_access(&state, &user, payload.admission_case_id).await?;
-    let entry = state
-        .create_fluid_balance_entry(
-            &admission,
-            payload.recorded_at,
-            payload.intake_ml,
-            payload.output_ml,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "fluid_balance_create_failed",
-                "Fluid balance entry could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(entry)))
+    Ok(Json(
+        state
+            .ward_services()
+            .observations_monitoring()
+            .create_fluid_balance_entry(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -1989,25 +1405,13 @@ pub async fn list_ward_stock_requests(
     RequestContext(user): RequestContext,
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<WardStockRequestListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_ward_stock_requests(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_stock_request_list_failed",
-                "Ward stock requests could not be loaded.",
-            )
-        })?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.requested_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .ward_services()
+            .ward_stock()
+            .list_ward_stock_requests(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -2030,35 +1434,13 @@ pub async fn create_ward_stock_request(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateWardStockRequestRequest>,
 ) -> Result<Json<ObjectResponse<WardStockRequestListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let _ward = load_ward(&state, payload.ward_id).await?;
-    let requested_item = required_text(payload.requested_item, "requested_item")?;
-    if payload.quantity_requested <= 0 {
-        return Err(ApiError::bad_request(
-            "invalid_ward_stock_request",
-            "Quantity requested must be greater than zero.",
-        ));
-    }
-    let request = state
-        .create_ward_stock_request(
-            payload.ward_id,
-            requested_item,
-            payload.quantity_requested,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_stock_request_create_failed",
-                "Ward stock request could not be created.",
-            )
-        })?;
-
-    Ok(Json(object(request)))
+    Ok(Json(
+        state
+            .ward_services()
+            .ward_stock()
+            .create_ward_stock_request(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -2081,28 +1463,13 @@ pub async fn approve_ward_stock_request(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardStockRequestListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let request = state
-        .approve_ward_stock_request(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_stock_request_approve_failed",
-                "Ward stock request could not be approved.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "ward_stock_request_not_found",
-                "Ward stock request was not found.",
-            )
-        })?;
-
-    Ok(Json(object(request)))
+    Ok(Json(
+        state
+            .ward_services()
+            .ward_stock()
+            .approve_ward_stock_request(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -2125,250 +1492,11 @@ pub async fn fulfill_ward_stock_request(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<WardStockRequestListItem>>, ApiError> {
-    require_facility_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::NursingTaskManage,
-    )?;
-    let request = state
-        .fulfill_ward_stock_request(id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_stock_request_fulfill_failed",
-                "Ward stock request could not be fulfilled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "ward_stock_request_not_found",
-                "Ward stock request was not found.",
-            )
-        })?;
-
-    Ok(Json(object(request)))
-}
-
-async fn load_admission_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    admission_case_id: Uuid,
-) -> Result<AdmissionContext, ApiError> {
-    let admission = state
-        .get_admission_context(admission_case_id)
-        .await
-        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
-    let _patient = load_patient_for_access(state, user, admission.patient_id).await?;
-    Ok(admission)
-}
-
-async fn load_admission_case_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    admission_case_id: Uuid,
-) -> Result<AdmissionCaseListItem, ApiError> {
-    let admission_case = state
-        .get_admission_case(admission_case_id)
-        .await
-        .map_err(|_| ApiError::conflict("admission_load_failed", "Admission could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("admission_not_found", "Admission was not found."))?;
-    let _patient = load_patient_for_access(state, user, admission_case.patient_id).await?;
-    Ok(admission_case)
-}
-
-async fn load_ward(state: &AppState, ward_id: Uuid) -> Result<WardListItem, ApiError> {
-    state
-        .get_ward(ward_id)
-        .await
-        .map_err(|_| ApiError::conflict("ward_load_failed", "Ward could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("ward_not_found", "Ward was not found."))
-}
-
-async fn load_ward_section(
-    state: &AppState,
-    section_id: Uuid,
-) -> Result<WardSectionListItem, ApiError> {
-    state
-        .get_ward_section(section_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "ward_section_load_failed",
-                "Ward section could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("ward_section_not_found", "Ward section was not found."))
-}
-
-async fn load_bed(state: &AppState, bed_id: Uuid) -> Result<BedListItem, ApiError> {
-    state
-        .get_bed(bed_id)
-        .await
-        .map_err(|_| ApiError::conflict("bed_load_failed", "Bed could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("bed_not_found", "Bed was not found."))
-}
-
-async fn load_patient_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    patient_id: Uuid,
-) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
-        .await
-        .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
-
-    require_patient_demographics_access(user, &patient).map_err(|_| {
-        ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to this patient.",
-        )
-    })?;
-    Ok(patient)
-}
-
-fn require_patient_workflow_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_patient_workflow_access(user, facility_id, permission).map_err(|error| {
-        match error {
-            hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
-                "patient_access_denied",
-                "You do not have access to patient workflow lists.",
-            ),
-            other => ApiError::from(other),
-        }
-    })
-}
-
-fn require_facility_permission(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_facility_permission(user, facility_id, permission).map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to perform this action.",
-        )
-    })
-}
-
-fn normalize_ward_text(value: Option<String>, max_len: usize) -> Result<Option<String>, ApiError> {
-    value
-        .map(|raw| {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(ApiError::bad_request(
-                    "invalid_ward",
-                    "Ward code and name cannot be empty.",
-                ));
-            }
-            if trimmed.len() > max_len {
-                return Err(ApiError::bad_request(
-                    "invalid_ward",
-                    "Ward code or name is too long.",
-                ));
-            }
-            Ok(trimmed.to_owned())
-        })
-        .transpose()
-}
-
-fn normalize_bed_code(value: Option<String>) -> Result<Option<String>, ApiError> {
-    value
-        .map(|raw| {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(ApiError::bad_request(
-                    "invalid_bed",
-                    "Bed code is required.",
-                ));
-            }
-            if trimmed.len() > MAX_BED_CODE_LEN {
-                return Err(ApiError::bad_request(
-                    "invalid_bed",
-                    "Bed code is too long.",
-                ));
-            }
-            Ok(trimmed.to_owned())
-        })
-        .transpose()
-}
-
-fn page_request(query: CursorListQuery) -> Result<(Option<WardCursor>, u8), ApiError> {
-    let page = cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT,
-        |occurred_at, id| WardCursor { occurred_at, id },
-    )?;
-    Ok((page.cursor, page.limit))
-}
-
-fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
-where
-    F: Fn(&T) -> String,
-{
-    cursor_list::page_response(rows, page_size, cursor_for)
-}
-
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    cursor_list::encode_cursor(occurred_at, id)
-}
-
-fn required_text(value: String, field: &'static str) -> Result<String, ApiError> {
-    let value = value.trim();
-    if value.is_empty() {
-        let mut error = ApiError::bad_request("invalid_request", "Request is invalid.");
-        error.details = json!({ field: ["This field is required."] });
-        return Err(error);
-    }
-    Ok(value.to_owned())
-}
-
-fn validate_vitals_payload(payload: &CreatePatientVitalsRequest) -> Result<(), ApiError> {
-    if let Some(temperature_c) = payload.temperature_c {
-        if !(25.0..=45.0).contains(&temperature_c) {
-            return Err(ApiError::bad_request(
-                "invalid_vitals",
-                "Temperature must be between 25.0 and 45.0 Celsius.",
-            ));
-        }
-    }
-    validate_optional_range(payload.systolic_bp, 40, 260)?;
-    validate_optional_range(payload.diastolic_bp, 20, 160)?;
-    validate_optional_range(payload.pulse, 20, 250)?;
-    validate_optional_range(payload.respiratory_rate, 4, 80)?;
-    validate_optional_range(payload.oxygen_saturation, 0, 100)?;
-    Ok(())
-}
-
-fn validate_optional_text(value: Option<&str>, max_len: usize) -> Result<(), ApiError> {
-    if let Some(value) = value {
-        if value.chars().count() > max_len {
-            return Err(ApiError::bad_request(
-                "invalid_text",
-                "Text value is too long.",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_optional_range(value: Option<i32>, min: i32, max: i32) -> Result<(), ApiError> {
-    if let Some(value) = value {
-        if !(min..=max).contains(&value) {
-            return Err(ApiError::bad_request(
-                "invalid_vitals",
-                "One or more vitals values are outside the accepted range.",
-            ));
-        }
-    }
-    Ok(())
+    Ok(Json(
+        state
+            .ward_services()
+            .ward_stock()
+            .fulfill_ward_stock_request(&user, id)
+            .await?,
+    ))
 }

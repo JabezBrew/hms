@@ -9,4 +9,5 @@ pub mod middleware;
 pub mod openapi;
 pub mod response;
 pub mod routes;
+pub mod services;
 pub mod state;
