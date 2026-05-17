@@ -46,6 +46,22 @@ function titleizeTask(taskType) {
   return taskType.replaceAll('_', ' ')
 }
 
+function getUserCapabilities(user) {
+  const directPermissions = Array.isArray(user?.permissions) ? user.permissions : []
+  const adminCapabilities = Array.isArray(user?.adminAccess?.capabilities) ? user.adminAccess.capabilities : []
+  const snakeAdminCapabilities = Array.isArray(user?.admin_access?.capabilities) ? user.admin_access.capabilities : []
+  const accessContextPermissions = Array.isArray(user?.accessContext?.permissions) ? user.accessContext.permissions : []
+  const snakeAccessContextPermissions = Array.isArray(user?.access_context?.permissions) ? user.access_context.permissions : []
+
+  return new Set([
+    ...directPermissions,
+    ...adminCapabilities,
+    ...snakeAdminCapabilities,
+    ...accessContextPermissions,
+    ...snakeAccessContextPermissions,
+  ])
+}
+
 export default function AdmissionCaseDetailPage() {
   const { caseId } = useParams()
   const navigate = useNavigate()
@@ -63,8 +79,13 @@ export default function AdmissionCaseDetailPage() {
   const [selectedBed, setSelectedBed] = useState(null)
   const admissionTaskMutationsAvailable = !isRustV2ApiMode()
 
-  const userType = user?.user_type
+  const userType = user?.user_type || user?.role
+  const userCapabilities = getUserCapabilities(user)
   const isNursingRole = ['admin', 'nurse', 'head_nurse', 'nurse_practitioner'].includes(userType)
+  const canManageAdmissions = userCapabilities.has('admission.manage')
+  const canManageWardBeds = userCapabilities.has('ward.manage_beds')
+  const canReserveBed = isNursingRole || canManageAdmissions || canManageWardBeds
+  const canActivateAdmission = isNursingRole || canManageAdmissions
   const pendingBlockers = useMemo(
     () => (admissionCase?.tasks || []).filter((task) => task.blocking && task.status === 'pending'),
     [admissionCase]
@@ -230,7 +251,7 @@ export default function AdmissionCaseDetailPage() {
                     patientGender={patientGender}
                     showAdvancedFilters
                   />
-                  {isNursingRole && (
+                  {canReserveBed && (
                     <Button onClick={handleReserveBed} disabled={!selectedBed?.id || reserveBed.isPending}>
                       Reserve Selected Bed
                     </Button>
@@ -241,7 +262,7 @@ export default function AdmissionCaseDetailPage() {
           </Card>
         )}
 
-        {admissionCase.can_activate && isNursingRole && (
+        {admissionCase.can_activate && canActivateAdmission && (
           <Card>
             <CardHeader>
               <CardTitle>Ward Activation</CardTitle>
@@ -284,10 +305,10 @@ export default function AdmissionCaseDetailPage() {
             {!admissionTaskMutationsAvailable && (
               <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
                 <p className="font-mono text-xs uppercase tracking-wide">
-                  Rust V2 admission task review
+                  Admission task review
                 </p>
                 <p className="mt-1">
-                  Admission task clearance and intake completion are not available in Rust V2 mode yet. Bed reservation, activation, and case cancellation remain available.
+                  Admission task clearance and intake completion are not available for this deployment yet. Bed reservation, activation, and case cancellation remain available.
                 </p>
               </div>
             )}

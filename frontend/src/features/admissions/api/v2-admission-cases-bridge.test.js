@@ -377,6 +377,45 @@ describe('Rust V2 admission cases bridge', () => {
     );
   });
 
+  it('exposes an active stay id after a Rust V2 admission case is activated', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'case-4',
+            patient_id: 'patient-4',
+            patient_code: 'MRN-004',
+            patient_display_name: 'Akosua Owusu',
+            ward_id: 'ward-4',
+            ward_name: 'Medical Ward',
+            bed_id: 'bed-4',
+            bed_code: 'C4',
+            status: 'admitted',
+            created_at: '2026-05-12T08:00:00Z',
+            admitted_at: '2026-05-12T08:30:00Z',
+            discharged_at: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const admissionCase = await admissionsApi.activateCase('case-4', {}, {
+      signal: new AbortController().signal,
+    });
+
+    expect(admissionCase).toEqual(expect.objectContaining({
+      id: 'case-4',
+      admission_id: 'case-4',
+      status: 'admitted',
+      admitted_at: '2026-05-12T08:30:00Z',
+    }));
+  });
+
   it('searches patients and practitioners through bounded Rust V2 search contracts', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(

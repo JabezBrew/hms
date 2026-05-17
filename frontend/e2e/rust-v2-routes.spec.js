@@ -861,3 +861,103 @@ test('Rust V2 Ward board patient scope loads through the existing UI', async ({ 
 
   expect(failures).toEqual([]);
 });
+
+test('Rust V2 admission and discharge queues complete the inpatient movement flow', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+
+  const patientName = uniquePatientName('Admission');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  const suffix = Date.now().toString(36).toUpperCase();
+  const wardPayload = await postV2FromBrowser(page, '/api/v2/wards', {
+    code: `PWA-${suffix}`,
+    name: `Playwright Admission Ward ${suffix}`,
+  });
+  const wardId = wardPayload?.data?.id;
+  expect(wardId).toBeTruthy();
+
+  const bedPayload = await postV2FromBrowser(page, `/api/v2/wards/${wardId}/beds`, {
+    section_id: null,
+    bed_code: `A-${suffix}`,
+  });
+  expect(bedPayload?.data?.id).toBeTruthy();
+
+  const admissionCasePayload = await postV2FromBrowser(page, '/api/v2/admissions/cases', {
+    patient_id: patientId,
+    ward_id: wardId,
+  });
+  const admissionCaseId = admissionCasePayload?.data?.id;
+  expect(admissionCaseId).toBeTruthy();
+
+  await page.goto('/admissions/requests');
+  await expect(page.getByRole('heading', { name: 'Admission Requests' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  await page.goto('/nursing/admissions');
+  await expect(page.getByRole('heading', { name: 'Nursing Admission Queue' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  await page.goto(`/admissions/cases/${admissionCaseId}`);
+  await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
+
+  const activateResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/admissions/cases/${admissionCaseId}/activate`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Activate Admission' }).click();
+
+  const activateResponse = await activateResponsePromise;
+  expect(activateResponse.status()).toBeLessThan(300);
+
+  await expect(page.getByRole('button', { name: 'Active Stay' })).toBeVisible();
+  await page.getByRole('button', { name: 'Active Stay' }).click();
+  await expect(page).toHaveURL(new RegExp(`/admissions/${admissionCaseId}$`));
+  await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
+
+  const requestDischargeResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/discharges') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Request Discharge' }).click();
+
+  const requestDischargeResponse = await requestDischargeResponsePromise;
+  expect(requestDischargeResponse.status()).toBeLessThan(300);
+  const requestDischargePayload = await requestDischargeResponse.json();
+  const dischargeId = requestDischargePayload?.data?.id;
+  expect(dischargeId).toBeTruthy();
+
+  await expect(page).toHaveURL(new RegExp(`/nursing/discharges\\?case=${dischargeId}$`));
+  await expect(page.getByRole('heading', { name: 'Nursing Discharges' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  const completeDischargeResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/discharges/${dischargeId}/complete`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Finalize Discharge' }).click();
+
+  const completeDischargeResponse = await completeDischargeResponsePromise;
+  expect(completeDischargeResponse.status()).toBeLessThan(300);
+
+  expect(failures).toEqual([]);
+});

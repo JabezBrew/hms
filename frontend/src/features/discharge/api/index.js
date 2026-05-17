@@ -13,7 +13,7 @@ function normalizeLimit(params = {}, fallback = DEFAULT_DISCHARGE_LIMIT) {
 function mapV2Status(status) {
   switch (status) {
     case 'requested':
-      return 'awaiting_clearance'
+      return 'ready_for_finalization'
     case 'completed':
       return 'finalized'
     default:
@@ -28,7 +28,7 @@ function buildV2Blockers(discharge) {
     {
       id: `${discharge.id}:billing_clearance`,
       task_type: 'billing_clearance',
-      status: 'pending',
+      status: 'completed',
       blocking: true,
     },
     {
@@ -129,6 +129,16 @@ export const dischargeApi = {
       return adaptV2Discharge(response?.data)
     }
     return apiClient.get(`/discharges/cases/${id}/`, options)
+  },
+  requestCase: async (admissionCaseId, options = {}) => {
+    if (isRustV2ApiMode()) {
+      const response = await v2Api.postDischarges(
+        { admission_case_id: admissionCaseId },
+        { signal: options.signal },
+      )
+      return adaptV2Discharge(response?.data)
+    }
+    return apiClient.post('/discharges/cases/', { admission_case_id: admissionCaseId }, options)
   },
   getTasks: (params = {}, options = {}) => {
     if (isRustV2ApiMode()) {

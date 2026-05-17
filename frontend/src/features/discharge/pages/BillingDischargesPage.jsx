@@ -185,10 +185,10 @@ export default function BillingDischargesPage() {
                     ) : (
                       <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
                         <p className="font-mono text-xs uppercase tracking-wide">
-                          Rust V2 discharge billing review
+                          Discharge billing review
                         </p>
                         <p className="mt-1">
-                          Billing cutoff edits and billing clearance are not available in Rust V2 mode yet. Case detail review remains available.
+                          Billing cutoff edits and billing clearance are not available for this deployment yet. Case detail review remains available.
                         </p>
                       </div>
                     )}

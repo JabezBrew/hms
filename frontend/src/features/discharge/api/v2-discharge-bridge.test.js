@@ -74,10 +74,10 @@ describe('Rust V2 discharge bridge', () => {
         patient: 'patient-1',
         patient_name: 'Ama Mensah',
         medical_record_number: 'MRN-001',
-        status: 'awaiting_clearance',
+        status: 'ready_for_finalization',
         medical_ready_at: '2026-05-12T09:00:00Z',
         blockers: expect.arrayContaining([
-          expect.objectContaining({ task_type: 'billing_clearance', status: 'pending' }),
+          expect.objectContaining({ task_type: 'billing_clearance', status: 'completed' }),
           expect.objectContaining({ task_type: 'nursing_finalization', status: 'pending' }),
         ]),
         invoice_summary: expect.objectContaining({ patient_balance_due: '0.00' }),
@@ -124,6 +124,49 @@ describe('Rust V2 discharge bridge', () => {
     );
   });
 
+  it('requests discharge cases through Rust /api/v2', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'discharge-2',
+            admission_case_id: 'admission-2',
+            patient_id: 'patient-2',
+            patient_code: 'MRN-002',
+            patient_display_name: 'Kojo Mensah',
+            status: 'requested',
+            requested_at: '2026-05-12T13:00:00Z',
+            discharged_at: null,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const result = await dischargeApi.requestCase('admission-2', {
+      signal: new AbortController().signal,
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/discharges',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({ admission_case_id: 'admission-2' }),
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({
+      id: 'discharge-2',
+      admission: 'admission-2',
+      patient_name: 'Kojo Mensah',
+      status: 'ready_for_finalization',
+    }));
+  });
+
   it('loads discharge case detail through the Rust /api/v2 detail endpoint', async () => {
     const signal = new AbortController().signal;
     globalThis.fetch.mockResolvedValueOnce(
@@ -158,7 +201,7 @@ describe('Rust V2 discharge bridge', () => {
       id: 'discharge-1',
       admission: 'admission-1',
       patient_name: 'Ama Mensah',
-      status: 'awaiting_clearance',
+      status: 'ready_for_finalization',
     }));
   });
 
@@ -203,7 +246,7 @@ describe('Rust V2 discharge bridge', () => {
         patient: 'patient-1',
         patient_name: 'Ama Mensah',
         task_type: 'billing_clearance',
-        status: 'pending',
+        status: 'completed',
       }),
       expect.objectContaining({
         id: 'discharge-1:nursing_finalization',

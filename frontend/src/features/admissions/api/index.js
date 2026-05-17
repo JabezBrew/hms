@@ -33,6 +33,7 @@ function adaptV2AdmissionCase(item) {
   if (!item) {
     return item
   }
+  const activeAdmissionId = item.status === 'admitted' ? item.id : null
   const requestedBedLabel = item.bed_code
     ? `${item.ward_name || 'Ward'} · Bed ${item.bed_code}`
     : item.ward_name || null
@@ -51,8 +52,9 @@ function adaptV2AdmissionCase(item) {
     requested_at: item.created_at,
     ready_for_activation_at: item.status === 'ready_for_activation' ? item.created_at : null,
     admission_source: 'direct',
-    admission_id: null,
+    admission_id: activeAdmissionId,
     admitted_at: item.admitted_at,
+    activated_at: item.admitted_at,
     discharged_at: item.discharged_at,
     blockers: [],
     tasks: [],

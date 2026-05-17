@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import format from 'date-fns/format';
 import { admissionsApi } from '@/features/admissions/api';
+import { dischargeApi } from '@/features/discharge/api';
 import { DischargeCasePanel } from '@/features/discharge/components/DischargeCasePanel';
 import { useAuth } from '@/lib/auth';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -45,6 +46,8 @@ export default function AdmissionDetailPage() {
   const [admission, setAdmission] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [requestingDischarge, setRequestingDischarge] = useState(false);
 
   const loadAdmission = useCallback(async () => {
     if (!admissionId) return;
@@ -135,8 +138,10 @@ export default function AdmissionDetailPage() {
   const totalCostLabel = admission?.total_cost != null ? `$${admission.total_cost}` : 'N/A';
   const lengthOfStayLabel = admission?.length_of_stay != null ? `${admission.length_of_stay} days` : 'N/A';
 
-  const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
-  const medicalDischargeAvailable = !isRustV2ApiMode();
+  const userRole = user?.user_type || user?.role;
+  const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(userRole);
+  const rustV2Mode = isRustV2ApiMode();
+  const medicalDischargeAvailable = !rustV2Mode;
   const backToWardPath = wardId ? `/wards/${wardId}` : '/wards';
   const backLabel = wardId ? 'Back to Ward' : 'Back to Wards';
   const pageMeta = usePageMeta({
@@ -190,6 +195,23 @@ export default function AdmissionDetailPage() {
     );
   }
 
+  async function handleRequestDischarge() {
+    if (!admission?.id) {
+      return;
+    }
+    try {
+      setRequestingDischarge(true);
+      setActionError(null);
+      const dischargeCase = await dischargeApi.requestCase(admission.id);
+      const dischargeCaseId = dischargeCase?.id;
+      navigate(dischargeCaseId ? `/nursing/discharges?case=${dischargeCaseId}` : '/nursing/discharges');
+    } catch {
+      setActionError('Unable to request discharge. Please try again.');
+    } finally {
+      setRequestingDischarge(false);
+    }
+  }
+
   return (
     <PageShell>
       {pageMeta}
@@ -226,6 +248,15 @@ export default function AdmissionDetailPage() {
                 {admission.status === 'pending_discharge' ? 'Review Medical Discharge' : 'Medical Discharge'}
               </Button>
             )}
+            {rustV2Mode && ['admitted', 'pending_discharge'].includes(admission.status) && (
+              <Button
+                size="sm"
+                disabled={!admission.id || requestingDischarge}
+                onClick={handleRequestDischarge}
+              >
+                {requestingDischarge ? 'Requesting...' : 'Request Discharge'}
+              </Button>
+            )}
           </div>
         )}
       >
@@ -235,10 +266,9 @@ export default function AdmissionDetailPage() {
       </PageHeader>
 
       <main className="p-6 space-y-6">
-      {!medicalDischargeAvailable && ['admitted', 'pending_discharge'].includes(admission.status) && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Medical discharge is not available in Rust V2 mode yet. Admission details remain
-          read-only until the generated /api/v2 admission discharge contract exists.
+      {actionError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          {actionError}
         </div>
       )}
 

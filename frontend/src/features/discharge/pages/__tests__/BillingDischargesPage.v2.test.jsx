@@ -83,7 +83,7 @@ describe('BillingDischargesPage Rust V2 guards', () => {
     expect(screen.queryByRole('button', { name: /save cutoff/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /clear billing/i })).not.toBeInTheDocument();
     expect(
-      screen.getByText(/billing cutoff edits and billing clearance are not available in rust v2/i),
+      screen.getByText(/billing cutoff edits and billing clearance are not available for this deployment yet/i),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /review details/i })).toBeInTheDocument();
   });
