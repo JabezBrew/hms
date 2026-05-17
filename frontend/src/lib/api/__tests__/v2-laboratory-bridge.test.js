@@ -319,6 +319,41 @@ describe('Rust V2 laboratory bridge', () => {
     ]);
   });
 
+  it('does not synthesize fake specimens for Rust V2 lab orders', async () => {
+    globalThis.fetch.mockResolvedValueOnce(jsonResponse({
+      data: {
+        id: 'order-1',
+        patient_id: 'patient-1',
+        patient_code: 'MRN-001',
+        priority: 'urgent',
+        status: 'result_entered',
+        ordered_at: '2026-05-12T08:00:00Z',
+        test_count: 1,
+        order_tests: [{
+          id: 'test-1',
+          test_id: 'test-1',
+          test: {
+            id: 'test-1',
+            code: 'MAL-RDT',
+            name: 'Malaria RDT',
+            short_name: 'Malaria RDT',
+            specimen_type: 'blood',
+            unit: null,
+            result_unit: null,
+          },
+          result: null,
+        }],
+      },
+      meta: {},
+    }));
+
+    await expect(laboratoryApi.getLabOrder('order-1')).resolves.toMatchObject({
+      id: 'order-1',
+      status: 'processing',
+      specimens: [],
+    });
+  });
+
   it('routes laboratory write workflows through generated Rust V2 endpoints', async () => {
     const signal = new AbortController().signal;
 

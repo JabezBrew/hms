@@ -4087,6 +4087,12 @@
           "priority": {
             "$ref": "#/components/schemas/LabPriority"
           },
+          "specimens": {
+            "items": {
+              "$ref": "#/components/schemas/SpecimenListItem"
+            },
+            "type": "array"
+          },
           "status": {
             "$ref": "#/components/schemas/LabOrderStatus"
           },
@@ -4103,7 +4109,8 @@
           "status",
           "ordered_at",
           "test_count",
-          "order_tests"
+          "order_tests",
+          "specimens"
         ],
         "type": "object"
       },
@@ -6390,6 +6397,12 @@
                 "priority": {
                   "$ref": "#/components/schemas/LabPriority"
                 },
+                "specimens": {
+                  "items": {
+                    "$ref": "#/components/schemas/SpecimenListItem"
+                  },
+                  "type": "array"
+                },
                 "status": {
                   "$ref": "#/components/schemas/LabOrderStatus"
                 },
@@ -6406,7 +6419,8 @@
                 "status",
                 "ordered_at",
                 "test_count",
-                "order_tests"
+                "order_tests",
+                "specimens"
               ],
               "type": "object"
             },
@@ -12066,6 +12080,12 @@
               "priority": {
                 "$ref": "#/components/schemas/LabPriority"
               },
+              "specimens": {
+                "items": {
+                  "$ref": "#/components/schemas/SpecimenListItem"
+                },
+                "type": "array"
+              },
               "status": {
                 "$ref": "#/components/schemas/LabOrderStatus"
               },
@@ -12082,7 +12102,8 @@
               "status",
               "ordered_at",
               "test_count",
-              "order_tests"
+              "order_tests",
+              "specimens"
             ],
             "type": "object"
           },

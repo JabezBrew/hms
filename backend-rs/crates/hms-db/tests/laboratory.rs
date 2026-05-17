@@ -116,6 +116,19 @@ async fn laboratory_repository_filters_orders_and_results_for_worklists() {
     assert!(result_entered
         .iter()
         .any(|order| order.id == entered_order.id));
+    let entered_worklist_order = result_entered
+        .iter()
+        .find(|order| order.id == entered_order.id)
+        .expect("entered order is present");
+    assert_eq!(entered_worklist_order.specimens.len(), 1);
+    assert_eq!(
+        entered_worklist_order.specimens[0].id,
+        entered_result.specimen_id
+    );
+    assert_eq!(
+        entered_worklist_order.specimens[0].order_id,
+        entered_order.id
+    );
     assert!(!result_entered
         .iter()
         .any(|order| order.id == pending_order.id));

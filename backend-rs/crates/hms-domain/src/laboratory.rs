@@ -63,6 +63,7 @@ pub struct LabOrderListItem {
     pub ordered_at: DateTime<Utc>,
     pub test_count: i64,
     pub order_tests: Vec<LabOrderTestItem>,
+    pub specimens: Vec<SpecimenListItem>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

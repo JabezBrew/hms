@@ -108,6 +108,7 @@ struct OrderRow {
     ordered_at: DateTime<Utc>,
     test_count: i64,
     order_tests: Json<Vec<LabOrderTestItem>>,
+    specimens: Json<Vec<SpecimenListItem>>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -253,13 +254,7 @@ pub async fn list_orders(
         query.push_bind(codec::encode(status)?);
     }
     apply_cursor(&mut query, "lab_orders.ordered_at", "lab_orders.id", cursor);
-    query.push(
-        r#"
-        GROUP BY lab_orders.id, patients.patient_code
-        ORDER BY lab_orders.ordered_at DESC, lab_orders.id DESC
-        LIMIT
-        "#,
-    );
+    query.push(" ORDER BY lab_orders.ordered_at DESC, lab_orders.id DESC LIMIT ");
     query.push_bind(limit);
     let rows = query.build_query_as::<OrderRow>().fetch_all(pool).await?;
     rows.into_iter().map(order_from_row).collect()
@@ -1015,7 +1010,6 @@ async fn fetch_order_by_id(
     query.push_bind(facility_id);
     query.push(" AND lab_orders.id = ");
     query.push_bind(order_id);
-    query.push(" GROUP BY lab_orders.id, patients.patient_code");
     query
         .build_query_as::<OrderRow>()
         .fetch_optional(pool)
@@ -1069,31 +1063,58 @@ fn order_query() -> QueryBuilder<'static, Postgres> {
                lab_orders.priority,
                lab_orders.status,
                lab_orders.ordered_at,
-               COUNT(lab_order_tests.test_id)::bigint AS test_count,
+               (
+                   SELECT COUNT(lab_order_tests.test_id)::bigint
+                   FROM lab_order_tests
+                   WHERE lab_order_tests.order_id = lab_orders.id
+               ) AS test_count,
                COALESCE(
-                   jsonb_agg(
-                       jsonb_build_object(
-                           'id', lab_tests.id,
-                           'test_id', lab_tests.id,
-                           'test', jsonb_build_object(
+                   (
+                       SELECT jsonb_agg(
+                           jsonb_build_object(
                                'id', lab_tests.id,
-                               'code', lab_tests.code,
-                               'name', lab_tests.name,
-                               'short_name', lab_tests.name,
-                               'specimen_type', lab_tests.specimen_type,
-                               'unit', lab_tests.result_unit,
-                               'result_unit', lab_tests.result_unit
-                           ),
-                           'result', NULL
+                               'test_id', lab_tests.id,
+                               'test', jsonb_build_object(
+                                   'id', lab_tests.id,
+                                   'code', lab_tests.code,
+                                   'name', lab_tests.name,
+                                   'short_name', lab_tests.name,
+                                   'specimen_type', lab_tests.specimen_type,
+                                   'unit', lab_tests.result_unit,
+                                   'result_unit', lab_tests.result_unit
+                               ),
+                               'result', NULL
+                           )
+                           ORDER BY lab_tests.code ASC, lab_tests.id ASC
                        )
-                       ORDER BY lab_tests.code ASC, lab_tests.id ASC
-                   ) FILTER (WHERE lab_tests.id IS NOT NULL),
+                       FROM lab_order_tests
+                       INNER JOIN lab_tests ON lab_tests.id = lab_order_tests.test_id
+                       WHERE lab_order_tests.order_id = lab_orders.id
+                   ),
                    '[]'::jsonb
-               ) AS order_tests
+               ) AS order_tests,
+               COALESCE(
+                   (
+                       SELECT jsonb_agg(
+                           jsonb_build_object(
+                               'id', lab_specimens.id,
+                               'order_id', lab_specimens.order_id,
+                               'patient_id', lab_specimens.patient_id,
+                               'patient_code', patients.patient_code,
+                               'specimen_type', lab_specimens.specimen_type,
+                               'status', lab_specimens.status,
+                               'collected_at', lab_specimens.collected_at
+                           )
+                           ORDER BY lab_specimens.collected_at DESC, lab_specimens.id DESC
+                       )
+                       FROM lab_specimens
+                       WHERE lab_specimens.facility_id = lab_orders.facility_id
+                         AND lab_specimens.order_id = lab_orders.id
+                   ),
+                   '[]'::jsonb
+               ) AS specimens
         FROM lab_orders
         INNER JOIN patients ON patients.id = lab_orders.patient_id
-        LEFT JOIN lab_order_tests ON lab_order_tests.order_id = lab_orders.id
-        LEFT JOIN lab_tests ON lab_tests.id = lab_order_tests.test_id
         "#,
     )
 }
@@ -1184,6 +1205,7 @@ fn order_from_row(row: OrderRow) -> anyhow::Result<LabOrderListItem> {
         ordered_at: row.ordered_at,
         test_count: row.test_count,
         order_tests: row.order_tests.0,
+        specimens: row.specimens.0,
     })
 }
 

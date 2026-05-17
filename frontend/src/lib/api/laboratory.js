@@ -134,13 +134,9 @@ function adaptV2LabOrder(item = {}) {
     ordered_at: item.ordered_at,
     tests_count: item.test_count ?? 0,
     order_tests: item.order_tests || testPlaceholders(item.id, item.test_count),
-    specimens: item.specimens || (status && status !== 'ordered'
-      ? [{
-          id: `${item.id}-specimen`,
-          barcode_number: 'Collected specimen',
-          status: 'collected',
-        }]
-      : []),
+    specimens: Array.isArray(item.specimens)
+      ? item.specimens.map(adaptV2LabSpecimen)
+      : [],
   };
 }
 

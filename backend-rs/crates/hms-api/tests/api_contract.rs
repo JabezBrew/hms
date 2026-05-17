@@ -2841,6 +2841,14 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         start_processing_order_body["data"]["status"],
         "result_entered"
     );
+    assert_eq!(
+        start_processing_order_body["data"]["specimens"][0]["id"],
+        specimen_id
+    );
+    assert_eq!(
+        start_processing_order_body["data"]["specimens"][0]["order_id"],
+        order_id
+    );
 
     let specimen_detail = app
         .clone()
@@ -2872,6 +2880,29 @@ async fn laboratory_orders_specimens_results_and_verification_are_patient_scoped
         .await
         .expect("specimen list succeeds");
     assert_eq!(specimens.status(), StatusCode::OK);
+
+    let result_entered_orders = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/laboratory/orders?status=result_entered&limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("result-entered order list succeeds");
+    assert_eq!(result_entered_orders.status(), StatusCode::OK);
+    let result_entered_orders_body = json_body(result_entered_orders).await;
+    let result_entered_order = result_entered_orders_body["data"]
+        .as_array()
+        .expect("orders are an array")
+        .iter()
+        .find(|order| order["id"] == order_id)
+        .expect("result-entered order appears in worklist");
+    assert_eq!(result_entered_order["specimens"][0]["id"], specimen_id);
+    assert_eq!(result_entered_order["specimens"][0]["order_id"], order_id);
 
     let result_response = app
         .clone()

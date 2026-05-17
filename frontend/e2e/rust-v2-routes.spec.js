@@ -22,6 +22,7 @@ const rustV2Routes = [
   '/nursing/tasks',
   '/nursing/shift-handoff',
   '/nursing/ward-stock-requests',
+  '/laboratory/catalog',
   '/laboratory/dashboard',
   '/laboratory/orders',
   '/laboratory/results',
@@ -203,6 +204,52 @@ async function postV2FromBrowser(page, path, body) {
     }
     return payload;
   }, { requestPath: path, requestBody: body });
+}
+
+async function getV2FromBrowser(page, path) {
+  return page.evaluate(async ({ requestPath }) => {
+    const readCookie = (name) => {
+      return document.cookie
+        .split(';')
+        .map((cookie) => cookie.trim())
+        .find((cookie) => cookie.startsWith(`${name}=`))
+        ?.split('=')
+        .slice(1)
+        .join('=') || '';
+    };
+
+    const csrfToken = readCookie('hms_v2_csrf');
+    const refreshResponse = await fetch('/api/v2/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+      headers: csrfToken ? { 'X-HMS-CSRF': csrfToken } : {},
+    });
+
+    if (!refreshResponse.ok) {
+      throw new Error(`token refresh failed with ${refreshResponse.status}`);
+    }
+
+    const refreshPayload = await refreshResponse.json();
+    const accessToken = refreshPayload?.data?.access_token;
+    if (!accessToken) {
+      throw new Error('token refresh did not return an access token');
+    }
+
+    const response = await fetch(requestPath, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Facility-Code': 'HMS',
+      },
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(`GET ${requestPath} failed with ${response.status}: ${JSON.stringify(payload)}`);
+    }
+    return payload;
+  }, { requestPath: path });
 }
 
 test('Rust V2 static work surfaces load without route crashes or server errors', async ({ page }) => {
@@ -1320,6 +1367,180 @@ test('Rust V2 patient Chronicle clinical actions stay patient-scoped', async ({ 
     admission_case_id: admissionCaseId,
     intake_ml: 100,
     output_ml: 0,
+  }));
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 laboratory catalog order result workflow uses real specimen ids', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+
+  const catalogPayload = await getV2FromBrowser(page, '/api/v2/laboratory/test-catalog');
+  const labTest = catalogPayload?.data?.find((item) => item.code === 'FBC') || catalogPayload?.data?.[0];
+  expect(labTest?.id).toBeTruthy();
+  expect(labTest?.name).toBeTruthy();
+
+  await page.goto('/laboratory/catalog');
+  await expect(page.getByRole('heading', { name: 'Lab Catalog' })).toBeVisible();
+  await expect(page.getByText(labTest.name).first()).toBeVisible();
+
+  const patientName = uniquePatientName('Lab');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  await page.goto(`/patients/${patientId}`);
+  await expect(page.getByRole('heading', { name: patientName })).toBeVisible();
+  await page.getByRole('button', { name: 'Order Labs' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Order Labs' })).toBeVisible();
+  await page.getByLabel('Search tests and panels').fill(labTest.name);
+  await page.getByRole('checkbox', { name: new RegExp(labTest.name, 'i') }).first().click();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByLabel(/Clinical Indication/i).fill('Playwright Rust V2 laboratory smoke order');
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  const createOrderResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/laboratory/orders') &&
+    response.request().method() === 'POST'
+  ));
+  const submitOrderResponsePromise = page.waitForResponse((response) => (
+    response.url().includes('/api/v2/laboratory/orders/') &&
+    response.url().endsWith('/submit') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Submit Order' }).click();
+
+  const createOrderResponse = await createOrderResponsePromise;
+  expect(createOrderResponse.status()).toBeLessThan(300);
+  const createOrderPayload = await createOrderResponse.json();
+  const orderId = createOrderPayload?.data?.id;
+  const orderNumber = createOrderPayload?.data?.order_number || orderId.slice(0, 8).toUpperCase();
+  expect(orderId).toBeTruthy();
+  expect(createOrderResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    patient_id: patientId,
+    test_ids: [labTest.id],
+    priority: 'routine',
+  }));
+
+  const submitOrderResponse = await submitOrderResponsePromise;
+  expect(submitOrderResponse.status()).toBeLessThan(300);
+
+  await page.goto('/laboratory/orders');
+  await expect(page.getByRole('heading', { name: 'Lab Orders' })).toBeVisible();
+  await expect(page.getByText(orderNumber).first()).toBeVisible();
+
+  await page.goto('/laboratory/dashboard');
+  await expect(page.getByRole('heading', { name: 'Laboratory Worklist' })).toBeVisible();
+  const orderedArticle = page.locator('article').filter({ hasText: orderNumber }).first();
+  await expect(orderedArticle).toBeVisible();
+  await orderedArticle.getByRole('button', { name: 'Collect Specimen' }).click();
+  await expect(page.getByRole('heading', { name: 'Collect Specimen' })).toBeVisible();
+  await page.getByRole('combobox').filter({ hasText: /Select specimen type/i }).click();
+  await page.getByRole('option', { name: 'Blood' }).click();
+  await page.getByRole('combobox').filter({ hasText: /Select container type/i }).click();
+  await page.getByRole('option', { name: /Red Top/i }).click();
+
+  const createSpecimenResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/laboratory/specimens') &&
+    response.request().method() === 'POST'
+  ));
+  const collectOrderResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/laboratory/orders/${orderId}/collect`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Collect Specimen' }).click();
+
+  const createSpecimenResponse = await createSpecimenResponsePromise;
+  expect(createSpecimenResponse.status()).toBeLessThan(300);
+  const createSpecimenPayload = await createSpecimenResponse.json();
+  const specimenId = createSpecimenPayload?.data?.id;
+  expect(specimenId).toBeTruthy();
+  expect(createSpecimenResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    order_id: orderId,
+    specimen_type: 'blood',
+  }));
+
+  const collectOrderResponse = await collectOrderResponsePromise;
+  expect(collectOrderResponse.status()).toBeLessThan(300);
+  const collectOrderPayload = await collectOrderResponse.json();
+  expect(collectOrderPayload?.data?.specimens?.[0]?.id).toBe(specimenId);
+
+  await page.getByRole('tab', { name: /Collected/ }).click();
+  const collectedArticle = page.locator('article').filter({ hasText: orderNumber }).first();
+  await expect(collectedArticle).toBeVisible();
+
+  const startProcessingResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/laboratory/orders/${orderId}/start-processing`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await collectedArticle.getByRole('button', { name: 'Start Processing' }).click();
+  await expect(page.getByRole('heading', { name: 'Start Processing' })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Start Processing' }).click();
+
+  const startProcessingResponse = await startProcessingResponsePromise;
+  expect(startProcessingResponse.status()).toBeLessThan(300);
+  const startProcessingPayload = await startProcessingResponse.json();
+  expect(startProcessingPayload?.data?.specimens?.[0]?.id).toBe(specimenId);
+
+  await page.getByRole('tab', { name: /^Processing/ }).click();
+  const processingArticle = page.locator('article').filter({ hasText: orderNumber }).first();
+  await expect(processingArticle).toBeVisible();
+  await processingArticle.getByRole('button', { name: 'Enter Results' }).click();
+  await expect(page.getByRole('heading', { name: 'Enter Lab Results' })).toBeVisible();
+  await page.getByLabel(new RegExp(`Result value for ${labTest.name}`, 'i')).fill('12.4');
+
+  const bulkCreateResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/laboratory/results/bulk') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: /Save 1 Result/i }).click();
+
+  const bulkCreateResponse = await bulkCreateResponsePromise;
+  expect(bulkCreateResponse.status()).toBeLessThan(300);
+  expect(bulkCreateResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    order_id: orderId,
+    specimen_id: specimenId,
+  }));
+
+  await page.goto('/laboratory/results');
+  await expect(page.getByRole('heading', { name: 'Lab Results' })).toBeVisible();
+  await expect(page.getByText(orderNumber).first()).toBeVisible();
+
+  await page.goto('/laboratory/dashboard');
+  await page.getByRole('tab', { name: /Pending Verification/ }).click();
+  const verificationArticle = page.locator('article').filter({ hasText: orderNumber }).first();
+  await expect(verificationArticle).toBeVisible();
+
+  const bulkVerifyResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/laboratory/results/bulk-verify') &&
+    response.request().method() === 'POST'
+  ));
+
+  await verificationArticle.getByRole('button', { name: 'Verify All' }).click();
+
+  const bulkVerifyResponse = await bulkVerifyResponsePromise;
+  expect(bulkVerifyResponse.status()).toBeLessThan(300);
+  expect(bulkVerifyResponse.request().postDataJSON()).toEqual(expect.objectContaining({
+    order_id: orderId,
   }));
 
   expect(failures).toEqual([]);
