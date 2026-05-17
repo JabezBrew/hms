@@ -28,7 +28,6 @@ use hms_db::laboratory::{
     OrderContext, ResultContext, SpecimenContext,
 };
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
-use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
     AdmissionContext, BedUpdate, NewAdmission, NewAdmissionCase, NewBed, NewFluidBalanceEntry,
@@ -77,8 +76,6 @@ use hms_domain::laboratory::{
     SpecimenListItem,
 };
 use hms_domain::patients::PatientRecord;
-use hms_domain::referrals::{ClinicWaitlistEntryListItem, ReferralListItem, ReferralPriority};
-use hms_domain::referrals::{ReferralSlaDashboard, ReferralSlaState, ReferralStatus};
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
     AdmissionCaseListItem, BedListItem, DischargeCaseListItem, FluidBalanceListItem,
@@ -658,154 +655,6 @@ impl AppState {
             user_id,
             notification_id,
             read,
-        )
-        .await
-    }
-
-    pub async fn list_referrals(
-        &self,
-        cursor: Option<ReferralCursor>,
-        limit: i64,
-        status: Option<ReferralStatus>,
-    ) -> Result<Vec<ReferralListItem>> {
-        hms_db::referrals::list_referrals(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            status,
-        )
-        .await
-    }
-
-    pub async fn create_referral(
-        &self,
-        patient_id: Uuid,
-        to_service: String,
-        priority: ReferralPriority,
-        reason: Option<String>,
-        actor_user_id: Uuid,
-    ) -> Result<ReferralListItem> {
-        hms_db::referrals::create_referral(
-            &self.inner.pool,
-            NewReferral {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                to_service,
-                priority,
-                reason,
-                sla_due_at: sla_due_at(priority),
-                created_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn get_referral(&self, referral_id: Uuid) -> Result<Option<ReferralListItem>> {
-        hms_db::referrals::get_referral(&self.inner.pool, self.facility_id(), referral_id).await
-    }
-
-    pub async fn accept_referral(
-        &self,
-        referral_id: Uuid,
-        actor_user_id: Uuid,
-        acceptance_notes: Option<String>,
-    ) -> Result<Option<ReferralListItem>> {
-        hms_db::referrals::accept_referral(
-            &self.inner.pool,
-            self.facility_id(),
-            referral_id,
-            actor_user_id,
-            acceptance_notes,
-        )
-        .await
-    }
-
-    pub async fn decline_referral(
-        &self,
-        referral_id: Uuid,
-        decline_reason: String,
-    ) -> Result<Option<ReferralListItem>> {
-        hms_db::referrals::decline_referral(
-            &self.inner.pool,
-            self.facility_id(),
-            referral_id,
-            decline_reason,
-        )
-        .await
-    }
-
-    pub async fn complete_referral(
-        &self,
-        referral_id: Uuid,
-        specialist_notes: String,
-        recommendations: Option<String>,
-    ) -> Result<Option<ReferralListItem>> {
-        hms_db::referrals::complete_referral(
-            &self.inner.pool,
-            self.facility_id(),
-            referral_id,
-            specialist_notes,
-            recommendations,
-        )
-        .await
-    }
-
-    pub async fn referral_sla_state(&self, referral_id: Uuid) -> Result<Option<ReferralSlaState>> {
-        hms_db::referrals::referral_sla_state(&self.inner.pool, self.facility_id(), referral_id)
-            .await
-    }
-
-    pub async fn referral_sla_dashboard(&self) -> Result<ReferralSlaDashboard> {
-        hms_db::referrals::referral_sla_dashboard(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_clinic_waitlist_entries(
-        &self,
-        cursor: Option<ReferralCursor>,
-        limit: i64,
-    ) -> Result<Vec<ClinicWaitlistEntryListItem>> {
-        hms_db::referrals::list_clinic_waitlist_entries(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_clinic_waitlist_entry(
-        &self,
-        patient_id: Uuid,
-        service: String,
-        priority: ReferralPriority,
-        actor_user_id: Uuid,
-    ) -> Result<ClinicWaitlistEntryListItem> {
-        hms_db::referrals::create_clinic_waitlist_entry(
-            &self.inner.pool,
-            NewClinicWaitlistEntry {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                service,
-                priority,
-                created_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn offer_next_clinic_waitlist_entry(
-        &self,
-        service: &str,
-        actor_user_id: Uuid,
-    ) -> Result<Option<ClinicWaitlistEntryListItem>> {
-        hms_db::referrals::offer_next_clinic_waitlist_entry(
-            &self.inner.pool,
-            self.facility_id(),
-            service,
-            actor_user_id,
         )
         .await
     }
@@ -3622,15 +3471,6 @@ fn password_meets_policy(password: &str) -> bool {
         && password.chars().any(char::is_lowercase)
         && password.chars().any(|value| value.is_ascii_digit())
         && password.chars().any(|value| !value.is_ascii_alphanumeric())
-}
-
-fn sla_due_at(priority: ReferralPriority) -> DateTime<Utc> {
-    let window = match priority {
-        ReferralPriority::Emergency => chrono::Duration::hours(1),
-        ReferralPriority::Urgent => chrono::Duration::hours(24),
-        ReferralPriority::Routine => chrono::Duration::days(7),
-    };
-    Utc::now() + window
 }
 
 pub(crate) fn csrf_compare_hash(token: &str) -> String {

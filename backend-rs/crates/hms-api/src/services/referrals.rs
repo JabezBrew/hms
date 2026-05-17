@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
-use hms_db::referrals::ReferralCursor;
+use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
 use hms_domain::care::CursorListQuery;
 use hms_domain::patients::PatientRecord;
 use hms_domain::referrals::{
     AcceptReferralRequest, ClinicWaitlistEntryListItem, CompleteReferralRequest,
     CreateClinicWaitlistEntryRequest, CreateReferralRequest, DeclineReferralRequest,
-    OfferNextClinicWaitlistEntryRequest, ReferralListItem, ReferralListQuery, ReferralSlaDashboard,
-    ReferralSlaState,
+    OfferNextClinicWaitlistEntryRequest, ReferralListItem, ReferralListQuery, ReferralPriority,
+    ReferralSlaDashboard, ReferralSlaState,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -30,24 +30,36 @@ impl ReferralsService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_referrals(
         &self,
         ctx: &hms_access::RequestContext,
         query: ReferralListQuery,
     ) -> Result<ListResponse<ReferralListItem>, ApiError> {
-        require_patient_workflow_access(ctx, self.state.facility_id())?;
+        require_patient_workflow_access(ctx, self.facility_id())?;
         let status = query.status;
         let (cursor, page_size) = page_request(CursorListQuery {
             cursor: query.cursor,
             limit: query.limit,
         })?;
-        let rows = self
-            .state
-            .list_referrals(cursor, page_size as i64 + 1, status)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("referral_list_failed", "Referrals could not be loaded.")
-            })?;
+        let rows = hms_db::referrals::list_referrals(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            status,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("referral_list_failed", "Referrals could not be loaded.")
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -59,23 +71,27 @@ impl ReferralsService {
         ctx: &hms_access::RequestContext,
         payload: CreateReferralRequest,
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         let to_service = required_text(payload.to_service, "to_service")?;
         let reason = optional_text(payload.reason);
-        let referral = self
-            .state
-            .create_referral(
-                payload.patient_id,
+        let referral = hms_db::referrals::create_referral(
+            self.pool(),
+            NewReferral {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
                 to_service,
-                payload.priority,
+                priority: payload.priority,
                 reason,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("referral_create_failed", "Referral could not be created.")
-            })?;
+                sla_due_at: sla_due_at(payload.priority),
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("referral_create_failed", "Referral could not be created.")
+        })?;
 
         Ok(object(referral))
     }
@@ -85,7 +101,7 @@ impl ReferralsService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let referral = load_referral_for_access(&self.state, ctx, id).await?;
         Ok(object(referral))
     }
@@ -96,16 +112,20 @@ impl ReferralsService {
         id: Uuid,
         payload: AcceptReferralRequest,
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
-        let referral = self
-            .state
-            .accept_referral(id, ctx.user_id, optional_text(payload.acceptance_notes))
-            .await
-            .map_err(|_| {
-                ApiError::conflict("referral_accept_failed", "Referral could not be accepted.")
-            })?
-            .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+        let referral = hms_db::referrals::accept_referral(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            optional_text(payload.acceptance_notes),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("referral_accept_failed", "Referral could not be accepted.")
+        })?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
 
         Ok(object(referral))
     }
@@ -116,17 +136,20 @@ impl ReferralsService {
         id: Uuid,
         payload: DeclineReferralRequest,
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
         let decline_reason = required_text(payload.decline_reason, "decline_reason")?;
-        let referral = self
-            .state
-            .decline_referral(id, decline_reason)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("referral_decline_failed", "Referral could not be declined.")
-            })?
-            .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+        let referral = hms_db::referrals::decline_referral(
+            self.pool(),
+            self.facility_id(),
+            id,
+            decline_reason,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("referral_decline_failed", "Referral could not be declined.")
+        })?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
 
         Ok(object(referral))
     }
@@ -137,20 +160,24 @@ impl ReferralsService {
         id: Uuid,
         payload: CompleteReferralRequest,
     ) -> Result<ObjectResponse<ReferralListItem>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
         let specialist_notes = required_text(payload.specialist_notes, "specialist_notes")?;
-        let referral = self
-            .state
-            .complete_referral(id, specialist_notes, optional_text(payload.recommendations))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "referral_complete_failed",
-                    "Referral could not be completed.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+        let referral = hms_db::referrals::complete_referral(
+            self.pool(),
+            self.facility_id(),
+            id,
+            specialist_notes,
+            optional_text(payload.recommendations),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "referral_complete_failed",
+                "Referral could not be completed.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
 
         Ok(object(referral))
     }
@@ -160,11 +187,9 @@ impl ReferralsService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<ReferralSlaState>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let _existing = load_referral_for_access(&self.state, ctx, id).await?;
-        let sla_state = self
-            .state
-            .referral_sla_state(id)
+        let sla_state = hms_db::referrals::referral_sla_state(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -181,13 +206,15 @@ impl ReferralsService {
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ObjectResponse<ReferralSlaDashboard>, ApiError> {
-        require_patient_workflow_access(ctx, self.state.facility_id())?;
-        let dashboard = self.state.referral_sla_dashboard().await.map_err(|_| {
-            ApiError::conflict(
-                "referral_sla_dashboard_failed",
-                "Referral SLA dashboard could not be loaded.",
-            )
-        })?;
+        require_patient_workflow_access(ctx, self.facility_id())?;
+        let dashboard = hms_db::referrals::referral_sla_dashboard(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "referral_sla_dashboard_failed",
+                    "Referral SLA dashboard could not be loaded.",
+                )
+            })?;
 
         Ok(object(dashboard))
     }
@@ -197,18 +224,21 @@ impl ReferralsService {
         ctx: &hms_access::RequestContext,
         query: CursorListQuery,
     ) -> Result<ListResponse<ClinicWaitlistEntryListItem>, ApiError> {
-        require_patient_workflow_access(ctx, self.state.facility_id())?;
+        require_patient_workflow_access(ctx, self.facility_id())?;
         let (cursor, page_size) = page_request(query)?;
-        let rows = self
-            .state
-            .list_clinic_waitlist_entries(cursor, page_size as i64 + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinic_waitlist_failed",
-                    "Clinic waitlist could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::referrals::list_clinic_waitlist_entries(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinic_waitlist_failed",
+                "Clinic waitlist could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -220,24 +250,27 @@ impl ReferralsService {
         ctx: &hms_access::RequestContext,
         payload: CreateClinicWaitlistEntryRequest,
     ) -> Result<ObjectResponse<ClinicWaitlistEntryListItem>, ApiError> {
-        require_referral_permission(ctx, self.state.facility_id())?;
+        require_referral_permission(ctx, self.facility_id())?;
         let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
         let service = required_text(payload.service, "service")?;
-        let entry = self
-            .state
-            .create_clinic_waitlist_entry(
-                payload.patient_id,
+        let entry = hms_db::referrals::create_clinic_waitlist_entry(
+            self.pool(),
+            NewClinicWaitlistEntry {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: payload.patient_id,
                 service,
-                payload.priority,
-                ctx.user_id,
+                priority: payload.priority,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinic_waitlist_create_failed",
+                "Clinic waitlist entry could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinic_waitlist_create_failed",
-                    "Clinic waitlist entry could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(entry))
     }
@@ -247,21 +280,24 @@ impl ReferralsService {
         ctx: &hms_access::RequestContext,
         payload: OfferNextClinicWaitlistEntryRequest,
     ) -> Result<ObjectResponse<ClinicWaitlistEntryListItem>, ApiError> {
-        require_patient_workflow_access(ctx, self.state.facility_id())?;
+        require_patient_workflow_access(ctx, self.facility_id())?;
         let service = required_text(payload.service, "service")?;
-        let entry = self
-            .state
-            .offer_next_clinic_waitlist_entry(&service, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "clinic_waitlist_offer_failed",
-                    "Clinic waitlist entry could not be offered.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("clinic_waitlist_empty", "No waiting entry was available.")
-            })?;
+        let entry = hms_db::referrals::offer_next_clinic_waitlist_entry(
+            self.pool(),
+            self.facility_id(),
+            &service,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "clinic_waitlist_offer_failed",
+                "Clinic waitlist entry could not be offered.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("clinic_waitlist_empty", "No waiting entry was available.")
+        })?;
 
         Ok(object(entry))
     }
@@ -298,11 +334,13 @@ async fn load_referral_for_access(
     ctx: &hms_access::RequestContext,
     referral_id: Uuid,
 ) -> Result<ReferralListItem, ApiError> {
-    let referral = state
-        .get_referral(referral_id)
-        .await
-        .map_err(|_| ApiError::conflict("referral_load_failed", "Referral could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
+    let referral =
+        hms_db::referrals::get_referral(state.db_pool(), state.facility_id(), referral_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("referral_load_failed", "Referral could not be loaded.")
+            })?
+            .ok_or_else(|| ApiError::not_found("referral_not_found", "Referral was not found."))?;
     let _patient = load_patient_for_access(state, ctx, referral.patient_id).await?;
     Ok(referral)
 }
@@ -372,4 +410,13 @@ fn optional_text(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
+}
+
+fn sla_due_at(priority: ReferralPriority) -> DateTime<Utc> {
+    let window = match priority {
+        ReferralPriority::Emergency => chrono::Duration::hours(1),
+        ReferralPriority::Urgent => chrono::Duration::hours(24),
+        ReferralPriority::Routine => chrono::Duration::days(7),
+    };
+    Utc::now() + window
 }
