@@ -173,13 +173,15 @@ impl AdminService {
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ListResponse<FeatureEntitlementListItem>, ApiError> {
-        require_feature_entitlement_access(ctx, self.state.facility_id())?;
-        let rows = self.state.list_feature_entitlements().await.map_err(|_| {
-            ApiError::conflict(
-                "feature_entitlement_list_failed",
-                "Feature entitlements could not be loaded.",
-            )
-        })?;
+        require_feature_entitlement_access(ctx, self.facility_id())?;
+        let rows = hms_db::admin::list_feature_entitlements(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "feature_entitlement_list_failed",
+                    "Feature entitlements could not be loaded.",
+                )
+            })?;
         Ok(list(
             rows,
             PageInfo {
@@ -198,25 +200,25 @@ impl AdminService {
     ) -> Result<ObjectResponse<FeatureEntitlementListItem>, ApiError> {
         require_high_risk_admin_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::AdminFeatureEntitlementsManage,
         )?;
-        let entitlement = self
-            .state
-            .update_feature_entitlement(
-                key,
-                payload.enabled,
-                ctx.user_id,
-                Some(ctx.request_id.clone()),
+        let entitlement = hms_db::admin::update_feature_entitlement(
+            self.pool(),
+            self.facility_id(),
+            key,
+            payload.enabled,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "feature_entitlement_update_failed",
+                "Feature entitlement could not be updated.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "feature_entitlement_update_failed",
-                    "Feature entitlement could not be updated.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
+        })?
+        .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
         Ok(object(entitlement))
     }
 
@@ -227,20 +229,24 @@ impl AdminService {
     ) -> Result<ObjectResponse<FeatureEntitlementListItem>, ApiError> {
         require_high_risk_admin_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::AdminFeatureEntitlementsManage,
         )?;
-        let entitlement = self
-            .state
-            .delete_feature_entitlement(key, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "feature_entitlement_delete_failed",
-                    "Feature entitlement override could not be removed.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
+        let entitlement = hms_db::admin::delete_feature_entitlement(
+            self.pool(),
+            self.facility_id(),
+            key,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "feature_entitlement_delete_failed",
+                "Feature entitlement override could not be removed.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
         Ok(object(entitlement))
     }
 

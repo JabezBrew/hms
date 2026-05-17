@@ -19,13 +19,12 @@ use hms_db::ward::{
 use hms_domain::admin::{
     AuditEventListItem, CommitteeListItem, CreateCommitteeRequest, CreateDelegationRequest,
     CreateOrganizationUnitRequest, CreatePositionRequest, CreatePositionTemplateRequest,
-    CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem, OrgUnitType,
-    OrganizationUnitListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
-    StaffDirectoryItem, StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
+    CreateStaffRequest, DelegationListItem, OrgUnitType, OrganizationUnitListItem,
+    PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
+    StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
-use hms_domain::deployment::FeatureKey;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -691,44 +690,6 @@ impl AppState {
                 org_unit_id: payload.org_unit_id,
                 template_id: payload.template_id,
             },
-        )
-        .await
-    }
-
-    pub async fn list_feature_entitlements(&self) -> Result<Vec<FeatureEntitlementListItem>> {
-        hms_db::admin::list_feature_entitlements(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn update_feature_entitlement(
-        &self,
-        feature: FeatureKey,
-        enabled: bool,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<FeatureEntitlementListItem>> {
-        hms_db::admin::update_feature_entitlement(
-            &self.inner.pool,
-            self.facility_id(),
-            feature,
-            enabled,
-            actor_user_id,
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn delete_feature_entitlement(
-        &self,
-        feature: FeatureKey,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<FeatureEntitlementListItem>> {
-        hms_db::admin::delete_feature_entitlement(
-            &self.inner.pool,
-            self.facility_id(),
-            feature,
-            actor_user_id,
-            request_id,
         )
         .await
     }
