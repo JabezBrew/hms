@@ -10,8 +10,8 @@ use hms_db::admin::{
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::billing::{
-    BillingCursor, CashSessionFilters, ClaimContext, InvoiceContext, NewCashSession, NewClaim,
-    NewInvoice, NewNhisBatch, NewPayment, NewRemittanceImport,
+    BillingCursor, ClaimContext, InvoiceContext, NewClaim, NewInvoice, NewNhisBatch, NewPayment,
+    NewRemittanceImport,
 };
 use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
@@ -40,8 +40,7 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
-    BillingDashboardSummary, CashDrawerListItem, CashSessionListItem, ClaimListItem,
-    CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem, PaymentListItem,
+    ClaimListItem, InvoiceListItem, NhisBatchExport, NhisBatchListItem, PaymentListItem,
     PaymentMethod, ReceiptListItem, RemittanceImportListItem,
 };
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -1449,10 +1448,6 @@ impl AppState {
         hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
     }
 
-    pub async fn billing_dashboard_summary(&self) -> Result<BillingDashboardSummary> {
-        hms_db::billing::billing_dashboard_summary(&self.inner.pool, self.facility_id()).await
-    }
-
     pub async fn list_billing_invoices(
         &self,
         patient_id: Option<Uuid>,
@@ -1563,65 +1558,6 @@ impl AppState {
     ) -> Result<Option<ReceiptListItem>> {
         hms_db::billing::get_receipt_by_payment(&self.inner.pool, self.facility_id(), payment_id)
             .await
-    }
-
-    pub async fn list_cash_drawers(&self) -> Result<Vec<CashDrawerListItem>> {
-        hms_db::billing::list_cash_drawers(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_cash_sessions(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-        filters: CashSessionFilters,
-    ) -> Result<Vec<CashSessionListItem>> {
-        hms_db::billing::list_cash_sessions(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            filters,
-        )
-        .await
-    }
-
-    pub async fn get_cash_session(&self, session_id: Uuid) -> Result<Option<CashSessionListItem>> {
-        hms_db::billing::get_cash_session(&self.inner.pool, self.facility_id(), session_id).await
-    }
-
-    pub async fn open_cash_session(
-        &self,
-        drawer_id: Uuid,
-        opening_float_minor: i64,
-        actor_user_id: Uuid,
-    ) -> Result<CashSessionListItem> {
-        hms_db::billing::open_cash_session(
-            &self.inner.pool,
-            NewCashSession {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                drawer_id,
-                opening_float_minor,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn close_cash_session(
-        &self,
-        session_id: Uuid,
-        payload: CloseCashSessionRequest,
-        actor_user_id: Uuid,
-    ) -> Result<Option<CashSessionListItem>> {
-        hms_db::billing::close_cash_session(
-            &self.inner.pool,
-            self.facility_id(),
-            session_id,
-            payload.counted_cash_minor,
-            actor_user_id,
-        )
-        .await
     }
 
     pub async fn list_nhis_claims(

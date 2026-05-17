@@ -1,4 +1,4 @@
-use hms_db::billing::CashSessionFilters;
+use hms_db::billing::{CashSessionFilters, NewCashSession};
 use hms_domain::billing::{
     CashDrawerListItem, CashSessionListItem, CashSessionListQuery, CloseCashSessionRequest,
     OpenCashSessionRequest,
@@ -21,17 +21,27 @@ impl CashControlService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_cash_drawers(
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ListResponse<CashDrawerListItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
-        let drawers = self.state.list_cash_drawers().await.map_err(|_| {
-            ApiError::conflict(
-                "cash_drawer_list_failed",
-                "Cash drawers could not be loaded.",
-            )
-        })?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let drawers = hms_db::billing::list_cash_drawers(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "cash_drawer_list_failed",
+                    "Cash drawers could not be loaded.",
+                )
+            })?;
 
         Ok(common::static_list(drawers))
     }
@@ -41,24 +51,24 @@ impl CashControlService {
         ctx: &hms_access::RequestContext,
         query: CashSessionListQuery,
     ) -> Result<ListResponse<CashSessionListItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
         let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
-        let rows = self
-            .state
-            .list_cash_sessions(
-                cursor,
-                page_size as i64 + 1,
-                CashSessionFilters {
-                    status: query.status,
-                },
+        let rows = hms_db::billing::list_cash_sessions(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            CashSessionFilters {
+                status: query.status,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "cash_session_list_failed",
+                "Cash sessions could not be loaded.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "cash_session_list_failed",
-                    "Cash sessions could not be loaded.",
-                )
-            })?;
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.opened_at, item.id)
@@ -70,10 +80,8 @@ impl CashControlService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<CashSessionListItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
-        let session = self
-            .state
-            .get_cash_session(id)
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let session = hms_db::billing::get_cash_session(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -93,22 +101,25 @@ impl CashControlService {
         ctx: &hms_access::RequestContext,
         payload: OpenCashSessionRequest,
     ) -> Result<ObjectResponse<CashSessionListItem>, ApiError> {
-        common::require_billing_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::BillingManage,
-        )?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingManage)?;
         common::require_non_negative(payload.opening_float_minor, "opening_float_minor")?;
-        let session = self
-            .state
-            .open_cash_session(payload.drawer_id, payload.opening_float_minor, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "cash_session_open_failed",
-                    "Cash session could not be opened.",
-                )
-            })?;
+        let session = hms_db::billing::open_cash_session(
+            self.pool(),
+            NewCashSession {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                drawer_id: payload.drawer_id,
+                opening_float_minor: payload.opening_float_minor,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "cash_session_open_failed",
+                "Cash session could not be opened.",
+            )
+        })?;
 
         Ok(object(session))
     }
@@ -119,25 +130,25 @@ impl CashControlService {
         id: Uuid,
         payload: CloseCashSessionRequest,
     ) -> Result<ObjectResponse<CashSessionListItem>, ApiError> {
-        common::require_billing_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::BillingManage,
-        )?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingManage)?;
         common::require_non_negative(payload.counted_cash_minor, "counted_cash_minor")?;
-        let session = self
-            .state
-            .close_cash_session(id, payload, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "cash_session_close_failed",
-                    "Cash session could not be closed.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("cash_session_not_found", "Open cash session was not found.")
-            })?;
+        let session = hms_db::billing::close_cash_session(
+            self.pool(),
+            self.facility_id(),
+            id,
+            payload.counted_cash_minor,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "cash_session_close_failed",
+                "Cash session could not be closed.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("cash_session_not_found", "Open cash session was not found.")
+        })?;
 
         Ok(object(session))
     }
