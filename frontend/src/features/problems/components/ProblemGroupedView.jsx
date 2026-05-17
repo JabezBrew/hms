@@ -1,4 +1,8 @@
-import { ChevronRight, FileText, Pill, FlaskConical, CalendarDays } from 'lucide-react';
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

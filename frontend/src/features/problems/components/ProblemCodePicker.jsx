@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Search } from 'lucide-react';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
