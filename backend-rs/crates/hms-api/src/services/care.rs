@@ -2,9 +2,10 @@ use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::CareCursor;
 use hms_domain::care::{
-    AppointmentListItem, AppointmentListQuery, CheckInVisitRequest, ClinicListItem,
-    CreateAppointmentRequest, CreateClinicRequest, CursorListQuery, UpdateAppointmentRequest,
-    UpdateClinicRequest, VisitListItem, VisitListQuery, VisitStatus,
+    AppointmentListItem, AppointmentListQuery, AssignTriageRequest, CheckInVisitRequest,
+    ClinicListItem, CreateAppointmentRequest, CreateClinicRequest, CreateTriageRequest,
+    CursorListQuery, TriageAssessmentRequest, TriageListItem, TriageListQuery, TriageStatus,
+    UpdateAppointmentRequest, UpdateClinicRequest, VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -17,6 +18,7 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
+const MAX_TRIAGE_NOTES_LEN: usize = 4_000;
 const MAX_CLINIC_CODE_LEN: usize = 48;
 const MAX_CLINIC_NAME_LEN: usize = 160;
 
@@ -472,6 +474,169 @@ impl CareService {
 
         Ok(object(updated))
     }
+
+    pub async fn list_triage(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: TriageListQuery,
+    ) -> Result<ListResponse<TriageListItem>, ApiError> {
+        require_workflow_list_access(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let (cursor, page_size) = page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let rows = self
+            .state
+            .list_triage(cursor, page_size as i64 + 1, query.status, query.acuity)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("triage_list_failed", "Triage queue could not be loaded.")
+            })?;
+
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn create_triage(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateTriageRequest,
+    ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let visit = load_visit_for_access(&self.state, ctx, payload.visit_id).await?;
+        let triage = self
+            .state
+            .create_triage(
+                payload.visit_id,
+                visit.patient_id,
+                payload.acuity,
+                ctx.user_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict("triage_create_failed", "Triage item could not be created.")
+            })?;
+
+        Ok(object(triage))
+    }
+
+    pub async fn get_triage(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let triage = load_triage_for_access(&self.state, ctx, id).await?;
+
+        Ok(object(triage))
+    }
+
+    pub async fn assess_triage(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        mut payload: TriageAssessmentRequest,
+    ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let _existing = load_triage_for_access(&self.state, ctx, id).await?;
+        if let Some(notes) = payload.notes.take() {
+            let notes = notes.trim().to_owned();
+            if notes.len() > MAX_TRIAGE_NOTES_LEN {
+                return Err(ApiError::bad_request(
+                    "invalid_triage_notes",
+                    "Triage notes are too long.",
+                ));
+            }
+            payload.notes = if notes.is_empty() { None } else { Some(notes) };
+        }
+        let triage = self
+            .state
+            .assess_triage(id, payload)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "triage_assessment_failed",
+                    "Triage assessment could not be saved.",
+                )
+            })?
+            .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+
+        Ok(object(triage))
+    }
+
+    pub async fn assign_triage(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: AssignTriageRequest,
+    ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let _existing = load_triage_for_access(&self.state, ctx, id).await?;
+        let triage = self
+            .state
+            .assign_triage(id, payload.assigned_to_user_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("triage_assign_failed", "Triage item could not be assigned.")
+            })?
+            .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+
+        Ok(object(triage))
+    }
+
+    pub async fn cancel_triage(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<TriageListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let existing = load_triage_for_access(&self.state, ctx, id).await?;
+        if existing.status != TriageStatus::Waiting {
+            return Err(ApiError::conflict(
+                "triage_cancel_invalid_status",
+                "Only waiting triage entries can be cancelled.",
+            ));
+        }
+
+        let triage = self
+            .state
+            .cancel_triage(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "triage_cancel_failed",
+                    "Triage item could not be cancelled.",
+                )
+            })?
+            .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+
+        Ok(object(triage))
+    }
 }
 
 impl AppState {
@@ -515,6 +680,20 @@ async fn load_visit_for_access(
         .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
     let _patient = load_patient_for_access(state, ctx, visit.patient_id).await?;
     Ok(visit)
+}
+
+async fn load_triage_for_access(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    triage_id: Uuid,
+) -> Result<TriageListItem, ApiError> {
+    let triage = state
+        .get_triage(triage_id)
+        .await
+        .map_err(|_| ApiError::conflict("triage_load_failed", "Triage item could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("triage_not_found", "Triage item was not found."))?;
+    let _patient = load_patient_for_access(state, ctx, triage.patient_id).await?;
+    Ok(triage)
 }
 
 async fn load_patient_for_access(
