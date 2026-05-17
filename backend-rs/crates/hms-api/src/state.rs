@@ -16,10 +16,9 @@ use hms_domain::capabilities::{deployment_capabilities_from_features, Deployment
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
-    DischargeCaseListItem, FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
-    MonitoringEventKind, MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity,
-    NursingTaskListItem, NursingTaskType, PatientVitalsListItem, TreatmentSheetListItem,
-    WardStockRequestListItem,
+    FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
+    MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity, NursingTaskListItem,
+    NursingTaskType, PatientVitalsListItem, TreatmentSheetListItem, WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -543,54 +542,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_discharge_cases(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<DischargeCaseListItem>> {
-        hms_db::ward::list_discharge_cases(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn request_discharge(
-        &self,
-        admission: &AdmissionContext,
-        actor_user_id: Uuid,
-    ) -> Result<DischargeCaseListItem> {
-        hms_db::ward::request_discharge(
-            &self.inner.pool,
-            Uuid::new_v4(),
-            self.facility_id(),
-            admission,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn complete_discharge(
-        &self,
-        discharge_case_id: Uuid,
-    ) -> Result<Option<DischargeCaseListItem>> {
-        hms_db::ward::complete_discharge(&self.inner.pool, self.facility_id(), discharge_case_id)
-            .await
-    }
-
-    pub async fn cancel_discharge(
-        &self,
-        discharge_case_id: Uuid,
-    ) -> Result<Option<DischargeCaseListItem>> {
-        hms_db::ward::cancel_discharge(&self.inner.pool, self.facility_id(), discharge_case_id)
-            .await
-    }
-
-    pub async fn get_discharge_case(
-        &self,
-        discharge_case_id: Uuid,
-    ) -> Result<Option<DischargeCaseListItem>> {
-        hms_db::ward::get_discharge_case(&self.inner.pool, self.facility_id(), discharge_case_id)
-            .await
     }
 
     pub async fn list_nursing_tasks(

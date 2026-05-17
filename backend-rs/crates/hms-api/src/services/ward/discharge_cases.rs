@@ -33,13 +33,16 @@ impl DischargeCasesService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_discharge_cases(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("discharge_list_failed", "Discharges could not be loaded.")
-            })?;
+        let rows = hms_db::ward::list_discharge_cases(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("discharge_list_failed", "Discharges could not be loaded.")
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.requested_at, item.id)
@@ -56,16 +59,15 @@ impl DischargeCasesService {
             self.state.facility_id(),
             PermissionCode::AdmissionManage,
         )?;
-        let discharge = self
-            .state
-            .get_discharge_case(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("discharge_not_found", "Discharge was not found.")
-            })?;
+        let discharge =
+            hms_db::ward::get_discharge_case(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, discharge.patient_id).await?;
         Ok(object(discharge))
@@ -83,16 +85,20 @@ impl DischargeCasesService {
         )?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
-        let discharge = self
-            .state
-            .request_discharge(&admission, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "discharge_create_failed",
-                    "Discharge could not be requested.",
-                )
-            })?;
+        let discharge = hms_db::ward::request_discharge(
+            self.state.db_pool(),
+            Uuid::new_v4(),
+            self.state.facility_id(),
+            &admission,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "discharge_create_failed",
+                "Discharge could not be requested.",
+            )
+        })?;
 
         Ok(object(discharge))
     }
@@ -112,16 +118,15 @@ impl DischargeCasesService {
             payload.reason.as_deref(),
             common::MAX_DISCHARGE_REASON_LEN,
         )?;
-        let existing = self
-            .state
-            .get_discharge_case(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("discharge_not_found", "Discharge was not found.")
-            })?;
+        let existing =
+            hms_db::ward::get_discharge_case(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
         if existing.status == DischargeStatus::Completed {
@@ -130,22 +135,21 @@ impl DischargeCasesService {
                 "Completed discharges cannot be cancelled.",
             ));
         }
-        let discharge = self
-            .state
-            .cancel_discharge(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "discharge_cancel_failed",
-                    "Discharge could not be cancelled.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::conflict(
-                    "discharge_cancel_invalid_status",
-                    "Discharge could not be cancelled in its current state.",
-                )
-            })?;
+        let discharge =
+            hms_db::ward::cancel_discharge(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "discharge_cancel_failed",
+                        "Discharge could not be cancelled.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::conflict(
+                        "discharge_cancel_invalid_status",
+                        "Discharge could not be cancelled in its current state.",
+                    )
+                })?;
 
         Ok(object(discharge))
     }
@@ -160,31 +164,29 @@ impl DischargeCasesService {
             self.state.facility_id(),
             PermissionCode::AdmissionManage,
         )?;
-        let existing = self
-            .state
-            .get_discharge_case(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("discharge_not_found", "Discharge was not found.")
-            })?;
+        let existing =
+            hms_db::ward::get_discharge_case(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let discharge = self
-            .state
-            .complete_discharge(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "discharge_complete_failed",
-                    "Discharge could not be completed.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("discharge_not_found", "Discharge was not found.")
-            })?;
+        let discharge =
+            hms_db::ward::complete_discharge(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict(
+                        "discharge_complete_failed",
+                        "Discharge could not be completed.",
+                    )
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
 
         Ok(object(discharge))
     }
