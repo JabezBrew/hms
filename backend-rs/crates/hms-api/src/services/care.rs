@@ -2,8 +2,9 @@ use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::CareCursor;
 use hms_domain::care::{
-    AppointmentListItem, AppointmentListQuery, ClinicListItem, CreateAppointmentRequest,
-    CreateClinicRequest, CursorListQuery, UpdateAppointmentRequest, UpdateClinicRequest,
+    AppointmentListItem, AppointmentListQuery, CheckInVisitRequest, ClinicListItem,
+    CreateAppointmentRequest, CreateClinicRequest, CursorListQuery, UpdateAppointmentRequest,
+    UpdateClinicRequest, VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -302,6 +303,175 @@ impl CareService {
 
         Ok(object(appointment))
     }
+
+    pub async fn list_visits(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: VisitListQuery,
+    ) -> Result<ListResponse<VisitListItem>, ApiError> {
+        require_workflow_list_access(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::AppointmentView,
+        )?;
+        let clinic_id = query.clinic_id;
+        let (cursor, page_size) = page_request(CursorListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let rows = self
+            .state
+            .list_visits(clinic_id, cursor, page_size as i64 + 1)
+            .await
+            .map_err(|_| ApiError::conflict("visit_list_failed", "Visits could not be loaded."))?;
+
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.checked_in_at, item.id)
+        }))
+    }
+
+    pub async fn get_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::AppointmentView,
+        )?;
+        Ok(object(load_visit_for_access(&self.state, ctx, id).await?))
+    }
+
+    pub async fn check_in_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CheckInVisitRequest,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        require_action_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::AppointmentManage,
+        )?;
+        let _patient = load_patient_for_access(&self.state, ctx, payload.patient_id).await?;
+        let visit = self
+            .state
+            .check_in_visit(
+                payload.patient_id,
+                payload.appointment_id,
+                payload.clinic_id,
+                ctx.user_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict("visit_check_in_failed", "Visit could not be checked in.")
+            })?;
+
+        Ok(object(visit))
+    }
+
+    pub async fn call_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        self.update_visit_with_access(
+            ctx,
+            id,
+            VisitStatus::Called,
+            PermissionCode::AppointmentManage,
+        )
+        .await
+    }
+
+    pub async fn start_visit_consultation(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        self.update_visit_with_access(
+            ctx,
+            id,
+            VisitStatus::InConsultation,
+            PermissionCode::EncounterManage,
+        )
+        .await
+    }
+
+    pub async fn hold_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        self.update_visit_with_access(
+            ctx,
+            id,
+            VisitStatus::OnHold,
+            PermissionCode::EncounterManage,
+        )
+        .await
+    }
+
+    pub async fn ready_checkout_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        self.update_visit_with_access(
+            ctx,
+            id,
+            VisitStatus::ReadyCheckout,
+            PermissionCode::EncounterManage,
+        )
+        .await
+    }
+
+    pub async fn checkout_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        self.update_visit_with_access(
+            ctx,
+            id,
+            VisitStatus::CheckedOut,
+            PermissionCode::AppointmentManage,
+        )
+        .await
+    }
+
+    pub async fn no_show_visit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        self.update_visit_with_access(
+            ctx,
+            id,
+            VisitStatus::NoShow,
+            PermissionCode::AppointmentManage,
+        )
+        .await
+    }
+
+    async fn update_visit_with_access(
+        &self,
+        ctx: &hms_access::RequestContext,
+        visit_id: Uuid,
+        status: VisitStatus,
+        permission: PermissionCode,
+    ) -> Result<ObjectResponse<VisitListItem>, ApiError> {
+        require_action_permission(ctx, self.state.facility_id(), permission)?;
+        let _visit = load_visit_for_access(&self.state, ctx, visit_id).await?;
+        let updated = self
+            .state
+            .update_visit_status(visit_id, status)
+            .await
+            .map_err(|_| ApiError::conflict("visit_update_failed", "Visit could not be updated."))?
+            .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+
+        Ok(object(updated))
+    }
 }
 
 impl AppState {
@@ -331,6 +501,20 @@ async fn load_appointment_for_access(
         })?;
     let _patient = load_patient_for_access(state, ctx, appointment.patient_id).await?;
     Ok(appointment)
+}
+
+async fn load_visit_for_access(
+    state: &AppState,
+    ctx: &hms_access::RequestContext,
+    visit_id: Uuid,
+) -> Result<VisitListItem, ApiError> {
+    let visit = state
+        .get_visit(visit_id)
+        .await
+        .map_err(|_| ApiError::conflict("visit_load_failed", "Visit could not be loaded."))?
+        .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
+    let _patient = load_patient_for_access(state, ctx, visit.patient_id).await?;
+    Ok(visit)
 }
 
 async fn load_patient_for_access(

@@ -9,7 +9,7 @@ use hms_domain::care::{
     CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
     EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageListQuery,
     TriageStatus, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
-    VisitListItem, VisitListQuery, VisitStatus,
+    VisitListItem, VisitListQuery,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -291,20 +291,7 @@ pub async fn list_visits(
     RequestContext(user): RequestContext,
     Query(query): Query<VisitListQuery>,
 ) -> Result<Json<ListResponse<VisitListItem>>, ApiError> {
-    require_workflow_list_access(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let clinic_id = query.clinic_id;
-    let (cursor, page_size) = page_request(CursorListQuery {
-        cursor: query.cursor,
-        limit: query.limit,
-    })?;
-    let rows = state
-        .list_visits(clinic_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("visit_list_failed", "Visits could not be loaded."))?;
-
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.checked_in_at, item.id)
-    })))
+    Ok(Json(state.care_service().list_visits(&user, query).await?))
 }
 
 #[utoipa::path(
@@ -326,9 +313,7 @@ pub async fn get_visit(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    require_action_permission(&user, state.facility_id(), PermissionCode::AppointmentView)?;
-    let visit = load_visit_for_access(&state, &user, id).await?;
-    Ok(Json(object(visit)))
+    Ok(Json(state.care_service().get_visit(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -349,25 +334,9 @@ pub async fn check_in_visit(
     RequestContext(user): RequestContext,
     Json(payload): Json<CheckInVisitRequest>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    require_action_permission(
-        &user,
-        state.facility_id(),
-        PermissionCode::AppointmentManage,
-    )?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    let visit = state
-        .check_in_visit(
-            payload.patient_id,
-            payload.appointment_id,
-            payload.clinic_id,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("visit_check_in_failed", "Visit could not be checked in.")
-        })?;
-
-    Ok(Json(object(visit)))
+    Ok(Json(
+        state.care_service().check_in_visit(&user, payload).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -389,14 +358,7 @@ pub async fn call_visit(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    update_visit_with_access(
-        &state,
-        &user,
-        id,
-        VisitStatus::Called,
-        PermissionCode::AppointmentManage,
-    )
-    .await
+    Ok(Json(state.care_service().call_visit(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -418,14 +380,12 @@ pub async fn start_visit_consultation(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    update_visit_with_access(
-        &state,
-        &user,
-        id,
-        VisitStatus::InConsultation,
-        PermissionCode::EncounterManage,
-    )
-    .await
+    Ok(Json(
+        state
+            .care_service()
+            .start_visit_consultation(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -447,14 +407,7 @@ pub async fn hold_visit(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    update_visit_with_access(
-        &state,
-        &user,
-        id,
-        VisitStatus::OnHold,
-        PermissionCode::EncounterManage,
-    )
-    .await
+    Ok(Json(state.care_service().hold_visit(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -476,14 +429,9 @@ pub async fn ready_checkout_visit(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    update_visit_with_access(
-        &state,
-        &user,
-        id,
-        VisitStatus::ReadyCheckout,
-        PermissionCode::EncounterManage,
-    )
-    .await
+    Ok(Json(
+        state.care_service().ready_checkout_visit(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -505,14 +453,7 @@ pub async fn checkout_visit(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    update_visit_with_access(
-        &state,
-        &user,
-        id,
-        VisitStatus::CheckedOut,
-        PermissionCode::AppointmentManage,
-    )
-    .await
+    Ok(Json(state.care_service().checkout_visit(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -534,14 +475,7 @@ pub async fn no_show_visit(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    update_visit_with_access(
-        &state,
-        &user,
-        id,
-        VisitStatus::NoShow,
-        PermissionCode::AppointmentManage,
-    )
-    .await
+    Ok(Json(state.care_service().no_show_visit(&user, id).await?))
 }
 
 #[utoipa::path(
@@ -1084,24 +1018,6 @@ pub async fn create_care_team_assignment(
         })?;
 
     Ok(Json(object(assignment)))
-}
-
-async fn update_visit_with_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    visit_id: Uuid,
-    status: VisitStatus,
-    permission: PermissionCode,
-) -> Result<Json<ObjectResponse<VisitListItem>>, ApiError> {
-    require_action_permission(user, state.facility_id(), permission)?;
-    let _visit = load_visit_for_access(state, user, visit_id).await?;
-    let updated = state
-        .update_visit_status(visit_id, status)
-        .await
-        .map_err(|_| ApiError::conflict("visit_update_failed", "Visit could not be updated."))?
-        .ok_or_else(|| ApiError::not_found("visit_not_found", "Visit was not found."))?;
-
-    Ok(Json(object(updated)))
 }
 
 async fn update_encounter_with_access(
