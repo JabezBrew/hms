@@ -1,9 +1,6 @@
-use std::collections::HashSet;
-
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hms_access::require_patient_demographics_access;
 use hms_db::billing::{BillingCursor, BillingRuleFilters, CashSessionFilters};
 use hms_domain::billing::{
     BillingDashboardSummary, BillingListQuery, BillingRuleListItem, BillingRuleListQuery,
@@ -14,7 +11,6 @@ use hms_domain::billing::{
     RemittanceImportListItem, ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
 };
 use hms_domain::deployment::PermissionCode;
-use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -26,7 +22,6 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
-const MAX_TEXT_LEN: usize = 160;
 
 #[utoipa::path(get, path = "/api/v2/billing/service-catalog", operation_id = "getBillingServiceCatalog", tag = "billing", security(("bearerAuth" = [])), params(ServiceCatalogQuery), responses((status = 200, body = ListResponse<ServiceCatalogItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_service_catalog(
@@ -143,19 +138,13 @@ pub async fn list_invoices(
     RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let patient_id = query.patient_id;
-    if let Some(patient_id) = patient_id {
-        let _patient = load_patient_for_access(&state, &user, patient_id).await?;
-    }
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_billing_invoices(patient_id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("invoice_list_failed", "Invoices could not be loaded."))?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.issued_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_invoices(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/invoices/{id}", operation_id = "getBillingInvoiceById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Invoice id")), responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -164,15 +153,13 @@ pub async fn get_invoice(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<InvoiceListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let invoice = state
-        .get_billing_invoice(id)
-        .await
-        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, invoice.patient_id).await?;
-
-    Ok(Json(object(invoice)))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .get_invoice(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/billing/invoices", operation_id = "postBillingInvoices", tag = "billing", security(("bearerAuth" = [])), request_body = CreateInvoiceRequest, responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -181,19 +168,13 @@ pub async fn create_invoice(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateInvoiceRequest>,
 ) -> Result<Json<ObjectResponse<InvoiceListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingManage)?;
-    require_positive(payload.quantity, "quantity")?;
-    let _patient = load_patient_for_access(&state, &user, payload.patient_id).await?;
-    let invoice = state
-        .create_billing_invoice(
-            payload.patient_id,
-            payload.service_price_id,
-            payload.quantity,
-            user.id,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("invoice_create_failed", "Invoice could not be saved."))?;
-    Ok(Json(object(invoice)))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .create_invoice(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/payments", operation_id = "getBillingPayments", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<PaymentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -202,15 +183,13 @@ pub async fn list_payments(
     RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<PaymentListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_billing_payments(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("payment_list_failed", "Payments could not be loaded."))?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.paid_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_payments(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/billing/payments", operation_id = "postBillingPayments", tag = "billing", security(("bearerAuth" = [])), request_body = CreatePaymentRequest, responses((status = 200, body = ObjectResponse<PaymentListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -219,25 +198,13 @@ pub async fn create_payment(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreatePaymentRequest>,
 ) -> Result<Json<ObjectResponse<PaymentListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingManage)?;
-    require_positive(payload.amount_minor, "amount_minor")?;
-    let invoice = state
-        .billing_invoice_context(payload.invoice_id)
-        .await
-        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, invoice.patient_id).await?;
-    let payment = state
-        .create_billing_payment(
-            payload.invoice_id,
-            payload.amount_minor,
-            payload.method,
-            payload.cash_session_id,
-            user.id,
-        )
-        .await
-        .map_err(|_| ApiError::conflict("payment_create_failed", "Payment could not be saved."))?;
-    Ok(Json(object(payment)))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .create_payment(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/receipts", operation_id = "getBillingReceipts", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -246,15 +213,13 @@ pub async fn list_receipts(
     RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<ReceiptListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_billing_receipts(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("receipt_list_failed", "Receipts could not be loaded."))?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.issued_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .list_receipts(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/receipts/{id}", operation_id = "getBillingReceiptById", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Receipt id")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -263,15 +228,13 @@ pub async fn get_receipt(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let receipt = state
-        .get_billing_receipt(id)
-        .await
-        .map_err(|_| ApiError::conflict("receipt_load_failed", "Receipt could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("receipt_not_found", "Receipt was not found."))?;
-    require_receipt_patient_access(&state, &user, receipt.invoice_id).await?;
-
-    Ok(Json(object(receipt)))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .get_receipt(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/receipts/by-number/{receipt_number}", operation_id = "getBillingReceiptByNumber", tag = "billing", security(("bearerAuth" = [])), params(("receipt_number" = String, Path, description = "Receipt number")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -280,15 +243,13 @@ pub async fn get_receipt_by_number(
     RequestContext(user): RequestContext,
     Path(receipt_number): Path<String>,
 ) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let receipt = state
-        .get_billing_receipt_by_number(&receipt_number)
-        .await
-        .map_err(|_| ApiError::conflict("receipt_load_failed", "Receipt could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("receipt_not_found", "Receipt was not found."))?;
-    require_receipt_patient_access(&state, &user, receipt.invoice_id).await?;
-
-    Ok(Json(object(receipt)))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .get_receipt_by_number(&user, receipt_number)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/payments/{id}/receipt", operation_id = "getBillingReceiptByPaymentId", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Payment id")), responses((status = 200, body = ObjectResponse<ReceiptListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -297,15 +258,13 @@ pub async fn get_receipt_by_payment(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ReceiptListItem>>, ApiError> {
-    require_billing_access(&user, state.facility_id(), PermissionCode::BillingView)?;
-    let receipt = state
-        .get_billing_receipt_by_payment(id)
-        .await
-        .map_err(|_| ApiError::conflict("receipt_load_failed", "Receipt could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("receipt_not_found", "Receipt was not found."))?;
-    require_receipt_patient_access(&state, &user, receipt.invoice_id).await?;
-
-    Ok(Json(object(receipt)))
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .get_receipt_by_payment(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/billing/cash-drawers", operation_id = "getCashDrawers", tag = "billing", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<CashDrawerListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -418,15 +377,13 @@ pub async fn list_claims(
     RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<ClaimListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_nhis_claims(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| ApiError::conflict("claim_list_failed", "Claims could not be loaded."))?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_claims(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/nhis/claims/{id}", operation_id = "getNhisClaimById", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS claim id")), responses((status = 200, body = ObjectResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -435,15 +392,9 @@ pub async fn get_claim(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<ClaimListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    let claim = state
-        .get_nhis_claim(id)
-        .await
-        .map_err(|_| ApiError::conflict("claim_load_failed", "Claim could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("claim_not_found", "Claim was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, claim.patient_id).await?;
-
-    Ok(Json(object(claim)))
+    Ok(Json(
+        state.billing_services().nhis().get_claim(&user, id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/nhis/claims", operation_id = "postNhisClaims", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateClaimRequest, responses((status = 200, body = ObjectResponse<ClaimListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -452,18 +403,13 @@ pub async fn create_claim(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateClaimRequest>,
 ) -> Result<Json<ObjectResponse<ClaimListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    let invoice = state
-        .billing_invoice_context(payload.invoice_id)
-        .await
-        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
-    let _patient = load_patient_for_access(&state, &user, invoice.patient_id).await?;
-    let claim = state
-        .create_nhis_claim(payload.invoice_id, user.id)
-        .await
-        .map_err(|_| ApiError::conflict("claim_create_failed", "Claim could not be saved."))?;
-    Ok(Json(object(claim)))
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .create_claim(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/nhis/batches", operation_id = "getNhisBatches", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<NhisBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -472,20 +418,13 @@ pub async fn list_batches(
     RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<NhisBatchListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_nhis_batches(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nhis_batch_list_failed",
-                "NHIS batches could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_batches(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/nhis/batches", operation_id = "postNhisBatches", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateNhisBatchRequest, responses((status = 200, body = ObjectResponse<NhisBatchListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -494,28 +433,13 @@ pub async fn create_batch(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateNhisBatchRequest>,
 ) -> Result<Json<ObjectResponse<NhisBatchListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    validate_claim_ids(&payload.claim_ids)?;
-    let contexts = state
-        .nhis_claim_contexts(&payload.claim_ids)
-        .await
-        .map_err(|_| ApiError::conflict("claim_load_failed", "Claims could not be loaded."))?;
-    if contexts.len() != payload.claim_ids.len() {
-        return Err(ApiError::not_found(
-            "claim_not_found",
-            "One or more claims were not found.",
-        ));
-    }
-    for context in contexts {
-        let _patient = load_patient_for_access(&state, &user, context.patient_id).await?;
-    }
-    let batch = state
-        .create_nhis_batch(payload.claim_ids, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("nhis_batch_create_failed", "NHIS batch could not be saved.")
-        })?;
-    Ok(Json(object(batch)))
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .create_batch(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/nhis/batches/{id}/export", operation_id = "postNhisBatchExport", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS batch id")), responses((status = 200, body = ObjectResponse<NhisBatchExport>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -524,18 +448,13 @@ pub async fn export_batch(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<NhisBatchExport>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    let exported = state
-        .export_nhis_batch(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "nhis_batch_export_failed",
-                "NHIS batch could not be exported.",
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found("nhis_batch_not_found", "NHIS batch was not found."))?;
-    Ok(Json(object(exported)))
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .export_batch(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/nhis/remittance-imports", operation_id = "getNhisRemittanceImports", tag = "nhis", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<RemittanceImportListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -544,20 +463,13 @@ pub async fn list_remittance_imports(
     RequestContext(user): RequestContext,
     Query(query): Query<BillingListQuery>,
 ) -> Result<Json<ListResponse<RemittanceImportListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_remittance_imports(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "remittance_list_failed",
-                "Remittance imports could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.imported_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .list_remittance_imports(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/nhis/remittance-imports", operation_id = "postNhisRemittanceImports", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateRemittanceImportRequest, responses((status = 200, body = ObjectResponse<RemittanceImportListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -566,43 +478,13 @@ pub async fn create_remittance_import(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateRemittanceImportRequest>,
 ) -> Result<Json<ObjectResponse<RemittanceImportListItem>>, ApiError> {
-    require_nhis_access(&user, state.facility_id())?;
-    require_positive(payload.total_paid_minor, "total_paid_minor")?;
-    let reference = normalize_text(payload.reference, "reference")?;
-    let remittance = state
-        .create_remittance_import(
-            payload.batch_id,
-            reference,
-            payload.total_paid_minor,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "remittance_create_failed",
-                "Remittance import could not be saved.",
-            )
-        })?;
-    Ok(Json(object(remittance)))
-}
-
-async fn load_patient_for_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    patient_id: Uuid,
-) -> Result<PatientRecord, ApiError> {
-    let patient = state
-        .get_patient(patient_id)
-        .await
-        .map_err(|_| ApiError::conflict("patient_load_failed", "Patient could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
-    require_patient_demographics_access(user, &patient).map_err(|_| {
-        ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to this patient.",
-        )
-    })?;
-    Ok(patient)
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .create_remittance_import(&user, payload)
+            .await?,
+    ))
 }
 
 fn require_billing_access(
@@ -616,36 +498,6 @@ fn require_billing_access(
             "You do not have permission for this billing action.",
         )
     })
-}
-
-fn require_nhis_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_nhis_access(user, facility_id).map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission for this billing action.",
-        )
-    })
-}
-
-async fn require_receipt_patient_access(
-    state: &AppState,
-    user: &hms_access::RequestContext,
-    invoice_id: Uuid,
-) -> Result<(), ApiError> {
-    let invoice = state
-        .billing_invoice_context(invoice_id)
-        .await
-        .map_err(|_| ApiError::conflict("invoice_load_failed", "Invoice could not be loaded."))?
-        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
-    let _patient = load_patient_for_access(state, user, invoice.patient_id).await?;
-    Ok(())
-}
-
-fn page_request(query: BillingListQuery) -> Result<(Option<BillingCursor>, u8), ApiError> {
-    decode_page(query.cursor.as_deref(), query.limit)
 }
 
 fn cash_session_page_request(
@@ -688,50 +540,6 @@ where
 
 fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
     cursor_list::encode_cursor(occurred_at, id)
-}
-
-fn validate_claim_ids(claim_ids: &[Uuid]) -> Result<(), ApiError> {
-    if claim_ids.is_empty() {
-        return Err(validation_error(
-            "claim_ids",
-            "At least one claim is required.",
-        ));
-    }
-    if claim_ids.len() > MAX_LIMIT as usize {
-        return Err(validation_error(
-            "claim_ids",
-            "Too many claims were supplied.",
-        ));
-    }
-    let unique = claim_ids.iter().collect::<HashSet<_>>();
-    if unique.len() != claim_ids.len() {
-        return Err(validation_error(
-            "claim_ids",
-            "Duplicate claims are not allowed.",
-        ));
-    }
-    Ok(())
-}
-
-fn normalize_text(value: String, field: &'static str) -> Result<String, ApiError> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Err(validation_error(field, "This field is required."));
-    }
-    if value.chars().count() > MAX_TEXT_LEN {
-        return Err(validation_error(field, "This field is too long."));
-    }
-    Ok(value.to_owned())
-}
-
-fn require_positive(value: i64, field: &'static str) -> Result<(), ApiError> {
-    if value <= 0 {
-        return Err(validation_error(
-            field,
-            "This value must be greater than zero.",
-        ));
-    }
-    Ok(())
 }
 
 fn require_non_negative(value: i64, field: &'static str) -> Result<(), ApiError> {
