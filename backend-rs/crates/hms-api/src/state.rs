@@ -6,18 +6,12 @@ use chrono::{DateTime, Utc};
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
-use hms_db::ward::{
-    AdmissionContext, NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
-    NewWardStockRequest, WardCursor,
-};
+use hms_db::ward::{NewWardStockRequest, WardCursor};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
-use hms_domain::ward::{
-    FluidBalanceListItem, MonitoringEventKind, MonitoringEventListItem, NursingAlertListItem,
-    NursingAlertSeverity, PatientVitalsListItem, WardStockRequestListItem,
-};
+use hms_domain::ward::WardStockRequestListItem;
 use hms_events::DomainEventKind;
 use tracing::warn;
 use uuid::Uuid;
@@ -540,177 +534,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_patient_vitals(
-        &self,
-        patient_id: Option<Uuid>,
-        admission_case_id: Option<Uuid>,
-        recorded_since: Option<DateTime<Utc>>,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<PatientVitalsListItem>> {
-        hms_db::ward::list_patient_vitals(
-            &self.inner.pool,
-            self.facility_id(),
-            patient_id,
-            admission_case_id,
-            recorded_since,
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_patient_vitals(
-        &self,
-        admission: &AdmissionContext,
-        recorded_at: DateTime<Utc>,
-        temperature_c: Option<f32>,
-        systolic_bp: Option<i32>,
-        diastolic_bp: Option<i32>,
-        pulse: Option<i32>,
-        respiratory_rate: Option<i32>,
-        oxygen_saturation: Option<i32>,
-        actor_user_id: Uuid,
-    ) -> Result<PatientVitalsListItem> {
-        hms_db::ward::create_patient_vitals(
-            &self.inner.pool,
-            NewPatientVitals {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                recorded_at,
-                temperature_c,
-                systolic_bp,
-                diastolic_bp,
-                pulse,
-                respiratory_rate,
-                oxygen_saturation,
-                recorded_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn list_nursing_alerts(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<NursingAlertListItem>> {
-        hms_db::ward::list_nursing_alerts(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_nursing_alert(
-        &self,
-        admission: &AdmissionContext,
-        severity: NursingAlertSeverity,
-        title: String,
-        actor_user_id: Uuid,
-    ) -> Result<NursingAlertListItem> {
-        hms_db::ward::create_nursing_alert(
-            &self.inner.pool,
-            NewNursingAlert {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                severity,
-                title,
-                created_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn acknowledge_nursing_alert(
-        &self,
-        alert_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<NursingAlertListItem>> {
-        hms_db::ward::acknowledge_nursing_alert(
-            &self.inner.pool,
-            self.facility_id(),
-            alert_id,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn get_nursing_alert(&self, alert_id: Uuid) -> Result<Option<NursingAlertListItem>> {
-        hms_db::ward::get_nursing_alert(&self.inner.pool, self.facility_id(), alert_id).await
-    }
-
-    pub async fn list_monitoring_events(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<MonitoringEventListItem>> {
-        hms_db::ward::list_monitoring_events(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn create_monitoring_event(
-        &self,
-        admission: &AdmissionContext,
-        event_kind: MonitoringEventKind,
-        summary: String,
-        recorded_at: DateTime<Utc>,
-        actor_user_id: Uuid,
-    ) -> Result<MonitoringEventListItem> {
-        hms_db::ward::create_monitoring_event(
-            &self.inner.pool,
-            NewMonitoringEvent {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                event_kind,
-                summary,
-                recorded_at,
-                recorded_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn list_fluid_balance_entries(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<FluidBalanceListItem>> {
-        hms_db::ward::list_fluid_balance_entries(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_fluid_balance_entry(
-        &self,
-        admission: &AdmissionContext,
-        recorded_at: DateTime<Utc>,
-        intake_ml: i32,
-        output_ml: i32,
-        actor_user_id: Uuid,
-    ) -> Result<FluidBalanceListItem> {
-        hms_db::ward::create_fluid_balance_entry(
-            &self.inner.pool,
-            NewFluidBalanceEntry {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                recorded_at,
-                intake_ml,
-                output_ml,
-                recorded_by_user_id: actor_user_id,
-            },
-        )
-        .await
     }
 
     pub async fn list_ward_stock_requests(

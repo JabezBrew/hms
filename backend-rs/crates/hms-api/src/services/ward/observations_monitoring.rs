@@ -1,4 +1,5 @@
 use chrono::Utc;
+use hms_db::ward::{NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
@@ -60,17 +61,17 @@ impl ObservationsMonitoringService {
         })?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_patient_vitals(
-                query.patient_id,
-                query.admission_case_id,
-                recorded_since,
-                page.cursor,
-                fetch_limit,
-            )
-            .await
-            .map_err(|_| ApiError::conflict("vitals_list_failed", "Vitals could not be loaded."))?;
+        let rows = hms_db::ward::list_patient_vitals(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            query.patient_id,
+            query.admission_case_id,
+            recorded_since,
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("vitals_list_failed", "Vitals could not be loaded."))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.recorded_at, item.id)
@@ -90,23 +91,25 @@ impl ObservationsMonitoringService {
         validate_vitals_payload(&payload)?;
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
-        let vitals = self
-            .state
-            .create_patient_vitals(
-                &admission,
-                payload.recorded_at,
-                payload.temperature_c,
-                payload.systolic_bp,
-                payload.diastolic_bp,
-                payload.pulse,
-                payload.respiratory_rate,
-                payload.oxygen_saturation,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("vitals_create_failed", "Vitals could not be recorded.")
-            })?;
+        let vitals = hms_db::ward::create_patient_vitals(
+            self.state.db_pool(),
+            NewPatientVitals {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                admission_case_id: admission.id,
+                patient_id: admission.patient_id,
+                recorded_at: payload.recorded_at,
+                temperature_c: payload.temperature_c,
+                systolic_bp: payload.systolic_bp,
+                diastolic_bp: payload.diastolic_bp,
+                pulse: payload.pulse,
+                respiratory_rate: payload.respiratory_rate,
+                oxygen_saturation: payload.oxygen_saturation,
+                recorded_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("vitals_create_failed", "Vitals could not be recorded."))?;
 
         Ok(object(vitals))
     }
@@ -124,11 +127,14 @@ impl ObservationsMonitoringService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_nursing_alerts(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| ApiError::conflict("alert_list_failed", "Alerts could not be loaded."))?;
+        let rows = hms_db::ward::list_nursing_alerts(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("alert_list_failed", "Alerts could not be loaded."))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
@@ -148,13 +154,20 @@ impl ObservationsMonitoringService {
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
         let title = required_text(payload.title, "title")?;
-        let alert = self
-            .state
-            .create_nursing_alert(&admission, payload.severity, title, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("alert_create_failed", "Alert could not be created.")
-            })?;
+        let alert = hms_db::ward::create_nursing_alert(
+            self.state.db_pool(),
+            NewNursingAlert {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                admission_case_id: admission.id,
+                patient_id: admission.patient_id,
+                severity: payload.severity,
+                title,
+                created_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| ApiError::conflict("alert_create_failed", "Alert could not be created."))?;
 
         Ok(object(alert))
     }
@@ -169,25 +182,27 @@ impl ObservationsMonitoringService {
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let existing = self
-            .state
-            .get_nursing_alert(id)
-            .await
-            .map_err(|_| ApiError::conflict("alert_load_failed", "Alert could not be loaded."))?
-            .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
+        let existing =
+            hms_db::ward::get_nursing_alert(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| ApiError::conflict("alert_load_failed", "Alert could not be loaded."))?
+                .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
         let _patient =
             common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
-        let alert = self
-            .state
-            .acknowledge_nursing_alert(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "alert_acknowledge_failed",
-                    "Alert could not be acknowledged.",
-                )
-            })?
-            .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
+        let alert = hms_db::ward::acknowledge_nursing_alert(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "alert_acknowledge_failed",
+                "Alert could not be acknowledged.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("alert_not_found", "Alert was not found."))?;
 
         Ok(object(alert))
     }
@@ -205,16 +220,19 @@ impl ObservationsMonitoringService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_monitoring_events(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "monitoring_event_list_failed",
-                    "Monitoring events could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::ward::list_monitoring_events(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "monitoring_event_list_failed",
+                "Monitoring events could not be loaded.",
+            )
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.recorded_at, item.id)
@@ -234,22 +252,26 @@ impl ObservationsMonitoringService {
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
         let summary = required_text(payload.summary, "summary")?;
-        let event = self
-            .state
-            .create_monitoring_event(
-                &admission,
-                payload.event_kind,
+        let event = hms_db::ward::create_monitoring_event(
+            self.state.db_pool(),
+            NewMonitoringEvent {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                admission_case_id: admission.id,
+                patient_id: admission.patient_id,
+                event_kind: payload.event_kind,
                 summary,
-                payload.recorded_at,
-                ctx.user_id,
+                recorded_at: payload.recorded_at,
+                recorded_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "monitoring_event_create_failed",
+                "Monitoring event could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "monitoring_event_create_failed",
-                    "Monitoring event could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(event))
     }
@@ -267,16 +289,19 @@ impl ObservationsMonitoringService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_fluid_balance_entries(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "fluid_balance_list_failed",
-                    "Fluid balance entries could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::ward::list_fluid_balance_entries(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "fluid_balance_list_failed",
+                "Fluid balance entries could not be loaded.",
+            )
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.recorded_at, item.id)
@@ -301,22 +326,26 @@ impl ObservationsMonitoringService {
         }
         let admission =
             common::load_admission_for_access(&self.state, ctx, payload.admission_case_id).await?;
-        let entry = self
-            .state
-            .create_fluid_balance_entry(
-                &admission,
-                payload.recorded_at,
-                payload.intake_ml,
-                payload.output_ml,
-                ctx.user_id,
+        let entry = hms_db::ward::create_fluid_balance_entry(
+            self.state.db_pool(),
+            NewFluidBalanceEntry {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                admission_case_id: admission.id,
+                patient_id: admission.patient_id,
+                recorded_at: payload.recorded_at,
+                intake_ml: payload.intake_ml,
+                output_ml: payload.output_ml,
+                recorded_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "fluid_balance_create_failed",
+                "Fluid balance entry could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "fluid_balance_create_failed",
-                    "Fluid balance entry could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(entry))
     }
