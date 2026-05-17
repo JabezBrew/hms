@@ -7,16 +7,16 @@ use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
-    AdmissionContext, NewFluidBalanceEntry, NewHandoff, NewMonitoringEvent, NewNursingAlert,
-    NewPatientVitals, NewWardStockRequest, WardCursor,
+    AdmissionContext, NewFluidBalanceEntry, NewMonitoringEvent, NewNursingAlert, NewPatientVitals,
+    NewWardStockRequest, WardCursor,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
-    FluidBalanceListItem, HandoffListItem, MonitoringEventKind, MonitoringEventListItem,
-    NursingAlertListItem, NursingAlertSeverity, PatientVitalsListItem, WardStockRequestListItem,
+    FluidBalanceListItem, MonitoringEventKind, MonitoringEventListItem, NursingAlertListItem,
+    NursingAlertSeverity, PatientVitalsListItem, WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -540,43 +540,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_handoffs(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<HandoffListItem>> {
-        hms_db::ward::list_handoffs(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_handoff(
-        &self,
-        ward_id: Uuid,
-        to_user_id: Uuid,
-        shift_label: String,
-        actor_user_id: Uuid,
-    ) -> Result<HandoffListItem> {
-        hms_db::ward::create_handoff(
-            &self.inner.pool,
-            NewHandoff {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                ward_id,
-                from_user_id: actor_user_id,
-                to_user_id,
-                shift_label,
-            },
-        )
-        .await
-    }
-
-    pub async fn complete_handoff(&self, handoff_id: Uuid) -> Result<Option<HandoffListItem>> {
-        hms_db::ward::complete_handoff(&self.inner.pool, self.facility_id(), handoff_id).await
-    }
-
-    pub async fn get_handoff(&self, handoff_id: Uuid) -> Result<Option<HandoffListItem>> {
-        hms_db::ward::get_handoff(&self.inner.pool, self.facility_id(), handoff_id).await
     }
 
     pub async fn list_patient_vitals(

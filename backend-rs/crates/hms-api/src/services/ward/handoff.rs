@@ -1,3 +1,4 @@
+use hms_db::ward::NewHandoff;
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{CreateHandoffRequest, HandoffListItem};
@@ -32,13 +33,14 @@ impl HandoffService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_handoffs(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("handoff_list_failed", "Handoffs could not be loaded.")
-            })?;
+        let rows = hms_db::ward::list_handoffs(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("handoff_list_failed", "Handoffs could not be loaded."))?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
@@ -56,18 +58,21 @@ impl HandoffService {
             PermissionCode::NursingTaskManage,
         )?;
         let shift_label = required_text(payload.shift_label, "shift_label")?;
-        let handoff = self
-            .state
-            .create_handoff(
-                payload.ward_id,
-                payload.to_user_id,
+        let handoff = hms_db::ward::create_handoff(
+            self.state.db_pool(),
+            NewHandoff {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                ward_id: payload.ward_id,
+                from_user_id: ctx.user_id,
+                to_user_id: payload.to_user_id,
                 shift_label,
-                ctx.user_id,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("handoff_create_failed", "Handoff could not be created.")
-            })?;
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("handoff_create_failed", "Handoff could not be created.")
+        })?;
 
         Ok(object(handoff))
     }
@@ -82,19 +87,19 @@ impl HandoffService {
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        self.state
-            .get_handoff(id)
+        hms_db::ward::get_handoff(self.state.db_pool(), self.state.facility_id(), id)
             .await
             .map_err(|_| ApiError::conflict("handoff_load_failed", "Handoff could not be loaded."))?
             .ok_or_else(|| ApiError::not_found("handoff_not_found", "Handoff was not found."))?;
-        let handoff = self
-            .state
-            .complete_handoff(id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict("handoff_complete_failed", "Handoff could not be completed.")
-            })?
-            .ok_or_else(|| ApiError::not_found("handoff_not_found", "Handoff was not found."))?;
+        let handoff =
+            hms_db::ward::complete_handoff(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("handoff_complete_failed", "Handoff could not be completed.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("handoff_not_found", "Handoff was not found.")
+                })?;
 
         Ok(object(handoff))
     }
