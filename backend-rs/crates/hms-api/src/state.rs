@@ -6,12 +6,10 @@ use chrono::{DateTime, Utc};
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
-use hms_db::ward::{NewWardStockRequest, WardCursor};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
-use hms_domain::ward::WardStockRequestListItem;
 use hms_events::DomainEventKind;
 use tracing::warn;
 use uuid::Uuid;
@@ -534,64 +532,6 @@ impl AppState {
 
     pub async fn get_patient(&self, id: Uuid) -> Result<Option<PatientRecord>> {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
-    }
-
-    pub async fn list_ward_stock_requests(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<WardStockRequestListItem>> {
-        hms_db::ward::list_ward_stock_requests(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn create_ward_stock_request(
-        &self,
-        ward_id: Uuid,
-        requested_item: String,
-        quantity_requested: i32,
-        actor_user_id: Uuid,
-    ) -> Result<WardStockRequestListItem> {
-        hms_db::ward::create_ward_stock_request(
-            &self.inner.pool,
-            NewWardStockRequest {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                ward_id,
-                requested_item,
-                quantity_requested,
-                requested_by_user_id: actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn approve_ward_stock_request(
-        &self,
-        request_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<WardStockRequestListItem>> {
-        hms_db::ward::approve_ward_stock_request(
-            &self.inner.pool,
-            self.facility_id(),
-            request_id,
-            actor_user_id,
-        )
-        .await
-    }
-
-    pub async fn fulfill_ward_stock_request(
-        &self,
-        request_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<Option<WardStockRequestListItem>> {
-        hms_db::ward::fulfill_ward_stock_request(
-            &self.inner.pool,
-            self.facility_id(),
-            request_id,
-            actor_user_id,
-        )
-        .await
     }
 
     async fn issue_session_for_user(

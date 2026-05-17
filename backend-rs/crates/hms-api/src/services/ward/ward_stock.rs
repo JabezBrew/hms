@@ -1,3 +1,4 @@
+use hms_db::ward::NewWardStockRequest;
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{CreateWardStockRequestRequest, WardStockRequestListItem};
@@ -32,16 +33,19 @@ impl WardStockService {
         let page = common::page_request(query)?;
         let page_size = page.limit;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_ward_stock_requests(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "ward_stock_request_list_failed",
-                    "Ward stock requests could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::ward::list_ward_stock_requests(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_stock_request_list_failed",
+                "Ward stock requests could not be loaded.",
+            )
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.requested_at, item.id)
@@ -66,21 +70,24 @@ impl WardStockService {
                 "Quantity requested must be greater than zero.",
             ));
         }
-        let request = self
-            .state
-            .create_ward_stock_request(
-                payload.ward_id,
+        let request = hms_db::ward::create_ward_stock_request(
+            self.state.db_pool(),
+            NewWardStockRequest {
+                id: Uuid::new_v4(),
+                facility_id: self.state.facility_id(),
+                ward_id: payload.ward_id,
                 requested_item,
-                payload.quantity_requested,
-                ctx.user_id,
+                quantity_requested: payload.quantity_requested,
+                requested_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_stock_request_create_failed",
+                "Ward stock request could not be created.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "ward_stock_request_create_failed",
-                    "Ward stock request could not be created.",
-                )
-            })?;
+        })?;
 
         Ok(object(request))
     }
@@ -95,22 +102,25 @@ impl WardStockService {
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let request = self
-            .state
-            .approve_ward_stock_request(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "ward_stock_request_approve_failed",
-                    "Ward stock request could not be approved.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found(
-                    "ward_stock_request_not_found",
-                    "Ward stock request was not found.",
-                )
-            })?;
+        let request = hms_db::ward::approve_ward_stock_request(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_stock_request_approve_failed",
+                "Ward stock request could not be approved.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "ward_stock_request_not_found",
+                "Ward stock request was not found.",
+            )
+        })?;
 
         Ok(object(request))
     }
@@ -125,22 +135,25 @@ impl WardStockService {
             self.state.facility_id(),
             PermissionCode::NursingTaskManage,
         )?;
-        let request = self
-            .state
-            .fulfill_ward_stock_request(id, ctx.user_id)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "ward_stock_request_fulfill_failed",
-                    "Ward stock request could not be fulfilled.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found(
-                    "ward_stock_request_not_found",
-                    "Ward stock request was not found.",
-                )
-            })?;
+        let request = hms_db::ward::fulfill_ward_stock_request(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "ward_stock_request_fulfill_failed",
+                "Ward stock request could not be fulfilled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "ward_stock_request_not_found",
+                "Ward stock request was not found.",
+            )
+        })?;
 
         Ok(object(request))
     }
