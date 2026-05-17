@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use hms_db::admin::{AdminCursor, AuditEventFilters};
+use hms_db::admin::{
+    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewPermissionAssignment,
+};
 use hms_domain::admin::{
     AdminListQuery, AuditEventListItem, AuditEventListQuery, AuthorityAppointmentListItem,
     CreateAuthorityAppointmentRequest, CreateDelegationRequest, CreatePermissionAssignmentRequest,
@@ -33,24 +35,35 @@ impl AdminService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_authority_appointments(
         &self,
         ctx: &hms_access::RequestContext,
         query: AdminListQuery,
     ) -> Result<ListResponse<AuthorityAppointmentListItem>, ApiError> {
-        require_admin_access(ctx, self.state.facility_id())?;
+        require_admin_access(ctx, self.facility_id())?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_authority_appointments(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "authority_appointment_list_failed",
-                    "Authority appointments could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::admin::list_authority_appointments(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "authority_appointment_list_failed",
+                "Authority appointments could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -63,21 +76,31 @@ impl AdminService {
     ) -> Result<ObjectResponse<AuthorityAppointmentListItem>, ApiError> {
         require_high_risk_admin_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::AdminAuthorityManage,
         )?;
         validate_text(&payload.appointment_type, MAX_CODE_LEN, "appointment_type")?;
         validate_time_window(payload.starts_at, payload.ends_at)?;
-        let appointment = self
-            .state
-            .create_authority_appointment(payload, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "authority_appointment_create_failed",
-                    "Authority appointment could not be saved.",
-                )
-            })?;
+        let appointment = hms_db::admin::create_authority_appointment(
+            self.pool(),
+            NewAuthorityAppointment {
+                facility_id: self.facility_id(),
+                position_id: payload.position_id,
+                user_id: payload.user_id,
+                appointed_by_user_id: ctx.user_id,
+                appointment_type: payload.appointment_type,
+                starts_at: payload.starts_at.unwrap_or_else(Utc::now),
+                ends_at: payload.ends_at,
+            },
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "authority_appointment_create_failed",
+                "Authority appointment could not be saved.",
+            )
+        })?;
         Ok(object(appointment))
     }
 
@@ -86,19 +109,22 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         query: AdminListQuery,
     ) -> Result<ListResponse<PermissionAssignmentListItem>, ApiError> {
-        require_admin_access(ctx, self.state.facility_id())?;
+        require_admin_access(ctx, self.facility_id())?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_permission_assignments(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "permission_assignment_list_failed",
-                    "Permission assignments could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::admin::list_permission_assignments(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "permission_assignment_list_failed",
+                "Permission assignments could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -111,23 +137,35 @@ impl AdminService {
     ) -> Result<ObjectResponse<PermissionAssignmentListItem>, ApiError> {
         require_high_risk_admin_access(
             ctx,
-            self.state.facility_id(),
+            self.facility_id(),
             PermissionCode::AdminAuthorityManage,
         )?;
         validate_text(&payload.scope_type, MAX_CODE_LEN, "scope_type")?;
         validate_text(&payload.reason_code, MAX_CODE_LEN, "reason_code")?;
         validate_time_window(payload.starts_at, payload.ends_at)?;
         ensure_supported_permissions(&self.state, &[payload.permission_code]).await?;
-        let assignment = self
-            .state
-            .create_permission_assignment(payload, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "permission_assignment_create_failed",
-                    "Permission assignment could not be saved.",
-                )
-            })?;
+        let assignment = hms_db::admin::create_permission_assignment(
+            self.pool(),
+            NewPermissionAssignment {
+                facility_id: self.facility_id(),
+                grantee_user_id: payload.grantee_user_id,
+                permission_code: payload.permission_code,
+                scope_type: payload.scope_type,
+                scope_id: payload.scope_id,
+                granted_by_user_id: ctx.user_id,
+                starts_at: payload.starts_at.unwrap_or_else(Utc::now),
+                ends_at: payload.ends_at,
+                reason_code: payload.reason_code,
+            },
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "permission_assignment_create_failed",
+                "Permission assignment could not be saved.",
+            )
+        })?;
         Ok(object(assignment))
     }
 

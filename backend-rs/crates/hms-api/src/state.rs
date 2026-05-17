@@ -4,9 +4,8 @@ use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_db::admin::{
-    AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewCommittee, NewDelegation,
-    NewOrganizationUnit, NewPermissionAssignment, NewPosition, NewPositionTemplate,
-    NewPractitionerProfile, NewStaffAccount,
+    AdminCursor, AuditEventFilters, NewCommittee, NewDelegation, NewOrganizationUnit, NewPosition,
+    NewPositionTemplate, NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
@@ -18,12 +17,10 @@ use hms_db::ward::{
     WardSectionUpdate, WardUpdate,
 };
 use hms_domain::admin::{
-    AuditEventListItem, AuthorityAppointmentListItem, CommitteeListItem,
-    CreateAuthorityAppointmentRequest, CreateCommitteeRequest, CreateDelegationRequest,
-    CreateOrganizationUnitRequest, CreatePermissionAssignmentRequest, CreatePositionRequest,
-    CreatePositionTemplateRequest, CreateStaffRequest, DelegationListItem,
-    FeatureEntitlementListItem, OrgUnitType, OrganizationUnitListItem,
-    PermissionAssignmentListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
+    AuditEventListItem, CommitteeListItem, CreateCommitteeRequest, CreateDelegationRequest,
+    CreateOrganizationUnitRequest, CreatePositionRequest, CreatePositionTemplateRequest,
+    CreateStaffRequest, DelegationListItem, FeatureEntitlementListItem, OrgUnitType,
+    OrganizationUnitListItem, PositionListItem, PositionTemplateListItem, PractitionerListItem,
     StaffDirectoryItem, StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
@@ -694,80 +691,6 @@ impl AppState {
                 org_unit_id: payload.org_unit_id,
                 template_id: payload.template_id,
             },
-        )
-        .await
-    }
-
-    pub async fn list_authority_appointments(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<AuthorityAppointmentListItem>> {
-        hms_db::admin::list_authority_appointments(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_authority_appointment(
-        &self,
-        payload: CreateAuthorityAppointmentRequest,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<AuthorityAppointmentListItem> {
-        hms_db::admin::create_authority_appointment(
-            &self.inner.pool,
-            NewAuthorityAppointment {
-                facility_id: self.facility_id(),
-                position_id: payload.position_id,
-                user_id: payload.user_id,
-                appointed_by_user_id: actor_user_id,
-                appointment_type: payload.appointment_type,
-                starts_at: payload.starts_at.unwrap_or_else(Utc::now),
-                ends_at: payload.ends_at,
-            },
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn list_permission_assignments(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<PermissionAssignmentListItem>> {
-        hms_db::admin::list_permission_assignments(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_permission_assignment(
-        &self,
-        payload: CreatePermissionAssignmentRequest,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<PermissionAssignmentListItem> {
-        hms_db::admin::create_permission_assignment(
-            &self.inner.pool,
-            NewPermissionAssignment {
-                facility_id: self.facility_id(),
-                grantee_user_id: payload.grantee_user_id,
-                permission_code: payload.permission_code,
-                scope_type: payload.scope_type,
-                scope_id: payload.scope_id,
-                granted_by_user_id: actor_user_id,
-                starts_at: payload.starts_at.unwrap_or_else(Utc::now),
-                ends_at: payload.ends_at,
-                reason_code: payload.reason_code,
-            },
-            request_id,
         )
         .await
     }
