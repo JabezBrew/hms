@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_db::admin::{
     AdminCursor, AuditEventFilters, NewCommittee, NewDelegation, NewOrganizationUnit, NewPosition,
-    NewPositionTemplate, NewPractitionerProfile, NewStaffAccount,
+    NewPositionTemplate,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
@@ -19,9 +19,8 @@ use hms_db::ward::{
 use hms_domain::admin::{
     AuditEventListItem, CommitteeListItem, CreateCommitteeRequest, CreateDelegationRequest,
     CreateOrganizationUnitRequest, CreatePositionRequest, CreatePositionTemplateRequest,
-    CreateStaffRequest, DelegationListItem, OrgUnitType, OrganizationUnitListItem,
-    PositionListItem, PositionTemplateListItem, PractitionerListItem, StaffDirectoryItem,
-    StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
+    DelegationListItem, OrgUnitType, OrganizationUnitListItem, PositionListItem,
+    PositionTemplateListItem, PractitionerListItem,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -35,13 +34,12 @@ use hms_domain::ward::{
     WardSectionListItem, WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
-use password_hash::SaltString;
-use rand_core::OsRng;
 use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
 use crate::config::Config;
+use crate::passwords::hash_password;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -690,149 +688,6 @@ impl AppState {
                 org_unit_id: payload.org_unit_id,
                 template_id: payload.template_id,
             },
-        )
-        .await
-    }
-
-    pub async fn list_staff_accounts(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-        search: Option<String>,
-        is_active: Option<bool>,
-        practitioners_only: Option<bool>,
-    ) -> Result<Vec<StaffListItem>> {
-        hms_db::admin::list_staff_accounts(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            search,
-            is_active,
-            practitioners_only,
-        )
-        .await
-    }
-
-    pub async fn list_staff_directory(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-    ) -> Result<Vec<StaffDirectoryItem>> {
-        hms_db::admin::list_staff_directory(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn get_staff_account(&self, staff_id: Uuid) -> Result<Option<StaffListItem>> {
-        hms_db::admin::get_staff_account(&self.inner.pool, self.facility_id(), staff_id).await
-    }
-
-    pub async fn create_staff_account(
-        &self,
-        payload: CreateStaffRequest,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<StaffListItem> {
-        let password_hash = hash_password(&payload.temporary_password)?;
-        hms_db::admin::create_staff_account(
-            &self.inner.pool,
-            NewStaffAccount {
-                facility_id: self.facility_id(),
-                email: payload.email,
-                display_name: payload.display_name,
-                password_hash,
-                employee_id: payload.employee_id,
-                department: payload.department,
-                position: payload.position,
-                hire_date: payload.hire_date,
-                created_by_user_id: actor_user_id,
-                practitioner_profile: payload.practitioner_profile.map(practitioner_profile),
-            },
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn update_staff_account(
-        &self,
-        staff_id: Uuid,
-        payload: UpdateStaffRequest,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<StaffListItem>> {
-        hms_db::admin::update_staff_account(
-            &self.inner.pool,
-            self.facility_id(),
-            staff_id,
-            payload,
-            actor_user_id,
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn force_staff_password_reset(
-        &self,
-        staff_id: Uuid,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<StaffListItem>> {
-        hms_db::admin::force_staff_password_reset(
-            &self.inner.pool,
-            self.facility_id(),
-            staff_id,
-            actor_user_id,
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn deactivate_staff_account(
-        &self,
-        staff_id: Uuid,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<StaffListItem>> {
-        hms_db::admin::deactivate_staff_account(
-            &self.inner.pool,
-            self.facility_id(),
-            staff_id,
-            actor_user_id,
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn reactivate_staff_account(
-        &self,
-        staff_id: Uuid,
-        actor_user_id: Uuid,
-        request_id: Option<String>,
-    ) -> Result<Option<StaffListItem>> {
-        hms_db::admin::reactivate_staff_account(
-            &self.inner.pool,
-            self.facility_id(),
-            staff_id,
-            actor_user_id,
-            request_id,
-        )
-        .await
-    }
-
-    pub async fn upsert_practitioner_profile(
-        &self,
-        staff_id: Uuid,
-        actor_user_id: Uuid,
-        payload: UpsertPractitionerProfileRequest,
-        request_id: Option<String>,
-    ) -> Result<Option<StaffListItem>> {
-        hms_db::admin::upsert_practitioner_profile(
-            &self.inner.pool,
-            self.facility_id(),
-            staff_id,
-            actor_user_id,
-            practitioner_profile(payload),
-            request_id,
         )
         .await
     }
@@ -1727,15 +1582,6 @@ impl AppState {
     }
 }
 
-fn practitioner_profile(payload: UpsertPractitionerProfileRequest) -> NewPractitionerProfile {
-    NewPractitionerProfile {
-        license_number: payload.license_number,
-        specialization: payload.specialization,
-        qualification: payload.qualification,
-        fhir_practitioner_id: payload.fhir_practitioner_id,
-    }
-}
-
 fn verify_password(hash: &str, password: &str) -> bool {
     let Ok(hash) = PasswordHash::new(hash) else {
         return false;
@@ -1744,14 +1590,6 @@ fn verify_password(hash: &str, password: &str) -> bool {
     Argon2::default()
         .verify_password(password.as_bytes(), &hash)
         .is_ok()
-}
-
-fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    Ok(Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|error| anyhow::anyhow!("failed to hash password: {error}"))?
-        .to_string())
 }
 
 fn password_meets_policy(password: &str) -> bool {

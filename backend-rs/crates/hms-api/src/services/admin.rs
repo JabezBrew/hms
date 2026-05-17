@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use hms_db::admin::{
     AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewPermissionAssignment,
+    NewPractitionerProfile, NewStaffAccount,
 };
 use hms_domain::admin::{
     AdminListQuery, AuditEventListItem, AuditEventListQuery, AuthorityAppointmentListItem,
@@ -15,6 +16,7 @@ use uuid::Uuid;
 
 use crate::cursor_list;
 use crate::error::ApiError;
+use crate::passwords::hash_password;
 use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
 use crate::state::AppState;
 
@@ -255,7 +257,7 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         query: StaffListQuery,
     ) -> Result<ListResponse<StaffListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
+        require_staff_access(ctx, self.facility_id())?;
         let search = query.search;
         let is_active = query.is_active;
         let practitioners_only = query.practitioners_only;
@@ -264,17 +266,17 @@ impl AdminService {
             limit: query.limit,
         })?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_staff_accounts(
-                page.cursor,
-                fetch_limit,
-                search,
-                is_active,
-                practitioners_only,
-            )
-            .await
-            .map_err(|_| ApiError::conflict("staff_list_failed", "Staff could not be loaded."))?;
+        let rows = hms_db::admin::list_staff_accounts(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+            search,
+            is_active,
+            practitioners_only,
+        )
+        .await
+        .map_err(|_| ApiError::conflict("staff_list_failed", "Staff could not be loaded."))?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -285,19 +287,22 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         query: AdminListQuery,
     ) -> Result<ListResponse<StaffDirectoryItem>, ApiError> {
-        require_staff_directory_access(ctx, self.state.facility_id())?;
+        require_staff_directory_access(ctx, self.facility_id())?;
         let page = page_request(query)?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_staff_directory(page.cursor, fetch_limit)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "staff_directory_failed",
-                    "Staff directory could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::admin::list_staff_directory(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "staff_directory_failed",
+                "Staff directory could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.user_id)
         }))
@@ -308,15 +313,31 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         payload: CreateStaffRequest,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
+        require_staff_access(ctx, self.facility_id())?;
         validate_staff_payload(&payload)?;
-        let staff = self
-            .state
-            .create_staff_account(payload, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
-            })?;
+        let password_hash = hash_password(&payload.temporary_password).map_err(|_| {
+            ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
+        })?;
+        let staff = hms_db::admin::create_staff_account(
+            self.pool(),
+            NewStaffAccount {
+                facility_id: self.facility_id(),
+                email: payload.email,
+                display_name: payload.display_name,
+                password_hash,
+                employee_id: payload.employee_id,
+                department: payload.department,
+                position: payload.position,
+                hire_date: payload.hire_date,
+                created_by_user_id: ctx.user_id,
+                practitioner_profile: payload.practitioner_profile.map(practitioner_profile),
+            },
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("staff_create_failed", "Staff account could not be saved.")
+        })?;
         Ok(object(staff))
     }
 
@@ -325,10 +346,8 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
-        let staff = self
-            .state
-            .get_staff_account(id)
+        require_staff_access(ctx, self.facility_id())?;
+        let staff = hms_db::admin::get_staff_account(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict("staff_load_failed", "Staff account could not be loaded.")
@@ -345,18 +364,21 @@ impl AdminService {
         id: Uuid,
         payload: UpdateStaffRequest,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
+        require_staff_access(ctx, self.facility_id())?;
         validate_staff_update_payload(&payload)?;
-        let staff = self
-            .state
-            .update_staff_account(id, payload, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict("staff_update_failed", "Staff account could not be updated.")
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("staff_not_found", "Staff account was not found.")
-            })?;
+        let staff = hms_db::admin::update_staff_account(
+            self.pool(),
+            self.facility_id(),
+            id,
+            payload,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("staff_update_failed", "Staff account could not be updated.")
+        })?
+        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
         Ok(object(staff))
     }
 
@@ -365,24 +387,22 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_high_risk_admin_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AdminStaffManage,
-        )?;
-        let staff = self
-            .state
-            .force_staff_password_reset(id, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "staff_reset_failed",
-                    "Staff password reset could not be forced.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("staff_not_found", "Staff account was not found.")
-            })?;
+        require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
+        let staff = hms_db::admin::force_staff_password_reset(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "staff_reset_failed",
+                "Staff password reset could not be forced.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
         Ok(object(staff))
     }
 
@@ -391,24 +411,22 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_high_risk_admin_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AdminStaffManage,
-        )?;
-        let staff = self
-            .state
-            .deactivate_staff_account(id, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "staff_deactivate_failed",
-                    "Staff account could not be deactivated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("staff_not_found", "Staff account was not found.")
-            })?;
+        require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
+        let staff = hms_db::admin::deactivate_staff_account(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "staff_deactivate_failed",
+                "Staff account could not be deactivated.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
         Ok(object(staff))
     }
 
@@ -417,24 +435,22 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_high_risk_admin_access(
-            ctx,
-            self.state.facility_id(),
-            PermissionCode::AdminStaffManage,
-        )?;
-        let staff = self
-            .state
-            .reactivate_staff_account(id, ctx.user_id, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "staff_reactivate_failed",
-                    "Staff account could not be reactivated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("staff_not_found", "Staff account was not found.")
-            })?;
+        require_high_risk_admin_access(ctx, self.facility_id(), PermissionCode::AdminStaffManage)?;
+        let staff = hms_db::admin::reactivate_staff_account(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "staff_reactivate_failed",
+                "Staff account could not be reactivated.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
         Ok(object(staff))
     }
 
@@ -444,21 +460,24 @@ impl AdminService {
         id: Uuid,
         payload: UpsertPractitionerProfileRequest,
     ) -> Result<ObjectResponse<StaffListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
+        require_staff_access(ctx, self.facility_id())?;
         validate_practitioner_profile(&payload)?;
-        let staff = self
-            .state
-            .upsert_practitioner_profile(id, ctx.user_id, payload, Some(ctx.request_id.clone()))
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "practitioner_profile_save_failed",
-                    "Practitioner profile could not be saved.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("staff_not_found", "Staff account was not found.")
-            })?;
+        let staff = hms_db::admin::upsert_practitioner_profile(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            practitioner_profile(payload),
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "practitioner_profile_save_failed",
+                "Practitioner profile could not be saved.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
         Ok(object(staff))
     }
 
@@ -708,6 +727,15 @@ fn validate_practitioner_profile(
         validate_text(value, MAX_TEXT_LEN, "fhir_practitioner_id")?;
     }
     Ok(())
+}
+
+fn practitioner_profile(payload: UpsertPractitionerProfileRequest) -> NewPractitionerProfile {
+    NewPractitionerProfile {
+        license_number: payload.license_number,
+        specialization: payload.specialization,
+        qualification: payload.qualification,
+        fhir_practitioner_id: payload.fhir_practitioner_id,
+    }
 }
 
 fn validate_code(value: &str) -> Result<(), ApiError> {
