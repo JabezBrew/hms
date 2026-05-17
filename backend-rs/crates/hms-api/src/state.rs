@@ -14,8 +14,7 @@ use hms_db::clinical::{
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
 use hms_db::inventory::{
-    InventoryCursor, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
-    NewPharmacyDispense, NewPurchaseOrder,
+    InventoryCursor, NewControlledCount, NewControlledMovement, NewPharmacyDispense,
 };
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
@@ -46,7 +45,7 @@ use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceBalanceValidation,
     ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
-    GoodsReceivedNoteListItem, PharmacyDispenseListItem, PurchaseOrderListItem,
+    PharmacyDispenseListItem,
 };
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
@@ -1431,114 +1430,6 @@ impl AppState {
             limit,
         )
         .await
-    }
-
-    pub async fn list_purchase_orders(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-    ) -> Result<Vec<PurchaseOrderListItem>> {
-        hms_db::inventory::list_purchase_orders(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn get_purchase_order(
-        &self,
-        purchase_order_id: Uuid,
-    ) -> Result<Option<PurchaseOrderListItem>> {
-        hms_db::inventory::get_purchase_order(
-            &self.inner.pool,
-            self.facility_id(),
-            purchase_order_id,
-        )
-        .await
-    }
-
-    pub async fn create_purchase_order(
-        &self,
-        supplier_name: String,
-        actor_user_id: Uuid,
-    ) -> Result<PurchaseOrderListItem> {
-        hms_db::inventory::create_purchase_order(
-            &self.inner.pool,
-            NewPurchaseOrder {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                supplier_name,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn approve_purchase_order(
-        &self,
-        purchase_order_id: Uuid,
-    ) -> Result<Option<PurchaseOrderListItem>> {
-        hms_db::inventory::approve_purchase_order(
-            &self.inner.pool,
-            self.facility_id(),
-            purchase_order_id,
-        )
-        .await
-    }
-
-    pub async fn send_purchase_order(
-        &self,
-        purchase_order_id: Uuid,
-    ) -> Result<Option<PurchaseOrderListItem>> {
-        hms_db::inventory::send_purchase_order(
-            &self.inner.pool,
-            self.facility_id(),
-            purchase_order_id,
-        )
-        .await
-    }
-
-    pub async fn list_goods_received_notes(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-    ) -> Result<Vec<GoodsReceivedNoteListItem>> {
-        hms_db::inventory::list_grns(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn get_goods_received_note(
-        &self,
-        grn_id: Uuid,
-    ) -> Result<Option<GoodsReceivedNoteListItem>> {
-        hms_db::inventory::get_grn(&self.inner.pool, self.facility_id(), grn_id).await
-    }
-
-    pub async fn create_goods_received_note(
-        &self,
-        purchase_order_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<GoodsReceivedNoteListItem> {
-        hms_db::inventory::create_grn(
-            &self.inner.pool,
-            NewGoodsReceivedNote {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                purchase_order_id,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn inspect_goods_received_note(
-        &self,
-        grn_id: Uuid,
-    ) -> Result<Option<GoodsReceivedNoteListItem>> {
-        hms_db::inventory::inspect_grn(&self.inner.pool, self.facility_id(), grn_id).await
-    }
-
-    pub async fn accept_goods_received_note(
-        &self,
-        grn_id: Uuid,
-    ) -> Result<Option<GoodsReceivedNoteListItem>> {
-        hms_db::inventory::accept_grn(&self.inner.pool, self.facility_id(), grn_id).await
     }
 
     pub async fn list_controlled_substance_register(
