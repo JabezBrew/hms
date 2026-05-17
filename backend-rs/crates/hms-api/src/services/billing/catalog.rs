@@ -21,30 +21,38 @@ impl BillingCatalogService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn list_service_catalog(
         &self,
         ctx: &hms_access::RequestContext,
         query: ServiceCatalogQuery,
     ) -> Result<ListResponse<ServiceCatalogItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
         let (cursor, page_size) = common::decode_page(query.cursor.as_deref(), query.limit)?;
-        let rows = self
-            .state
-            .list_service_catalog(
-                cursor,
-                page_size as i64 + 1,
-                ServiceCatalogFilters {
-                    search: query.search,
-                    is_active: query.is_active,
-                },
+        let rows = hms_db::billing::list_service_catalog(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+            ServiceCatalogFilters {
+                search: query.search,
+                is_active: query.is_active,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "service_catalog_failed",
+                "Service catalog could not be loaded.",
             )
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "service_catalog_failed",
-                    "Service catalog could not be loaded.",
-                )
-            })?;
+        })?;
 
         Ok(common::page_response(rows, page_size, |item| {
             common::encode_cursor(item.created_at, item.id)
@@ -55,13 +63,15 @@ impl BillingCatalogService {
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ListResponse<ServicePriceListItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
-        let prices = self.state.list_service_prices().await.map_err(|_| {
-            ApiError::conflict(
-                "service_price_failed",
-                "Service prices could not be loaded.",
-            )
-        })?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let prices = hms_db::billing::list_service_prices(self.pool(), self.facility_id())
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "service_price_failed",
+                    "Service prices could not be loaded.",
+                )
+            })?;
 
         Ok(common::static_list(prices))
     }
@@ -71,24 +81,24 @@ impl BillingCatalogService {
         ctx: &hms_access::RequestContext,
         query: BillingRuleListQuery,
     ) -> Result<ListResponse<BillingRuleListItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
         let page_size = query
             .limit
             .unwrap_or(common::DEFAULT_LIMIT)
             .clamp(1, common::MAX_LIMIT);
-        let rules = self
-            .state
-            .list_billing_rules(
-                BillingRuleFilters {
-                    rule_type: query.rule_type,
-                    is_active: query.is_active,
-                },
-                page_size as i64,
-            )
-            .await
-            .map_err(|_| {
-                ApiError::conflict("billing_rule_failed", "Billing rules could not be loaded.")
-            })?;
+        let rules = hms_db::billing::list_billing_rules(
+            self.pool(),
+            self.facility_id(),
+            BillingRuleFilters {
+                rule_type: query.rule_type,
+                is_active: query.is_active,
+            },
+            page_size as i64,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict("billing_rule_failed", "Billing rules could not be loaded.")
+        })?;
 
         Ok(list(
             rules,
@@ -105,10 +115,8 @@ impl BillingCatalogService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<BillingRuleListItem>, ApiError> {
-        common::require_billing_access(ctx, self.state.facility_id(), PermissionCode::BillingView)?;
-        let rule = self
-            .state
-            .get_billing_rule(id)
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingView)?;
+        let rule = hms_db::billing::get_billing_rule(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(

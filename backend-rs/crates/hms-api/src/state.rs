@@ -40,10 +40,9 @@ use hms_domain::admin::{
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::billing::{
-    BillingDashboardSummary, BillingRuleListItem, CashDrawerListItem, CashSessionListItem,
-    ClaimListItem, CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem,
-    PaymentListItem, PaymentMethod, ReceiptListItem, RemittanceImportListItem, ServiceCatalogItem,
-    ServicePriceListItem,
+    BillingDashboardSummary, CashDrawerListItem, CashSessionListItem, ClaimListItem,
+    CloseCashSessionRequest, InvoiceListItem, NhisBatchExport, NhisBatchListItem, PaymentListItem,
+    PaymentMethod, ReceiptListItem, RemittanceImportListItem,
 };
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
@@ -1448,39 +1447,6 @@ impl AppState {
 
     pub async fn list_inventory_categories(&self) -> Result<Vec<InventoryCategoryListItem>> {
         hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_service_catalog(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-        filters: hms_db::billing::ServiceCatalogFilters,
-    ) -> Result<Vec<ServiceCatalogItem>> {
-        hms_db::billing::list_service_catalog(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            filters,
-        )
-        .await
-    }
-
-    pub async fn list_service_prices(&self) -> Result<Vec<ServicePriceListItem>> {
-        hms_db::billing::list_service_prices(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_billing_rules(
-        &self,
-        filters: hms_db::billing::BillingRuleFilters,
-        limit: i64,
-    ) -> Result<Vec<BillingRuleListItem>> {
-        hms_db::billing::list_billing_rules(&self.inner.pool, self.facility_id(), filters, limit)
-            .await
-    }
-
-    pub async fn get_billing_rule(&self, rule_id: Uuid) -> Result<Option<BillingRuleListItem>> {
-        hms_db::billing::get_billing_rule(&self.inner.pool, self.facility_id(), rule_id).await
     }
 
     pub async fn billing_dashboard_summary(&self) -> Result<BillingDashboardSummary> {
