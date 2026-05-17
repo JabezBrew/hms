@@ -2,41 +2,26 @@ use axum::extract::ws::{Message, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Json;
-use chrono::{DateTime, Utc};
-use hms_db::dashboard::NotificationCursor;
 use hms_domain::dashboard::{
     AdminCapacityQuery, AdminCapacitySummary, DashboardSnapshot, MarkNotificationReadRequest,
-    NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeChannelKind,
-    RealtimeMessage, RealtimeSubscribeQuery, RealtimeSubscription,
+    NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeSubscribeQuery,
+    RealtimeSubscription,
 };
-use hms_domain::deployment::{FeatureKey, PermissionCode};
-use serde_json::json;
 use uuid::Uuid;
 
-use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::response::{list, object, ListResponse, ObjectResponse, PageInfo};
+use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: u8 = 25;
-const MAX_LIMIT: u8 = 100;
-const DEFAULT_CAPACITY_LIMIT: u8 = 8;
-const MAX_CAPACITY_LIMIT: u8 = 25;
 
 #[utoipa::path(get, path = "/api/v2/dashboards/snapshot", operation_id = "getDashboardSnapshot", tag = "dashboards", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<DashboardSnapshot>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn dashboard_snapshot(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<DashboardSnapshot>>, ApiError> {
-    require_dashboard_access(&user, state.facility_id())?;
-    let snapshot = state.dashboard_snapshot().await.map_err(|_| {
-        ApiError::conflict(
-            "dashboard_snapshot_failed",
-            "Dashboard snapshot could not be loaded.",
-        )
-    })?;
-    Ok(Json(object(snapshot)))
+    Ok(Json(
+        state.dashboard_service().dashboard_snapshot(&user).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/dashboards/admin-v2/capacity", operation_id = "getAdminDashboardV2Capacity", tag = "dashboards", security(("bearerAuth" = [])), params(AdminCapacityQuery), responses((status = 200, body = ObjectResponse<AdminCapacitySummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -45,18 +30,12 @@ pub async fn admin_capacity_summary(
     RequestContext(user): RequestContext,
     Query(query): Query<AdminCapacityQuery>,
 ) -> Result<Json<ObjectResponse<AdminCapacitySummary>>, ApiError> {
-    require_dashboard_access(&user, state.facility_id())?;
-    let limit = query
-        .limit
-        .unwrap_or(DEFAULT_CAPACITY_LIMIT)
-        .clamp(1, MAX_CAPACITY_LIMIT) as i64;
-    let summary = state.admin_capacity_summary(limit).await.map_err(|_| {
-        ApiError::conflict(
-            "admin_capacity_summary_failed",
-            "Admin capacity summary could not be loaded.",
-        )
-    })?;
-    Ok(Json(object(summary)))
+    Ok(Json(
+        state
+            .dashboard_service()
+            .admin_capacity_summary(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/notifications", operation_id = "getNotifications", tag = "notifications", security(("bearerAuth" = [])), params(NotificationListQuery), responses((status = 200, body = ListResponse<NotificationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -65,20 +44,12 @@ pub async fn list_notifications(
     RequestContext(user): RequestContext,
     Query(query): Query<NotificationListQuery>,
 ) -> Result<Json<ListResponse<NotificationListItem>>, ApiError> {
-    require_notification_access(&user, state.facility_id())?;
-    let (cursor, page_size, unread_only) = notification_page_request(query)?;
-    let rows = state
-        .list_notifications(user.id, cursor, unread_only, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "notification_list_failed",
-                "Notifications could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .dashboard_service()
+            .list_notifications(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/notifications/counts", operation_id = "getNotificationCounts", tag = "notifications", security(("bearerAuth" = [])), responses((status = 200, body = ObjectResponse<NotificationCounts>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -86,14 +57,9 @@ pub async fn notification_counts(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ObjectResponse<NotificationCounts>>, ApiError> {
-    require_notification_access(&user, state.facility_id())?;
-    let counts = state.notification_counts(user.id).await.map_err(|_| {
-        ApiError::conflict(
-            "notification_counts_failed",
-            "Notification counts could not be loaded.",
-        )
-    })?;
-    Ok(Json(object(counts)))
+    Ok(Json(
+        state.dashboard_service().notification_counts(&user).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/notifications/{id}/read", operation_id = "postNotificationRead", tag = "notifications", security(("bearerAuth" = [])), request_body = MarkNotificationReadRequest, responses((status = 200, body = ObjectResponse<NotificationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -103,20 +69,12 @@ pub async fn mark_notification_read(
     Path(id): Path<Uuid>,
     Json(payload): Json<MarkNotificationReadRequest>,
 ) -> Result<Json<ObjectResponse<NotificationListItem>>, ApiError> {
-    require_notification_access(&user, state.facility_id())?;
-    let notification = state
-        .mark_notification_read(user.id, id, payload.read)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "notification_update_failed",
-                "Notification could not be updated.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("notification_not_found", "Notification was not found.")
-        })?;
-    Ok(Json(object(notification)))
+    Ok(Json(
+        state
+            .dashboard_service()
+            .mark_notification_read(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/realtime/subscriptions", operation_id = "getRealtimeSubscriptions", tag = "realtime", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<RealtimeSubscription>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -124,21 +82,9 @@ pub async fn list_realtime_subscriptions(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<RealtimeSubscription>>, ApiError> {
-    let mut subscriptions = Vec::new();
-    if require_dashboard_access(&user, state.facility_id()).is_ok() {
-        subscriptions.push(subscription(&state, RealtimeChannelKind::Dashboard));
-    }
-    if require_notification_access(&user, state.facility_id()).is_ok() {
-        subscriptions.push(subscription(&state, RealtimeChannelKind::Notifications));
-    }
-    Ok(Json(list(
-        subscriptions,
-        PageInfo {
-            next_cursor: None,
-            has_next: false,
-            limit: 10,
-        },
-    )))
+    Ok(Json(
+        state.dashboard_service().list_realtime_subscriptions(&user),
+    ))
 }
 
 pub async fn realtime_ws(
@@ -147,106 +93,17 @@ pub async fn realtime_ws(
     Query(query): Query<RealtimeSubscribeQuery>,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, ApiError> {
-    let channel_kind = query.channel_kind.unwrap_or(RealtimeChannelKind::Dashboard);
-    require_realtime_access(&user, state.facility_id(), channel_kind)?;
-    let channel_name = state.realtime_channel_name(channel_kind);
+    let dashboard = state.dashboard_service();
+    let stream = dashboard.prepare_realtime_stream(&user, query)?;
     Ok(ws.on_upgrade(move |mut socket| async move {
-        let subscription_id = state
-            .audit_realtime_open(user.id, &channel_name, channel_kind)
-            .await
-            .ok();
-        let payload = match channel_kind {
-            RealtimeChannelKind::Dashboard => json!({ "status": "snapshot_available" }),
-            RealtimeChannelKind::Notifications => json!({ "status": "notification_stream_ready" }),
-        };
-        let message = RealtimeMessage {
-            message_type: "snapshot".to_owned(),
-            channel_name: channel_name.clone(),
-            generated_at: Utc::now(),
-            payload,
-        };
-        if let Ok(serialized) = serde_json::to_string(&message) {
+        let subscription_id = dashboard
+            .audit_realtime_open(stream.user_id, &stream.channel_name, stream.channel_kind)
+            .await;
+        if let Ok(serialized) = serde_json::to_string(&stream.message) {
             let _ = socket.send(Message::Text(serialized)).await;
         }
         if let Some(subscription_id) = subscription_id {
-            let _ = state.audit_realtime_close(subscription_id).await;
+            dashboard.audit_realtime_close(subscription_id).await;
         }
     }))
-}
-
-fn subscription(state: &AppState, channel_kind: RealtimeChannelKind) -> RealtimeSubscription {
-    let (feature, permission) = match channel_kind {
-        RealtimeChannelKind::Dashboard => (FeatureKey::Dashboards, PermissionCode::DashboardView),
-        RealtimeChannelKind::Notifications => {
-            (FeatureKey::Dashboards, PermissionCode::NotificationView)
-        }
-    };
-    RealtimeSubscription {
-        channel_name: state.realtime_channel_name(channel_kind),
-        channel_kind,
-        feature,
-        permission,
-    }
-}
-
-fn require_realtime_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    channel_kind: RealtimeChannelKind,
-) -> Result<(), ApiError> {
-    match channel_kind {
-        RealtimeChannelKind::Dashboard => require_dashboard_access(user, facility_id),
-        RealtimeChannelKind::Notifications => require_notification_access(user, facility_id),
-    }
-}
-
-fn require_dashboard_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_dashboard_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::MissingPermission => ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to view dashboards.",
-        ),
-        other => ApiError::from(other),
-    })
-}
-
-fn require_notification_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_notification_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::MissingPermission => ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission to view notifications.",
-        ),
-        other => ApiError::from(other),
-    })
-}
-
-fn notification_page_request(
-    query: NotificationListQuery,
-) -> Result<(Option<NotificationCursor>, u8, bool), ApiError> {
-    let page = cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT,
-        |occurred_at, id| NotificationCursor { occurred_at, id },
-    )?;
-    Ok((page.cursor, page.limit, query.unread_only.unwrap_or(false)))
-}
-
-fn page_response<T>(
-    rows: Vec<T>,
-    page_size: u8,
-    cursor_for: impl Fn(&T) -> String,
-) -> ListResponse<T> {
-    cursor_list::page_response(rows, page_size, cursor_for)
-}
-
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    cursor_list::encode_cursor(occurred_at, id)
 }
