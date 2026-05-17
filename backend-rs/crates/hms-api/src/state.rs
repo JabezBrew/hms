@@ -13,7 +13,6 @@ use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
-use hms_db::inventory::{InventoryCursor, NewPharmacyDispense};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
@@ -40,7 +39,6 @@ use hms_domain::clinical::{
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::FeatureKey;
-use hms_domain::inventory::PharmacyDispenseListItem;
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
@@ -1422,37 +1420,6 @@ impl AppState {
             self.facility_id(),
             patient_id,
             limit,
-        )
-        .await
-    }
-
-    pub async fn list_pharmacy_dispenses(
-        &self,
-        cursor: Option<InventoryCursor>,
-        limit: i64,
-    ) -> Result<Vec<PharmacyDispenseListItem>> {
-        hms_db::inventory::list_dispenses(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn create_pharmacy_dispense(
-        &self,
-        patient_id: Uuid,
-        item_id: Uuid,
-        location_id: Uuid,
-        quantity: i64,
-        actor_user_id: Uuid,
-    ) -> Result<PharmacyDispenseListItem> {
-        hms_db::inventory::create_dispense(
-            &self.inner.pool,
-            NewPharmacyDispense {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id,
-                item_id,
-                location_id,
-                quantity,
-                actor_user_id,
-            },
         )
         .await
     }
