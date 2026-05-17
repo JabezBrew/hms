@@ -20,7 +20,7 @@ use hms_domain::admin::{
     AuditEventListItem, CommitteeListItem, CreateCommitteeRequest, CreateDelegationRequest,
     CreateOrganizationUnitRequest, CreatePositionRequest, CreatePositionTemplateRequest,
     DelegationListItem, OrgUnitType, OrganizationUnitListItem, PositionListItem,
-    PositionTemplateListItem, PractitionerListItem,
+    PositionTemplateListItem,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
@@ -690,28 +690,6 @@ impl AppState {
             },
         )
         .await
-    }
-
-    pub async fn list_practitioners(
-        &self,
-        cursor: Option<AdminCursor>,
-        limit: i64,
-        search: Option<String>,
-        is_active: Option<bool>,
-    ) -> Result<Vec<PractitionerListItem>> {
-        hms_db::admin::list_practitioners(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-            search,
-            is_active,
-        )
-        .await
-    }
-
-    pub async fn get_practitioner(&self, id: Uuid) -> Result<Option<PractitionerListItem>> {
-        hms_db::admin::get_practitioner(&self.inner.pool, self.facility_id(), id).await
     }
 
     pub async fn list_committees(

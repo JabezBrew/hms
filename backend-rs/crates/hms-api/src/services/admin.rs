@@ -486,7 +486,7 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         query: PractitionerListQuery,
     ) -> Result<ListResponse<PractitionerListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
+        require_staff_access(ctx, self.facility_id())?;
         let search = query.search;
         let is_active = query.is_active;
         let page = page_request(AdminListQuery {
@@ -494,16 +494,21 @@ impl AdminService {
             limit: query.limit,
         })?;
         let fetch_limit = page.fetch_limit();
-        let rows = self
-            .state
-            .list_practitioners(page.cursor, fetch_limit, search, is_active)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "practitioner_list_failed",
-                    "Practitioners could not be loaded.",
-                )
-            })?;
+        let rows = hms_db::admin::list_practitioners(
+            self.pool(),
+            self.facility_id(),
+            page.cursor,
+            fetch_limit,
+            search,
+            is_active,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "practitioner_list_failed",
+                "Practitioners could not be loaded.",
+            )
+        })?;
         Ok(page_response(rows, page.limit, |item| {
             encode_cursor(item.created_at, item.id)
         }))
@@ -514,10 +519,8 @@ impl AdminService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<PractitionerListItem>, ApiError> {
-        require_staff_access(ctx, self.state.facility_id())?;
-        let practitioner = self
-            .state
-            .get_practitioner(id)
+        require_staff_access(ctx, self.facility_id())?;
+        let practitioner = hms_db::admin::get_practitioner(self.pool(), self.facility_id(), id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
