@@ -1,0 +1,444 @@
+use hms_domain::deployment::PermissionCode;
+use hms_domain::inventory::{
+    CreateStockBatchRequest, CreateStockRequisitionRequest, CreateStockTransferRequest,
+    InventoryItemStockLocationItem, InventoryListQuery, RejectStockRequisitionRequest,
+    StockBatchListItem, StockBatchListQuery, StockMovementListItem, StockRequisitionListItem,
+    StockTransferListItem, StorageLocationStockItem,
+};
+use uuid::Uuid;
+
+use super::common::{
+    encode_cursor, ensure_item_exists, ensure_location_exists, normalize_text, page_request,
+    page_response, require_inventory_access, require_inventory_list_access, require_positive,
+    static_list, stock_batch_page_request,
+};
+use crate::error::ApiError;
+use crate::response::{object, ListResponse, ObjectResponse};
+use crate::state::AppState;
+
+#[derive(Clone)]
+pub struct StockControlService {
+    state: AppState,
+}
+
+impl StockControlService {
+    pub fn new(state: AppState) -> Self {
+        Self { state }
+    }
+
+    pub async fn list_item_batches(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<StockBatchListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        ensure_item_exists(&self.state, id).await?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = self
+            .state
+            .list_inventory_item_stock_batches(id, cursor, i64::from(page_size) + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "inventory_item_batch_list_failed",
+                    "Item stock batches could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.received_at, item.id)
+        }))
+    }
+
+    pub async fn list_item_movements(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<StockMovementListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        ensure_item_exists(&self.state, id).await?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = self
+            .state
+            .list_inventory_item_stock_movements(id, cursor, i64::from(page_size) + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "inventory_item_movement_list_failed",
+                    "Item stock movements could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_item_stock_by_location(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ListResponse<InventoryItemStockLocationItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        ensure_item_exists(&self.state, id).await?;
+        let rows = self
+            .state
+            .list_inventory_item_stock_by_location(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "inventory_item_location_stock_failed",
+                    "Item stock by location could not be loaded.",
+                )
+            })?;
+        Ok(static_list(rows))
+    }
+
+    pub async fn list_location_stock(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<StorageLocationStockItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        ensure_location_exists(&self.state, id).await?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = self
+            .state
+            .list_storage_location_stock(id, cursor, i64::from(page_size) + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "storage_location_stock_failed",
+                    "Location stock could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.last_received_at, item.item_id)
+        }))
+    }
+
+    pub async fn list_batches(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: StockBatchListQuery,
+    ) -> Result<ListResponse<StockBatchListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        let (cursor, page_size, filters) = stock_batch_page_request(query)?;
+        let rows = self
+            .state
+            .list_stock_batches(cursor, i64::from(page_size) + 1, filters)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_batch_list_failed",
+                    "Stock batches could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.received_at, item.id)
+        }))
+    }
+
+    pub async fn create_batch(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateStockBatchRequest,
+    ) -> Result<ObjectResponse<StockBatchListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        require_positive(payload.quantity_received, "quantity_received")?;
+        let batch_number = normalize_text(payload.batch_number, "batch_number")?;
+        let batch = self
+            .state
+            .create_stock_batch(
+                payload.item_id,
+                payload.location_id,
+                batch_number,
+                payload.expires_on,
+                payload.quantity_received,
+                ctx.user_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_batch_create_failed",
+                    "Stock batch could not be saved.",
+                )
+            })?;
+        Ok(object(batch))
+    }
+
+    pub async fn list_movements(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<StockMovementListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = self
+            .state
+            .list_stock_movements(cursor, i64::from(page_size) + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_movement_list_failed",
+                    "Stock movements could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_transfers(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<StockTransferListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = self
+            .state
+            .list_stock_transfers(cursor, i64::from(page_size) + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_transfer_list_failed",
+                    "Transfers could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn get_transfer(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockTransferListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        let transfer = self
+            .state
+            .get_stock_transfer(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_transfer_load_failed",
+                    "Transfer could not be loaded.",
+                )
+            })?
+            .ok_or_else(|| {
+                ApiError::not_found("stock_transfer_not_found", "Transfer could not be found.")
+            })?;
+        Ok(object(transfer))
+    }
+
+    pub async fn create_transfer(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateStockTransferRequest,
+    ) -> Result<ObjectResponse<StockTransferListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        require_positive(payload.quantity, "quantity")?;
+        let transfer = self
+            .state
+            .create_stock_transfer(
+                payload.item_id,
+                payload.from_location_id,
+                payload.to_location_id,
+                payload.quantity,
+                ctx.user_id,
+            )
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_transfer_create_failed",
+                    "Transfer could not be saved.",
+                )
+            })?;
+        Ok(object(transfer))
+    }
+
+    pub async fn list_requisitions(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<StockRequisitionListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = self
+            .state
+            .list_stock_requisitions(cursor, i64::from(page_size) + 1)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_list_failed",
+                    "Requisitions could not be loaded.",
+                )
+            })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn get_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_inventory_list_access(ctx, self.state.facility_id())?;
+        Ok(object(load_requisition(&self.state, id).await?))
+    }
+
+    pub async fn create_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateStockRequisitionRequest,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        let requisition = self
+            .state
+            .create_stock_requisition(payload.requesting_location_id, ctx.user_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_create_failed",
+                    "Requisition could not be saved.",
+                )
+            })?;
+        Ok(object(requisition))
+    }
+
+    pub async fn submit_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        let requisition = self
+            .state
+            .submit_stock_requisition(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_submit_failed",
+                    "Requisition could not be submitted.",
+                )
+            })?
+            .ok_or_else(requisition_not_found)?;
+        Ok(object(requisition))
+    }
+
+    pub async fn approve_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        let requisition = self
+            .state
+            .approve_stock_requisition(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_approve_failed",
+                    "Requisition could not be approved.",
+                )
+            })?
+            .ok_or_else(requisition_not_found)?;
+        Ok(object(requisition))
+    }
+
+    pub async fn fulfill_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        let requisition = self
+            .state
+            .fulfill_stock_requisition(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_fulfill_failed",
+                    "Requisition could not be fulfilled.",
+                )
+            })?
+            .ok_or_else(requisition_not_found)?;
+        Ok(object(requisition))
+    }
+
+    pub async fn reject_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: RejectStockRequisitionRequest,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        let reason = normalize_text(payload.reason, "reason")?;
+        let requisition = self
+            .state
+            .reject_stock_requisition(id, reason)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_reject_failed",
+                    "Requisition could not be rejected.",
+                )
+            })?
+            .ok_or_else(requisition_not_found)?;
+        Ok(object(requisition))
+    }
+
+    pub async fn cancel_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.state.facility_id())?;
+        let requisition = self
+            .state
+            .cancel_stock_requisition(id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict(
+                    "stock_requisition_cancel_failed",
+                    "Requisition could not be cancelled.",
+                )
+            })?
+            .ok_or_else(requisition_not_found)?;
+        Ok(object(requisition))
+    }
+}
+
+fn require_stock_write_access(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    require_inventory_access(ctx, facility_id, PermissionCode::InventoryManage)
+}
+
+async fn load_requisition(
+    state: &AppState,
+    id: Uuid,
+) -> Result<StockRequisitionListItem, ApiError> {
+    state
+        .get_stock_requisition(id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_requisition_load_failed",
+                "Requisition could not be loaded.",
+            )
+        })?
+        .ok_or_else(requisition_not_found)
+}
+
+fn requisition_not_found() -> ApiError {
+    ApiError::not_found(
+        "stock_requisition_not_found",
+        "Requisition could not be found.",
+    )
+}

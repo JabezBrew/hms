@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
-use hms_db::inventory::InventoryCursor;
+use hms_db::inventory::{InventoryCursor, StockBatchFilters};
 use hms_domain::deployment::PermissionCode;
-use hms_domain::inventory::InventoryListQuery;
+use hms_domain::inventory::{InventoryListQuery, StockBatchListQuery};
 use hms_domain::patients::PatientRecord;
 use serde_json::json;
 use uuid::Uuid;
@@ -14,6 +14,7 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: u8 = 25;
 const MAX_LIMIT: u8 = 100;
+const MAX_TEXT_LEN: usize = 120;
 
 pub(super) async fn load_patient_for_access(
     state: &AppState,
@@ -80,14 +81,66 @@ pub(super) fn require_pharmacy_dispense_list_access(
 pub(super) fn page_request(
     query: InventoryListQuery,
 ) -> Result<(Option<InventoryCursor>, u8), ApiError> {
+    decode_page(query.cursor.as_deref(), query.limit)
+}
+
+pub(super) fn stock_batch_page_request(
+    query: StockBatchListQuery,
+) -> Result<(Option<InventoryCursor>, u8, StockBatchFilters), ApiError> {
+    let (cursor, limit) = decode_page(query.cursor.as_deref(), query.limit)?;
+    let filters = StockBatchFilters {
+        expired: query.expired,
+        expiring_within_days: query.expiring_within_days.map(i32::from),
+    };
+    Ok((cursor, limit, filters))
+}
+
+pub(super) fn decode_page(
+    cursor: Option<&str>,
+    limit: Option<u8>,
+) -> Result<(Option<InventoryCursor>, u8), ApiError> {
     let page = cursor_list::page_request(
-        query.cursor.as_deref(),
-        query.limit,
+        cursor,
+        limit,
         DEFAULT_LIMIT,
         MAX_LIMIT,
         |occurred_at, id| InventoryCursor { occurred_at, id },
     )?;
     Ok((page.cursor, page.limit))
+}
+
+pub(super) fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
+    cursor_list::static_list(items, MAX_LIMIT)
+}
+
+pub(super) async fn ensure_item_exists(state: &AppState, item_id: Uuid) -> Result<(), ApiError> {
+    state
+        .get_inventory_item(item_id)
+        .await
+        .map_err(|_| ApiError::conflict("inventory_item_load_failed", "Item could not be loaded."))?
+        .ok_or_else(|| {
+            ApiError::not_found("inventory_item_not_found", "Item could not be found.")
+        })?;
+    Ok(())
+}
+
+pub(super) async fn ensure_location_exists(
+    state: &AppState,
+    location_id: Uuid,
+) -> Result<(), ApiError> {
+    state
+        .get_storage_location(location_id)
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "storage_location_load_failed",
+                "Location could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("storage_location_not_found", "Location could not be found.")
+        })?;
+    Ok(())
 }
 
 pub(super) fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
@@ -99,6 +152,17 @@ where
 
 pub(super) fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
     cursor_list::encode_cursor(occurred_at, id)
+}
+
+pub(super) fn normalize_text(value: String, field: &'static str) -> Result<String, ApiError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(validation_error(field, "This field is required."));
+    }
+    if value.chars().count() > MAX_TEXT_LEN {
+        return Err(validation_error(field, "This field is too long."));
+    }
+    Ok(value.to_owned())
 }
 
 pub(super) fn require_positive(value: i64, field: &'static str) -> Result<(), ApiError> {

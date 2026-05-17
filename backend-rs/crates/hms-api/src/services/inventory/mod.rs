@@ -1,9 +1,15 @@
+mod catalog;
 mod common;
 mod controlled_substances;
 mod pharmacy;
+mod procurement;
+mod stock_control;
 
+pub use catalog::InventoryCatalogService;
 pub use controlled_substances::ControlledSubstancesService;
 pub use pharmacy::PharmacyService;
+pub use procurement::ProcurementService;
+pub use stock_control::StockControlService;
 
 use crate::state::AppState;
 
@@ -21,8 +27,20 @@ impl InventoryServices {
         ControlledSubstancesService::new(self.state.clone())
     }
 
+    pub fn catalog(&self) -> InventoryCatalogService {
+        InventoryCatalogService::new(self.state.clone())
+    }
+
     pub fn pharmacy(&self) -> PharmacyService {
         PharmacyService::new(self.state.clone())
+    }
+
+    pub fn procurement(&self) -> ProcurementService {
+        ProcurementService::new(self.state.clone())
+    }
+
+    pub fn stock_control(&self) -> StockControlService {
+        StockControlService::new(self.state.clone())
     }
 }
 

@@ -1,8 +1,5 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::{DateTime, Utc};
-use hms_db::inventory::{InventoryCursor, StockBatchFilters};
-use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
     ControlledSubstanceBalanceValidation, ControlledSubstanceRegisterEntryItem,
     ControlledSubstanceRegisterItem, CreateControlledSubstanceCountRequest,
@@ -16,33 +13,25 @@ use hms_domain::inventory::{
     StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
     SupplierListQuery,
 };
-use serde_json::json;
 use uuid::Uuid;
 
-use crate::cursor_list;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
-use crate::response::{object, ListResponse, ObjectResponse};
+use crate::response::{ListResponse, ObjectResponse};
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: u8 = 25;
-const MAX_LIMIT: u8 = 100;
-const MAX_TEXT_LEN: usize = 120;
 
 #[utoipa::path(get, path = "/api/v2/inventory/categories", operation_id = "getInventoryCategories", tag = "inventory", security(("bearerAuth" = [])), responses((status = 200, body = ListResponse<InventoryCategoryListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_categories(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
 ) -> Result<Json<ListResponse<InventoryCategoryListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    Ok(Json(static_list(
-        state.list_inventory_categories().await.map_err(|_| {
-            ApiError::conflict(
-                "inventory_category_list_failed",
-                "Categories could not be loaded.",
-            )
-        })?,
-    )))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .list_categories(&user)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items", operation_id = "getInventoryItems", tag = "inventory", security(("bearerAuth" = [])), params(InventoryItemsQuery), responses((status = 200, body = ListResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -51,23 +40,13 @@ pub async fn list_items(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryItemsQuery>,
 ) -> Result<Json<ListResponse<InventoryItemListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    let (cursor, page_size) = inventory_items_page_request(&query)?;
-    let filters = hms_db::inventory::InventoryItemFilters {
-        search: query.search.clone(),
-        category_id: query.category,
-        location_id: query.location,
-        stock_status: query.status.clone(),
-    };
-    let rows = state
-        .list_inventory_items(cursor, page_size as i64 + 1, filters)
-        .await
-        .map_err(|_| {
-            ApiError::conflict("inventory_item_list_failed", "Items could not be loaded.")
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.updated_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .list_items(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/dashboard-summary", operation_id = "getInventoryDashboardSummary", tag = "inventory", security(("bearerAuth" = [])), params(InventoryDashboardSummaryQuery), responses((status = 200, body = ObjectResponse<InventoryDashboardSummary>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -76,18 +55,13 @@ pub async fn dashboard_summary(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryDashboardSummaryQuery>,
 ) -> Result<Json<ObjectResponse<InventoryDashboardSummary>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    let expiring_within_days = query.expiring_within_days.unwrap_or(30).clamp(1, 365) as i32;
-    let summary = state
-        .inventory_dashboard_summary(expiring_within_days)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "inventory_dashboard_summary_failed",
-                "Inventory dashboard summary could not be loaded.",
-            )
-        })?;
-    Ok(Json(object(summary)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .dashboard_summary(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}", operation_id = "getInventoryItemById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ObjectResponse<InventoryItemListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -96,15 +70,13 @@ pub async fn get_item(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<InventoryItemListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    let item = state
-        .get_inventory_item(id)
-        .await
-        .map_err(|_| ApiError::conflict("inventory_item_load_failed", "Item could not be loaded."))?
-        .ok_or_else(|| {
-            ApiError::not_found("inventory_item_not_found", "Item could not be found.")
-        })?;
-    Ok(Json(object(item)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .get_item(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}/stock-batches", operation_id = "getInventoryItemStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -114,21 +86,13 @@ pub async fn list_item_batches(
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockBatchListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    ensure_item_exists(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_inventory_item_stock_batches(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "inventory_item_batch_list_failed",
-                "Item stock batches could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.received_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_item_batches(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}/stock-movements", operation_id = "getInventoryItemStockMovements", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StockMovementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -138,21 +102,13 @@ pub async fn list_item_movements(
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockMovementListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    ensure_item_exists(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_inventory_item_stock_movements(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "inventory_item_movement_list_failed",
-                "Item stock movements could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_item_movements(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/items/{id}/stock-by-location", operation_id = "getInventoryItemStockByLocation", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Inventory item ID")), responses((status = 200, body = ListResponse<InventoryItemStockLocationItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -161,18 +117,13 @@ pub async fn list_item_stock_by_location(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ListResponse<InventoryItemStockLocationItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    ensure_item_exists(&state, id).await?;
-    let rows = state
-        .list_inventory_item_stock_by_location(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "inventory_item_location_stock_failed",
-                "Item stock by location could not be loaded.",
-            )
-        })?;
-    Ok(Json(static_list(rows)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_item_stock_by_location(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations", operation_id = "getStorageLocations", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -181,20 +132,13 @@ pub async fn list_locations(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StorageLocationListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_storage_locations(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "storage_location_list_failed",
-                "Locations could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .list_locations(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/suppliers", operation_id = "getInventorySuppliers", tag = "inventory", security(("bearerAuth" = [])), params(SupplierListQuery), responses((status = 200, body = ListResponse<SupplierListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -203,24 +147,13 @@ pub async fn list_suppliers(
     RequestContext(user): RequestContext,
     Query(query): Query<SupplierListQuery>,
 ) -> Result<Json<ListResponse<SupplierListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    let (cursor, page_size) = decode_page(query.cursor.as_deref(), query.limit)?;
-    let rows = state
-        .list_suppliers(
-            cursor,
-            page_size as i64 + 1,
-            hms_db::inventory::SupplierFilters {
-                search: query.search.clone(),
-                is_active: query.is_active,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict("supplier_list_failed", "Suppliers could not be loaded.")
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .list_suppliers(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}", operation_id = "getStorageLocationById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID")), responses((status = 200, body = ObjectResponse<StorageLocationListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -229,20 +162,13 @@ pub async fn get_location(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StorageLocationListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryView)?;
-    let location = state
-        .get_storage_location(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "storage_location_load_failed",
-                "Location could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("storage_location_not_found", "Location could not be found.")
-        })?;
-    Ok(Json(object(location)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .get_location(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/storage-locations/{id}/stock", operation_id = "getStorageLocationStock", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Storage location ID"), InventoryListQuery), responses((status = 200, body = ListResponse<StorageLocationStockItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -252,21 +178,13 @@ pub async fn list_location_stock(
     Path(id): Path<Uuid>,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StorageLocationStockItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    ensure_location_exists(&state, id).await?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_storage_location_stock(id, cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "storage_location_stock_failed",
-                "Location stock could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.last_received_at, item.item_id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_location_stock(&user, id, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/stock-batches", operation_id = "getStockBatches", tag = "inventory", security(("bearerAuth" = [])), params(StockBatchListQuery), responses((status = 200, body = ListResponse<StockBatchListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -275,20 +193,13 @@ pub async fn list_batches(
     RequestContext(user): RequestContext,
     Query(query): Query<StockBatchListQuery>,
 ) -> Result<Json<ListResponse<StockBatchListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size, filters) = stock_batch_page_request(query)?;
-    let rows = state
-        .list_stock_batches(cursor, page_size as i64 + 1, filters)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_batch_list_failed",
-                "Stock batches could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.received_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_batches(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/stock-batches", operation_id = "postStockBatches", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockBatchRequest, responses((status = 200, body = ObjectResponse<StockBatchListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -297,26 +208,13 @@ pub async fn create_batch(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateStockBatchRequest>,
 ) -> Result<Json<ObjectResponse<StockBatchListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    require_positive(payload.quantity_received, "quantity_received")?;
-    let batch_number = normalize_text(payload.batch_number, "batch_number")?;
-    let batch = state
-        .create_stock_batch(
-            payload.item_id,
-            payload.location_id,
-            batch_number,
-            payload.expires_on,
-            payload.quantity_received,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_batch_create_failed",
-                "Stock batch could not be saved.",
-            )
-        })?;
-    Ok(Json(object(batch)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .create_batch(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/stock-movements", operation_id = "getStockMovements", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockMovementListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -325,20 +223,13 @@ pub async fn list_movements(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockMovementListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_stock_movements(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_movement_list_failed",
-                "Stock movements could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_movements(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/transfers", operation_id = "getStockTransfers", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockTransferListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -347,20 +238,13 @@ pub async fn list_transfers(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockTransferListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_stock_transfers(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_transfer_list_failed",
-                "Transfers could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_transfers(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/transfers/{id}", operation_id = "getStockTransferById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock transfer ID")), responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -369,20 +253,13 @@ pub async fn get_transfer(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockTransferListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let transfer = state
-        .get_stock_transfer(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_transfer_load_failed",
-                "Transfer could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("stock_transfer_not_found", "Transfer could not be found.")
-        })?;
-    Ok(Json(object(transfer)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .get_transfer(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/transfers", operation_id = "postStockTransfers", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockTransferRequest, responses((status = 200, body = ObjectResponse<StockTransferListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -391,24 +268,13 @@ pub async fn create_transfer(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateStockTransferRequest>,
 ) -> Result<Json<ObjectResponse<StockTransferListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    require_positive(payload.quantity, "quantity")?;
-    let transfer = state
-        .create_stock_transfer(
-            payload.item_id,
-            payload.from_location_id,
-            payload.to_location_id,
-            payload.quantity,
-            user.id,
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_transfer_create_failed",
-                "Transfer could not be saved.",
-            )
-        })?;
-    Ok(Json(object(transfer)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .create_transfer(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/requisitions", operation_id = "getStockRequisitions", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -417,20 +283,13 @@ pub async fn list_requisitions(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_stock_requisitions(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_list_failed",
-                "Requisitions could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .list_requisitions(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/requisitions/{id}", operation_id = "getStockRequisitionById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -439,23 +298,13 @@ pub async fn get_requisition(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let requisition = state
-        .get_stock_requisition(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_load_failed",
-                "Requisition could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "stock_requisition_not_found",
-                "Requisition could not be found.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .get_requisition(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions", operation_id = "postStockRequisitions", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockRequisitionRequest, responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -464,17 +313,13 @@ pub async fn create_requisition(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateStockRequisitionRequest>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let requisition = state
-        .create_stock_requisition(payload.requesting_location_id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_create_failed",
-                "Requisition could not be saved.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .create_requisition(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/submit", operation_id = "postStockRequisitionSubmit", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -483,23 +328,13 @@ pub async fn submit_requisition(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let requisition = state
-        .submit_stock_requisition(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_submit_failed",
-                "Requisition could not be submitted.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "stock_requisition_not_found",
-                "Requisition could not be found.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .submit_requisition(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/approve", operation_id = "postStockRequisitionApprove", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -508,23 +343,13 @@ pub async fn approve_requisition(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let requisition = state
-        .approve_stock_requisition(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_approve_failed",
-                "Requisition could not be approved.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "stock_requisition_not_found",
-                "Requisition could not be found.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .approve_requisition(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/fulfill", operation_id = "postStockRequisitionFulfill", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -533,23 +358,13 @@ pub async fn fulfill_requisition(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let requisition = state
-        .fulfill_stock_requisition(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_fulfill_failed",
-                "Requisition could not be fulfilled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "stock_requisition_not_found",
-                "Requisition could not be found.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .fulfill_requisition(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/reject", operation_id = "postStockRequisitionReject", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), request_body = RejectStockRequisitionRequest, responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -559,24 +374,13 @@ pub async fn reject_requisition(
     Path(id): Path<Uuid>,
     Json(payload): Json<RejectStockRequisitionRequest>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let reason = normalize_text(payload.reason, "reason")?;
-    let requisition = state
-        .reject_stock_requisition(id, reason)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_reject_failed",
-                "Requisition could not be rejected.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "stock_requisition_not_found",
-                "Requisition could not be found.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .reject_requisition(&user, id, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/cancel", operation_id = "postStockRequisitionCancel", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -585,23 +389,13 @@ pub async fn cancel_requisition(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let requisition = state
-        .cancel_stock_requisition(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "stock_requisition_cancel_failed",
-                "Requisition could not be cancelled.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "stock_requisition_not_found",
-                "Requisition could not be found.",
-            )
-        })?;
-    Ok(Json(object(requisition)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .cancel_requisition(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders", operation_id = "getPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -610,20 +404,13 @@ pub async fn list_purchase_orders(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<PurchaseOrderListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_purchase_orders(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "purchase_order_list_failed",
-                "Purchase orders could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.created_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .list_purchase_orders(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders/{id}", operation_id = "getPurchaseOrderById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -632,23 +419,13 @@ pub async fn get_purchase_order(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let purchase_order = state
-        .get_purchase_order(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "purchase_order_load_failed",
-                "Purchase order could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "purchase_order_not_found",
-                "Purchase order could not be found.",
-            )
-        })?;
-    Ok(Json(object(purchase_order)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .get_purchase_order(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders", operation_id = "postPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), request_body = CreatePurchaseOrderRequest, responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -657,18 +434,13 @@ pub async fn create_purchase_order(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreatePurchaseOrderRequest>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let supplier_name = normalize_text(payload.supplier_name, "supplier_name")?;
-    let order = state
-        .create_purchase_order(supplier_name, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "purchase_order_create_failed",
-                "Purchase order could not be saved.",
-            )
-        })?;
-    Ok(Json(object(order)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .create_purchase_order(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders/{id}/approve", operation_id = "postPurchaseOrderApprove", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -677,23 +449,13 @@ pub async fn approve_purchase_order(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let order = state
-        .approve_purchase_order(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "purchase_order_approve_failed",
-                "Purchase order could not be approved.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "purchase_order_not_found",
-                "Purchase order could not be found.",
-            )
-        })?;
-    Ok(Json(object(order)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .approve_purchase_order(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/purchase-orders/{id}/send", operation_id = "postPurchaseOrderSend", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Purchase order ID")), responses((status = 200, body = ObjectResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -702,23 +464,13 @@ pub async fn send_purchase_order(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<PurchaseOrderListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let order = state
-        .send_purchase_order(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "purchase_order_send_failed",
-                "Purchase order could not be sent.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "purchase_order_not_found",
-                "Purchase order could not be found.",
-            )
-        })?;
-    Ok(Json(object(order)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .send_purchase_order(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/goods-received-notes", operation_id = "getGoodsReceivedNotes", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -727,20 +479,13 @@ pub async fn list_grns(
     RequestContext(user): RequestContext,
     Query(query): Query<InventoryListQuery>,
 ) -> Result<Json<ListResponse<GoodsReceivedNoteListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let (cursor, page_size) = page_request(query)?;
-    let rows = state
-        .list_goods_received_notes(cursor, page_size as i64 + 1)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "grn_list_failed",
-                "Goods received notes could not be loaded.",
-            )
-        })?;
-    Ok(Json(page_response(rows, page_size, |item| {
-        encode_cursor(item.received_at, item.id)
-    })))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .list_grns(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/inventory/goods-received-notes/{id}", operation_id = "getGoodsReceivedNoteById", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -749,23 +494,13 @@ pub async fn get_grn(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
-    require_inventory_list_access(&user, state.facility_id())?;
-    let grn = state
-        .get_goods_received_note(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "goods_received_note_load_failed",
-                "Goods received note could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "goods_received_note_not_found",
-                "Goods received note could not be found.",
-            )
-        })?;
-    Ok(Json(object(grn)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .get_grn(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes", operation_id = "postGoodsReceivedNotes", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateGoodsReceivedNoteRequest, responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -774,17 +509,13 @@ pub async fn create_grn(
     RequestContext(user): RequestContext,
     Json(payload): Json<CreateGoodsReceivedNoteRequest>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let grn = state
-        .create_goods_received_note(payload.purchase_order_id, user.id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "grn_create_failed",
-                "Goods received note could not be saved.",
-            )
-        })?;
-    Ok(Json(object(grn)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .create_grn(&user, payload)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes/{id}/inspect", operation_id = "postGoodsReceivedNoteInspect", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -793,23 +524,13 @@ pub async fn inspect_grn(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let grn = state
-        .inspect_goods_received_note(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "grn_inspect_failed",
-                "Goods received note could not be inspected.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "goods_received_note_not_found",
-                "Goods received note could not be found.",
-            )
-        })?;
-    Ok(Json(object(grn)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .inspect_grn(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/v2/inventory/goods-received-notes/{id}/accept", operation_id = "postGoodsReceivedNoteAccept", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Goods received note ID")), responses((status = 200, body = ObjectResponse<GoodsReceivedNoteListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse)))]
@@ -818,23 +539,13 @@ pub async fn accept_grn(
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObjectResponse<GoodsReceivedNoteListItem>>, ApiError> {
-    require_inventory_access(&user, state.facility_id(), PermissionCode::InventoryManage)?;
-    let grn = state
-        .accept_goods_received_note(id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "grn_accept_failed",
-                "Goods received note could not be accepted.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found(
-                "goods_received_note_not_found",
-                "Goods received note could not be found.",
-            )
-        })?;
-    Ok(Json(object(grn)))
+    Ok(Json(
+        state
+            .inventory_services()
+            .procurement()
+            .accept_grn(&user, id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/register", operation_id = "getControlledSubstanceRegister", tag = "pharmacy", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<ControlledSubstanceRegisterItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
@@ -957,138 +668,4 @@ pub async fn create_dispense(
             .create_dispense(&user, payload)
             .await?,
     ))
-}
-
-fn require_inventory_list_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_inventory_list_access(user, facility_id).map_err(|error| match error {
-        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have patient workflow access.",
-        ),
-        hms_access::AccessError::InventoryAccessDenied => {
-            ApiError::forbidden("permission_denied", "You do not have inventory access.")
-        }
-        other => ApiError::from(other),
-    })
-}
-
-fn require_inventory_access(
-    user: &hms_access::RequestContext,
-    facility_id: Uuid,
-    permission: PermissionCode,
-) -> Result<(), ApiError> {
-    hms_access::require_inventory_access(user, facility_id, permission).map_err(|_| {
-        ApiError::forbidden(
-            "permission_denied",
-            "You do not have permission for this action.",
-        )
-    })
-}
-
-fn page_request(query: InventoryListQuery) -> Result<(Option<InventoryCursor>, u8), ApiError> {
-    decode_page(query.cursor.as_deref(), query.limit)
-}
-
-fn stock_batch_page_request(
-    query: StockBatchListQuery,
-) -> Result<(Option<InventoryCursor>, u8, StockBatchFilters), ApiError> {
-    let (cursor, limit) = decode_page(query.cursor.as_deref(), query.limit)?;
-    let filters = StockBatchFilters {
-        expired: query.expired,
-        expiring_within_days: query.expiring_within_days.map(i32::from),
-    };
-    Ok((cursor, limit, filters))
-}
-
-fn decode_page(
-    cursor: Option<&str>,
-    limit: Option<u8>,
-) -> Result<(Option<InventoryCursor>, u8), ApiError> {
-    let page = cursor_list::page_request(
-        cursor,
-        limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT,
-        |occurred_at, id| InventoryCursor { occurred_at, id },
-    )?;
-    Ok((page.cursor, page.limit))
-}
-
-fn inventory_items_page_request(
-    query: &InventoryItemsQuery,
-) -> Result<(Option<InventoryCursor>, u8), ApiError> {
-    decode_page(query.cursor.as_deref(), query.limit)
-}
-
-fn static_list<T>(items: Vec<T>) -> ListResponse<T> {
-    cursor_list::static_list(items, MAX_LIMIT)
-}
-
-async fn ensure_item_exists(state: &AppState, item_id: Uuid) -> Result<(), ApiError> {
-    state
-        .get_inventory_item(item_id)
-        .await
-        .map_err(|_| ApiError::conflict("inventory_item_load_failed", "Item could not be loaded."))?
-        .ok_or_else(|| {
-            ApiError::not_found("inventory_item_not_found", "Item could not be found.")
-        })?;
-    Ok(())
-}
-
-async fn ensure_location_exists(state: &AppState, location_id: Uuid) -> Result<(), ApiError> {
-    state
-        .get_storage_location(location_id)
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "storage_location_load_failed",
-                "Location could not be loaded.",
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError::not_found("storage_location_not_found", "Location could not be found.")
-        })?;
-    Ok(())
-}
-
-fn page_response<T, F>(rows: Vec<T>, page_size: u8, cursor_for: F) -> ListResponse<T>
-where
-    F: Fn(&T) -> String,
-{
-    cursor_list::page_response(rows, page_size, cursor_for)
-}
-
-fn encode_cursor(occurred_at: DateTime<Utc>, id: Uuid) -> String {
-    cursor_list::encode_cursor(occurred_at, id)
-}
-
-fn normalize_text(value: String, field: &'static str) -> Result<String, ApiError> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Err(validation_error(field, "This field is required."));
-    }
-    if value.chars().count() > MAX_TEXT_LEN {
-        return Err(validation_error(field, "This field is too long."));
-    }
-    Ok(value.to_owned())
-}
-
-fn require_positive(value: i64, field: &'static str) -> Result<(), ApiError> {
-    if value <= 0 {
-        return Err(validation_error(
-            field,
-            "This value must be greater than zero.",
-        ));
-    }
-    Ok(())
-}
-
-fn validation_error(field: &'static str, message: &'static str) -> ApiError {
-    let mut error =
-        ApiError::bad_request("invalid_inventory_request", "Inventory request is invalid.");
-    error.details = json!({ field: [message] });
-    error
 }
