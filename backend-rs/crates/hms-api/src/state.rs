@@ -9,7 +9,6 @@ use hms_db::admin::{
     NewPractitionerProfile, NewStaffAccount,
 };
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
-use hms_db::billing::{BillingCursor, ClaimContext, NewClaim, NewNhisBatch, NewRemittanceImport};
 use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
@@ -36,9 +35,6 @@ use hms_domain::admin::{
     StaffDirectoryItem, StaffListItem, UpdateStaffRequest, UpsertPractitionerProfileRequest,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
-use hms_domain::billing::{
-    ClaimListItem, NhisBatchExport, NhisBatchListItem, RemittanceImportListItem,
-};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, ChartEntryListItem, ChartEntryType, ClinicalNoteDetail,
@@ -1442,108 +1438,6 @@ impl AppState {
 
     pub async fn list_inventory_categories(&self) -> Result<Vec<InventoryCategoryListItem>> {
         hms_db::inventory::list_categories(&self.inner.pool, self.facility_id()).await
-    }
-
-    pub async fn list_nhis_claims(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-    ) -> Result<Vec<ClaimListItem>> {
-        hms_db::billing::list_claims(&self.inner.pool, self.facility_id(), cursor, limit).await
-    }
-
-    pub async fn get_nhis_claim(&self, claim_id: Uuid) -> Result<Option<ClaimListItem>> {
-        hms_db::billing::get_claim(&self.inner.pool, self.facility_id(), claim_id).await
-    }
-
-    pub async fn create_nhis_claim(
-        &self,
-        invoice_id: Uuid,
-        actor_user_id: Uuid,
-    ) -> Result<ClaimListItem> {
-        let id = Uuid::new_v4();
-        hms_db::billing::create_claim(
-            &self.inner.pool,
-            NewClaim {
-                id,
-                facility_id: self.facility_id(),
-                invoice_id,
-                claim_number: format!("CLM-{}", &id.simple().to_string()[..10].to_uppercase()),
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn nhis_claim_contexts(&self, claim_ids: &[Uuid]) -> Result<Vec<ClaimContext>> {
-        hms_db::billing::claim_contexts(&self.inner.pool, self.facility_id(), claim_ids).await
-    }
-
-    pub async fn list_nhis_batches(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-    ) -> Result<Vec<NhisBatchListItem>> {
-        hms_db::billing::list_nhis_batches(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn create_nhis_batch(
-        &self,
-        claim_ids: Vec<Uuid>,
-        actor_user_id: Uuid,
-    ) -> Result<NhisBatchListItem> {
-        let id = Uuid::new_v4();
-        hms_db::billing::create_nhis_batch(
-            &self.inner.pool,
-            NewNhisBatch {
-                id,
-                facility_id: self.facility_id(),
-                batch_number: format!("NHB-{}", &id.simple().to_string()[..10].to_uppercase()),
-                claim_ids,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn export_nhis_batch(&self, batch_id: Uuid) -> Result<Option<NhisBatchExport>> {
-        hms_db::billing::export_nhis_batch(&self.inner.pool, self.facility_id(), batch_id).await
-    }
-
-    pub async fn list_remittance_imports(
-        &self,
-        cursor: Option<BillingCursor>,
-        limit: i64,
-    ) -> Result<Vec<RemittanceImportListItem>> {
-        hms_db::billing::list_remittance_imports(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn create_remittance_import(
-        &self,
-        batch_id: Uuid,
-        reference: String,
-        total_paid_minor: i64,
-        actor_user_id: Uuid,
-    ) -> Result<RemittanceImportListItem> {
-        hms_db::billing::create_remittance_import(
-            &self.inner.pool,
-            NewRemittanceImport {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                batch_id,
-                reference,
-                total_paid_minor,
-                actor_user_id,
-            },
-        )
-        .await
     }
 
     pub async fn list_inventory_items(
