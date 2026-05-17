@@ -2,23 +2,21 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
 use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_db::ward::{
-    AdmissionContext, NewFluidBalanceEntry, NewHandoff, NewMedicationAdministration,
-    NewMonitoringEvent, NewNursingAlert, NewPatientVitals, NewTreatmentSheet, NewWardStockRequest,
-    WardCursor,
+    AdmissionContext, NewFluidBalanceEntry, NewHandoff, NewMonitoringEvent, NewNursingAlert,
+    NewPatientVitals, NewWardStockRequest, WardCursor,
 };
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::patients::PatientRecord;
 use hms_domain::search::SearchResourceType;
 use hms_domain::ward::{
-    FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem, MonitoringEventKind,
-    MonitoringEventListItem, NursingAlertListItem, NursingAlertSeverity, PatientVitalsListItem,
-    TreatmentSheetListItem, WardStockRequestListItem,
+    FluidBalanceListItem, HandoffListItem, MonitoringEventKind, MonitoringEventListItem,
+    NursingAlertListItem, NursingAlertSeverity, PatientVitalsListItem, WardStockRequestListItem,
 };
 use hms_events::DomainEventKind;
 use tracing::warn;
@@ -544,70 +542,6 @@ impl AppState {
         hms_db::patients::get_patient(&self.inner.pool, self.facility_id(), id).await
     }
 
-    pub async fn list_medication_administrations(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<MedicationAdministrationListItem>> {
-        hms_db::ward::list_medication_administrations(
-            &self.inner.pool,
-            self.facility_id(),
-            cursor,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn schedule_medication_administration(
-        &self,
-        admission: &AdmissionContext,
-        medication_name: String,
-        scheduled_at: DateTime<Utc>,
-        actor_user_id: Uuid,
-    ) -> Result<MedicationAdministrationListItem> {
-        hms_db::ward::schedule_medication_administration(
-            &self.inner.pool,
-            NewMedicationAdministration {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                medication_name,
-                scheduled_at,
-                actor_user_id,
-            },
-        )
-        .await
-    }
-
-    pub async fn administer_medication(
-        &self,
-        medication_id: Uuid,
-        actor_user_id: Uuid,
-        witness_user_id: Option<Uuid>,
-    ) -> Result<Option<MedicationAdministrationListItem>> {
-        hms_db::ward::administer_medication(
-            &self.inner.pool,
-            self.facility_id(),
-            medication_id,
-            actor_user_id,
-            witness_user_id,
-        )
-        .await
-    }
-
-    pub async fn get_medication_administration(
-        &self,
-        medication_id: Uuid,
-    ) -> Result<Option<MedicationAdministrationListItem>> {
-        hms_db::ward::get_medication_administration(
-            &self.inner.pool,
-            self.facility_id(),
-            medication_id,
-        )
-        .await
-    }
-
     pub async fn list_handoffs(
         &self,
         cursor: Option<WardCursor>,
@@ -643,35 +577,6 @@ impl AppState {
 
     pub async fn get_handoff(&self, handoff_id: Uuid) -> Result<Option<HandoffListItem>> {
         hms_db::ward::get_handoff(&self.inner.pool, self.facility_id(), handoff_id).await
-    }
-
-    pub async fn list_treatment_sheets(
-        &self,
-        cursor: Option<WardCursor>,
-        limit: i64,
-    ) -> Result<Vec<TreatmentSheetListItem>> {
-        hms_db::ward::list_treatment_sheets(&self.inner.pool, self.facility_id(), cursor, limit)
-            .await
-    }
-
-    pub async fn create_treatment_sheet(
-        &self,
-        admission: &AdmissionContext,
-        sheet_date: NaiveDate,
-        actor_user_id: Uuid,
-    ) -> Result<TreatmentSheetListItem> {
-        hms_db::ward::create_treatment_sheet(
-            &self.inner.pool,
-            NewTreatmentSheet {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                admission_case_id: admission.id,
-                patient_id: admission.patient_id,
-                sheet_date,
-                actor_user_id,
-            },
-        )
-        .await
     }
 
     pub async fn list_patient_vitals(
