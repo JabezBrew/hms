@@ -54,6 +54,26 @@ function parseNoteBody(value) {
   }
 }
 
+function parseTemplateStructure(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'object') {
+    return Array.isArray(value.sections) ? value.sections : [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+    return Array.isArray(parsed?.sections) ? parsed.sections : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeTemplateStructure(value) {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
 function serializeNoteBody(data = {}) {
   const source = data.data ?? data.body ?? data.content ?? data.note ?? {};
   if (typeof source === 'string') {
@@ -63,8 +83,9 @@ function serializeNoteBody(data = {}) {
 }
 
 function normalizeNotePayload(data = {}) {
-  const noteType = String(data.note_type || data.type || data.template?.note_type || 'clinical_note').trim();
-  const title = String(data.title || data.note_title || data.template?.title || 'Clinical note').trim();
+  const template = typeof data.template === 'object' && data.template !== null ? data.template : null;
+  const noteType = String(data.note_type || data.type || template?.note_type || template?.category || 'clinical_note').trim();
+  const title = String(data.title || data.note_title || template?.title || template?.name || 'Clinical note').trim();
   return {
     note_type: noteType || 'clinical_note',
     title: title || 'Clinical note',
@@ -85,12 +106,17 @@ function selectNoteSections(body = {}, sections = []) {
 }
 
 function adaptV2Template(template) {
+  if (!template) {
+    return template;
+  }
+
+  const structure = parseTemplateStructure(template.body_template);
   return {
     ...template,
     name: template.title,
     category: template.note_type,
     is_active: template.is_active !== false,
-    structure: template.body_template,
+    structure,
   };
 }
 
@@ -103,7 +129,7 @@ function normalizeTemplatePayload(data = {}) {
     payload.note_type = data.note_type ?? data.category ?? data.type;
   }
   if (data.body_template !== undefined || data.structure !== undefined || data.template !== undefined) {
-    payload.body_template = data.body_template ?? data.structure ?? data.template;
+    payload.body_template = serializeTemplateStructure(data.body_template ?? data.structure ?? data.template);
   }
   if (data.is_active !== undefined) {
     payload.is_active = Boolean(data.is_active);
@@ -118,7 +144,7 @@ function adaptV2Note(note, body) {
     patient_id: note.patient_id,
     version_number: note.version,
     created_at: note.updated_at,
-    data: body === undefined ? undefined : parseNoteBody(body),
+    data: parseNoteBody(body ?? note.body ?? {}),
   };
 }
 

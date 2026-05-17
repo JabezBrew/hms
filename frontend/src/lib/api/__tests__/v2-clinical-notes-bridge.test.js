@@ -75,6 +75,46 @@ describe('Rust V2 clinical notes bridge', () => {
     ]);
   });
 
+  it('adapts Rust template body templates into preserved UI structures', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'template-structured',
+              title: 'Structured SOAP Note',
+              note_type: 'soap',
+              body_template: JSON.stringify([
+                { section: 'Subjective', type: 'text', required: true },
+                { section: 'Assessment', type: 'condition', required: true },
+              ]),
+              is_active: true,
+            },
+          ],
+          page: { limit: 25, has_next: false, next_cursor: null },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const templates = await clinicalNotesApi.getNoteTemplates({ page_size: 25 });
+
+    expect(templates[0]).toEqual(
+      expect.objectContaining({
+        id: 'template-structured',
+        category: 'soap',
+        structure: [
+          { section: 'Subjective', type: 'text', required: true },
+          { section: 'Assessment', type: 'condition', required: true },
+        ],
+      }),
+    );
+  });
+
   it('routes clinical note template mutations through generated Rust V2 endpoints', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
@@ -188,6 +228,65 @@ describe('Rust V2 clinical notes bridge', () => {
     expect(created).toEqual(expect.objectContaining({ id: 'template-2', is_active: true }));
     expect(updated).toEqual(expect.objectContaining({ title: 'Updated Ward Round Note' }));
     expect(deleted).toEqual(expect.objectContaining({ id: 'template-2', is_active: false }));
+  });
+
+  it('serializes preserved template-builder structures into Rust body templates', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'template-structured',
+            title: 'Structured SOAP Note',
+            note_type: 'soap',
+            body_template: JSON.stringify({
+              sections: [
+                { name: 'Subjective', type: 'text', required: true },
+                { name: 'Assessment', type: 'condition', required: true },
+              ],
+            }),
+            is_active: true,
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const created = await clinicalNotesApi.createNoteTemplate({
+      title: 'Structured SOAP Note',
+      category: 'soap',
+      structure: {
+        sections: [
+          { name: 'Subjective', type: 'text', required: true },
+          { name: 'Assessment', type: 'condition', required: true },
+        ],
+      },
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/clinical/note-templates',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          title: 'Structured SOAP Note',
+          note_type: 'soap',
+          body_template: JSON.stringify({
+            sections: [
+              { name: 'Subjective', type: 'text', required: true },
+              { name: 'Assessment', type: 'condition', required: true },
+            ],
+          }),
+        }),
+      }),
+    );
+    expect(created.structure).toEqual([
+      { name: 'Subjective', type: 'text', required: true },
+      { name: 'Assessment', type: 'condition', required: true },
+    ]);
   });
 
   it('lists patient clinical notes through patient-scoped Rust endpoints only', async () => {

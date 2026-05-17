@@ -17,6 +17,7 @@ const rustV2Routes = [
   '/billing/invoices',
   '/billing/payments',
   '/billing/catalog',
+  '/clinical-notes/templates',
   '/nursing/dashboard',
   '/nursing/tasks',
   '/nursing/shift-handoff',
@@ -1067,6 +1068,117 @@ test('Rust V2 nursing dashboard tasks and handoff use generated nursing contract
 
   const handoffResponse = await handoffResponsePromise;
   expect(handoffResponse.status()).toBeLessThan(300);
+
+  expect(failures).toEqual([]);
+});
+
+test('Rust V2 clinical note templates and encounter notes use generated clinical contracts', async ({ page }) => {
+  const failures = [];
+
+  page.on('pageerror', (error) => {
+    failures.push(`pageerror: ${error.message}`);
+  });
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (url.includes('/api/v2/') && response.status() >= 500) {
+      failures.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await signInAsAdmin(page);
+
+  const suffix = Date.now().toString(36).toUpperCase();
+  const templateTitle = `AAA Playwright SOAP ${suffix}`;
+
+  await page.goto('/clinical-notes/templates');
+  await expect(page.getByRole('heading', { name: 'Note Templates' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Create Template' }).click();
+  await expect(page.getByRole('heading', { name: 'New Note Template' })).toBeVisible();
+  await page.getByLabel(/Template Title/i).fill(templateTitle);
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'SOAP', exact: true }).click();
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  const createTemplateResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/v2/clinical/note-templates') &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Create Template' }).click();
+
+  const createTemplateResponse = await createTemplateResponsePromise;
+  expect(createTemplateResponse.status()).toBeLessThan(300);
+  const createTemplatePayload = await createTemplateResponse.json();
+  expect(createTemplatePayload?.data?.title).toBe(templateTitle);
+  expect(createTemplatePayload?.data?.note_type).toBe('soap');
+
+  await page.goto('/clinical-notes/templates');
+  await expect(page.getByRole('heading', { name: 'Note Templates' })).toBeVisible();
+  await page.getByPlaceholder('Search templates...').fill(templateTitle);
+  await expect(page.getByText(templateTitle).first()).toBeVisible();
+
+  const patientName = uniquePatientName('Notes');
+  const patientId = await createSmokePatient(page, {
+    firstName: 'Playwright',
+    lastName: patientName.replace('Playwright ', ''),
+  });
+  expect(patientId).toBeTruthy();
+
+  const encounterPayload = await postV2FromBrowser(page, '/api/v2/encounters', {
+    patient_id: patientId,
+    visit_id: null,
+    encounter_type: 'outpatient',
+  });
+  const encounterId = encounterPayload?.data?.id;
+  expect(encounterId).toBeTruthy();
+
+  await page.goto(`/encounters/${encounterId}/clinical-notes`);
+  await expect(page.getByRole('heading', { name: 'Clinical Notes' })).toBeVisible();
+  await expect(page.getByText(patientName).first()).toBeVisible();
+
+  await page.getByRole('combobox').filter({ hasText: /Select a template/i }).click();
+  await page.getByRole('option', { name: templateTitle }).click();
+  await page.getByRole('button', { name: 'Use Template' }).click();
+
+  await expect(page.getByText(templateTitle).first()).toBeVisible();
+  await page.getByPlaceholder('Enter subjective').fill('Cough for two days.');
+  await page.getByPlaceholder('Enter diagnosis or condition').fill('Upper respiratory tract infection.');
+  await page.getByPlaceholder('Enter plan').fill('Hydration and review if symptoms worsen.');
+
+  const createNoteResponsePromise = page.waitForResponse((response) => (
+    response.url().endsWith(`/api/v2/patients/${patientId}/clinical/notes`) &&
+    response.request().method() === 'POST'
+  ));
+
+  await page.getByRole('button', { name: 'Submit Note' }).click();
+
+  const createNoteResponse = await createNoteResponsePromise;
+  expect(createNoteResponse.status()).toBeLessThan(300);
+  const noteRequestBody = createNoteResponse.request().postDataJSON();
+  expect(noteRequestBody.note_type).toBe('soap');
+  expect(noteRequestBody.title).toBe(templateTitle);
+  expect(JSON.parse(noteRequestBody.body)).toEqual(expect.objectContaining({
+    Subjective: 'Cough for two days.',
+    Assessment: 'Upper respiratory tract infection.',
+    Plan: 'Hydration and review if symptoms worsen.',
+  }));
+
+  const notePayload = await createNoteResponse.json();
+  const noteId = notePayload?.data?.id;
+  expect(noteId).toBeTruthy();
+
+  const versionPayload = await postV2FromBrowser(page, `/api/v2/clinical/notes/${noteId}/versions`, {
+    body: JSON.stringify({
+      Subjective: 'Cough improving.',
+      Assessment: 'Improving upper respiratory tract infection.',
+      Plan: 'Continue supportive care.',
+    }),
+  });
+  expect(versionPayload?.data?.version).toBe(2);
 
   expect(failures).toEqual([]);
 });
