@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use base64::Engine;
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_db::admin::{
     AdminCursor, AuditEventFilters, NewAuthorityAppointment, NewCommittee, NewDelegation,
@@ -18,7 +17,6 @@ use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
     NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
 };
-use hms_db::dashboard::NotificationCursor;
 use hms_db::inventory::{
     InventoryCursor, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
     NewPharmacyDispense, NewPurchaseOrder, NewStockBatch, NewStockRequisition, NewStockTransfer,
@@ -58,10 +56,6 @@ use hms_domain::clinical::{
     PrescriptionListItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
-use hms_domain::dashboard::{
-    AdminCapacitySummary, DashboardSnapshot, NotificationCounts, NotificationListItem,
-    RealtimeChannelKind,
-};
 use hms_domain::deployment::FeatureKey;
 use hms_domain::inventory::{
     ControlledMovementType, ControlledSubstanceBalanceValidation,
@@ -84,7 +78,6 @@ use hms_domain::ward::{
 use hms_events::DomainEventKind;
 use password_hash::SaltString;
 use rand_core::OsRng;
-use sha2::Digest;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -601,93 +594,6 @@ impl AppState {
             &self.inner.config.facility_code,
             features,
         ))
-    }
-
-    pub async fn dashboard_snapshot(&self) -> Result<DashboardSnapshot> {
-        let capabilities = self.deployment_capabilities().await?;
-        hms_db::dashboard::dashboard_snapshot(
-            &self.inner.pool,
-            self.facility_id(),
-            self.inner.config.deployment_profile,
-            capabilities.navigation,
-        )
-        .await
-    }
-
-    pub async fn admin_capacity_summary(&self, limit: i64) -> Result<AdminCapacitySummary> {
-        hms_db::dashboard::admin_capacity_summary(&self.inner.pool, self.facility_id(), limit).await
-    }
-
-    pub async fn list_notifications(
-        &self,
-        user_id: Uuid,
-        cursor: Option<NotificationCursor>,
-        unread_only: bool,
-        limit: i64,
-    ) -> Result<Vec<NotificationListItem>> {
-        hms_db::dashboard::list_notifications(
-            &self.inner.pool,
-            self.facility_id(),
-            user_id,
-            cursor,
-            unread_only,
-            limit,
-        )
-        .await
-    }
-
-    pub async fn notification_counts(&self, user_id: Uuid) -> Result<NotificationCounts> {
-        hms_db::dashboard::notification_counts(&self.inner.pool, self.facility_id(), user_id).await
-    }
-
-    pub async fn mark_notification_read(
-        &self,
-        user_id: Uuid,
-        notification_id: Uuid,
-        read: bool,
-    ) -> Result<Option<NotificationListItem>> {
-        hms_db::dashboard::mark_notification_read(
-            &self.inner.pool,
-            self.facility_id(),
-            user_id,
-            notification_id,
-            read,
-        )
-        .await
-    }
-
-    pub fn realtime_channel_name(&self, channel_kind: RealtimeChannelKind) -> String {
-        let digest = sha2::Sha256::digest(self.facility_id().as_bytes());
-        let scope = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest[..9]);
-        let channel = match channel_kind {
-            RealtimeChannelKind::Dashboard => "dashboard",
-            RealtimeChannelKind::Notifications => "notifications",
-        };
-        format!("facility:{scope}:{channel}")
-    }
-
-    pub async fn audit_realtime_open(
-        &self,
-        user_id: Uuid,
-        channel_name: &str,
-        channel_kind: RealtimeChannelKind,
-    ) -> Result<Uuid> {
-        let channel_kind = match channel_kind {
-            RealtimeChannelKind::Dashboard => "dashboard",
-            RealtimeChannelKind::Notifications => "notifications",
-        };
-        hms_db::dashboard::audit_realtime_open(
-            &self.inner.pool,
-            self.facility_id(),
-            user_id,
-            channel_name,
-            channel_kind,
-        )
-        .await
-    }
-
-    pub async fn audit_realtime_close(&self, subscription_id: Uuid) -> Result<()> {
-        hms_db::dashboard::audit_realtime_close(&self.inner.pool, subscription_id).await
     }
 
     pub async fn list_organization_units(

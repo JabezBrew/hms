@@ -1,5 +1,6 @@
+use base64::Engine;
 use chrono::{DateTime, Utc};
-use hms_db::dashboard::NotificationCursor;
+use hms_db::dashboard::{self, NotificationCursor};
 use hms_domain::dashboard::{
     AdminCapacityQuery, AdminCapacitySummary, DashboardSnapshot, MarkNotificationReadRequest,
     NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeChannelKind,
@@ -7,6 +8,7 @@ use hms_domain::dashboard::{
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
 use serde_json::json;
+use sha2::Digest;
 use uuid::Uuid;
 
 use crate::cursor_list;
@@ -36,12 +38,33 @@ impl DashboardService {
         Self { state }
     }
 
+    fn facility_id(&self) -> Uuid {
+        self.state.facility_id()
+    }
+
+    fn pool(&self) -> &hms_db::PgPool {
+        self.state.db_pool()
+    }
+
     pub async fn dashboard_snapshot(
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ObjectResponse<DashboardSnapshot>, ApiError> {
-        require_dashboard_access(ctx, self.state.facility_id())?;
-        let snapshot = self.state.dashboard_snapshot().await.map_err(|_| {
+        require_dashboard_access(ctx, self.facility_id())?;
+        let capabilities = self.state.deployment_capabilities().await.map_err(|_| {
+            ApiError::conflict(
+                "dashboard_snapshot_failed",
+                "Dashboard snapshot could not be loaded.",
+            )
+        })?;
+        let snapshot = dashboard::dashboard_snapshot(
+            self.pool(),
+            self.facility_id(),
+            capabilities.deployment_profile,
+            capabilities.navigation,
+        )
+        .await
+        .map_err(|_| {
             ApiError::conflict(
                 "dashboard_snapshot_failed",
                 "Dashboard snapshot could not be loaded.",
@@ -56,14 +79,12 @@ impl DashboardService {
         ctx: &hms_access::RequestContext,
         query: AdminCapacityQuery,
     ) -> Result<ObjectResponse<AdminCapacitySummary>, ApiError> {
-        require_dashboard_access(ctx, self.state.facility_id())?;
+        require_dashboard_access(ctx, self.facility_id())?;
         let limit = query
             .limit
             .unwrap_or(DEFAULT_CAPACITY_LIMIT)
             .clamp(1, MAX_CAPACITY_LIMIT) as i64;
-        let summary = self
-            .state
-            .admin_capacity_summary(limit)
+        let summary = dashboard::admin_capacity_summary(self.pool(), self.facility_id(), limit)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -80,18 +101,23 @@ impl DashboardService {
         ctx: &hms_access::RequestContext,
         query: NotificationListQuery,
     ) -> Result<ListResponse<NotificationListItem>, ApiError> {
-        require_notification_access(ctx, self.state.facility_id())?;
+        require_notification_access(ctx, self.facility_id())?;
         let (cursor, page_size, unread_only) = notification_page_request(query)?;
-        let rows = self
-            .state
-            .list_notifications(ctx.user_id, cursor, unread_only, page_size as i64 + 1)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "notification_list_failed",
-                    "Notifications could not be loaded.",
-                )
-            })?;
+        let rows = dashboard::list_notifications(
+            self.pool(),
+            self.facility_id(),
+            ctx.user_id,
+            cursor,
+            unread_only,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "notification_list_failed",
+                "Notifications could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -102,10 +128,8 @@ impl DashboardService {
         &self,
         ctx: &hms_access::RequestContext,
     ) -> Result<ObjectResponse<NotificationCounts>, ApiError> {
-        require_notification_access(ctx, self.state.facility_id())?;
-        let counts = self
-            .state
-            .notification_counts(ctx.user_id)
+        require_notification_access(ctx, self.facility_id())?;
+        let counts = dashboard::notification_counts(self.pool(), self.facility_id(), ctx.user_id)
             .await
             .map_err(|_| {
                 ApiError::conflict(
@@ -123,20 +147,24 @@ impl DashboardService {
         id: Uuid,
         payload: MarkNotificationReadRequest,
     ) -> Result<ObjectResponse<NotificationListItem>, ApiError> {
-        require_notification_access(ctx, self.state.facility_id())?;
-        let notification = self
-            .state
-            .mark_notification_read(ctx.user_id, id, payload.read)
-            .await
-            .map_err(|_| {
-                ApiError::conflict(
-                    "notification_update_failed",
-                    "Notification could not be updated.",
-                )
-            })?
-            .ok_or_else(|| {
-                ApiError::not_found("notification_not_found", "Notification was not found.")
-            })?;
+        require_notification_access(ctx, self.facility_id())?;
+        let notification = dashboard::mark_notification_read(
+            self.pool(),
+            self.facility_id(),
+            ctx.user_id,
+            id,
+            payload.read,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "notification_update_failed",
+                "Notification could not be updated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("notification_not_found", "Notification was not found.")
+        })?;
 
         Ok(object(notification))
     }
@@ -146,12 +174,15 @@ impl DashboardService {
         ctx: &hms_access::RequestContext,
     ) -> ListResponse<RealtimeSubscription> {
         let mut subscriptions = Vec::new();
-        if require_dashboard_access(ctx, self.state.facility_id()).is_ok() {
-            subscriptions.push(subscription(&self.state, RealtimeChannelKind::Dashboard));
-        }
-        if require_notification_access(ctx, self.state.facility_id()).is_ok() {
+        if require_dashboard_access(ctx, self.facility_id()).is_ok() {
             subscriptions.push(subscription(
-                &self.state,
+                self.facility_id(),
+                RealtimeChannelKind::Dashboard,
+            ));
+        }
+        if require_notification_access(ctx, self.facility_id()).is_ok() {
+            subscriptions.push(subscription(
+                self.facility_id(),
                 RealtimeChannelKind::Notifications,
             ));
         }
@@ -172,8 +203,8 @@ impl DashboardService {
         query: RealtimeSubscribeQuery,
     ) -> Result<PreparedRealtimeStream, ApiError> {
         let channel_kind = query.channel_kind.unwrap_or(RealtimeChannelKind::Dashboard);
-        require_realtime_access(ctx, self.state.facility_id(), channel_kind)?;
-        let channel_name = self.state.realtime_channel_name(channel_kind);
+        require_realtime_access(ctx, self.facility_id(), channel_kind)?;
+        let channel_name = realtime_channel_name(self.facility_id(), channel_kind);
         let payload = match channel_kind {
             RealtimeChannelKind::Dashboard => json!({ "status": "snapshot_available" }),
             RealtimeChannelKind::Notifications => json!({ "status": "notification_stream_ready" }),
@@ -198,14 +229,19 @@ impl DashboardService {
         channel_name: &str,
         channel_kind: RealtimeChannelKind,
     ) -> Option<Uuid> {
-        self.state
-            .audit_realtime_open(user_id, channel_name, channel_kind)
-            .await
-            .ok()
+        dashboard::audit_realtime_open(
+            self.pool(),
+            self.facility_id(),
+            user_id,
+            channel_name,
+            channel_kind_key(channel_kind),
+        )
+        .await
+        .ok()
     }
 
     pub async fn audit_realtime_close(&self, subscription_id: Uuid) {
-        let _ = self.state.audit_realtime_close(subscription_id).await;
+        let _ = dashboard::audit_realtime_close(self.pool(), subscription_id).await;
     }
 }
 
@@ -215,7 +251,7 @@ impl AppState {
     }
 }
 
-fn subscription(state: &AppState, channel_kind: RealtimeChannelKind) -> RealtimeSubscription {
+fn subscription(facility_id: Uuid, channel_kind: RealtimeChannelKind) -> RealtimeSubscription {
     let (feature, permission) = match channel_kind {
         RealtimeChannelKind::Dashboard => (FeatureKey::Dashboards, PermissionCode::DashboardView),
         RealtimeChannelKind::Notifications => {
@@ -223,10 +259,23 @@ fn subscription(state: &AppState, channel_kind: RealtimeChannelKind) -> Realtime
         }
     };
     RealtimeSubscription {
-        channel_name: state.realtime_channel_name(channel_kind),
+        channel_name: realtime_channel_name(facility_id, channel_kind),
         channel_kind,
         feature,
         permission,
+    }
+}
+
+fn realtime_channel_name(facility_id: Uuid, channel_kind: RealtimeChannelKind) -> String {
+    let digest = sha2::Sha256::digest(facility_id.as_bytes());
+    let scope = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest[..9]);
+    format!("facility:{scope}:{}", channel_kind_key(channel_kind))
+}
+
+fn channel_kind_key(channel_kind: RealtimeChannelKind) -> &'static str {
+    match channel_kind {
+        RealtimeChannelKind::Dashboard => "dashboard",
+        RealtimeChannelKind::Notifications => "notifications",
     }
 }
 
