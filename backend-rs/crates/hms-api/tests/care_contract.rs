@@ -1,5 +1,5 @@
 mod support;
 use support::*;
 
-#[path = "api_contract/care.rs"]
+#[path = "api_contract/care/mod.rs"]
 mod cases;

@@ -539,6 +539,204 @@ async fn ward_board_can_be_filtered_by_ward_and_patient() {
 }
 
 #[tokio::test]
+async fn admission_case_invalid_transitions_fail_without_partial_writes() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("admission-invalid")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+
+    let reserved = hms_db::ward::reserve_admission_bed(
+        db.pool(),
+        db.facility_id(),
+        scenario.admission.id,
+        Some(scenario.bed.id),
+        db.owner_user_id(),
+    )
+    .await
+    .expect("bed reserve query succeeds")
+    .expect("bed reserve returns admission");
+    assert_eq!(reserved.status, AdmissionStatus::ReadyForActivation);
+    assert_eq!(reserved.bed_id, Some(scenario.bed.id));
+
+    let second_patient = db
+        .scenario("admission-second")
+        .registered_patient()
+        .await
+        .expect("second patient creates");
+    let second_case = hms_db::ward::create_admission_case(
+        db.pool(),
+        NewAdmissionCase {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: second_patient.id,
+            ward_id: scenario.ward.id,
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("second admission case creates");
+    assert!(
+        hms_db::ward::reserve_admission_bed(
+            db.pool(),
+            db.facility_id(),
+            second_case.id,
+            Some(scenario.bed.id),
+            db.owner_user_id(),
+        )
+        .await
+        .expect("second reserve query succeeds")
+        .is_none(),
+        "reserved bed must not be assigned to a second admission case"
+    );
+    let second_after_failed_reserve =
+        hms_db::ward::get_admission_case(db.pool(), db.facility_id(), second_case.id)
+            .await
+            .expect("second admission reload succeeds")
+            .expect("second admission exists");
+    assert_eq!(
+        second_after_failed_reserve.status,
+        AdmissionStatus::ReadyForActivation
+    );
+    assert_eq!(second_after_failed_reserve.bed_id, None);
+
+    let cancelled = hms_db::ward::cancel_admission_case(
+        db.pool(),
+        db.facility_id(),
+        scenario.admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("cancel query succeeds")
+    .expect("cancel returns admission");
+    assert_eq!(cancelled.status, AdmissionStatus::Cancelled);
+    let released_bed = hms_db::ward::get_bed_by_id(db.pool(), db.facility_id(), scenario.bed.id)
+        .await
+        .expect("bed reload succeeds")
+        .expect("bed exists");
+    assert_eq!(released_bed.status, BedStatus::Available);
+
+    assert!(
+        hms_db::ward::activate_admission_case(
+            db.pool(),
+            db.facility_id(),
+            scenario.admission.id,
+            db.owner_user_id(),
+        )
+        .await
+        .expect("cancelled activation query succeeds")
+        .is_none(),
+        "cancelled admission must not be activated"
+    );
+    assert!(
+        hms_db::ward::cancel_admission_case(
+            db.pool(),
+            db.facility_id(),
+            scenario.admission.id,
+            db.owner_user_id(),
+        )
+        .await
+        .expect("double cancel query succeeds")
+        .is_none(),
+        "cancelled admission must not be cancelled twice"
+    );
+
+    let cancelled_after_failed_transitions =
+        hms_db::ward::get_admission_case(db.pool(), db.facility_id(), scenario.admission.id)
+            .await
+            .expect("cancelled admission reload succeeds")
+            .expect("cancelled admission exists");
+    assert_eq!(
+        cancelled_after_failed_transitions.status,
+        AdmissionStatus::Cancelled
+    );
+    let bed_after_failed_transitions =
+        hms_db::ward::get_bed_by_id(db.pool(), db.facility_id(), scenario.bed.id)
+            .await
+            .expect("bed reload succeeds")
+            .expect("bed exists");
+    assert_eq!(bed_after_failed_transitions.status, BedStatus::Available);
+}
+
+#[tokio::test]
+async fn concurrent_bed_reservations_allow_only_one_admission_case() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let first = db
+        .scenario("reserve-first")
+        .admission_case_with_available_bed()
+        .await
+        .expect("first admission scenario builds");
+    let second_patient = db
+        .scenario("reserve-second")
+        .registered_patient()
+        .await
+        .expect("second patient creates");
+    let second_case = hms_db::ward::create_admission_case(
+        db.pool(),
+        NewAdmissionCase {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: second_patient.id,
+            ward_id: first.ward.id,
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("second admission case creates");
+
+    let reserve_first = hms_db::ward::reserve_admission_bed(
+        db.pool(),
+        db.facility_id(),
+        first.admission.id,
+        Some(first.bed.id),
+        db.owner_user_id(),
+    );
+    let reserve_second = hms_db::ward::reserve_admission_bed(
+        db.pool(),
+        db.facility_id(),
+        second_case.id,
+        Some(first.bed.id),
+        db.owner_user_id(),
+    );
+    let (first_result, second_result) = tokio::join!(reserve_first, reserve_second);
+    let first_result = first_result.expect("first reserve query succeeds");
+    let second_result = second_result.expect("second reserve query succeeds");
+
+    assert_eq!(
+        (first_result.is_some() as usize) + (second_result.is_some() as usize),
+        1,
+        "only one concurrent reservation may claim the bed"
+    );
+
+    let first_after =
+        hms_db::ward::get_admission_case(db.pool(), db.facility_id(), first.admission.id)
+            .await
+            .expect("first admission reload succeeds")
+            .expect("first admission exists");
+    let second_after =
+        hms_db::ward::get_admission_case(db.pool(), db.facility_id(), second_case.id)
+            .await
+            .expect("second admission reload succeeds")
+            .expect("second admission exists");
+    assert_eq!(
+        (first_after.bed_id == Some(first.bed.id)) as usize
+            + (second_after.bed_id == Some(first.bed.id)) as usize,
+        1,
+        "only one admission case may retain the requested bed"
+    );
+    let bed_after = hms_db::ward::get_bed_by_id(db.pool(), db.facility_id(), first.bed.id)
+        .await
+        .expect("bed reload succeeds")
+        .expect("bed exists");
+    assert_eq!(bed_after.status, BedStatus::Reserved);
+}
+
+#[tokio::test]
 async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scoped() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

@@ -6,6 +6,10 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use chrono::NaiveDate;
+use hms_domain::deployment::DeploymentProfile;
+use hms_domain::patients::{PatientRecord, Sex};
+use hms_domain::ward::{AdmissionCaseListItem, BedListItem, WardListItem, WardSectionListItem};
 use uuid::Uuid;
 
 static SHARED_DATABASE: OnceLock<Mutex<Option<TestDatabase>>> = OnceLock::new();
@@ -50,6 +54,182 @@ impl TestDatabase {
     pub fn database_url(&self) -> &str {
         &self.database_url
     }
+}
+
+pub struct TestDb {
+    pool: crate::PgPool,
+    facility_id: Uuid,
+    owner_user_id: Uuid,
+    _database: TestDatabase,
+}
+
+impl TestDb {
+    pub async fn hospital() -> anyhow::Result<Self> {
+        Self::with_profile(DeploymentProfile::Hospital).await
+    }
+
+    pub async fn with_profile(deployment_profile: DeploymentProfile) -> anyhow::Result<Self> {
+        let database = TestDatabase::create()?;
+        let pool = crate::connect(database.database_url()).await?;
+
+        crate::migrate::run(&pool).await?;
+        crate::provision::provision_baseline(
+            &pool,
+            &crate::provision::BaselineProvisioning::hms_local(deployment_profile),
+        )
+        .await?;
+
+        let facility_id = crate::facilities::facility_id_by_code(&pool, "HMS")
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("test facility HMS was not provisioned"))?;
+        let owner_user_id = Uuid::from_u128(crate::provision::OWNER_USER_ID);
+
+        Ok(Self {
+            pool,
+            facility_id,
+            owner_user_id,
+            _database: database,
+        })
+    }
+
+    pub fn pool(&self) -> &crate::PgPool {
+        &self.pool
+    }
+
+    pub fn facility_id(&self) -> Uuid {
+        self.facility_id
+    }
+
+    pub fn owner_user_id(&self) -> Uuid {
+        self.owner_user_id
+    }
+
+    pub fn scenario(&self, slug: impl Into<String>) -> ScenarioBuilder<'_> {
+        ScenarioBuilder {
+            db: self,
+            slug: slug.into(),
+        }
+    }
+}
+
+pub struct ScenarioBuilder<'a> {
+    db: &'a TestDb,
+    slug: String,
+}
+
+pub struct WardBedScenario {
+    pub ward: WardListItem,
+    pub section: WardSectionListItem,
+    pub bed: BedListItem,
+}
+
+pub struct AdmissionScenario {
+    pub patient: PatientRecord,
+    pub ward: WardListItem,
+    pub section: WardSectionListItem,
+    pub bed: BedListItem,
+    pub admission: AdmissionCaseListItem,
+}
+
+impl ScenarioBuilder<'_> {
+    pub async fn registered_patient(&self) -> anyhow::Result<PatientRecord> {
+        let token = scenario_token(&self.slug);
+        crate::patients::create_patient(
+            self.db.pool(),
+            crate::patients::NewPatient {
+                id: Uuid::new_v4(),
+                facility_id: self.db.facility_id(),
+                patient_code: format!("P-{token}"),
+                first_name: format!("Test{token}"),
+                last_name: "Patient".to_owned(),
+                date_of_birth: NaiveDate::from_ymd_opt(1990, 1, 1)
+                    .expect("static test date is valid"),
+                sex: Sex::Female,
+            },
+        )
+        .await
+    }
+
+    pub async fn ward_with_available_bed(&self) -> anyhow::Result<WardBedScenario> {
+        let token = scenario_token(&self.slug);
+        let ward = crate::ward::create_ward(
+            self.db.pool(),
+            crate::ward::NewWard {
+                id: Uuid::new_v4(),
+                facility_id: self.db.facility_id(),
+                code: format!("W-{token}"),
+                name: format!("Ward {token}"),
+            },
+        )
+        .await?;
+        let section = crate::ward::create_ward_section(
+            self.db.pool(),
+            crate::ward::NewWardSection {
+                id: Uuid::new_v4(),
+                facility_id: self.db.facility_id(),
+                ward_id: ward.id,
+                code: format!("S-{token}"),
+                name: format!("Section {token}"),
+                actor_user_id: self.db.owner_user_id(),
+            },
+        )
+        .await?;
+        let bed = crate::ward::create_bed(
+            self.db.pool(),
+            crate::ward::NewBed {
+                id: Uuid::new_v4(),
+                facility_id: self.db.facility_id(),
+                ward_id: ward.id,
+                section_id: Some(section.id),
+                bed_code: format!("B-{token}"),
+                actor_user_id: self.db.owner_user_id(),
+            },
+        )
+        .await?;
+
+        Ok(WardBedScenario { ward, section, bed })
+    }
+
+    pub async fn admission_case_with_available_bed(&self) -> anyhow::Result<AdmissionScenario> {
+        let patient = self.registered_patient().await?;
+        let WardBedScenario { ward, section, bed } = self.ward_with_available_bed().await?;
+        let admission = crate::ward::create_admission_case(
+            self.db.pool(),
+            crate::ward::NewAdmissionCase {
+                id: Uuid::new_v4(),
+                facility_id: self.db.facility_id(),
+                patient_id: patient.id,
+                ward_id: ward.id,
+                actor_user_id: self.db.owner_user_id(),
+            },
+        )
+        .await?;
+
+        Ok(AdmissionScenario {
+            patient,
+            ward,
+            section,
+            bed,
+            admission,
+        })
+    }
+}
+
+fn scenario_token(slug: &str) -> String {
+    let prefix: String = slug
+        .chars()
+        .filter(|value| value.is_ascii_alphanumeric())
+        .take(8)
+        .collect::<String>()
+        .to_ascii_uppercase();
+    let prefix = if prefix.is_empty() {
+        "SCENARIO".to_owned()
+    } else {
+        prefix
+    };
+    let id = Uuid::new_v4().simple().to_string();
+    let suffix = id[..8].to_ascii_uppercase();
+    format!("{prefix}{suffix}")
 }
 
 impl Drop for TestDatabase {

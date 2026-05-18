@@ -39,6 +39,36 @@ pub(crate) struct TestAppFuture<F> {
     _database: Arc<hms_db::test_support::TestDatabase>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct Actor {
+    access_token: String,
+    cookie_header: String,
+    csrf_token: String,
+}
+
+impl Actor {
+    pub(crate) async fn login(app: &TestApp, email: &str) -> Self {
+        let (access_token, cookie_header, csrf_token) = login(app.clone(), email).await;
+        Self {
+            access_token,
+            cookie_header,
+            csrf_token,
+        }
+    }
+
+    pub(crate) fn bearer(&self) -> String {
+        format!("Bearer {}", self.access_token)
+    }
+
+    pub(crate) fn cookie_header(&self) -> &str {
+        &self.cookie_header
+    }
+
+    pub(crate) fn csrf_token(&self) -> &str {
+        &self.csrf_token
+    }
+}
+
 impl<F> Future for TestAppFuture<F>
 where
     F: Future,
@@ -147,6 +177,109 @@ pub(crate) async fn json_body(response: axum::response::Response) -> Value {
         .await
         .expect("response body reads");
     serde_json::from_slice(&bytes).expect("response body is json")
+}
+
+pub(crate) async fn text_body(response: axum::response::Response) -> String {
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body reads");
+    String::from_utf8(bytes.to_vec()).expect("response body is utf-8")
+}
+
+pub(crate) async fn api_get(
+    app: TestApp,
+    actor: &Actor,
+    uri: impl AsRef<str>,
+) -> axum::response::Response {
+    app.oneshot(
+        Request::builder()
+            .method(Method::GET)
+            .uri(uri.as_ref())
+            .header(AUTHORIZATION, actor.bearer())
+            .body(Body::empty())
+            .expect("request builds"),
+    )
+    .await
+    .expect("request succeeds")
+}
+
+pub(crate) async fn api_post_json(
+    app: TestApp,
+    actor: &Actor,
+    uri: impl AsRef<str>,
+    payload: Value,
+) -> axum::response::Response {
+    api_json(Method::POST, app, actor, uri, payload).await
+}
+
+pub(crate) async fn api_patch_json(
+    app: TestApp,
+    actor: &Actor,
+    uri: impl AsRef<str>,
+    payload: Value,
+) -> axum::response::Response {
+    api_json(Method::PATCH, app, actor, uri, payload).await
+}
+
+async fn api_json(
+    method: Method,
+    app: TestApp,
+    actor: &Actor,
+    uri: impl AsRef<str>,
+    payload: Value,
+) -> axum::response::Response {
+    app.oneshot(
+        Request::builder()
+            .method(method)
+            .uri(uri.as_ref())
+            .header(AUTHORIZATION, actor.bearer())
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .expect("request builds"),
+    )
+    .await
+    .expect("request succeeds")
+}
+
+pub(crate) async fn assert_json_status(
+    response: axum::response::Response,
+    expected: StatusCode,
+) -> Value {
+    let status = response.status();
+    let body = json_body(response).await;
+    assert_eq!(status, expected, "{body}");
+    body
+}
+
+pub(crate) async fn assert_forbidden(response: axum::response::Response) -> Value {
+    assert_json_status(response, StatusCode::FORBIDDEN).await
+}
+
+pub(crate) async fn assert_unauthorized(response: axum::response::Response) -> Value {
+    assert_json_status(response, StatusCode::UNAUTHORIZED).await
+}
+
+pub(crate) async fn assert_bad_request(response: axum::response::Response) -> Value {
+    assert_json_status(response, StatusCode::BAD_REQUEST).await
+}
+
+pub(crate) fn assert_cursor_page(body: &Value, expected_limit: u8) {
+    assert!(body["data"].is_array(), "{body}");
+    assert_eq!(body["page"]["limit"], expected_limit, "{body}");
+    assert!(body["page"]["has_next"].is_boolean(), "{body}");
+    assert!(
+        body["page"]["next_cursor"].is_null() || body["page"]["next_cursor"].is_string(),
+        "{body}"
+    );
+}
+
+pub(crate) fn assert_phi_absent(haystack: &str, phi_values: &[&str]) {
+    for value in phi_values {
+        assert!(
+            !haystack.contains(value),
+            "PHI value `{value}` leaked into text: {haystack}"
+        );
+    }
 }
 
 pub(crate) async fn login(app: TestApp, email: &str) -> (String, String, String) {

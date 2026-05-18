@@ -842,6 +842,145 @@ mod tests {
     }
 
     #[test]
+    fn policy_matrix_covers_core_denial_reasons() {
+        struct PolicyCase {
+            name: &'static str,
+            mutate: fn(&mut RequestContext),
+            check: fn(&RequestContext) -> Result<(), AccessError>,
+            expected: AccessError,
+        }
+
+        fn unchanged(_: &mut RequestContext) {}
+        fn clear_patient_visibility(ctx: &mut RequestContext) {
+            ctx.patient_visibility.clear();
+        }
+        fn disable_billing(ctx: &mut RequestContext) {
+            ctx.enabled_features
+                .retain(|feature| *feature != FeatureKey::Billing);
+        }
+        fn remove_lab_permission(ctx: &mut RequestContext) {
+            ctx.permissions
+                .retain(|permission| *permission != PermissionCode::LaboratoryOrderManage);
+        }
+        fn disable_inventory(ctx: &mut RequestContext) {
+            ctx.enabled_features
+                .retain(|feature| *feature != FeatureKey::Inventory);
+        }
+        fn remove_admin_permission(ctx: &mut RequestContext) {
+            ctx.permissions
+                .retain(|permission| *permission != PermissionCode::AdminAuthorityManage);
+        }
+        fn make_offsite(ctx: &mut RequestContext) {
+            ctx.offsite = OffsiteState::OffsiteReadOnly;
+        }
+
+        fn missing_facility(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_facility(ctx, Uuid::nil())
+        }
+        fn wrong_facility(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_facility(ctx, Uuid::new_v4())
+        }
+        fn disabled_feature(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_feature(ctx, FeatureKey::Nursing)
+        }
+        fn missing_permission(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_permission(ctx, PermissionCode::NursingTaskManage)
+        }
+        fn insufficient_patient_visibility(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_patient_demographics_access(ctx, &patient(ctx.facility_id))
+        }
+        fn billing_guard(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_billing_access(ctx, ctx.facility_id, PermissionCode::BillingView)
+        }
+        fn lab_guard(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_lab_access(ctx, ctx.facility_id, PermissionCode::LaboratoryOrderManage)
+        }
+        fn inventory_guard(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_inventory_access(ctx, ctx.facility_id, PermissionCode::InventoryView)
+        }
+        fn admin_guard(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_admin_authority_access(ctx, ctx.facility_id)
+        }
+        fn high_risk_offsite_guard(ctx: &RequestContext) -> Result<(), AccessError> {
+            require_high_risk_facility_permission(
+                ctx,
+                ctx.facility_id,
+                PermissionCode::AdminAuthorityManage,
+                Utc::now(),
+            )
+        }
+
+        let cases = [
+            PolicyCase {
+                name: "missing facility",
+                mutate: unchanged,
+                check: missing_facility,
+                expected: AccessError::MissingFacility,
+            },
+            PolicyCase {
+                name: "wrong facility",
+                mutate: unchanged,
+                check: wrong_facility,
+                expected: AccessError::WrongFacility,
+            },
+            PolicyCase {
+                name: "disabled feature",
+                mutate: unchanged,
+                check: disabled_feature,
+                expected: AccessError::FeatureDisabled,
+            },
+            PolicyCase {
+                name: "missing permission",
+                mutate: unchanged,
+                check: missing_permission,
+                expected: AccessError::MissingPermission,
+            },
+            PolicyCase {
+                name: "insufficient patient visibility",
+                mutate: clear_patient_visibility,
+                check: insufficient_patient_visibility,
+                expected: AccessError::PatientAccessDenied,
+            },
+            PolicyCase {
+                name: "billing disabled feature",
+                mutate: disable_billing,
+                check: billing_guard,
+                expected: AccessError::BillingAccessDenied,
+            },
+            PolicyCase {
+                name: "laboratory missing permission",
+                mutate: remove_lab_permission,
+                check: lab_guard,
+                expected: AccessError::LaboratoryAccessDenied,
+            },
+            PolicyCase {
+                name: "inventory disabled feature",
+                mutate: disable_inventory,
+                check: inventory_guard,
+                expected: AccessError::InventoryAccessDenied,
+            },
+            PolicyCase {
+                name: "admin authority missing permission",
+                mutate: remove_admin_permission,
+                check: admin_guard,
+                expected: AccessError::AdminAuthorityAccessDenied,
+            },
+            PolicyCase {
+                name: "offsite high-risk write",
+                mutate: make_offsite,
+                check: high_risk_offsite_guard,
+                expected: AccessError::OffsiteReadOnly,
+            },
+        ];
+
+        for case in cases {
+            let mut ctx = make_ctx();
+            (case.mutate)(&mut ctx);
+            assert_eq!((case.check)(&ctx), Err(case.expected), "{}", case.name);
+        }
+    }
+
+    #[test]
     fn rejects_missing_and_wrong_facility() {
         let ctx = make_ctx();
         assert_eq!(
@@ -1025,6 +1164,27 @@ mod tests {
             PermissionCode::AdminAuthorityManage,
             AuthorityScope::organization_unit(Uuid::new_v4()),
         ));
+
+        assert_eq!(
+            require_admin_authority_access(&ctx, ctx.facility_id),
+            Err(AccessError::AdminAuthorityAccessDenied)
+        );
+    }
+
+    #[test]
+    fn authority_without_permission_code_does_not_grant_access() {
+        let mut ctx = make_ctx();
+        ctx.permissions
+            .retain(|permission| *permission != PermissionCode::AdminAuthorityManage);
+        ctx.active_authorities.push(ActiveAuthority {
+            source: AuthoritySource::PermissionAssignment,
+            source_id: Uuid::new_v4(),
+            facility_id: ctx.facility_id,
+            permission_code: None,
+            scope: AuthorityScope::facility(),
+            starts_at: Utc::now(),
+            ends_at: None,
+        });
 
         assert_eq!(
             require_admin_authority_access(&ctx, ctx.facility_id),
