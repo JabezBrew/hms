@@ -36,6 +36,30 @@ favor correctness, least privilege, and predictable performance.
 - Legacy Django backend: `backend/` for explicit legacy work only.
 - Frontend: `frontend/src/` with built assets in `frontend/public/`.
 
+## Rust V2 Architecture Rules
+- Use deep module design for Rust V2 work. A module should expose a small
+  Interface, hide meaningful implementation detail, and own a product invariant.
+  Splitting files is a consequence of Depth, not the objective.
+- Current request flow: `routes/*` mount URLs, `handlers/*` translate HTTP and
+  OpenAPI shapes, `services/*` orchestrate workflows, `hms-access` authorizes,
+  `hms-db` persists, and `hms-domain` owns typed product language.
+- `AppState` is a runtime Adapter/facade for configuration, pools, auth/session
+  helpers, deployment capabilities, and service factories. Do not put workflow
+  implementation in `state.rs`.
+- New complex workflows should add or extend a `services/<domain>/...` module
+  with a small public Interface, and add matching `hms-db` repository modules
+  when persistence is non-trivial. Avoid shallow pass-through modules.
+- Reuse `hms-access::RequestContext` for facility, session, profile,
+  permission, feature, patient-visibility, offsite, and reauth facts. Do not
+  recreate handler-local access checks.
+- Reuse `hms-api/src/cursor_list.rs` for bounded cursor-list parsing and
+  response shape. Do not add local pagination helpers without a specific reason.
+- Tests should cross the same Interface production callers use. Prefer contract,
+  repository, and access tests that prove the invariant at the module Seam.
+- For architecture planning, use the `improve-codebase-architecture` vocabulary:
+  Module, Interface, Implementation, Depth, Seam, Adapter, Leverage, and
+  Locality.
+
 ## Frontend Modularization Rules
 - Feature code lives in `frontend/src/features/<domain>/` with `api/`, `hooks/`, `components/`, `pages/`, `routes.js`, `index.js` exports.
 - `frontend/src/pages/*` are thin route wrappers that import feature pages; do not put logic there.

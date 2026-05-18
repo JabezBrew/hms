@@ -97,86 +97,94 @@ backend-rs/
     hms-observability/   # logging, metrics, tracing helpers
 ```
 
-The initial production system should be a modular monolith. Split services only when an operational boundary is proven.
+The initial production system should be a modular monolith. Split crates only
+when an operational boundary is proven. Inside a crate, prefer deep modules:
+each module should expose a small Interface that hides meaningful implementation
+detail and owns a product invariant.
 
-Inside `hms-api`:
+Current `hms-api` shape:
 
 ```text
 src/
   main.rs
-  app.rs
   config.rs
   routes/
-    auth.rs
-    admin.rs
-    patients.rs
-    staff.rs
-    organization.rs
-    appointments.rs
-    encounters.rs
-    admissions.rs
-    wards.rs
-    clinical.rs
-    nursing.rs
-    laboratory.rs
-    pharmacy.rs
-    inventory.rs
+    patients.rs          # URL mounting only
+    ward.rs
     billing.rs
-    referrals.rs
-    dashboards.rs
-    realtime.rs
+    inventory.rs
+    laboratory.rs
+    ...
   handlers/
-    auth/
-    admin/
-    patients/
-      registry.rs
-      chronicle.rs
-      identity.rs
-      contacts.rs
-      flags.rs
-      access.rs
-    encounters/
-    admissions/
-    wards/
-    clinical/
-    laboratory/
-    pharmacy/
+    patients.rs          # HTTP extractors/OpenAPI response mapping
+    ward.rs
+    ...
+  services/
+    ward/                # workflow Interface + implementation modules
+    billing/
     inventory/
-    billing/
-  dto/
-    auth/
-    patients/
-      requests.rs
-      responses.rs
-    encounters/
-    admissions/
-    billing/
-  middleware/
-    request_context.rs
-    facility.rs
-    auth.rs
-    feature_gate.rs
-    offsite.rs
-    audit.rs
-    rate_limit.rs
+    laboratory/
+    patients.rs
+    care.rs
+    clinical.rs
+  cursor_list.rs         # shared cursor pagination module
+  extractors.rs          # authenticated session + RequestContext extraction
+  state.rs               # runtime adapter/facade, not workflow logic
   error.rs
-  response.rs
 ```
 
-Route modules stay thin. Domain decisions live in `hms-domain`, persistence in `hms-db`, access decisions in `hms-access`, and auth/session concerns in `hms-auth`.
+Route modules stay thin. Handler modules translate HTTP into typed calls.
+Workflow decisions live in `services/*`. Domain language and DTOs live in
+`hms-domain`, persistence lives in `hms-db`, access decisions live in
+`hms-access`, and auth/session concerns live in `hms-auth`.
 
 `routes/*.rs` files are mount points only. They should group URLs and connect them to handler functions; they should not contain business logic, SQL, large DTO definitions, or resource-specific policy code.
+
+`handlers/*.rs` files should not contain SQL, product-state transitions, or
+handler-local access shortcuts. They may validate HTTP shape, call the relevant
+service Interface, and map the result into a response.
+
+`services/*` is the main workflow Seam inside `hms-api`. New complex workflows
+should get a service module or submodule with a small public Interface. The
+Interface should be the test surface callers use. Avoid shallow pass-through
+modules that only rename calls without hiding invariants or reducing caller
+knowledge.
+
+`state.rs` is an Adapter/facade for runtime capabilities: database pools,
+configuration, auth/session helpers, deployment capabilities, and service
+factories. Do not add new workflow implementations to `state.rs`.
+
+Use existing shared modules before adding local variants:
+
+- `hms-access::RequestContext` for facility, session, profile, permission,
+  feature, patient-visibility, offsite, and reauth facts.
+- `hms-api/src/extractors.rs` for request-context extraction.
+- `hms-api/src/cursor_list.rs` for bounded cursor-list parsing and response
+  shape.
+
+File splitting is not the goal. Depth is the goal. Split a file when the new
+module can own a stable Interface, hide implementation detail, and reduce the
+knowledge required at callers. Do not split merely because a file is long.
 
 Example shape:
 
 ```rust
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/", get(handlers::patients::registry::list))
-        .route("/", post(handlers::patients::registry::create))
-        .route("/:id", get(handlers::patients::registry::get))
-        .route("/:id/chronicle", get(handlers::patients::chronicle::get))
-        .route("/:id/break-glass", post(handlers::patients::access::break_glass))
+        .route(
+            "/api/v2/patients",
+            get(handlers::patients::list_patients)
+                .post(handlers::patients::create_patient),
+        )
+        .route(
+            "/api/v2/patients/:id",
+            get(handlers::patients::get_patient)
+                .patch(handlers::patients::update_patient),
+        )
+        .route(
+            "/api/v2/patients/:id/chronicle",
+            get(handlers::patients::get_patient_chronicle),
+        )
 }
 ```
 
@@ -198,7 +206,11 @@ hms-db/src/patients/
   identity_repo.rs
 ```
 
-File size rule: if a route, handler, DTO, repository, or domain module is becoming a catch-all file, split by workflow or responsibility before it becomes hard to review.
+`hms-db` currently has deeper repository modules for workflows such as ward and
+inventory. Broader files such as admin, billing, care, laboratory, and search
+should be deepened when a workflow Interface is clear, especially when doing so
+lets the caller state one intention instead of coordinating SQL details across
+multiple helpers.
 
 <a id="core-runtime-model"></a>
 

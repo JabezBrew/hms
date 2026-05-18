@@ -96,6 +96,32 @@ frontend/src/                         backend-rs/crates/
                                       └── hms-migrator/       # migrations/provisioning
 ```
 
+### Rust V2 Module Rules
+
+Use deep modules for backend work. A useful module exposes a small Interface,
+hides implementation detail, and owns a product invariant. File splitting is
+secondary; split when the new module gives callers more Leverage and better
+Locality.
+
+Current request flow:
+
+```
+routes/* -> handlers/* -> services/* -> hms-access -> hms-db
+                                      -> hms-domain
+```
+
+- `routes/*` mounts URLs only.
+- `handlers/*` handles HTTP extractors, OpenAPI response mapping, and typed
+  service calls. No SQL, product-state transitions, or handler-local access
+  shortcuts.
+- `services/*` is the workflow Seam inside `hms-api`. Add new workflow modules
+  here before expanding handlers or `state.rs`.
+- `hms-access::RequestContext` owns facility, session, profile, permission,
+  feature, patient-visibility, offsite, and reauth facts.
+- `hms-api/src/cursor_list.rs` owns bounded cursor-list behavior.
+- `AppState` is a runtime Adapter/facade for pools, config, auth/session,
+  deployment capabilities, and service factories. It is not a workflow module.
+
 ### Key APIs
 ```
 GET  /api/v2/health/ready

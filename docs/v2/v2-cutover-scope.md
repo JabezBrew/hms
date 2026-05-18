@@ -165,9 +165,17 @@ When a deferred item becomes approved:
 
 1. Add or update this document with the product rule and acceptance criteria.
 2. Add Rust repository/contract tests before implementation.
-3. Keep access decisions in `hms-access` and request context guards.
-4. Keep persistence in `hms-db`; handlers stay thin.
-5. Generate OpenAPI after backend changes.
-6. Add or update generated JavaScript `/api/v2` bridge tests in `frontend/`.
-7. Add Playwright smoke for user-visible workflows.
-8. Keep unsupported legacy UI actions guarded until their Rust contract exists.
+3. Model the work as a deep Rust module with a small Interface and an explicit
+   product invariant. Do not start by splitting files or porting legacy
+   handlers line-for-line.
+4. Keep access decisions in `hms-access` and request context guards.
+5. Keep workflow orchestration in `hms-api/src/services/*`; handlers stay thin
+   and route modules remain mount points only.
+6. Keep persistence in `hms-db`; repository Interfaces should express workflow
+   intent instead of leaking SQL coordination to handlers.
+7. Reuse `hms-api/src/cursor_list.rs` for bounded lists and
+   `hms-access::RequestContext` for facility/session/profile/permission facts.
+8. Generate OpenAPI after backend changes.
+9. Add or update generated JavaScript `/api/v2` bridge tests in `frontend/`.
+10. Add Playwright smoke for user-visible workflows.
+11. Keep unsupported legacy UI actions guarded until their Rust contract exists.

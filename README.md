@@ -14,6 +14,9 @@ in `backend/` as legacy reference code only. Do not add new backend behavior to
   - API base: `/api/v2`
   - Stack: Rust, axum, tokio, sqlx, PostgreSQL, Redis, utoipa/OpenAPI.
   - Runtime binaries: `hms-api`, `hms-worker`, `hms-migrator`, `hms-openapi`.
+  - Architecture: `routes/*` mount URLs, `handlers/*` translate HTTP,
+    `services/*` own workflow Interfaces, `hms-access` authorizes, and
+    `hms-db` persists.
   - Source of truth: `docs/v2/rust-v2-backend-spec.md`.
 
 - **Frontend (active): React/Vite**
