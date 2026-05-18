@@ -1,3 +1,8 @@
+# Legacy Django client VPS Compose profile.
+#
+# Active Rust V2 deployments use ops/hetzner-v2/compose.yml. Keep this file only
+# for explicit legacy Django deployment maintenance/reference.
+
 name: ${COMPOSE_PROJECT_NAME:-hms-client-vps}
 
 x-backend-image: &backend-image

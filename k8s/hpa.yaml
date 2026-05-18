@@ -1,4 +1,6 @@
 # Kubernetes Horizontal Pod Autoscalers for HMS
+# Legacy Django-era manifest. The active HMS backend is Rust V2 under
+# backend-rs/ and the maintained deployment target is ops/hetzner-v2/.
 # Automatically scales pods based on CPU/memory usage
 #
 # Prerequisites:

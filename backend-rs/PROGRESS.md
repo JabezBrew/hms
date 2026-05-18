@@ -1,5 +1,10 @@
 # HMS V2 Progress Log
 
+> Historical note: some older entries describe a temporary V2-only worktree with
+> `frontend-v2/` and removed legacy roots. In the current main HMS checkout,
+> `backend-rs/` is the active backend, `frontend/` is the maintained UI runtime,
+> and `backend/` is legacy Django reference code.
+
 ## 2026-05-10
 
 - Checkpoint 1 audit/fix complete: verified the existing Rust workspace, health routes, envelopes, request id middleware, OpenAPI command, TypeScript toolchain, generated-client pipeline, V2 API shell, and targeted frontend tests. Replaced the hand-written OpenAPI JSON builder with a `utoipa::OpenApi` document generated from Rust path/schema annotations.

@@ -1,4 +1,6 @@
 # Kubernetes Ingress for HMS
+# Legacy Django-era manifest. The active HMS backend is Rust V2 under
+# backend-rs/ and the maintained deployment target is ops/hetzner-v2/.
 # Routes external traffic to internal services
 #
 # Prerequisites:
@@ -34,7 +36,7 @@ metadata:
     nginx.ingress.kubernetes.io/limit-rps: "100"
     nginx.ingress.kubernetes.io/limit-connections: "50"
 
-    # CORS (if not handled by Django)
+    # CORS (if not handled by the API)
     # nginx.ingress.kubernetes.io/enable-cors: "true"
 
     # cert-manager for automatic TLS

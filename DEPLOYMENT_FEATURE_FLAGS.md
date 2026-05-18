@@ -1,44 +1,43 @@
 # Deployment Feature Flags
 
 HMS uses one codebase with deployment profiles that resolve to explicit feature
-flags. The backend matrix in `backend/hms_backend/deployment.py` is the source
-of truth; frontend code should consume `/api/settings/deployment-capabilities/`
-instead of duplicating profile logic.
+flags. The active backend is Rust V2 under `backend-rs/`; its source of truth is
+`backend-rs/crates/hms-domain/src/deployment.rs` plus
+`backend-rs/crates/hms-domain/src/capabilities.rs`.
+
+Frontend code should consume `/api/v2/system/deployment-capabilities` in
+`VITE_HMS_API_MODE=rust-v2` instead of duplicating profile logic. The older
+Django implementation under `backend/` is legacy reference code only.
 
 ## Profiles
 
 | Profile | Facility scope | Intended deployment |
 | --- | --- | --- |
+| `chps_compound` | Single facility | CHPS compound with core patient, encounter, pharmacy, inventory, referral, and dashboard workflows. |
+| `health_center` | Single facility | Health center deployment with outpatient workflows, billing/NHIS, lab, pharmacy, inventory, referrals, dashboards, and admin. |
 | `clinic` | Single facility | Lean outpatient clinic. Inpatient, wards, bed management, and roster requirements are off by default. |
 | `hospital` | Single facility | Full single-hospital deployment. Rosters, inpatient, wards, billing, labs, pharmacy, and clinical workflows are on by default. |
+| `district_hospital` | Single facility | Full hospital deployment tuned for district hospital operations. |
+| `regional_hospital` | Single facility | Full hospital deployment tuned for regional hospital operations. |
+| `teaching_hospital` | Single facility | Full hospital deployment tuned for teaching hospital operations. |
 | `hospital_network` | Network | Multi-facility hospital group. Enables facility switching, network admin access, cross-facility referrals, and record exchange by default. |
-
-Legacy aliases are preserved: `small_clinic` maps to `clinic`, and
-`single_hospital` maps to `hospital`.
 
 ## Configuration
 
 Set the profile first:
 
 ```bash
-DEPLOYMENT_PROFILE=clinic
+HMS_DEPLOYMENT_PROFILE=clinic
 ```
 
-Override individual flags only when a customer needs a non-standard package:
-
-```bash
-FEATURE_FLAG_OVERRIDES={"laboratory": false, "pharmacy": false}
-```
-
-The override parser also accepts comma-separated pairs:
-
-```bash
-FEATURE_FLAG_OVERRIDES=laboratory=false,pharmacy=false
-```
+Rust V2 reads feature defaults from the selected profile, seeds supported
+profiles and default permissions through `hms-migrator`, and applies per-facility
+runtime overrides from the `facility_feature_entitlements` table.
 
 ## Compatibility
 
-These existing env vars still work and override the equivalent flags:
+These older Django env vars are legacy compatibility only and do not define the
+active Rust V2 capability matrix:
 
 | Env var | Feature |
 | --- | --- |
@@ -48,26 +47,24 @@ These existing env vars still work and override the equivalent flags:
 | `PRACTITIONER_SCHEDULING_MODE` | `department_rosters` |
 | `REQUIRE_OUTPATIENT_ACTIVE_CLINIC` | `outpatient_active_clinic_required` |
 
-New backend code should use `hms_backend.deployment.feature_enabled()` for
-branching, or declare `required_feature` with
-`apps.core.security.FeatureRequiredPermission` when an endpoint should be
-blocked for a deployment. New frontend code should use `useSystemCapabilities()`
-and check the returned `features` object.
+New Rust backend code should model profile, feature, permission, and navigation
+changes in `hms-domain`, then enforce permissions and feature entitlement access
+through `hms-access`. New frontend code should use `useSystemCapabilities()`
+and check the returned `features`, `permissions`, and `navigation` objects.
 
 ## Enforcement
 
-Backend feature metadata is declared in `backend/hms_backend/feature_manifest.py`.
-Profile/env settings define the default feature matrix, then
-`FeatureEntitlementOverride` records can override features globally or for a
-single facility. Precedence is:
+Backend feature metadata is declared in `backend-rs/crates/hms-domain`.
+Profile defaults define the baseline feature matrix, then
+`facility_feature_entitlements` can override features for a single facility.
+Precedence is:
 
 1. facility DB override
-2. global DB override
-3. deployment profile/env default
+2. deployment profile default
 
-`FeatureRequiredPermission` enforces `required_feature` on tier-controlled DRF
-views. `FacilityContextMiddleware` also blocks known API prefixes as a
-defense-in-depth safety net. Disabled APIs return `404 feature_disabled`.
+Rust API handlers enforce capability-sensitive operations with explicit
+permission checks and feature entitlement checks. Capability responses are gated
+by `system.deployment_capabilities.view`.
 
 Frontend route arrays are tagged with feature metadata in
 `frontend/src/app/routes/featureRoutes.js`, and `FeatureBasedRoute` redirects
@@ -78,12 +75,13 @@ Admins can inspect and manage runtime overrides at:
 
 ```text
 /settings/feature-entitlements
-/api/settings/feature-entitlements/
+/api/v2/admin/features
+/api/v2/admin/features/{key}
 ```
 
 The deployment capabilities endpoint includes effective features, feature
 sources, the active facility code, and the feature manifest:
 
 ```text
-/api/settings/deployment-capabilities/
+/api/v2/system/deployment-capabilities
 ```

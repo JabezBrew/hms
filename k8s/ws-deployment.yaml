@@ -1,4 +1,8 @@
-# Kubernetes Deployment for HMS WebSocket Server
+# Legacy Kubernetes Deployment for the old HMS WebSocket server.
+#
+# Active Rust V2 deploys use /api/v2/realtime endpoints in hms-api. Keep this
+# manifest only for explicit legacy Kubernetes reference work.
+#
 # Django Channels served by Daphne
 #
 # Apply: kubectl apply -f k8s/ws-deployment.yaml

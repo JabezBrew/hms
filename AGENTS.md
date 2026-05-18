@@ -9,27 +9,31 @@ favor correctness, least privilege, and predictable performance.
   security, systems, and DB reliability findings.
 
 ## Architecture Mode
-- Current HMS maintenance uses the existing Django/DRF/Celery backend under
-  `backend/`. For that work, follow the Django-specific commands, ORM guidance,
-  serializers, viewsets, Celery task rules, and pytest instructions below.
-- HMS Rust V2 rewrite work uses the planned Rust backend under `backend-rs/`.
-  For that work, follow `docs/v2/rust-v2-backend-spec.md` as the implementation
-  architecture. When Django-specific guidance conflicts with the Rust V2 spec,
-  the Rust V2 spec wins for files under `backend-rs/`.
-- Shared non-negotiables apply to both architectures: PHI safety, least
-  privilege, patient access enforcement, facility scoping, p99 performance,
-  paginated lists, scoped cache keys, no PHI logs, no unbounded clinical lists,
-  and no external I/O inside open DB transactions.
-- Translate current-system concepts into Rust equivalents during V2 work:
+- The active HMS backend is Rust V2 under `backend-rs/`. Treat `backend-rs/`
+  and `docs/v2/rust-v2-backend-spec.md` as the backend source of truth.
+- The old Django/DRF/Celery backend under `backend/` is legacy reference code.
+  Use it only when the task explicitly asks for legacy Django maintenance,
+  parity research, or comparison against old behavior.
+- When any Django-specific guidance conflicts with Rust V2 guidance, the Rust
+  V2 spec wins for active backend work.
+- Shared non-negotiables remain mandatory: PHI safety, least privilege, patient
+  access enforcement, facility scoping, p99 performance, bounded/cursor lists,
+  scoped cache keys, no PHI logs, no unbounded clinical lists, and no external
+  I/O inside open DB transactions.
+- Translate legacy concepts into Rust equivalents during active work:
   `apps/core/security.py` becomes `hms-access`, DRF serializers become explicit
   DTOs, Django ORM query hygiene becomes SQL/query-plan hygiene, Celery tasks
   become `hms-worker` jobs, and Django migrations become `hms-migrator`
   migrations and seed/provisioning commands.
 
 ## Project Structure
-- Backend: `backend/` with domain apps under `backend/apps/`.
-- Shared backend settings: `backend/hms_backend/`.
-- Workflows and dashboards: `backend/workflows/`, `backend/dashboards/`.
+- Active backend: `backend-rs/` with crates under `backend-rs/crates/`.
+- Active backend API: `backend-rs/crates/hms-api/`.
+- Active backend persistence: `backend-rs/crates/hms-db/` and
+  `backend-rs/migrations/`.
+- Active worker/migrator: `backend-rs/crates/hms-worker/` and
+  `backend-rs/crates/hms-migrator/`.
+- Legacy Django backend: `backend/` for explicit legacy work only.
 - Frontend: `frontend/src/` with built assets in `frontend/public/`.
 
 ## Frontend Modularization Rules
@@ -43,15 +47,19 @@ favor correctness, least privilege, and predictable performance.
 - Centralize React Query keys with `shared/lib/queryKeys.js` helpers and feature key exports. Avoid ad-hoc `queryKey: ['...']`.
 
 ## Build, Test, and Development Commands
-- `cd backend && python manage.py runserver` starts the Django API.
-- `cd backend && pytest` runs backend tests (use `-k` or `apps.<app_name>` to scope).
-- `cd backend && celery -A hms_backend worker --beat --loglevel=info` runs background tasks.
+- `docker compose up -d postgres redis` starts local backend dependencies.
+- `cd backend-rs && cargo run -p hms-api` starts the Rust API.
+- `cd backend-rs && cargo test --workspace` runs active backend tests.
+- `cd backend-rs && cargo fmt --all --check` validates Rust formatting.
+- `cd backend-rs && cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json` regenerates the Rust OpenAPI document.
 - `cd frontend && npm run dev` serves the React app; `npm run build` and `npm run lint` validate.
 
 ## Coding Style
-- Python: PEP 8, 4-space indentation, business logic stays inside the owning app.
+- Rust: keep handlers thin; domain decisions live in `hms-domain`, persistence
+  in `hms-db`, access decisions in `hms-access`, and auth/session concerns in
+  `hms-auth`.
 - React: PascalCase components, `use*` hooks, camelCase utilities.
-- Keep Celery tasks small and pure. Prefer Tailwind utilities over inline styles.
+- Keep `hms-worker` jobs small and pure. Prefer Tailwind utilities over inline styles.
 
 ## Workflow-Oriented Product Rules
 - Prioritize workflow-centric UX over data-centric CRUD: guide users step-by-step.
@@ -67,9 +75,10 @@ favor correctness, least privilege, and predictable performance.
 
 ## Security Rules (Non-Negotiable)
 - Every endpoint that accepts a patient identifier MUST enforce access control
-  at the queryset and object level (use `apps/core/security.py`).
+  before returning or mutating data (use `hms-access` and request context
+  guards, not handler-local shortcuts).
 - Never log PHI. Avoid logging request bodies and free-text clinical data.
-- Use least-privilege serializers: list endpoints should not return full objects.
+- Use least-privilege DTOs: list endpoints should not return full objects.
 - Treat FHIR calls as external and unsafe; never block request threads on FHIR.
 - WebSocket subscriptions must enforce facility + patient/ward access before joining groups.
 - Cache keys must include user scope when access varies by role or assignment.
@@ -77,10 +86,9 @@ favor correctness, least privilege, and predictable performance.
 
 ## Performance Rules (p99 < 200ms for clinical views)
 - List endpoints must be O(1) queries per page. No N+1s.
-- Avoid `prefetch_related` on large child tables unless explicitly requested.
-- Use `select_related` and `annotate` for counts/exists instead of per-row queries.
-- Defer or exclude large JSON/BLOB fields in list endpoints.
-- Keep external I/O (FHIR, PDFs, emails) async via Celery.
+- Use SQL that proves bounded page size and avoids per-row follow-up queries.
+- Select only the columns needed for list DTOs.
+- Keep external I/O (FHIR, PDFs, emails) async via `hms-worker`.
 - Never use `__date` or `DATE(column)` filters. Always use `[start, end)` ranges.
 - Avoid `distinct()` on join filters for search; prefer `Exists` subqueries.
 - For dashboards, use cached projections + async refresh with stale reads; no FHIR in request path.
@@ -100,16 +108,17 @@ favor correctness, least privilege, and predictable performance.
 - Beware write amplification: every index is a tax on inserts.
 - Use per-day sequence tables for order numbers; never scan with `Max()` on hot paths.
 
-## Query Hygiene (Django ORM)
-- Prefer `.select_related()` for FK joins and `.prefetch_related()` only when bounded.
-- Use `.only()`/`.defer()` to avoid pulling large JSON blobs.
-- Avoid per-row `.count()` or `.exists()` calls; annotate once in the queryset.
+## Query Hygiene (Rust/sqlx)
+- Keep repository queries in `hms-db`; handlers should not contain SQL.
+- Use explicit projections for list DTOs instead of selecting whole rows.
+- Use `EXISTS`, joins, or precomputed projections instead of per-row count/existence checks.
+- Keep cursor pagination deterministic with stable sort keys and bounded limits.
 
 ## API Payload Optimization (Mandatory)
-- All list endpoints must use lightweight `*ListSerializer` (5-8 fields max).
-- All `ModelViewSet` classes must set `pagination_class = StandardResultsSetPagination`.
-- Import pagination from `apps.core.pagination.StandardResultsSetPagination`.
-- Never nest full related objects in list serializers; flatten required fields instead.
+- All list endpoints must use lightweight DTOs (5-8 fields max unless the
+  contract explicitly justifies more).
+- All hot lists must be cursor-paginated and bounded server-side.
+- Never nest full related objects in list responses; flatten required fields instead.
 
 ## Interactive List Fetching (Mandatory)
 - Route-level list pages must not use `apiClient.getAll()` against paginated endpoints. Use server-side pagination via `getWithPagination()` and explicit pagination UI.
@@ -129,30 +138,32 @@ favor correctness, least privilege, and predictable performance.
 - Avoid read-modify-write patterns that require table scans (use sequences/counters).
 
 ## Testing and Migrations
-- Backend tests live alongside modules (e.g., `backend/apps/users/tests.py`).
-- Add tests for serializers, viewsets, Celery tasks, and access control.
+- Backend tests live under the relevant Rust crate (`backend-rs/crates/*/tests`
+  or focused `#[cfg(test)]` modules).
+- Add tests for DTO contracts, handlers, repository scope, worker jobs, and
+  `hms-access` decisions.
 - Always run tests after code changes; fix failures before moving on.
 - Use scoped tests for bug fixes and full suite for refactors when feasible.
 - Add query-count tests for hot endpoints to enforce O(1) query behavior.
-- For migrations, include data backfill checks and index creation where needed.
-- When adding FKs to models moved across apps, add explicit migration dependencies
-  (e.g., `('encounters', '0001_initial')`) to avoid fresh-DB ordering failures.
+- For migrations, include fresh-database/provisioning checks and index creation
+  where needed.
 
 ## Commit and PR Notes
 - Use Conventional Commits (`feat:`, `fix(scope):`, `Add ...`).
-- PRs must note migrations, env var changes, and Celery schedule changes.
+- PRs must note migrations, env var changes, worker/job schedule changes, and
+  OpenAPI/generated-client changes.
 - Provide UI captures for visual changes.
 - Do not credit yourself in commit messages.
 
 ## Security and Configuration Notes
-- Never commit secrets. Use `backend/.env.example` and `frontend/.env.example`.
-- Ignore `backend/credentials/` contents.
-- Ensure Redis is available before launching Celery.
+- Never commit secrets. Use `ops/hetzner-v2/env.example` and `frontend/.env.example`.
+- Ignore legacy `backend/credentials/` contents.
+- Ensure Redis is available before launching `hms-api` or `hms-worker`.
 - Document new dependencies or IAM needs in `docs/`.
 
 ## Deployment Notes
-- HMS deploys one client per Hetzner VPS with Docker Compose. Use the runbook in
-  `ops/hetzner-client-vps/README.md`.
+- HMS deploys one client per Hetzner VPS with Docker Compose. The active Rust
+  V2 runbook is `ops/hetzner-v2/README.md`.
 - For HMS Hetzner VPS access from this laptop, use `ssh hms-staging`. The alias
   lives in `/Users/jebre/.ssh/config`, connects as `deploy@staging.thehms.systems`,
   and uses the local key `~/.ssh/hms_staging`.
@@ -161,12 +172,12 @@ favor correctness, least privilege, and predictable performance.
   run as `deploy` from `/opt/hms` and do not require `sudo`.
 - Do not store deployment passwords in repo files, Codex memory, or shell history;
   use the SSH alias and local keychain/agent setup instead.
-- The reusable client Compose profile is `ops/hetzner-client-vps/compose.yml`.
-- Generate private client env files with `ops/create-client-deployment.py`.
+- The reusable Rust V2 Compose profile is `ops/hetzner-v2/compose.yml`.
+- Create private client env files from `ops/hetzner-v2/env.example`.
 - Deploy updates from `/opt/hms` on the VPS with:
-  `ops/hetzner-client-vps/deploy.sh`.
-- Legacy managed-hosting config files have been removed. Do not reintroduce
-  provider-specific service config unless the deployment target changes again.
+  `ops/hetzner-v2/deploy.sh`.
+- `ops/hetzner-client-vps/` is the legacy Django deployment kit. Do not use it
+  for new Rust V2 deploys.
 
 ## Design System (Frontend)
 - Use Chronicle design system (/Users/jebre/Desktop/hms/frontend/CHRONICLE_DESIGN_SYSTEM.md) patterns and components when building clinical UIs.
@@ -174,42 +185,36 @@ favor correctness, least privilege, and predictable performance.
 - Visual language: editorial medical journal aesthetic; avoid generic dashboards.
 
 ## Running tests
-- Backend tests use `backend/hms_backend/settings_test.py` via `backend/pytest.ini`.
-- The default backend test run is the fast parallel suite:
+- Active backend tests use Rust cargo suites under `backend-rs/`.
+- The default backend test run is:
+
+```bash
+cd backend-rs
+cargo fmt --all --check
+cargo test --workspace
+```
+
+- Focus high-risk suites before cutover:
+
+```bash
+cargo test -p hms-access
+cargo test -p hms-db admission -- --nocapture
+cargo test -p hms-db inventory -- --nocapture
+cargo test -p hms-db billing -- --nocapture
+cargo test -p hms-db laboratory -- --nocapture
+cargo test -p hms-api --test auth_contract --test patients_contract --test ward_contract
+```
+
+- Rust DB tests use `HMS_TEST_DATABASE_URL` when supplied. Without it, tests try
+  to create an isolated local Postgres database first, then use a temporary
+  local Postgres cluster if the binaries are available.
+- Legacy Django tests are only for explicit legacy backend tasks:
 
 ```bash
 cd backend
 source .venv/bin/activate
 pytest -n auto
 ```
-
-- If the local reused test database is stale after pulling migration or seed-data changes, rebuild it once:
-
-```bash
-pytest -n auto --create-db
-```
-
-- After the test database has been rebuilt, normal runs can use the reused DB again:
-
-```bash
-pytest -n auto --reuse-db
-```
-
-- For local Postgres installs where the role is the macOS username instead of `postgres`, override DB env vars explicitly:
-
-```bash
-DB_NAME=hms DB_USER=jebre DB_PASSWORD= DB_HOST=localhost DB_PORT=5432 pytest -n auto --reuse-db
-```
-
-- Coverage is intentionally not part of the default fast run. Use this when coverage is needed:
-
-```bash
-pytest --cov=apps --cov-report=term-missing --cov-report=html
-```
-
-- The test settings force locmem cache, in-memory email, eager Celery, and fast password hashing. Tests that need Redis or production-like hashing must opt into those settings explicitly.
-- Pure unit tests must not rely on implicit database access. Mark DB-backed tests with `@pytest.mark.django_db`, request `db`, or use a fixture that requests DB access.
-- Ensure Postgres is running and accessible on the configured host/port before running tests.
 
 ## Debugging
 - When it comes to debugging, never stipulate what the cause "could be". Always investigate the codebase for the actual cause and provide a solution. The solution should be robust and not some quick patch.

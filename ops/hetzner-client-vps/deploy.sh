@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Legacy Django client VPS deploy script.
+# Active Rust V2 client deploys use ops/hetzner-v2/deploy.sh.
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"

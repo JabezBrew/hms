@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate a private HMS client VPS deployment environment file.
+Generate a private legacy Django HMS client VPS deployment environment file.
+
+Active Rust V2 deployments use ops/hetzner-v2/env.example directly. Keep this
+script only for explicit legacy Django deployment maintenance/reference.
 
 The generated file is intentionally not committed. It contains application
 secrets, bootstrap admin credentials, client profile defaults, and backup
-configuration for the one-VPS-per-client deployment model.
+configuration for the old Django one-VPS-per-client deployment model.
 """
 
 from __future__ import annotations

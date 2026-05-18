@@ -1,4 +1,8 @@
-# Celery Worker Dockerfile
+# Legacy Django Celery Worker Dockerfile
+#
+# Active Rust V2 worker builds use backend-rs/Dockerfile and hms-worker. Keep
+# this file only for explicit legacy Django maintenance/reference work.
+#
 # Runs Celery workers for background task processing
 #
 # Build: docker build -f docker/Dockerfile.celery -t hms-celery .

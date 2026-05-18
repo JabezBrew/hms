@@ -1,189 +1,167 @@
 # Hospital Management System (HMS)
 
-A modern, modular, and scalable Hospital Management System using Django REST Framework for the backend and React (Vite) with shadcn/ui components for the frontend.
+HMS is a workflow-oriented hospital management system with an active Rust V2
+backend and the maintained React/Vite frontend.
 
-## Project Overview
+The active backend is `backend-rs/`. The old Django/DRF/Celery backend remains
+in `backend/` as legacy reference code only. Do not add new backend behavior to
+`backend/` unless the task explicitly says it is legacy Django maintenance.
 
-The Hospital Management System is designed to integrate with Google Cloud Healthcare API while implementing custom modules and logic that the API doesn't natively support.
+## Architecture
 
-### Architecture
+- **Backend (active): Rust V2**
+  - Source: `backend-rs/`
+  - API base: `/api/v2`
+  - Stack: Rust, axum, tokio, sqlx, PostgreSQL, Redis, utoipa/OpenAPI.
+  - Runtime binaries: `hms-api`, `hms-worker`, `hms-migrator`, `hms-openapi`.
+  - Source of truth: `docs/v2/rust-v2-backend-spec.md`.
 
-- **Backend (Django)**:
-  - Acts as a proxy/controller between React frontend and Google Cloud FHIR/DICOM/HL7v2 endpoints.
-  - Validates and transforms user input to conform to FHIR resource structure.
-  - Implements custom business logic and modules not covered by the Google API.
+- **Frontend (active): React/Vite**
+  - Source: `frontend/`
+  - The current product UI remains JavaScript/Vite.
+  - Rust integration uses generated JavaScript helpers from the Rust OpenAPI
+    document and runs in `rust-v2` API mode.
+  - Source of truth: `docs/v2/rust-v2-main-ui-integration.md`.
 
-- **Frontend (React + shadcn/ui)**:
-  - Uses modular, composable components (e.g., `PatientForm`, `EncounterForm`, `LabForm`, `PatientSelector`)
-  - Dynamically interacts with backend endpoints.
-  - Styled with clean UI, minimal state coupling, and reusable patterns.
+- **Legacy backend reference**
+  - Source: `backend/`
+  - Historical Django implementation used for reference/parity only.
+  - Legacy deployment/config files are retained only where they are explicitly
+    labeled legacy.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.9+
-- Node.js 16+
+- Rust stable toolchain
+- Node.js 20+
 - Docker Desktop or another Docker daemon for local PostgreSQL/Redis
-- Google Cloud account with Healthcare API enabled (for production)
+- PostgreSQL client tools if you want Rust tests to create isolated local test
+  databases with `createdb`/`dropdb`
 
-### Backend Setup
+### Local Dependencies
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/hms.git
-   cd hms
-   ```
-
-2. Create a virtual environment and install dependencies:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -r backend/requirements.txt
-   ```
-
-3. Start local service dependencies:
-   ```bash
-   docker compose up -d postgres redis
-   ```
-
-4. Configure environment variables:
-   ```bash
-   cp backend/.env.example backend/.env
-   # The default local database credentials match compose.yml and CI:
-   # DB_NAME=hms DB_USER=postgres DB_PASSWORD=postgres DB_HOST=localhost DB_PORT=5432
-   ```
-
-5. Run migrations:
-   ```bash
-   cd backend
-   python manage.py migrate
-   ```
-
-6. Create a superuser:
-   ```bash
-   python manage.py createsuperuser
-   ```
-
-7. Run the development server:
-   ```bash
-   python manage.py runserver
-   ```
-
-### Backend Tests
-
-The local and CI test database credentials are intentionally the same. Start
-Postgres and Redis first, then run pytest from `backend/`:
+Start PostgreSQL and Redis from the root dependency Compose file:
 
 ```bash
 docker compose up -d postgres redis
-cd backend
-source .venv/bin/activate
-pytest -n auto --create-db
 ```
 
-Use `--create-db` when rebuilding stale reused test databases. Normal reruns can
-use:
+### Rust Backend
+
+Run checks and tests from `backend-rs/`:
 
 ```bash
-pytest -n auto
+cd backend-rs
+cargo fmt --all --check
+cargo test --workspace
 ```
 
-### Frontend Setup
+Run the API locally:
 
-1. Install dependencies:
-   ```bash
-   cd frontend
-   npm install
-   ```
+```bash
+cd backend-rs
+HMS_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/hms \
+HMS_API_LISTEN_ADDR=127.0.0.1:8080 \
+cargo run -p hms-api
+```
 
-2. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API URL and other settings
-   ```
+Regenerate the OpenAPI document after backend contract changes:
 
-3. Run the development server:
-   ```bash
-   npm run dev
-   ```
+```bash
+cd backend-rs
+cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json
+```
 
-### Hetzner Client VPS Deployment
+### Frontend
 
-The low-cost deployment path runs one HMS client per Hetzner VPS with Docker
-Compose, Caddy, Postgres, Redis, the Django ASGI API, Celery worker/beat, and
-the Nginx-served React frontend.
+Install dependencies and run the maintained UI:
 
-Use the runbook here:
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+The frontend `.env.example` defaults to Rust V2 mode:
 
 ```text
-ops/hetzner-client-vps/README.md
+VITE_HMS_API_MODE=rust-v2
+VITE_V2_API_BASE_URL=/api/v2
+VITE_V2_API_PROXY_TARGET=http://localhost:8080
 ```
 
-The reusable Compose profile is:
+Validate frontend integration:
+
+```bash
+cd frontend
+npm run api:v2:generate:check
+npm run build
+```
+
+## Deployment
+
+The active Hetzner deployment path is the Rust V2 kit:
 
 ```text
-ops/hetzner-client-vps/compose.yml
+ops/hetzner-v2/README.md
+ops/hetzner-v2/compose.yml
 ```
 
-Generate a client environment:
+It builds `backend-rs/`, runs `hms-migrator`, starts `hms-api` and
+`hms-worker`, serves the React frontend in Rust V2 mode, and checks:
 
-```bash
-python3 ops/create-client-deployment.py --slug acme --name "Acme Clinic" --profile clinic --mode production --domain acme.thehms.systems --facility-code ACME --output ops/hetzner-client-vps/.env
+```text
+https://<client-domain>/api/v2/health/ready
 ```
 
-Deploy updates from `/opt/hms` on a client VPS:
-
-```bash
-ops/hetzner-client-vps/deploy.sh
-```
-
-Legacy managed-hosting deployment files have been removed from the repo.
-
-## Authentication
-
-The system uses JWT authentication with:
-
-- **Access Token**: Short-lived (15 minutes), stored in memory or Authorization header.
-- **Refresh Token**: Long-lived (30 days), stored in HttpOnly cookie for security.
+The older `ops/hetzner-client-vps/` kit is legacy Django deployment material.
+Do not use it for new Rust V2 deploys.
 
 ## Project Structure
 
-```
-backend/
-├── apps/                  # Django apps
-│   ├── appointments/      # Appointment scheduling
-│   ├── billing/           # Billing and claims
-│   ├── fhir_client/       # FHIR API client
-│   ├── inventory/         # Inventory management
-│   ├── patients/          # Patient management
-│   ├── users/             # User management
-│   └── wards/             # Ward management
-├── hms_backend/           # Project settings
-├── logs/                  # Application logs
-└── manage.py              # Django management script
+```text
+backend-rs/
+  crates/
+    hms-api/             # Rust HTTP API server
+    hms-worker/          # Rust background worker
+    hms-migrator/        # SQL migrations and provisioning
+    hms-domain/          # Domain types and policies
+    hms-db/              # sqlx repositories and transactions
+    hms-auth/            # Auth/session/password reset logic
+    hms-access/          # Permissions and patient-access guards
+    hms-events/          # Domain event and job contracts
+    hms-observability/   # Logging, metrics, tracing helpers
+  migrations/            # Rust V2 SQL migrations
+  openapi/               # Generated Rust V2 OpenAPI document
 
 frontend/
-├── public/                # Static files
-├── src/
-│   ├── components/        # Reusable UI components
-│   ├── pages/             # Page components
-│   ├── api/               # API service layer
-│   ├── context/           # React context providers
-│   ├── hooks/             # Custom React hooks
-│   ├── utils/             # Utility functions
-│   └── App.jsx            # Main application component
-└── vite.config.js         # Vite configuration
+  src/                   # Maintained React/Vite UI
+  scripts/               # Generated V2 API client tooling
+  public/runtime-config.js
+
+backend/
+  apps/                  # Legacy Django apps for reference only
+  hms_backend/           # Legacy Django settings
+  manage.py              # Legacy Django management entry point
 ```
 
-## Development Guidelines
+## Development Rules
 
-- Follow PEP 8 style guide for Python code
-- Use ESLint and Prettier for JavaScript/React code
-- Write tests for all new features
-- Document code using docstrings and comments
-- Follow the Git workflow (feature branches, pull requests)
+- Default backend work belongs in `backend-rs/`.
+- Default backend tests are `cargo fmt --all --check` and
+  `cargo test --workspace` from `backend-rs/`.
+- Add/modify frontend Rust integration through `frontend/src/lib/api/v2/*` and
+  feature API adapters in `frontend/`.
+- Keep patient clinical data workflows inside the Patient Chronicle UI.
+- Keep PHI out of logs, metrics labels, query keys, and browser storage.
+- Use bounded cursor lists for hot clinical endpoints.
+- Preserve AbortSignal support in frontend list/search calls.
 
-## License
+## Legacy Django
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Use `backend/` only when the task explicitly says to inspect, compare, or
+maintain legacy Django behavior. Legacy commands such as `python manage.py`,
+`pytest`, DRF serializers, Django migrations, Celery tasks, and Django
+deployment files do not define the active backend architecture.

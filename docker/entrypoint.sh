@@ -1,5 +1,6 @@
 #!/bin/bash
-# Backend entrypoint script
+# Legacy Django backend entrypoint script.
+# The active HMS backend is Rust V2 under backend-rs/.
 # Validates dependencies and migration state before starting the application.
 
 set -e

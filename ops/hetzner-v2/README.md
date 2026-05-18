@@ -1,8 +1,9 @@
 # HMS V2 Hetzner Deployment Runbook
 
-This kit deploys the Rust HMS V2 API and TypeScript frontend for one client per
-Hetzner VPS. It runs Caddy, the React static frontend, `hms-api`,
-`hms-worker`, one-shot `hms-migrator`, Postgres, PgBouncer, and Redis.
+This kit deploys the Rust HMS V2 API and the maintained React/Vite frontend in
+`rust-v2` mode for one client per Hetzner VPS. It runs Caddy, the React static
+frontend, `hms-api`, `hms-worker`, one-shot `hms-migrator`, Postgres,
+PgBouncer, and Redis.
 
 The stack serves only `/api/v2/*` from Rust. It does not include Django admin,
 Django sessions, old API shapes, old data migration, or AI shell modules.
@@ -125,8 +126,7 @@ Before cutover:
 - `cargo test --workspace`
 - migration fresh-db/provisioning test
 - `cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json`
-- `npm run api:generate:check`
-- `npm run typecheck`
+- `npm run api:v2:generate:check`
 - targeted V2 frontend tests
 - `npm run build`
 - `npm run perf:bundle-budget`

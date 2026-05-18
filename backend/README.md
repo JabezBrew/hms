@@ -1,4 +1,8 @@
-# Hospital Management System - Backend
+# Legacy Hospital Management System - Django Backend
+
+> Legacy note: the active HMS backend is Rust V2 under `backend-rs/`. Use this
+> directory only for explicit legacy Django maintenance, parity research, or
+> historical reference.
 
 This document provides an overview of the backend implementation for the Hospital Management System.
 

@@ -69,10 +69,11 @@ services:
   frontend:
     image: hms-v2-frontend-${CLIENT_SLUG:-client}:${VERSION:-latest}
     build:
-      context: ../../frontend-v2
+      context: ../../frontend
       dockerfile: Dockerfile
     environment:
       API_BASE_URL: /api
+      HMS_API_MODE: rust-v2
       V2_API_BASE_URL: /api/v2
       WS_URL: ${FRONTEND_WS_URL:-}
       DEFAULT_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}

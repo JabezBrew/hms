@@ -1,9 +1,13 @@
-name: Backend Dependency Review
+name: Rust Backend Dependency Review
 
 on:
   pull_request:
     branches: [ main, develop ]
     paths:
+      - 'backend-rs/Cargo.toml'
+      - 'backend-rs/Cargo.lock'
+      # Legacy Django reference dependencies are still reviewed when touched,
+      # but backend-rs is the active backend.
       - 'backend/requirements.txt'
       - 'backend/requirements-dev.txt'
       - '.github/workflows/backend-dependency-review.yml'

@@ -1,6 +1,10 @@
-# Docker Compose for HMS Development
+# Legacy Django Docker Compose for HMS Development
 #
-# Starts all services needed for full-container local development:
+# Active Rust V2 backend development uses backend-rs/ plus the root dependency
+# compose.yml for Postgres/Redis. Keep this full-container stack only for
+# explicit legacy Django maintenance/reference work.
+#
+# Starts all services needed for legacy full-container local development:
 # - PostgreSQL (primary + replica)
 # - Redis (cache + channels)
 # - Django API (gunicorn)
