@@ -2,11 +2,6 @@
 
 This is the React/Vite frontend for HMS.
 
-## Deep Documentation
-
-- `/Users/jebre/Desktop/hms/frontend/CODEBASE_FRONTEND.md`
-- `/Users/jebre/Desktop/hms/CODEBASE_DEEP_DIVE.md`
-
 ## Local Development
 
 ```bash

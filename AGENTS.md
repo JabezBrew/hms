@@ -13,7 +13,7 @@ favor correctness, least privilege, and predictable performance.
   `backend/`. For that work, follow the Django-specific commands, ORM guidance,
   serializers, viewsets, Celery task rules, and pytest instructions below.
 - HMS Rust V2 rewrite work uses the planned Rust backend under `backend-rs/`.
-  For that work, follow `docs/rust-v2-backend-spec.md` as the implementation
+  For that work, follow `docs/v2/rust-v2-backend-spec.md` as the implementation
   architecture. When Django-specific guidance conflicts with the Rust V2 spec,
   the Rust V2 spec wins for files under `backend-rs/`.
 - Shared non-negotiables apply to both architectures: PHI safety, least

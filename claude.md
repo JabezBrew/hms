@@ -14,7 +14,7 @@ Django/DRF/Celery backend. Keep using that guidance for maintenance work under
 `backend/`.
 
 For the Rust V2 rewrite under `backend-rs/`, use
-`docs/rust-v2-backend-spec.md` as the implementation architecture. When
+`docs/v2/rust-v2-backend-spec.md` as the implementation architecture. When
 Django-specific guidance here conflicts with the Rust V2 spec, the Rust V2 spec
 wins for `backend-rs/`.
 
