@@ -21,7 +21,7 @@ in `backend/` as legacy reference code only. Do not add new backend behavior to
   - The current product UI remains JavaScript/Vite.
   - Rust integration uses generated JavaScript helpers from the Rust OpenAPI
     document and runs in `rust-v2` API mode.
-  - Source of truth: `docs/v2/rust-v2-main-ui-integration.md`.
+  - Source of truth: `docs/v2/v2-cutover-scope.md`.
 
 - **Legacy backend reference**
   - Source: `backend/`

@@ -55,6 +55,11 @@
 
 ## 2026-05-10 Spec Reconciliation
 
+Historical note: the `frontend-v2` TypeScript rewrite and interim parity
+documents referenced in this section were later collapsed into
+`docs/v2/v2-cutover-scope.md`. Treat the filenames below as historical evidence,
+not active source-of-truth docs.
+
 - Reconciled the implemented V2 rewrite against `docs/v2/rust-v2-backend-spec.md` and `docs/v2/typescript-v2-frontend-spec.md`. The specs were copied into this rewrite worktree as ignored local V2 source-of-truth docs.
 - Added `docs/v2/V2_SPEC_ALIGNMENT.md` with requirement-by-requirement evidence, verification commands, status, and remaining decisions.
 - Fixed material Rust architecture drift by adding `hms-auth`, `hms-events`, and `hms-observability` crates. JWT access-token claims and issue/verify now live in `hms-auth`; JSON tracing setup lives in `hms-observability`; domain event kinds and a durable event insert boundary live behind `hms-events`/`hms-db`.

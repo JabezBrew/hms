@@ -59,7 +59,10 @@ AGENTS.md
 
 # Docs
 .junie/
-docs/
+docs/*
+!docs/modules.md
+!docs/v2/
+!docs/v2/**
 backend-rs/target/
 .claude/
 .codex/
