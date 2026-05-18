@@ -8,6 +8,7 @@ describe('Rust V2 auth bridge', () => {
   const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__;
 
   beforeEach(() => {
+    vi.stubEnv('VITE_DEFAULT_FACILITY_CODE', '');
     globalThis.window.__HMS_RUNTIME_CONFIG__ = {
       apiMode: 'rust-v2',
       v2ApiBaseUrl: 'http://localhost:8080/api/v2',
@@ -19,6 +20,7 @@ describe('Rust V2 auth bridge', () => {
 
   afterEach(() => {
     __resetV2ApiClientForTests();
+    vi.unstubAllEnvs();
     globalThis.window.__HMS_RUNTIME_CONFIG__ = originalRuntimeConfig;
     globalThis.fetch = originalFetch;
   });
@@ -132,6 +134,18 @@ describe('Rust V2 auth bridge', () => {
     expect(JSON.parse(request.body)).toMatchObject({
       facility_code: 'HMS',
     });
+  });
+
+  it('rejects Rust V2 login locally when no facility code is available', async () => {
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+      apiMode: 'rust-v2',
+      v2ApiBaseUrl: 'http://localhost:8080/api/v2',
+    };
+
+    await expect(authApi.login('owner@hms.local', 'secret-password')).rejects.toThrow(
+      'Facility code is required for Rust V2 login',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('loads the current profile through /api/v2/auth/me', async () => {

@@ -140,6 +140,9 @@ export const authApi = {
     try {
       if (isRustV2ApiMode()) {
         const v2FacilityCode = requestedFacilityCode || getDefaultFacilityCode();
+        if (!v2FacilityCode) {
+          throw new Error('Facility code is required for Rust V2 login');
+        }
         const response = await v2Api.postAuthLogin(
           {
             email,
