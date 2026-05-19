@@ -14,7 +14,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorResponse};
-use crate::extractors::{AuthenticatedSession, RequestContext};
+use crate::extractors::{AuthenticatedSession, AuthenticatedUser, RequestContext};
 use crate::response::{object, ObjectResponse};
 use crate::state::{AppState, ChangePasswordOutcome, LoginOutcome};
 
@@ -242,8 +242,8 @@ pub async fn logout(
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
 )]
-pub async fn me(RequestContext(user): RequestContext) -> Json<ObjectResponse<AuthUser>> {
-    Json(object(user.auth_user().clone()))
+pub async fn me(AuthenticatedUser(user): AuthenticatedUser) -> Json<ObjectResponse<AuthUser>> {
+    Json(object(user))
 }
 
 #[utoipa::path(

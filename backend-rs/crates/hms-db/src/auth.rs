@@ -307,6 +307,76 @@ pub async fn user_by_id(pool: &PgPool, user_id: Uuid) -> anyhow::Result<Option<U
     hydrate_user(row)
 }
 
+pub async fn user_by_id_for_facility(
+    pool: &PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+) -> anyhow::Result<Option<UserAccount>> {
+    let row = hms_observability::observe_db_query(
+        "auth.user_by_id_for_facility",
+        sqlx::query_as::<_, UserRow>(
+            r#"
+        SELECT users.id,
+               users.email,
+               users.display_name,
+               users.facility_id,
+               facilities.code AS facility_code,
+               facilities.deployment_profile AS active_profile,
+               users.session_version,
+               users.permission_version,
+               users.password_change_required,
+               users.password_hash,
+               COALESCE(user_permissions.permission_codes, ARRAY[]::text[]) AS permission_codes,
+               COALESCE(user_features.feature_keys, ARRAY[]::text[]) AS feature_keys,
+               COALESCE(user_patient_visibility.visibility_codes, ARRAY[]::text[]) AS visibility_codes,
+               EXISTS (
+                   SELECT 1
+                   FROM auth_webauthn_credentials
+                   WHERE auth_webauthn_credentials.facility_id = users.facility_id
+                     AND auth_webauthn_credentials.user_id = users.id
+                     AND auth_webauthn_credentials.disabled_at IS NULL
+               ) AS passkey_enrolled,
+               COALESCE(auth_recovery_codes.remaining, 0)::bigint AS recovery_codes_remaining
+        FROM users
+        JOIN facilities ON facilities.id = users.facility_id
+        LEFT JOIN LATERAL (
+            SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
+            FROM user_permissions
+            WHERE user_id = users.id
+        ) user_permissions ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(feature_key ORDER BY feature_key) AS feature_keys
+            FROM user_features
+            WHERE user_id = users.id
+        ) user_features ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(visibility ORDER BY visibility) AS visibility_codes
+            FROM user_patient_visibility
+            WHERE user_id = users.id
+        ) user_patient_visibility ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::bigint AS remaining
+            FROM auth_recovery_codes
+            WHERE facility_id = users.facility_id
+              AND user_id = users.id
+              AND used_at IS NULL
+              AND invalidated_at IS NULL
+        ) auth_recovery_codes ON TRUE
+        WHERE users.id = $1
+          AND users.facility_id = $2
+          AND users.is_active = TRUE
+          AND facilities.is_active = TRUE
+        "#,
+        )
+        .bind(user_id)
+        .bind(facility_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    hydrate_user(row)
+}
+
 pub async fn request_context_facts(
     pool: &PgPool,
     user_id: Uuid,

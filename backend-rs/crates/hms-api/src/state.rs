@@ -208,6 +208,18 @@ impl AppState {
             .map(|user| user.to_auth_user()))
     }
 
+    pub async fn auth_user_for_facility(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+    ) -> Result<Option<AuthUser>> {
+        Ok(
+            hms_db::auth::user_by_id_for_facility(&self.inner.pool, user_id, facility_id)
+                .await?
+                .map(|user| user.to_auth_user()),
+        )
+    }
+
     pub async fn request_context_facts(
         &self,
         user_id: Uuid,

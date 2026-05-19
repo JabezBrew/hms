@@ -21,6 +21,8 @@ const SLOW_REQUEST_CONTEXT_THRESHOLD: Duration = Duration::from_millis(75);
 
 pub struct RequestContext(pub hms_access::RequestContext);
 
+pub struct AuthenticatedUser(pub AuthUser);
+
 pub struct AuthenticatedSession {
     pub context: hms_access::RequestContext,
     pub session_id: Uuid,
@@ -35,6 +37,18 @@ impl FromRequestParts<AppState> for RequestContext {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         Ok(Self(resolve_request_context(parts, state).await?))
+    }
+}
+
+#[async_trait]
+impl FromRequestParts<AppState> for AuthenticatedUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Self(resolve_authenticated_user(parts, state).await?))
     }
 }
 
@@ -116,6 +130,19 @@ async fn resolve_request_context(
     }
 
     Ok(context)
+}
+
+async fn resolve_authenticated_user(parts: &Parts, state: &AppState) -> Result<AuthUser, ApiError> {
+    let claims = access_claims(parts, state)?;
+    let user = state
+        .auth_user_for_facility(claims.sub, state.facility_id())
+        .await
+        .map_err(|_| ApiError::unauthorized())?
+        .ok_or_else(ApiError::unauthorized)?;
+
+    reject_stale_claims(&user, &claims)?;
+
+    Ok(user)
 }
 
 fn duration_ms(duration: Duration) -> f64 {
