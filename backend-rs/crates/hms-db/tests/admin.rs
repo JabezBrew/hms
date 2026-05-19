@@ -138,6 +138,22 @@ async fn active_authorities_are_resolved_for_request_context() {
             .expect("cross-facility authority query succeeds")
             .is_empty()
     );
+
+    let facts = hms_db::admin::request_context_admin_facts(
+        &pool,
+        facility_id,
+        owner_id,
+        DeploymentProfile::Hospital,
+    )
+    .await
+    .expect("request context admin facts resolve");
+    assert_eq!(facts.feature_flags.get(&FeatureKey::Patients), Some(&true));
+    assert!(facts.active_authorities.iter().any(|authority| {
+        authority.facility_id == facility_id
+            && authority.permission_code == Some(PermissionCode::AdminAuthorityManage)
+            && authority.scope.scope_type == "organization_unit"
+            && authority.scope.scope_id.is_some()
+    }));
 }
 
 #[tokio::test]

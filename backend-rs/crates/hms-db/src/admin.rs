@@ -12,6 +12,7 @@ use hms_domain::admin::{
 use hms_domain::auth::{ActiveAuthority, AuthorityScope, AuthoritySource};
 use hms_domain::capabilities::{feature_flags_for_profile, ALL_FEATURES};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{FromRow, QueryBuilder};
 use uuid::Uuid;
@@ -173,7 +174,7 @@ struct AuthorityAppointmentRow {
     created_at: DateTime<Utc>,
 }
 
-#[derive(FromRow)]
+#[derive(Deserialize, FromRow)]
 struct ActiveAuthorityRow {
     source: String,
     source_id: Uuid,
@@ -212,11 +213,23 @@ struct FeatureEntitlementRow {
     updated_by_user_id: Option<Uuid>,
 }
 
-#[derive(FromRow)]
+#[derive(Deserialize, FromRow)]
 struct EffectiveFeatureFlagRow {
     deployment_profile: String,
     feature_key: Option<String>,
     enabled: Option<bool>,
+}
+
+#[derive(FromRow)]
+struct RequestContextAdminFactsRow {
+    feature_flags: Value,
+    active_authorities: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestContextAdminFacts {
+    pub feature_flags: HashMap<FeatureKey, bool>,
+    pub active_authorities: Vec<ActiveAuthority>,
 }
 
 #[derive(FromRow)]
@@ -790,7 +803,106 @@ pub async fn active_authorities_for_user(
     )
     .await?;
 
-    rows.into_iter().map(active_authority_from_row).collect()
+    active_authorities_from_rows(rows)
+}
+
+pub async fn request_context_admin_facts(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    fallback_profile: DeploymentProfile,
+) -> anyhow::Result<RequestContextAdminFacts> {
+    let row = hms_observability::observe_db_query(
+        "admin.request_context_facts",
+        sqlx::query_as::<_, RequestContextAdminFactsRow>(
+            r#"
+            SELECT
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(feature_rows) ORDER BY feature_rows.feature_key NULLS FIRST)
+                FROM (
+                  SELECT facilities.deployment_profile,
+                         facility_feature_entitlements.feature_key,
+                         facility_feature_entitlements.enabled
+                  FROM facilities
+                  LEFT JOIN facility_feature_entitlements
+                    ON facility_feature_entitlements.facility_id = facilities.id
+                  WHERE facilities.id = $1
+                    AND facilities.is_active = TRUE
+                ) feature_rows
+              ), '[]'::jsonb) AS feature_flags,
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(active_authorities) ORDER BY active_authorities.starts_at ASC, active_authorities.source_id ASC, active_authorities.permission_code ASC NULLS LAST)
+                FROM (
+                  SELECT 'position_appointment' AS source,
+                         authority_appointments.id AS source_id,
+                         authority_appointments.facility_id,
+                         authority_permissions.permission_code,
+                         'organization_unit' AS scope_type,
+                         positions.org_unit_id AS scope_id,
+                         authority_appointments.starts_at,
+                         authority_appointments.ends_at
+                  FROM authority_appointments
+                  JOIN positions ON positions.id = authority_appointments.position_id
+                  LEFT JOIN position_templates ON position_templates.id = positions.template_id
+                  LEFT JOIN LATERAL unnest(COALESCE(position_templates.permission_codes, '{}'::text[]))
+                      AS authority_permissions(permission_code) ON TRUE
+                  WHERE authority_appointments.facility_id = $1
+                    AND authority_appointments.user_id = $2
+                    AND authority_appointments.status = 'active'
+                    AND positions.status = 'active'
+                    AND authority_appointments.starts_at <= now()
+                    AND (authority_appointments.ends_at IS NULL OR authority_appointments.ends_at > now())
+
+                  UNION ALL
+
+                  SELECT 'permission_assignment' AS source,
+                         permission_assignments.id AS source_id,
+                         permission_assignments.facility_id,
+                         permission_assignments.permission_code,
+                         permission_assignments.scope_type,
+                         permission_assignments.scope_id,
+                         permission_assignments.starts_at,
+                         permission_assignments.ends_at
+                  FROM permission_assignments
+                  WHERE permission_assignments.facility_id = $1
+                    AND permission_assignments.grantee_user_id = $2
+                    AND permission_assignments.status = 'active'
+                    AND permission_assignments.starts_at <= now()
+                    AND (permission_assignments.ends_at IS NULL OR permission_assignments.ends_at > now())
+
+                  UNION ALL
+
+                  SELECT 'delegation' AS source,
+                         delegations.id AS source_id,
+                         delegations.facility_id,
+                         delegations.permission_code,
+                         'facility' AS scope_type,
+                         NULL::uuid AS scope_id,
+                         delegations.starts_at,
+                         delegations.ends_at
+                  FROM delegations
+                  WHERE delegations.facility_id = $1
+                    AND delegations.delegate_user_id = $2
+                    AND delegations.status = 'active'
+                    AND delegations.starts_at <= now()
+                    AND (delegations.ends_at IS NULL OR delegations.ends_at > now())
+                ) active_authorities
+              ), '[]'::jsonb) AS active_authorities
+            "#,
+        )
+        .bind(facility_id)
+        .bind(user_id)
+        .fetch_one(pool),
+    )
+    .await?;
+
+    let feature_rows: Vec<EffectiveFeatureFlagRow> = serde_json::from_value(row.feature_flags)?;
+    let authority_rows: Vec<ActiveAuthorityRow> = serde_json::from_value(row.active_authorities)?;
+
+    Ok(RequestContextAdminFacts {
+        feature_flags: effective_feature_flags_from_rows(feature_rows, fallback_profile)?,
+        active_authorities: active_authorities_from_rows(authority_rows)?,
+    })
 }
 
 pub async fn create_permission_assignment(
@@ -892,6 +1004,13 @@ pub async fn effective_feature_flags(
         .fetch_all(pool),
     )
     .await?;
+    effective_feature_flags_from_rows(rows, fallback_profile)
+}
+
+fn effective_feature_flags_from_rows(
+    rows: Vec<EffectiveFeatureFlagRow>,
+    fallback_profile: DeploymentProfile,
+) -> anyhow::Result<HashMap<FeatureKey, bool>> {
     let profile = rows
         .first()
         .map(|row| codec::decode(&row.deployment_profile))
@@ -2272,6 +2391,12 @@ fn active_authority_from_row(row: ActiveAuthorityRow) -> anyhow::Result<ActiveAu
         starts_at: row.starts_at,
         ends_at: row.ends_at,
     })
+}
+
+fn active_authorities_from_rows(
+    rows: Vec<ActiveAuthorityRow>,
+) -> anyhow::Result<Vec<ActiveAuthority>> {
+    rows.into_iter().map(active_authority_from_row).collect()
 }
 
 fn permission_assignment_from_row(

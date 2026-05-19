@@ -213,6 +213,19 @@ impl AppState {
             .await
     }
 
+    pub async fn request_context_admin_facts(
+        &self,
+        user_id: Uuid,
+    ) -> Result<hms_db::admin::RequestContextAdminFacts> {
+        hms_db::admin::request_context_admin_facts(
+            &self.inner.pool,
+            self.facility_id(),
+            user_id,
+            self.inner.config.deployment_profile,
+        )
+        .await
+    }
+
     pub async fn update_auth_profile(
         &self,
         user_id: Uuid,

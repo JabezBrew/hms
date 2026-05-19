@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use axum::extract::FromRequestParts;
 use axum::http::header::AUTHORIZATION;
@@ -63,11 +65,11 @@ async fn resolve_request_context(
 
     reject_stale_claims(&user, &claims)?;
 
-    let enabled_features = enabled_features(state, &user).await?;
-    let active_authorities = state
-        .active_authorities_for_user(user.id)
+    let admin_facts = state
+        .request_context_admin_facts(user.id)
         .await
         .map_err(|_| ApiError::unauthorized())?;
+    let enabled_features = enabled_features(&admin_facts.feature_flags, &user);
     let request_id = parts
         .extensions
         .get::<RequestId>()
@@ -89,7 +91,7 @@ async fn resolve_request_context(
         offsite,
         reauth,
     )
-    .with_active_authorities(active_authorities))
+    .with_active_authorities(admin_facts.active_authorities))
 }
 
 fn access_claims(parts: &Parts, state: &AppState) -> Result<AccessClaims, ApiError> {
@@ -124,19 +126,13 @@ fn reject_stale_claims(user: &AuthUser, claims: &AccessClaims) -> Result<(), Api
     Ok(())
 }
 
-async fn enabled_features(state: &AppState, user: &AuthUser) -> Result<Vec<FeatureKey>, ApiError> {
-    let capabilities = state
-        .deployment_capabilities()
-        .await
-        .map_err(|_| ApiError::unauthorized())?;
-
-    Ok(capabilities
-        .features
-        .into_iter()
+fn enabled_features(feature_flags: &HashMap<FeatureKey, bool>, user: &AuthUser) -> Vec<FeatureKey> {
+    feature_flags
+        .iter()
         .filter_map(|(feature, enabled)| {
-            (enabled && user.features.contains(&feature)).then_some(feature)
+            (*enabled && user.features.contains(feature)).then_some(*feature)
         })
-        .collect())
+        .collect()
 }
 
 fn access_token_issued_at(claims: &AccessClaims) -> Result<DateTime<Utc>, ApiError> {
