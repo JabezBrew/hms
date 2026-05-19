@@ -81,13 +81,16 @@ export function setup() {
     route: '/api/v2/health/ready',
     expected: [200],
   });
-  if (!health.ok) {
+  if (health.status !== 200) {
     throw new Error(`Readiness check failed with status ${health.status}`);
   }
 
   const fixture = collectFixture(probeSession);
   if (ENABLE_WRITES) {
     seedMinimalWriteFixture(probeSession, fixture, runId);
+  }
+  if (workflowEnabled('doctor')) {
+    fixture.chroniclePatientIds = filterChroniclePatientIds(probeSession, fixture.patientIds);
   }
 
   console.log(
@@ -98,6 +101,7 @@ export function setup() {
       `roles=${activeRoles.map((item) => item.role).join(',')}`,
       `writes=${ENABLE_WRITES ? 'enabled' : 'disabled'}`,
       `patients=${fixture.patientIds.length}`,
+      `chronicle_patients=${fixture.chroniclePatientIds.length}`,
       `wards=${fixture.wardIds.length}`,
       `admission_cases=${fixture.admissionCaseIds.length}`,
       `lab_tests=${fixture.labTestIds.length}`,
@@ -256,7 +260,7 @@ function doctorConsultWorkflow(session, data) {
     route: '/api/v2/triage',
   });
 
-  const patientId = pick(data.fixture.patientIds);
+  const patientId = pick(data.fixture.chroniclePatientIds);
   if (patientId) {
     getJson(session, `/api/v2/patients/${patientId}/chronicle`, {
       role: 'doctor',
@@ -276,7 +280,7 @@ function doctorConsultWorkflow(session, data) {
       createLabOrder(session, patientId, pick(data.fixture.labTestIds));
     }
   } else {
-    skippedWrites.add(1, { workflow: 'doctor', reason: 'no_patient' });
+    skippedWrites.add(1, { workflow: 'doctor', reason: 'no_chronicle_patient' });
   }
 
   think(6, 30);
@@ -444,6 +448,7 @@ function adminWorkflow(session) {
 function collectFixture(session) {
   const fixture = {
     patientIds: [],
+    chroniclePatientIds: [],
     wardIds: [],
     bedIds: [],
     admissionCaseIds: [],
@@ -516,6 +521,23 @@ function collectFixture(session) {
   }
 
   return fixture;
+}
+
+function filterChroniclePatientIds(session, patientIds) {
+  const accessible = [];
+  for (const patientId of patientIds.slice(0, 20)) {
+    const res = request('GET', `/api/v2/patients/${patientId}/chronicle`, {
+      role: 'setup',
+      route: '/api/v2/patients/:id/chronicle-access-probe',
+      session,
+      expected: [200, 403, 404],
+      responseCallback: http.expectedStatuses(200, 403, 404),
+    });
+    if (res.status === 200) {
+      accessible.push(patientId);
+    }
+  }
+  return accessible;
 }
 
 function seedMinimalWriteFixture(session, fixture, runId) {
@@ -640,7 +662,7 @@ function checkInVisit(session, patientId) {
 function createTriage(session, visitId) {
   const res = postJson(session, '/api/v2/triage', {
     visit_id: visitId,
-    acuity: pick(['low', 'moderate', 'urgent']),
+    acuity: pick(['routine', 'urgent', 'emergency']),
   }, {
     role: 'reception',
     route: '/api/v2/triage',
@@ -890,6 +912,7 @@ function request(method, path, opts) {
     headers,
     tags,
     timeout: REQUEST_TIMEOUT,
+    responseCallback: opts.responseCallback,
   });
 
   if (opts.metric) {
@@ -1131,7 +1154,9 @@ function think(minSeconds, maxSeconds) {
 }
 
 function safeSuffix(runId) {
-  return `${runId}${__VU || 0}${__ITER || 0}${randomInt(100, 999)}`
+  const vu = typeof __VU === 'undefined' ? 0 : __VU;
+  const iter = typeof __ITER === 'undefined' ? 0 : __ITER;
+  return `${runId}${vu}${iter}${randomInt(100, 999)}`
     .replace(/[^A-Za-z0-9]/g, '')
     .slice(-12);
 }
