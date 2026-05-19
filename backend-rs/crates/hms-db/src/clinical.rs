@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
@@ -7,8 +8,10 @@ use hms_domain::clinical::{
     ProblemArtifactLinkItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
     UpdatePrescriptionRequest, UpdateProblemRequest,
 };
-use hms_domain::patients::PatientDetail;
-use serde_json::json;
+use hms_domain::patients::{PatientDetail, PatientRecord};
+use hms_observability::observe_db_query;
+use serde::de::DeserializeOwned;
+use serde_json::{json, Value as JsonValue};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -209,6 +212,15 @@ struct ChartEntryRow {
 struct NoteContextRow {
     id: Uuid,
     patient_id: Uuid,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ChronicleSectionsRow {
+    notes: JsonValue,
+    problems: JsonValue,
+    allergies: JsonValue,
+    prescriptions: JsonValue,
+    chart_entries: JsonValue,
 }
 
 pub async fn list_note_templates(
@@ -1096,17 +1108,109 @@ pub async fn patient_chronicle_summary(
     let Some(patient) = crate::patients::get_patient(pool, facility_id, patient_id).await? else {
         return Ok(None);
     };
-    let limit = limit.clamp(1, 100);
 
-    Ok(Some(PatientChronicleSummary {
+    patient_chronicle_summary_for_patient(pool, patient, limit)
+        .await
+        .map(Some)
+}
+
+pub async fn patient_chronicle_summary_for_patient(
+    pool: &PgPool,
+    patient: PatientRecord,
+    limit: i64,
+) -> anyhow::Result<PatientChronicleSummary> {
+    let limit = limit.clamp(1, 100);
+    let sections = patient_chronicle_sections(pool, patient.facility_id, patient.id, limit).await?;
+
+    Ok(PatientChronicleSummary {
         patient: PatientDetail::from(&patient),
         generated_at: Utc::now(),
-        notes: list_notes(pool, facility_id, patient_id, None, limit).await?,
-        problems: list_problems(pool, facility_id, patient_id, None, limit).await?,
-        allergies: list_allergies(pool, facility_id, patient_id, None, limit).await?,
-        prescriptions: list_prescriptions(pool, facility_id, patient_id, None, limit).await?,
-        chart_entries: list_chart_entries(pool, facility_id, patient_id, None, limit).await?,
-    }))
+        notes: decode_chronicle_section(sections.notes, "notes")?,
+        problems: decode_chronicle_section(sections.problems, "problems")?,
+        allergies: decode_chronicle_section(sections.allergies, "allergies")?,
+        prescriptions: decode_chronicle_section(sections.prescriptions, "prescriptions")?,
+        chart_entries: decode_chronicle_section(sections.chart_entries, "chart_entries")?,
+    })
+}
+
+async fn patient_chronicle_sections(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+    limit: i64,
+) -> anyhow::Result<ChronicleSectionsRow> {
+    let row = observe_db_query(
+        "clinical.patient_chronicle.sections",
+        sqlx::query_as::<_, ChronicleSectionsRow>(
+            r#"
+            SELECT
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(notes) ORDER BY notes.updated_at DESC, notes.id DESC)
+                FROM (
+                  SELECT id, patient_id, note_type, title, status, version, updated_at
+                  FROM clinical_notes
+                  WHERE facility_id = $1 AND patient_id = $2
+                  ORDER BY updated_at DESC, id DESC
+                  LIMIT $3
+                ) notes
+              ), '[]'::jsonb) AS notes,
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(problems) ORDER BY problems.created_at DESC, problems.id DESC)
+                FROM (
+                  SELECT id, patient_id, label, status, onset_date, created_at
+                  FROM patient_problems
+                  WHERE facility_id = $1 AND patient_id = $2
+                  ORDER BY created_at DESC, id DESC
+                  LIMIT $3
+                ) problems
+              ), '[]'::jsonb) AS problems,
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(allergies) ORDER BY allergies.created_at DESC, allergies.id DESC)
+                FROM (
+                  SELECT id, patient_id, substance, reaction, severity, status, created_at
+                  FROM patient_allergies
+                  WHERE facility_id = $1 AND patient_id = $2
+                  ORDER BY created_at DESC, id DESC
+                  LIMIT $3
+                ) allergies
+              ), '[]'::jsonb) AS allergies,
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(prescriptions) ORDER BY prescriptions.prescribed_at DESC, prescriptions.id DESC)
+                FROM (
+                  SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+                  FROM prescriptions
+                  WHERE facility_id = $1 AND patient_id = $2
+                  ORDER BY prescribed_at DESC, id DESC
+                  LIMIT $3
+                ) prescriptions
+              ), '[]'::jsonb) AS prescriptions,
+              COALESCE((
+                SELECT jsonb_agg(to_jsonb(chart_entries) ORDER BY chart_entries.measured_at DESC, chart_entries.id DESC)
+                FROM (
+                  SELECT id, patient_id, entry_type, measured_at, value, unit
+                  FROM chart_entries
+                  WHERE facility_id = $1 AND patient_id = $2
+                  ORDER BY measured_at DESC, id DESC
+                  LIMIT $3
+                ) chart_entries
+              ), '[]'::jsonb) AS chart_entries
+            "#,
+        )
+        .bind(facility_id)
+        .bind(patient_id)
+        .bind(limit)
+        .fetch_one(pool),
+    )
+    .await?;
+    Ok(row)
+}
+
+fn decode_chronicle_section<T>(value: JsonValue, section: &'static str) -> anyhow::Result<Vec<T>>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_value(value)
+        .with_context(|| format!("patient Chronicle section {section} could not be decoded"))
 }
 
 fn patient_table_query(

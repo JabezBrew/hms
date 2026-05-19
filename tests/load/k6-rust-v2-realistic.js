@@ -60,6 +60,7 @@ const billingTrend = new Trend('hms_billing', true);
 export const options = buildOptions();
 
 const sessions = {};
+let credentialsCache = null;
 
 export function setup() {
   const runId = __ENV.HMS_LOAD_RUN_ID || `lt${Date.now().toString(36)}${randomInt(100, 999)}`;
@@ -109,12 +110,13 @@ export function setup() {
     ].join(' ')
   );
 
-  return { activeRoles, credentials, fixture, runId };
+  return { activeRoles, fixture, runId };
 }
 
 export function staffWorkday(data) {
+  const credentials = credentialsForVu();
   const role = chooseRole(data.activeRoles);
-  const session = sessionFor(role, data.credentials);
+  const session = sessionFor(role, credentials);
   if (!session) {
     sleep(1);
     return;
@@ -150,8 +152,9 @@ export function staffWorkday(data) {
 }
 
 export function opdRush(data) {
-  const role = data.credentials.reception ? 'reception' : data.activeRoles[0].role;
-  const session = sessionFor(role, data.credentials);
+  const credentials = credentialsForVu();
+  const role = credentials.reception ? 'reception' : data.activeRoles[0].role;
+  const session = sessionFor(role, credentials);
   if (!session) {
     sleep(1);
     return;
@@ -1069,6 +1072,13 @@ function loadCredentials() {
   }
 
   return credentials;
+}
+
+function credentialsForVu() {
+  if (!credentialsCache) {
+    credentialsCache = loadCredentials();
+  }
+  return credentialsCache;
 }
 
 function buildActiveRoles(credentials) {

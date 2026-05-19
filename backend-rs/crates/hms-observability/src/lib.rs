@@ -166,64 +166,100 @@ pub fn prometheus_metrics() -> String {
         "# HELP hms_api_http_requests_total Total HTTP requests by method, route pattern, and status.\n",
     );
     body.push_str("# TYPE hms_api_http_requests_total counter\n");
-    for (key, value) in http_metrics.iter() {
-        body.push_str(&format!(
-            "hms_api_http_requests_total{{method=\"{}\",route=\"{}\",status=\"{}\"}} {}\n",
-            escape_label_value(&key.method),
-            escape_label_value(&key.route),
-            key.status,
-            value.count
-        ));
+    if http_metrics.is_empty() {
+        body.push_str(
+            "hms_api_http_requests_total{method=\"NONE\",route=\"_none\",status=\"0\"} 0\n",
+        );
+    } else {
+        for (key, value) in http_metrics.iter() {
+            body.push_str(&format!(
+                "hms_api_http_requests_total{{method=\"{}\",route=\"{}\",status=\"{}\"}} {}\n",
+                escape_label_value(&key.method),
+                escape_label_value(&key.route),
+                key.status,
+                value.count
+            ));
+        }
     }
 
     body.push_str(
         "# HELP hms_api_http_request_duration_seconds HTTP request duration in seconds by method, route pattern, and status.\n",
     );
     body.push_str("# TYPE hms_api_http_request_duration_seconds histogram\n");
-    for (key, value) in http_metrics.iter() {
+    if http_metrics.is_empty() {
         append_histogram(
             &mut body,
             "hms_api_http_request_duration_seconds",
-            &[
-                ("method", &key.method),
-                ("route", &key.route),
-                ("status", &key.status.to_string()),
-            ],
+            &[("method", "NONE"), ("route", "_none"), ("status", "0")],
             HTTP_DURATION_BUCKETS,
-            &value.duration_bucket_counts,
-            nanos_to_seconds(value.duration_ns_sum),
-            value.count,
+            &[],
+            0.0,
+            0,
         );
+    } else {
+        for (key, value) in http_metrics.iter() {
+            append_histogram(
+                &mut body,
+                "hms_api_http_request_duration_seconds",
+                &[
+                    ("method", &key.method),
+                    ("route", &key.route),
+                    ("status", &key.status.to_string()),
+                ],
+                HTTP_DURATION_BUCKETS,
+                &value.duration_bucket_counts,
+                nanos_to_seconds(value.duration_ns_sum),
+                value.count,
+            );
+        }
     }
 
     body.push_str(
         "# HELP hms_api_http_db_query_count_sum Total database queries observed inside HTTP requests by method, route pattern, and status.\n",
     );
     body.push_str("# TYPE hms_api_http_db_query_count_sum counter\n");
-    for (key, value) in http_metrics.iter() {
-        body.push_str(&format!(
-            "hms_api_http_db_query_count_sum{{method=\"{}\",route=\"{}\",status=\"{}\"}} {}\n",
-            escape_label_value(&key.method),
-            escape_label_value(&key.route),
-            key.status,
-            value.db_query_count_sum
-        ));
+    if http_metrics.is_empty() {
+        body.push_str(
+            "hms_api_http_db_query_count_sum{method=\"NONE\",route=\"_none\",status=\"0\"} 0\n",
+        );
+    } else {
+        for (key, value) in http_metrics.iter() {
+            body.push_str(&format!(
+                "hms_api_http_db_query_count_sum{{method=\"{}\",route=\"{}\",status=\"{}\"}} {}\n",
+                escape_label_value(&key.method),
+                escape_label_value(&key.route),
+                key.status,
+                value.db_query_count_sum
+            ));
+        }
     }
 
     body.push_str(
         "# HELP hms_db_query_duration_seconds Database query duration in seconds by stable query name.\n",
     );
     body.push_str("# TYPE hms_db_query_duration_seconds histogram\n");
-    for (key, value) in db_metrics.iter() {
+    if db_metrics.is_empty() {
         append_histogram(
             &mut body,
             "hms_db_query_duration_seconds",
-            &[("query", &key.query)],
+            &[("query", "_none")],
             DB_QUERY_DURATION_BUCKETS,
-            &value.duration_bucket_counts,
-            nanos_to_seconds(value.duration_ns_sum),
-            value.count,
+            &[],
+            0.0,
+            0,
         );
+    } else {
+        for (key, value) in db_metrics.iter() {
+            append_histogram(
+                &mut body,
+                "hms_db_query_duration_seconds",
+                &[("query", &key.query)],
+                DB_QUERY_DURATION_BUCKETS,
+                &value.duration_bucket_counts,
+                nanos_to_seconds(value.duration_ns_sum),
+                value.count,
+            );
+        }
     }
 
     append_gauges(&mut body, &gauge_metrics);
@@ -543,6 +579,25 @@ mod tests {
     use std::sync::Mutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn prometheus_metrics_exports_core_series_before_traffic() {
+        let _guard = TEST_LOCK.lock().expect("test lock is available");
+        reset_metrics_for_tests();
+
+        let metrics = prometheus_metrics();
+
+        assert!(metrics.contains(
+            "hms_api_http_requests_total{method=\"NONE\",route=\"_none\",status=\"0\"} 0"
+        ));
+        assert!(metrics.contains("hms_api_http_request_duration_seconds_bucket"));
+        assert!(metrics.contains(
+            "hms_api_http_db_query_count_sum{method=\"NONE\",route=\"_none\",status=\"0\"} 0"
+        ));
+        assert!(
+            metrics.contains("hms_db_query_duration_seconds_bucket{query=\"_none\",le=\"+Inf\"} 0")
+        );
+    }
 
     #[test]
     fn metric_labels_are_sanitized_before_export() {

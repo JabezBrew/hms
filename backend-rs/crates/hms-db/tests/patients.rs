@@ -397,6 +397,20 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
     assert_eq!(summary.allergies[0].substance, "Penicillin");
     assert_eq!(summary.prescriptions[0].medication_name, "Amlodipine");
     assert_eq!(summary.chart_entries[0].value, "130/82");
+
+    let patient = hms_db::patients::get_patient(&pool, facility_id, patient_id)
+        .await
+        .expect("patient lookup succeeds")
+        .expect("patient exists");
+    let (loaded_summary, observed_queries) = hms_observability::with_request_query_counter(async {
+        hms_db::clinical::patient_chronicle_summary_for_patient(&pool, patient, 1).await
+    })
+    .await;
+    let loaded_summary = loaded_summary.expect("summary from loaded patient succeeds");
+    assert_eq!(loaded_summary.patient.id, patient_id);
+    assert_eq!(loaded_summary.notes.len(), 1);
+    assert_eq!(observed_queries, 1);
+
     assert!(hms_db::clinical::patient_chronicle_summary(
         &pool,
         uuid::Uuid::new_v4(),
