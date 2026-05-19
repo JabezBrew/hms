@@ -24,10 +24,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(30);
 
     let pool = hms_db::pool::connect_with_max_connections(&database_url, max_connections).await?;
-    sqlx::query_scalar::<_, i64>("SELECT 1")
-        .fetch_one(&pool)
-        .await
-        .context("worker database readiness check failed")?;
+    check_database_ready(&pool).await?;
 
     info!(
         max_connections,
@@ -43,13 +40,21 @@ async fn main() -> anyhow::Result<()> {
                 break;
             }
             _ = interval.tick() => {
-                if let Err(error) = sqlx::query_scalar::<_, i64>("SELECT 1").fetch_one(&pool).await {
+                if let Err(error) = check_database_ready(&pool).await {
                     warn!(%error, "worker database heartbeat failed");
                 }
             }
         }
     }
 
+    Ok(())
+}
+
+async fn check_database_ready(pool: &hms_db::PgPool) -> anyhow::Result<()> {
+    sqlx::query("SELECT 1")
+        .fetch_one(pool)
+        .await
+        .context("worker database readiness check failed")?;
     Ok(())
 }
 
@@ -66,6 +71,24 @@ fn parse_u32(value: &str, name: &str) -> anyhow::Result<u32> {
         bail!("{name} must be greater than zero");
     }
     Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn database_readiness_check_accepts_postgres_select_one() {
+        let database =
+            hms_db::test_support::TestDatabase::create().expect("test database is available");
+        let pool = hms_db::pool::connect_with_max_connections(database.database_url(), 1)
+            .await
+            .expect("test database connects");
+
+        check_database_ready(&pool)
+            .await
+            .expect("readiness query should not fail on Postgres integer typing");
+    }
 }
 
 fn parse_u64(value: &str, name: &str) -> anyhow::Result<u64> {
