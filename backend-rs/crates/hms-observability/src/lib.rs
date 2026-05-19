@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use tracing_subscriber::EnvFilter;
@@ -21,12 +21,11 @@ struct HttpRequestMetricKey {
     status: u16,
 }
 
-#[derive(Clone, Debug, Default)]
 struct HttpRequestMetricValue {
-    count: u64,
-    duration_ns_sum: u128,
-    duration_bucket_counts: Vec<u64>,
-    db_query_count_sum: u64,
+    count: AtomicU64,
+    duration_ns_sum: AtomicU64,
+    duration_bucket_counts: Vec<AtomicU64>,
+    db_query_count_sum: AtomicU64,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -34,11 +33,10 @@ struct DbQueryMetricKey {
     query: String,
 }
 
-#[derive(Clone, Debug, Default)]
 struct DbQueryMetricValue {
-    count: u64,
-    duration_ns_sum: u128,
-    duration_bucket_counts: Vec<u64>,
+    count: AtomicU64,
+    duration_ns_sum: AtomicU64,
+    duration_bucket_counts: Vec<AtomicU64>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -56,21 +54,124 @@ struct BrowserRumMetricKey {
     status: String,
 }
 
-#[derive(Clone, Debug, Default)]
 struct BrowserRumMetricValue {
-    count: u64,
-    duration_ns_sum: u128,
-    duration_bucket_counts: Vec<u64>,
+    count: AtomicU64,
+    duration_ns_sum: AtomicU64,
+    duration_bucket_counts: Vec<AtomicU64>,
+}
+
+impl HttpRequestMetricValue {
+    fn new() -> Self {
+        Self {
+            count: AtomicU64::new(0),
+            duration_ns_sum: AtomicU64::new(0),
+            duration_bucket_counts: atomic_buckets(HTTP_DURATION_BUCKETS.len()),
+            db_query_count_sum: AtomicU64::new(0),
+        }
+    }
+
+    fn observe(&self, duration: Duration, db_query_count: u64) {
+        observe_duration_histogram(
+            duration,
+            HTTP_DURATION_BUCKETS,
+            &self.duration_bucket_counts,
+            &self.duration_ns_sum,
+            &self.count,
+        );
+        self.db_query_count_sum
+            .fetch_add(db_query_count, Ordering::Relaxed);
+    }
+
+    fn count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    fn duration_ns_sum(&self) -> u64 {
+        self.duration_ns_sum.load(Ordering::Relaxed)
+    }
+
+    fn duration_bucket_counts(&self) -> Vec<u64> {
+        load_buckets(&self.duration_bucket_counts)
+    }
+
+    fn db_query_count_sum(&self) -> u64 {
+        self.db_query_count_sum.load(Ordering::Relaxed)
+    }
+}
+
+impl DbQueryMetricValue {
+    fn new() -> Self {
+        Self {
+            count: AtomicU64::new(0),
+            duration_ns_sum: AtomicU64::new(0),
+            duration_bucket_counts: atomic_buckets(DB_QUERY_DURATION_BUCKETS.len()),
+        }
+    }
+
+    fn observe(&self, duration: Duration) {
+        observe_duration_histogram(
+            duration,
+            DB_QUERY_DURATION_BUCKETS,
+            &self.duration_bucket_counts,
+            &self.duration_ns_sum,
+            &self.count,
+        );
+    }
+
+    fn count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    fn duration_ns_sum(&self) -> u64 {
+        self.duration_ns_sum.load(Ordering::Relaxed)
+    }
+
+    fn duration_bucket_counts(&self) -> Vec<u64> {
+        load_buckets(&self.duration_bucket_counts)
+    }
+}
+
+impl BrowserRumMetricValue {
+    fn new() -> Self {
+        Self {
+            count: AtomicU64::new(0),
+            duration_ns_sum: AtomicU64::new(0),
+            duration_bucket_counts: atomic_buckets(RUM_DURATION_BUCKETS.len()),
+        }
+    }
+
+    fn observe(&self, duration: Duration) {
+        observe_duration_histogram(
+            duration,
+            RUM_DURATION_BUCKETS,
+            &self.duration_bucket_counts,
+            &self.duration_ns_sum,
+            &self.count,
+        );
+    }
+
+    fn count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    fn duration_ns_sum(&self) -> u64 {
+        self.duration_ns_sum.load(Ordering::Relaxed)
+    }
+
+    fn duration_bucket_counts(&self) -> Vec<u64> {
+        load_buckets(&self.duration_bucket_counts)
+    }
 }
 
 static HTTP_REQUEST_METRICS: OnceLock<
-    Mutex<BTreeMap<HttpRequestMetricKey, HttpRequestMetricValue>>,
+    RwLock<BTreeMap<HttpRequestMetricKey, Arc<HttpRequestMetricValue>>>,
 > = OnceLock::new();
-static DB_QUERY_METRICS: OnceLock<Mutex<BTreeMap<DbQueryMetricKey, DbQueryMetricValue>>> =
+static DB_QUERY_METRICS: OnceLock<RwLock<BTreeMap<DbQueryMetricKey, Arc<DbQueryMetricValue>>>> =
     OnceLock::new();
 static GAUGE_METRICS: OnceLock<Mutex<BTreeMap<GaugeMetricKey, f64>>> = OnceLock::new();
-static BROWSER_RUM_METRICS: OnceLock<Mutex<BTreeMap<BrowserRumMetricKey, BrowserRumMetricValue>>> =
-    OnceLock::new();
+static BROWSER_RUM_METRICS: OnceLock<
+    RwLock<BTreeMap<BrowserRumMetricKey, Arc<BrowserRumMetricValue>>>,
+> = OnceLock::new();
 
 pub fn init_json_tracing(default_filter: &'static str) {
     let filter =
@@ -109,19 +210,10 @@ pub fn record_db_query(query_name: &'static str, duration: Duration) {
         counter.fetch_add(1, Ordering::Relaxed);
     });
 
-    let mut metrics = db_query_metrics().lock().expect("db metrics lock poisoned");
-    let entry = metrics
-        .entry(DbQueryMetricKey {
-            query: sanitize_query_label(query_name),
-        })
-        .or_default();
-    entry.count += 1;
-    entry.duration_ns_sum += duration.as_nanos();
-    observe_bucket(
-        duration.as_secs_f64(),
-        DB_QUERY_DURATION_BUCKETS,
-        &mut entry.duration_bucket_counts,
-    );
+    let entry = db_query_metric(DbQueryMetricKey {
+        query: sanitize_query_label(query_name),
+    });
+    entry.observe(duration);
 }
 
 pub fn record_http_request(
@@ -131,34 +223,22 @@ pub fn record_http_request(
     duration: Duration,
     db_query_count: u64,
 ) {
-    let mut metrics = http_request_metrics()
-        .lock()
-        .expect("http metrics lock poisoned");
-    let entry = metrics
-        .entry(HttpRequestMetricKey {
-            method: sanitize_method_label(method),
-            route: sanitize_route_label(route_pattern),
-            status,
-        })
-        .or_default();
-    entry.count += 1;
-    entry.duration_ns_sum += duration.as_nanos();
-    observe_bucket(
-        duration.as_secs_f64(),
-        HTTP_DURATION_BUCKETS,
-        &mut entry.duration_bucket_counts,
-    );
-    entry.db_query_count_sum += db_query_count;
+    let entry = http_request_metric(HttpRequestMetricKey {
+        method: sanitize_method_label(method),
+        route: sanitize_route_label(route_pattern),
+        status,
+    });
+    entry.observe(duration, db_query_count);
 }
 
 pub fn prometheus_metrics() -> String {
     let http_metrics = http_request_metrics()
-        .lock()
+        .read()
         .expect("http metrics lock poisoned");
-    let db_metrics = db_query_metrics().lock().expect("db metrics lock poisoned");
+    let db_metrics = db_query_metrics().read().expect("db metrics lock poisoned");
     let gauge_metrics = gauge_metrics().lock().expect("gauge metrics lock poisoned");
     let browser_rum_metrics = browser_rum_metrics()
-        .lock()
+        .read()
         .expect("browser RUM metrics lock poisoned");
     let mut body = String::new();
 
@@ -177,7 +257,7 @@ pub fn prometheus_metrics() -> String {
                 escape_label_value(&key.method),
                 escape_label_value(&key.route),
                 key.status,
-                value.count
+                value.count()
             ));
         }
     }
@@ -207,9 +287,9 @@ pub fn prometheus_metrics() -> String {
                     ("status", &key.status.to_string()),
                 ],
                 HTTP_DURATION_BUCKETS,
-                &value.duration_bucket_counts,
-                nanos_to_seconds(value.duration_ns_sum),
-                value.count,
+                &value.duration_bucket_counts(),
+                nanos_to_seconds(value.duration_ns_sum()),
+                value.count(),
             );
         }
     }
@@ -229,7 +309,7 @@ pub fn prometheus_metrics() -> String {
                 escape_label_value(&key.method),
                 escape_label_value(&key.route),
                 key.status,
-                value.db_query_count_sum
+                value.db_query_count_sum()
             ));
         }
     }
@@ -255,9 +335,9 @@ pub fn prometheus_metrics() -> String {
                 "hms_db_query_duration_seconds",
                 &[("query", &key.query)],
                 DB_QUERY_DURATION_BUCKETS,
-                &value.duration_bucket_counts,
-                nanos_to_seconds(value.duration_ns_sum),
-                value.count,
+                &value.duration_bucket_counts(),
+                nanos_to_seconds(value.duration_ns_sum()),
+                value.count(),
             );
         }
     }
@@ -295,39 +375,28 @@ pub fn record_browser_rum_event(
     status: Option<&str>,
     duration: Duration,
 ) {
-    let mut metrics = browser_rum_metrics()
-        .lock()
-        .expect("browser RUM metrics lock poisoned");
-    let entry = metrics
-        .entry(BrowserRumMetricKey {
-            event_type: sanitize_rum_label(event_type),
-            name: sanitize_rum_label(name),
-            route: sanitize_route_label(route),
-            method: method
-                .map(sanitize_method_label)
-                .unwrap_or_else(|| "NA".to_owned()),
-            status: status
-                .map(sanitize_rum_label)
-                .unwrap_or_else(|| "unknown".to_owned()),
-        })
-        .or_default();
-    entry.count += 1;
-    entry.duration_ns_sum += duration.as_nanos();
-    observe_bucket(
-        duration.as_secs_f64(),
-        RUM_DURATION_BUCKETS,
-        &mut entry.duration_bucket_counts,
-    );
+    let entry = browser_rum_metric(BrowserRumMetricKey {
+        event_type: sanitize_rum_label(event_type),
+        name: sanitize_rum_label(name),
+        route: sanitize_route_label(route),
+        method: method
+            .map(sanitize_method_label)
+            .unwrap_or_else(|| "NA".to_owned()),
+        status: status
+            .map(sanitize_rum_label)
+            .unwrap_or_else(|| "unknown".to_owned()),
+    });
+    entry.observe(duration);
 }
 
 #[cfg(test)]
 pub fn reset_metrics_for_tests() {
     http_request_metrics()
-        .lock()
+        .write()
         .expect("http metrics lock poisoned")
         .clear();
     db_query_metrics()
-        .lock()
+        .write()
         .expect("db metrics lock poisoned")
         .clear();
     gauge_metrics()
@@ -335,26 +404,85 @@ pub fn reset_metrics_for_tests() {
         .expect("gauge metrics lock poisoned")
         .clear();
     browser_rum_metrics()
-        .lock()
+        .write()
         .expect("browser RUM metrics lock poisoned")
         .clear();
 }
 
-fn http_request_metrics() -> &'static Mutex<BTreeMap<HttpRequestMetricKey, HttpRequestMetricValue>>
-{
-    HTTP_REQUEST_METRICS.get_or_init(|| Mutex::new(BTreeMap::new()))
+fn http_request_metrics(
+) -> &'static RwLock<BTreeMap<HttpRequestMetricKey, Arc<HttpRequestMetricValue>>> {
+    HTTP_REQUEST_METRICS.get_or_init(|| RwLock::new(BTreeMap::new()))
 }
 
-fn db_query_metrics() -> &'static Mutex<BTreeMap<DbQueryMetricKey, DbQueryMetricValue>> {
-    DB_QUERY_METRICS.get_or_init(|| Mutex::new(BTreeMap::new()))
+fn db_query_metrics() -> &'static RwLock<BTreeMap<DbQueryMetricKey, Arc<DbQueryMetricValue>>> {
+    DB_QUERY_METRICS.get_or_init(|| RwLock::new(BTreeMap::new()))
 }
 
 fn gauge_metrics() -> &'static Mutex<BTreeMap<GaugeMetricKey, f64>> {
     GAUGE_METRICS.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
-fn browser_rum_metrics() -> &'static Mutex<BTreeMap<BrowserRumMetricKey, BrowserRumMetricValue>> {
-    BROWSER_RUM_METRICS.get_or_init(|| Mutex::new(BTreeMap::new()))
+fn browser_rum_metrics(
+) -> &'static RwLock<BTreeMap<BrowserRumMetricKey, Arc<BrowserRumMetricValue>>> {
+    BROWSER_RUM_METRICS.get_or_init(|| RwLock::new(BTreeMap::new()))
+}
+
+fn http_request_metric(key: HttpRequestMetricKey) -> Arc<HttpRequestMetricValue> {
+    {
+        let metrics = http_request_metrics()
+            .read()
+            .expect("http metrics lock poisoned");
+        if let Some(entry) = metrics.get(&key) {
+            return Arc::clone(entry);
+        }
+    }
+
+    let mut metrics = http_request_metrics()
+        .write()
+        .expect("http metrics lock poisoned");
+    Arc::clone(
+        metrics
+            .entry(key)
+            .or_insert_with(|| Arc::new(HttpRequestMetricValue::new())),
+    )
+}
+
+fn db_query_metric(key: DbQueryMetricKey) -> Arc<DbQueryMetricValue> {
+    {
+        let metrics = db_query_metrics().read().expect("db metrics lock poisoned");
+        if let Some(entry) = metrics.get(&key) {
+            return Arc::clone(entry);
+        }
+    }
+
+    let mut metrics = db_query_metrics()
+        .write()
+        .expect("db metrics lock poisoned");
+    Arc::clone(
+        metrics
+            .entry(key)
+            .or_insert_with(|| Arc::new(DbQueryMetricValue::new())),
+    )
+}
+
+fn browser_rum_metric(key: BrowserRumMetricKey) -> Arc<BrowserRumMetricValue> {
+    {
+        let metrics = browser_rum_metrics()
+            .read()
+            .expect("browser RUM metrics lock poisoned");
+        if let Some(entry) = metrics.get(&key) {
+            return Arc::clone(entry);
+        }
+    }
+
+    let mut metrics = browser_rum_metrics()
+        .write()
+        .expect("browser RUM metrics lock poisoned");
+    Arc::clone(
+        metrics
+            .entry(key)
+            .or_insert_with(|| Arc::new(BrowserRumMetricValue::new())),
+    )
 }
 
 fn sanitize_method_label(value: &str) -> String {
@@ -431,20 +559,46 @@ fn escape_label_value(value: &str) -> String {
         .replace('\n', "\\n")
 }
 
-fn nanos_to_seconds(nanos: u128) -> f64 {
+fn nanos_to_seconds(nanos: u64) -> f64 {
     nanos as f64 / 1_000_000_000.0
 }
 
-fn observe_bucket(value: f64, buckets: &[f64], bucket_counts: &mut Vec<u64>) {
-    if bucket_counts.len() < buckets.len() {
-        bucket_counts.resize(buckets.len(), 0);
-    }
-    for (index, upper_bound) in buckets.iter().enumerate() {
-        if value <= *upper_bound {
-            bucket_counts[index] += 1;
-            break;
+fn atomic_buckets(count: usize) -> Vec<AtomicU64> {
+    (0..count).map(|_| AtomicU64::new(0)).collect()
+}
+
+fn load_buckets(bucket_counts: &[AtomicU64]) -> Vec<u64> {
+    bucket_counts
+        .iter()
+        .map(|bucket| bucket.load(Ordering::Relaxed))
+        .collect()
+}
+
+fn observe_duration_histogram(
+    duration: Duration,
+    buckets: &[f64],
+    bucket_counts: &[AtomicU64],
+    duration_ns_sum: &AtomicU64,
+    count: &AtomicU64,
+) {
+    let duration_seconds = duration.as_secs_f64();
+    if let Some(index) = bucket_index(duration_seconds, buckets) {
+        if let Some(bucket) = bucket_counts.get(index) {
+            bucket.fetch_add(1, Ordering::Relaxed);
         }
     }
+    let duration_nanos = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
+    duration_ns_sum.fetch_add(duration_nanos, Ordering::Relaxed);
+    count.fetch_add(1, Ordering::Relaxed);
+}
+
+fn bucket_index(value: f64, buckets: &[f64]) -> Option<usize> {
+    for (index, upper_bound) in buckets.iter().enumerate() {
+        if value <= *upper_bound {
+            return Some(index);
+        }
+    }
+    None
 }
 
 fn append_histogram(
@@ -513,7 +667,7 @@ fn append_gauges(body: &mut String, metrics: &BTreeMap<GaugeMetricKey, f64>) {
 
 fn append_browser_rum_metrics(
     body: &mut String,
-    metrics: &BTreeMap<BrowserRumMetricKey, BrowserRumMetricValue>,
+    metrics: &BTreeMap<BrowserRumMetricKey, Arc<BrowserRumMetricValue>>,
 ) {
     body.push_str(
         "# HELP hms_browser_rum_events_total Total browser RUM events accepted by the Rust API.\n",
@@ -523,7 +677,7 @@ fn append_browser_rum_metrics(
         body.push_str(&format!(
             "hms_browser_rum_events_total{} {}\n",
             browser_rum_labels(key),
-            value.count
+            value.count()
         ));
     }
 
@@ -544,9 +698,9 @@ fn append_browser_rum_metrics(
             "hms_browser_rum_duration_seconds",
             &labels,
             RUM_DURATION_BUCKETS,
-            &value.duration_bucket_counts,
-            nanos_to_seconds(value.duration_ns_sum),
-            value.count,
+            &value.duration_bucket_counts(),
+            nanos_to_seconds(value.duration_ns_sum()),
+            value.count(),
         );
     }
 }
@@ -577,6 +731,7 @@ fn labels_to_prometheus(labels: &[(&str, &str)]) -> String {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+    use std::thread;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -658,5 +813,43 @@ mod tests {
         .await;
 
         assert_eq!(query_count, 2);
+    }
+
+    #[test]
+    fn metrics_recording_preserves_counts_under_concurrency() {
+        let _guard = TEST_LOCK.lock().expect("test lock is available");
+        reset_metrics_for_tests();
+
+        let workers = 8;
+        let records_per_worker = 250;
+        thread::scope(|scope| {
+            for _ in 0..workers {
+                scope.spawn(|| {
+                    for _ in 0..records_per_worker {
+                        record_http_request(
+                            "GET",
+                            "/api/v2/auth/me",
+                            200,
+                            Duration::from_millis(2),
+                            1,
+                        );
+                        record_db_query("auth.request_context_facts", Duration::from_millis(2));
+                    }
+                });
+            }
+        });
+
+        let expected = workers * records_per_worker;
+        let metrics = prometheus_metrics();
+
+        assert!(metrics.contains(&format!(
+            "hms_api_http_requests_total{{method=\"GET\",route=\"/api/v2/auth/me\",status=\"200\"}} {expected}"
+        )));
+        assert!(metrics.contains(&format!(
+            "hms_api_http_db_query_count_sum{{method=\"GET\",route=\"/api/v2/auth/me\",status=\"200\"}} {expected}"
+        )));
+        assert!(metrics.contains(&format!(
+            "hms_db_query_duration_seconds_count{{query=\"auth.request_context_facts\"}} {expected}"
+        )));
     }
 }
