@@ -47,6 +47,7 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/health/alive",
         "/api/v2/health/ready",
         "/api/v2/metrics",
+        "/api/v2/observability/rum",
         "/api/v2/auth/login",
         "/api/v2/auth/refresh",
         "/api/v2/auth/logout",
@@ -308,11 +309,96 @@ async fn metrics_endpoint_is_phi_safe_prometheus_text() {
     let body = String::from_utf8(bytes.to_vec()).expect("metrics text is utf-8");
     assert!(body.contains("hms_api_up 1"));
     assert!(body.contains("hms_api_postgres_pool_size"));
+    assert!(body.contains("hms_api_health_ready"));
+    assert!(body.contains("hms_api_dependency_ready"));
+    assert!(body.contains("hms_rum_enabled"));
     assert!(body.contains("hms_api_http_requests_total"));
-    assert!(body.contains("hms_api_http_request_duration_seconds_sum"));
+    assert!(body.contains("hms_api_http_request_duration_seconds_bucket"));
     assert!(body.contains("hms_api_http_db_query_count_sum"));
-    assert!(body.contains("hms_db_query_duration_seconds_count"));
+    assert!(body.contains("hms_db_query_duration_seconds_bucket"));
     assert!(!body.contains("Ama"));
     assert!(!body.contains("Mensah"));
     assert!(!body.contains("P-0000000001"));
+}
+
+#[tokio::test]
+async fn rum_ingest_requires_authentication() {
+    let response = app()
+        .await
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/observability/rum")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "events": [] }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("rum request succeeds");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn rum_ingest_records_phi_safe_browser_metrics() {
+    let app = app().await;
+    let owner = Actor::login(&app, "owner@hms.local").await;
+
+    let response = api_post_json(
+        app.clone(),
+        &owner,
+        "/api/v2/observability/rum",
+        json!({
+            "events": [
+                {
+                    "type": "api",
+                    "name": "duration",
+                    "route": "/patients/:id/chronicle",
+                    "value": 125,
+                    "status": "200",
+                    "method": "post",
+                    "ts": 1_715_000_000_000_i64
+                }
+            ]
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let metrics = text_body(api_get(app, &owner, "/api/v2/metrics").await).await;
+    assert!(metrics.contains("hms_browser_rum_events_total"));
+    assert!(metrics.contains("type=\"api\""));
+    assert!(metrics.contains("name=\"duration\""));
+    assert!(metrics.contains("route=\"/patients/:id/chronicle\""));
+    assert!(metrics.contains("method=\"POST\""));
+    assert!(metrics.contains("hms_browser_rum_duration_seconds_bucket"));
+    assert!(!metrics.contains("Ama"));
+    assert!(!metrics.contains("Mensah"));
+}
+
+#[tokio::test]
+async fn rum_ingest_rejects_unbounded_batches() {
+    let app = app().await;
+    let owner = Actor::login(&app, "owner@hms.local").await;
+    let events = (0..21)
+        .map(|_| {
+            json!({
+                "type": "navigation",
+                "name": "load",
+                "route": "/dashboard",
+                "value": 50
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let response = api_post_json(
+        app,
+        &owner,
+        "/api/v2/observability/rum",
+        json!({ "events": events }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

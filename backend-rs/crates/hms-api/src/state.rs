@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
@@ -10,6 +11,8 @@ use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
 use hms_domain::search::SearchResourceType;
 use hms_events::DomainEventKind;
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -51,6 +54,18 @@ pub enum ChangePasswordOutcome {
     InvalidCurrentPassword,
     WeakPassword,
     PasswordReused,
+}
+
+#[derive(Clone, Debug)]
+pub struct DependencyReadiness {
+    pub name: String,
+    pub ready: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReadinessSnapshot {
+    pub ready: bool,
+    pub dependencies: Vec<DependencyReadiness>,
 }
 
 impl AppState {
@@ -111,6 +126,38 @@ impl AppState {
 
     pub fn postgres_pool_idle(&self) -> usize {
         self.inner.pool.num_idle()
+    }
+
+    pub fn rum_enabled(&self) -> bool {
+        self.inner.config.rum_enabled
+    }
+
+    pub async fn readiness_snapshot(&self) -> ReadinessSnapshot {
+        let mut dependencies = Vec::new();
+
+        let postgres_ready = sqlx::query("SELECT 1")
+            .fetch_one(&self.inner.pool)
+            .await
+            .is_ok();
+        dependencies.push(DependencyReadiness {
+            name: "postgres".to_owned(),
+            ready: postgres_ready,
+        });
+
+        if let Some(redis_addr) = &self.inner.config.redis_addr {
+            dependencies.push(DependencyReadiness {
+                name: "redis".to_owned(),
+                ready: redis_ready(redis_addr).await,
+            });
+        }
+
+        let ready = dependencies.iter().all(|dependency| dependency.ready);
+        record_readiness_metrics(ready, &dependencies);
+
+        ReadinessSnapshot {
+            ready,
+            dependencies,
+        }
     }
 
     pub(crate) fn db_pool(&self) -> &hms_db::PgPool {
@@ -596,6 +643,32 @@ fn verify_password(hash: &str, password: &str) -> bool {
     Argon2::default()
         .verify_password(password.as_bytes(), &hash)
         .is_ok()
+}
+
+async fn redis_ready(redis_addr: &str) -> bool {
+    timeout(Duration::from_millis(500), TcpStream::connect(redis_addr))
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false)
+}
+
+fn record_readiness_metrics(ready: bool, dependencies: &[DependencyReadiness]) {
+    hms_observability::set_gauge("hms_api_health_ready", bool_as_gauge(ready), &[]);
+    for dependency in dependencies {
+        hms_observability::set_gauge(
+            "hms_api_dependency_ready",
+            bool_as_gauge(dependency.ready),
+            &[("dependency", dependency.name.as_str())],
+        );
+    }
+}
+
+fn bool_as_gauge(value: bool) -> f64 {
+    if value {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 fn password_meets_policy(password: &str) -> bool {

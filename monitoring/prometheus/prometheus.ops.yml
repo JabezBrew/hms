@@ -22,6 +22,13 @@ scrape_configs:
           - /etc/prometheus/client-targets/hms-api*.targets.yml
         refresh_interval: 1m
 
+  - job_name: hms-worker
+    metrics_path: /worker/metrics
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/client-targets/hms-worker*.targets.yml
+        refresh_interval: 1m
+
   - job_name: node
     file_sd_configs:
       - files:

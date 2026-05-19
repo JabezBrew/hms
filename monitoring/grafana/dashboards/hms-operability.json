@@ -77,7 +77,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hms_health_ready",
+          "expr": "hms_api_health_ready",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -140,13 +140,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hms_celery_workers",
+          "expr": "hms_worker_up",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Visible Workers",
+      "title": "Visible Rust Workers",
       "type": "stat"
     },
     {
@@ -207,13 +207,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(hms_celery_queue_depth)",
+          "expr": "sum(hms_worker_job_queue_depth{status=\"queued\"})",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Queued Tasks",
+      "title": "Queued Jobs",
       "type": "stat"
     },
     {
@@ -257,7 +257,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hms_process_uptime_seconds",
+          "expr": "time() - hms_api_started_at",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -348,7 +348,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hms_dependency_ready",
+          "expr": "hms_api_dependency_ready",
           "legendFormat": "{{dependency}}",
           "range": true,
           "refId": "A"
@@ -422,13 +422,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hms_celery_queue_depth",
-          "legendFormat": "{{queue}}",
+          "expr": "hms_worker_job_queue_depth",
+          "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Queue Depth By Queue",
+      "title": "Job Depth By Status",
       "type": "timeseries"
     }
   ],

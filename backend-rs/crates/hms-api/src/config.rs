@@ -11,6 +11,7 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub database_url: String,
     pub database_max_connections: u32,
+    pub redis_addr: Option<String>,
     pub facility_code: String,
     pub jwt_secret: String,
     pub access_token_ttl: Duration,
@@ -20,6 +21,7 @@ pub struct Config {
     pub auto_migrate: bool,
     pub provision_baseline: bool,
     pub search_index_rebuild_on_start: bool,
+    pub rum_enabled: bool,
 }
 
 impl Config {
@@ -35,6 +37,10 @@ impl Config {
             Ok(value) => parse_u32(&value, "HMS_DATABASE_MAX_CONNECTIONS")?,
             Err(_) => 10,
         };
+        let redis_addr = env::var("HMS_REDIS_ADDR")
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
         let facility_code = env::var("HMS_FACILITY_CODE").unwrap_or_else(|_| "HMS".to_owned());
         let jwt_secret = env::var("HMS_JWT_SECRET").unwrap_or_else(|_| {
             "development-only-hms-v2-jwt-secret-change-before-production".to_owned()
@@ -69,12 +75,17 @@ impl Config {
             Ok(value) => parse_bool(&value, "HMS_SEARCH_INDEX_REBUILD_ON_START")?,
             Err(_) => false,
         };
+        let rum_enabled = match env::var("HMS_RUM_ENABLED") {
+            Ok(value) => parse_bool(&value, "HMS_RUM_ENABLED")?,
+            Err(_) => false,
+        };
 
         Ok(Self {
             environment,
             listen_addr,
             database_url,
             database_max_connections,
+            redis_addr,
             facility_code,
             jwt_secret,
             access_token_ttl: Duration::from_secs(10 * 60),
@@ -84,6 +95,7 @@ impl Config {
             auto_migrate,
             provision_baseline,
             search_index_rebuild_on_start,
+            rum_enabled,
         })
     }
 
@@ -93,6 +105,7 @@ impl Config {
             listen_addr: "127.0.0.1:0".parse().expect("static test address parses"),
             database_url,
             database_max_connections: 10,
+            redis_addr: None,
             facility_code: "HMS".to_owned(),
             jwt_secret: "test-only-hms-v2-jwt-secret".to_owned(),
             access_token_ttl: Duration::from_secs(10 * 60),
@@ -102,6 +115,7 @@ impl Config {
             auto_migrate: true,
             provision_baseline: true,
             search_index_rebuild_on_start: true,
+            rum_enabled: false,
         }
     }
 }

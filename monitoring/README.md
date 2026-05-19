@@ -24,7 +24,7 @@ Then visit `http://127.0.0.1:3001` and open the `HMS` folder.
 
 Use the dashboards in this order during incidents:
 
-- `HMS Operability`: process readiness, dependency readiness, Celery worker
+- `HMS Operability`: process readiness, dependency readiness, Rust worker
   visibility, queue depth, uptime, and basic infrastructure health.
 - API/request dashboard, when provisioned: request rate, 5xx rate, p95 latency,
   slow routes, and status-code breakdowns.
@@ -106,15 +106,15 @@ After deploying monitoring changes to staging:
    `docker compose -f monitoring/docker-compose.monitoring.yml ps`.
 2. Open Grafana through the SSH tunnel and confirm the `HMS` folder contains the
    expected dashboards.
-3. In Prometheus, check `Status > Targets` and confirm `hms-api`, `node`,
-   `cadvisor`, `postgres`, and `redis` are up.
-4. Load `/api/health/ready/` and `/api/metrics/` through the private metrics
-   proxy from the monitoring container or host.
+3. In Prometheus, check `Status > Targets` and confirm `hms-api`, `hms-worker`,
+   `node`, `cadvisor`, `postgres`, and `redis` are up.
+4. Load `/api/v2/health/ready`, `/api/metrics/`, and `/worker/metrics` through
+   the private metrics proxy from the monitoring container or host.
 5. Generate one authenticated staging page load and one normal API request, then
    confirm request metrics move on the API dashboard when that dashboard is
    provisioned.
 6. If RUM is enabled, generate a staging page load and confirm
-   `hms_rum_events_total` increases without sending PHI fields.
+   `hms_browser_rum_events_total` increases without sending PHI fields.
 7. If Tempo is enabled, confirm the Tempo scrape target is up and one staging API
    request produces a trace.
 8. Check Alertmanager logs for template errors before relying on Telegram.
@@ -145,6 +145,8 @@ ending in `.targets.yml`, for example:
 ```bash
 cp monitoring/prometheus/client-targets/hms-api.example.yml \
   monitoring/prometheus/client-targets/hms-api-acme.targets.yml
+cp monitoring/prometheus/client-targets/hms-worker.example.yml \
+  monitoring/prometheus/client-targets/hms-worker-acme.targets.yml
 ```
 
 Replace the sample IP with the client VPS WireGuard IP. The tracked
@@ -161,15 +163,15 @@ cd /opt/hms
 CLIENT_WG_IP='10.90.0.11' \
 LOKI_WRITE_URL='http://10.90.0.1:3100/loki/api/v1/push' \
 OBS_ENVIRONMENT=production \
-HMS_EDGE_NETWORK="${COMPOSE_PROJECT_NAME:-hms-client}_edge" \
-HMS_INTERNAL_NETWORK="${COMPOSE_PROJECT_NAME:-hms-client}_internal" \
-docker compose --env-file ops/hetzner-client-vps/.env \
+HMS_EDGE_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_edge" \
+HMS_INTERNAL_NETWORK="${COMPOSE_PROJECT_NAME:-hms-v2-client}_internal" \
+docker compose --env-file ops/hetzner-v2/.env \
   -f monitoring/docker-compose.client-telemetry.yml up -d
 ```
 
 The client telemetry stack exposes:
 
-- `CLIENT_WG_IP:9188` for `/api/metrics/` through a private metrics proxy.
+- `CLIENT_WG_IP:9188` for `/api/metrics/` and `/worker/metrics` through a private metrics proxy.
 - `CLIENT_WG_IP:9100` for node exporter.
 - `CLIENT_WG_IP:8080` for cAdvisor.
 - `CLIENT_WG_IP:9187` for Postgres exporter.
@@ -241,6 +243,7 @@ Check private API metrics from the ops VPS:
 
 ```bash
 curl -fsS http://10.90.0.11:9188/api/metrics/ | head
+curl -fsS http://10.90.0.11:9188/worker/metrics | head
 ```
 
 For alert rules, every Prometheus alert must keep the Telegram annotation

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
 hms-db = { path = "../hms-db" }
 hms-observability = { path = "../hms-observability" }
 sqlx.workspace = true

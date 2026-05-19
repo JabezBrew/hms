@@ -1141,6 +1141,63 @@
         ],
         "type": "object"
       },
+      "BrowserRumEvent": {
+        "properties": {
+          "method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ts": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "route",
+          "value"
+        ],
+        "type": "object"
+      },
+      "BrowserRumIngestRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserRumEvent"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
       "BulkCreateLabResultItem": {
         "properties": {
           "order_test_id": {
@@ -4468,8 +4525,29 @@
         ],
         "type": "string"
       },
+      "HealthDependencyStatus": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "ready"
+        ],
+        "type": "object"
+      },
       "HealthStatus": {
         "properties": {
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/HealthDependencyStatus"
+            },
+            "type": "array"
+          },
           "service": {
             "type": "string"
           },
@@ -4488,7 +4566,8 @@
           "service",
           "status",
           "version",
-          "started_at"
+          "started_at",
+          "dependencies"
         ],
         "type": "object"
       },
@@ -13420,6 +13499,12 @@
         "properties": {
           "data": {
             "properties": {
+              "dependencies": {
+                "items": {
+                  "$ref": "#/components/schemas/HealthDependencyStatus"
+                },
+                "type": "array"
+              },
               "service": {
                 "type": "string"
               },
@@ -13438,7 +13523,8 @@
               "service",
               "status",
               "version",
-              "started_at"
+              "started_at",
+              "dependencies"
             ],
             "type": "object"
           },
@@ -29995,6 +30081,16 @@
               }
             },
             "description": "API process is ready to serve traffic"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_HealthStatus"
+                }
+              }
+            },
+            "description": "API process is not ready to serve traffic"
           }
         },
         "tags": [
@@ -37482,6 +37578,40 @@
         ]
       }
     },
+    "/api/v2/observability/rum": {
+      "post": {
+        "operationId": "ingestBrowserRum",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserRumIngestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Browser RUM events accepted"
+          },
+          "400": {
+            "description": "RUM payload is invalid"
+          },
+          "401": {
+            "description": "Authentication is required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "observability"
+        ]
+      }
+    },
     "/api/v2/patients": {
       "get": {
         "operationId": "getPatients",
@@ -43411,6 +43541,10 @@
     {
       "description": "Nursing, medication administration, handoff, and treatment-sheet workflows",
       "name": "nursing"
+    },
+    {
+      "description": "PHI-safe browser and service observability ingestion",
+      "name": "observability"
     },
     {
       "description": "Pharmacy dispensing and controlled-substance register workflows",

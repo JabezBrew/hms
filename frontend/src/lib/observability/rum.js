@@ -1,5 +1,8 @@
+import { buildV2ApiUrl, isRustV2ApiMode } from '../api/v2/runtime';
+
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const API_ENDPOINT = '/observability/rum/';
+const V2_API_ENDPOINT = '/observability/rum';
 const MAX_BATCH_SIZE = 20;
 const FLUSH_INTERVAL_MS = 15000;
 const MAX_ROUTE_LENGTH = 120;
@@ -122,6 +125,9 @@ function apiBaseUrl() {
 }
 
 function rumUrl() {
+  if (isRustV2ApiMode()) {
+    return buildV2ApiUrl(V2_API_ENDPOINT);
+  }
   return `${apiBaseUrl()}${API_ENDPOINT}`;
 }
 

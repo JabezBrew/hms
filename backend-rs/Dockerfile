@@ -26,6 +26,6 @@ COPY --from=builder /app/target/release/hms-openapi /usr/local/bin/hms-openapi
 COPY --from=builder /app/target/release/hms-worker /usr/local/bin/hms-worker
 
 USER hms
-EXPOSE 8080
+EXPOSE 8080 8081
 
 CMD ["hms-api"]

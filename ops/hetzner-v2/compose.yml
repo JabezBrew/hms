@@ -10,11 +10,13 @@ x-rust-image: &rust-image
     HMS_API_LISTEN_ADDR: 0.0.0.0:8080
     HMS_DATABASE_URL: postgres://${DB_USER:-hms}:${DB_PASSWORD:?set DB_PASSWORD in ops/hetzner-v2/.env}@pgbouncer:6432/${DB_NAME:-hms}
     HMS_DATABASE_MAX_CONNECTIONS: ${HMS_DATABASE_MAX_CONNECTIONS:-10}
+    HMS_REDIS_ADDR: ${HMS_REDIS_ADDR:-redis:6379}
     HMS_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
     HMS_FACILITY_NAME: ${HMS_FACILITY_NAME:?set HMS_FACILITY_NAME in ops/hetzner-v2/.env}
     HMS_DEPLOYMENT_PROFILE: ${HMS_DEPLOYMENT_PROFILE:?set HMS_DEPLOYMENT_PROFILE in ops/hetzner-v2/.env}
     HMS_JWT_SECRET: ${HMS_JWT_SECRET:?set HMS_JWT_SECRET in ops/hetzner-v2/.env}
     HMS_COOKIE_SECURE: "true"
+    HMS_RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
     HMS_AUTO_MIGRATE: "false"
     HMS_PROVISION_BASELINE: "false"
     RUST_LOG: ${RUST_LOG:-hms_api=info,hms_worker=info,hms_db=info}
@@ -133,11 +135,27 @@ services:
       <<: *rust-environment
       HMS_WORKER_DATABASE_MAX_CONNECTIONS: ${HMS_WORKER_DATABASE_MAX_CONNECTIONS:-2}
       HMS_WORKER_POLL_INTERVAL_SECONDS: ${HMS_WORKER_POLL_INTERVAL_SECONDS:-30}
+      HMS_WORKER_METRICS_LISTEN_ADDR: 0.0.0.0:8081
+    expose:
+      - "8081"
     depends_on:
       pgbouncer:
         condition: service_healthy
       hms-migrator:
         condition: service_completed_successfully
+    networks:
+      edge:
+        aliases:
+          - hms-worker
+      internal:
+        aliases:
+          - hms-worker
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/health/ready >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     mem_limit: 384m
     cpus: 0.50
 

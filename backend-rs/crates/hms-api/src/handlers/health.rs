@@ -1,5 +1,6 @@
 use axum::extract::State;
 use axum::http::header::CONTENT_TYPE;
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{DateTime, Utc};
@@ -10,11 +11,18 @@ use crate::response::{object, ObjectResponse};
 use crate::state::AppState;
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct HealthDependencyStatus {
+    pub name: String,
+    pub ready: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct HealthStatus {
     pub service: String,
     pub status: String,
     pub version: String,
     pub started_at: DateTime<Utc>,
+    pub dependencies: Vec<HealthDependencyStatus>,
 }
 
 #[utoipa::path(
@@ -27,7 +35,7 @@ pub struct HealthStatus {
     )
 )]
 pub async fn alive(State(state): State<AppState>) -> Json<ObjectResponse<HealthStatus>> {
-    Json(object(health_status(state, "alive")))
+    Json(object(health_status(state, "alive", Vec::new())))
 }
 
 #[utoipa::path(
@@ -36,11 +44,31 @@ pub async fn alive(State(state): State<AppState>) -> Json<ObjectResponse<HealthS
     operation_id = "getHealthReady",
     tag = "health",
     responses(
-        (status = 200, description = "API process is ready to serve traffic", body = ObjectResponse<HealthStatus>)
+        (status = 200, description = "API process is ready to serve traffic", body = ObjectResponse<HealthStatus>),
+        (status = 503, description = "API process is not ready to serve traffic", body = ObjectResponse<HealthStatus>)
     )
 )]
-pub async fn ready(State(state): State<AppState>) -> Json<ObjectResponse<HealthStatus>> {
-    Json(object(health_status(state, "ready")))
+pub async fn ready(State(state): State<AppState>) -> impl IntoResponse {
+    let snapshot = state.readiness_snapshot().await;
+    let http_status = if snapshot.ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    let status = if snapshot.ready { "ready" } else { "not_ready" };
+    let dependencies = snapshot
+        .dependencies
+        .into_iter()
+        .map(|dependency| HealthDependencyStatus {
+            name: dependency.name,
+            ready: dependency.ready,
+        })
+        .collect();
+
+    (
+        http_status,
+        Json(object(health_status(state, status, dependencies))),
+    )
 }
 
 #[utoipa::path(
@@ -53,6 +81,13 @@ pub async fn ready(State(state): State<AppState>) -> Json<ObjectResponse<HealthS
     )
 )]
 pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let _ = state.readiness_snapshot().await;
+    hms_observability::set_gauge(
+        "hms_rum_enabled",
+        if state.rum_enabled() { 1.0 } else { 0.0 },
+        &[],
+    );
+
     let started_at = state.started_at().timestamp();
     let pool_size = state.postgres_pool_size();
     let pool_idle = state.postgres_pool_idle();
@@ -75,11 +110,16 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     ([(CONTENT_TYPE, "text/plain; version=0.0.4")], body)
 }
 
-fn health_status(state: AppState, status: &str) -> HealthStatus {
+fn health_status(
+    state: AppState,
+    status: &str,
+    dependencies: Vec<HealthDependencyStatus>,
+) -> HealthStatus {
     HealthStatus {
         service: "hms-api".to_owned(),
         status: status.to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         started_at: state.started_at(),
+        dependencies,
     }
 }

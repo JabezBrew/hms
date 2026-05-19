@@ -1650,6 +1650,14 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "ingestBrowserRum": {
+    "operationId": "ingestBrowserRum",
+    "method": "POST",
+    "path": "/api/v2/observability/rum",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "patchAdminFeature": {
     "operationId": "patchAdminFeature",
     "method": "PATCH",
@@ -3259,6 +3267,7 @@ export function createGeneratedClient(request) {
     getWardSectionById: createOperation(request, operations.getWardSectionById),
     getWardSections: createOperation(request, operations.getWardSections),
     getWardStockRequests: createOperation(request, operations.getWardStockRequests),
+    ingestBrowserRum: createOperation(request, operations.ingestBrowserRum),
     patchAdminFeature: createOperation(request, operations.patchAdminFeature),
     patchAdminStaff: createOperation(request, operations.patchAdminStaff),
     patchAppointmentById: createOperation(request, operations.patchAppointmentById),
