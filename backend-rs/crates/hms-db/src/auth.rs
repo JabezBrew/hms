@@ -1,5 +1,10 @@
-use chrono::{DateTime, Utc};
-use hms_domain::auth::{AuthUser, PatientDataVisibility, UpdateAuthProfileRequest};
+use chrono::{DateTime, Duration, Utc};
+use hms_domain::auth::{
+    AuthSecurityState, AuthUser, BreakGlassCategory, BreakGlassGrant, BreakGlassGrantDenialReason,
+    BreakGlassGrantOutcome, ClinicalPatientAccessEvidence, ClinicalPatientAccessReason,
+    PatientDataVisibility, UpdateAuthProfileRequest, BREAK_GLASS_GRANT_TTL_HOURS,
+    BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER, BREAK_GLASS_PERMISSION_CODE,
+};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -21,6 +26,7 @@ pub struct UserAccount {
     pub session_version: i64,
     pub permission_version: i64,
     pub password_change_required: bool,
+    pub auth_security: AuthSecurityState,
     pub password_hash: String,
 }
 
@@ -93,6 +99,96 @@ pub struct PasswordResetTokenRow {
     pub used_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Clone, Debug)]
+pub struct StartBreakGlassGrant {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub user_id: Uuid,
+    pub patient_id: Uuid,
+    pub category: BreakGlassCategory,
+    pub reason_text: Option<String>,
+    pub request_id: Option<String>,
+    pub now: DateTime<Utc>,
+    pub reauth_verified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EndBreakGlassGrants {
+    pub facility_id: Uuid,
+    pub user_id: Uuid,
+    pub patient_id: Uuid,
+    pub ended_by_user_id: Uuid,
+    pub request_id: Option<String>,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct BreakGlassGrantRow {
+    id: Uuid,
+    facility_id: Uuid,
+    user_id: Uuid,
+    patient_id: Uuid,
+    category: String,
+    reason_text: Option<String>,
+    started_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    ended_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+pub struct WebAuthnCredentialRow {
+    pub id: Uuid,
+    pub credential_id: String,
+    pub passkey: serde_json::Value,
+    pub label: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewWebAuthnCredential {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub facility_id: Uuid,
+    pub credential_id: String,
+    pub passkey: serde_json::Value,
+    pub label: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum WebAuthnCeremonyType {
+    Registration,
+    Authentication,
+}
+
+impl WebAuthnCeremonyType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Registration => "registration",
+            Self::Authentication => "authentication",
+        }
+    }
+}
+
+#[derive(Clone, Debug, FromRow)]
+pub struct WebAuthnChallengeRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub facility_id: Uuid,
+    pub state: serde_json::Value,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewWebAuthnChallenge {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub facility_id: Uuid,
+    pub ceremony_type: WebAuthnCeremonyType,
+    pub state: serde_json::Value,
+    pub expires_at: DateTime<Utc>,
+}
+
 impl UserAccount {
     pub fn to_auth_user(&self) -> AuthUser {
         AuthUser {
@@ -108,6 +204,7 @@ impl UserAccount {
             session_version: self.session_version,
             permission_version: self.permission_version,
             password_change_required: self.password_change_required,
+            auth_security: self.auth_security.clone(),
         }
     }
 }
@@ -628,6 +725,614 @@ pub async fn complete_password_reset(
     Ok(true)
 }
 
+pub async fn list_webauthn_credentials(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<Vec<WebAuthnCredentialRow>> {
+    Ok(sqlx::query_as::<_, WebAuthnCredentialRow>(
+        r#"
+        SELECT id,
+               credential_id,
+               passkey,
+               label,
+               created_at,
+               last_used_at
+        FROM auth_webauthn_credentials
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND disabled_at IS NULL
+        ORDER BY created_at DESC, id DESC
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn insert_webauthn_challenge(
+    pool: &PgPool,
+    challenge: &NewWebAuthnChallenge,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO auth_webauthn_challenges (
+            id,
+            user_id,
+            facility_id,
+            ceremony_type,
+            state,
+            expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(challenge.id)
+    .bind(challenge.user_id)
+    .bind(challenge.facility_id)
+    .bind(challenge.ceremony_type.as_str())
+    .bind(&challenge.state)
+    .bind(challenge.expires_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn consume_webauthn_challenge(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    challenge_id: Uuid,
+    ceremony_type: WebAuthnCeremonyType,
+) -> anyhow::Result<Option<WebAuthnChallengeRow>> {
+    let mut transaction = pool.begin().await?;
+    let challenge = sqlx::query_as::<_, WebAuthnChallengeRow>(
+        r#"
+        SELECT id,
+               user_id,
+               facility_id,
+               state,
+               expires_at
+        FROM auth_webauthn_challenges
+        WHERE id = $1
+          AND facility_id = $2
+          AND user_id = $3
+          AND ceremony_type = $4
+          AND consumed_at IS NULL
+          AND expires_at > now()
+        FOR UPDATE
+        "#,
+    )
+    .bind(challenge_id)
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(ceremony_type.as_str())
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    if challenge.is_some() {
+        sqlx::query(
+            r#"
+            UPDATE auth_webauthn_challenges
+            SET consumed_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(challenge_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    transaction.commit().await?;
+    Ok(challenge)
+}
+
+pub async fn insert_webauthn_credential(
+    pool: &PgPool,
+    credential: &NewWebAuthnCredential,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO auth_webauthn_credentials (
+            id,
+            user_id,
+            facility_id,
+            credential_id,
+            passkey,
+            label
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(credential.id)
+    .bind(credential.user_id)
+    .bind(credential.facility_id)
+    .bind(&credential.credential_id)
+    .bind(&credential.passkey)
+    .bind(credential.label.as_deref())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_webauthn_credential_after_authentication(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    credential_id: &str,
+    passkey: &serde_json::Value,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"
+        UPDATE auth_webauthn_credentials
+        SET passkey = $4,
+            last_used_at = now()
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND credential_id = $3
+          AND disabled_at IS NULL
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(credential_id)
+    .bind(passkey)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn replace_recovery_codes(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    code_hashes: Vec<String>,
+) -> anyhow::Result<()> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE auth_recovery_codes
+        SET invalidated_at = COALESCE(invalidated_at, now())
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND used_at IS NULL
+          AND invalidated_at IS NULL
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    let generated_set_id = Uuid::new_v4();
+    for code_hash in code_hashes {
+        sqlx::query(
+            r#"
+            INSERT INTO auth_recovery_codes (
+                id,
+                user_id,
+                facility_id,
+                code_hash,
+                generated_set_id
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(user_id)
+        .bind(facility_id)
+        .bind(code_hash)
+        .bind(generated_set_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    transaction.commit().await?;
+    Ok(())
+}
+
+pub async fn consume_recovery_code(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    code_hash: &str,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"
+        UPDATE auth_recovery_codes
+        SET used_at = now()
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND code_hash = $3
+          AND used_at IS NULL
+          AND invalidated_at IS NULL
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(code_hash)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn recovery_codes_remaining(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)::bigint
+        FROM auth_recovery_codes
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND used_at IS NULL
+          AND invalidated_at IS NULL
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn clinical_patient_access_evidence(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    patient_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<ClinicalPatientAccessEvidence> {
+    let has_workflow_access = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM patient_contexts
+            JOIN patients ON patients.id = patient_contexts.patient_id
+            WHERE patient_contexts.facility_id = $1
+              AND patient_contexts.user_id = $2
+              AND patient_contexts.patient_id = $3
+              AND patients.facility_id = $1
+              AND patients.status = 'active'
+        ) OR EXISTS (
+            SELECT 1
+            FROM clinical_notes
+            JOIN patients ON patients.id = clinical_notes.patient_id
+            WHERE clinical_notes.facility_id = $1
+              AND clinical_notes.created_by_user_id = $2
+              AND clinical_notes.patient_id = $3
+              AND patients.facility_id = $1
+              AND patients.status = 'active'
+        )
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(patient_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(ClinicalPatientAccessEvidence {
+        workflow_reason: has_workflow_access
+            .then_some(ClinicalPatientAccessReason::ActiveClinicalRelationship),
+        break_glass_grant: active_break_glass_grant_for_patient(
+            pool,
+            facility_id,
+            user_id,
+            patient_id,
+            now,
+        )
+        .await?,
+    })
+}
+
+pub async fn active_break_glass_grant_for_patient(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    patient_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<BreakGlassGrant>> {
+    let row = sqlx::query_as::<_, BreakGlassGrantRow>(
+        r#"
+        SELECT id,
+               facility_id,
+               user_id,
+               patient_id,
+               category,
+               reason_text,
+               started_at,
+               expires_at,
+               ended_at
+        FROM patient_break_glass_grants
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND patient_id = $3
+          AND ended_at IS NULL
+          AND started_at <= $4
+          AND expires_at > $4
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(patient_id)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(break_glass_grant_from_row).transpose()
+}
+
+pub async fn start_break_glass_grant(
+    pool: &PgPool,
+    command: StartBreakGlassGrant,
+) -> anyhow::Result<BreakGlassGrantOutcome> {
+    if !reauth_is_fresh(command.reauth_verified_at, command.now) {
+        return Ok(BreakGlassGrantOutcome::Denied(
+            BreakGlassGrantDenialReason::ReauthRequired,
+        ));
+    }
+
+    let has_permission = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM users
+            JOIN user_permissions ON user_permissions.user_id = users.id
+            WHERE users.id = $1
+              AND users.facility_id = $2
+              AND users.is_active = TRUE
+              AND user_permissions.permission_code = $3
+        )
+        "#,
+    )
+    .bind(command.user_id)
+    .bind(command.facility_id)
+    .bind(BREAK_GLASS_PERMISSION_CODE)
+    .fetch_one(pool)
+    .await?;
+    if !has_permission {
+        return Ok(BreakGlassGrantOutcome::Denied(
+            BreakGlassGrantDenialReason::MissingDedicatedPermission,
+        ));
+    }
+
+    let patient_is_active = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM patients
+            WHERE id = $1
+              AND facility_id = $2
+              AND status = 'active'
+        )
+        "#,
+    )
+    .bind(command.patient_id)
+    .bind(command.facility_id)
+    .fetch_one(pool)
+    .await?;
+    if !patient_is_active {
+        return Ok(BreakGlassGrantOutcome::Denied(
+            BreakGlassGrantDenialReason::PatientNotActive,
+        ));
+    }
+
+    if active_break_glass_grant_for_patient(
+        pool,
+        command.facility_id,
+        command.user_id,
+        command.patient_id,
+        command.now,
+    )
+    .await?
+    .is_some()
+    {
+        return Ok(BreakGlassGrantOutcome::Denied(
+            BreakGlassGrantDenialReason::ActiveGrantAlreadyExists,
+        ));
+    }
+
+    let active_count =
+        active_break_glass_grant_count(pool, command.facility_id, command.user_id, command.now)
+            .await?;
+    if active_count >= BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER {
+        return Ok(BreakGlassGrantOutcome::Denied(
+            BreakGlassGrantDenialReason::TooManyActiveGrants,
+        ));
+    }
+
+    let reason_text = command
+        .reason_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let expires_at = command.now + Duration::hours(BREAK_GLASS_GRANT_TTL_HOURS);
+    let mut transaction = pool.begin().await?;
+    let category = codec::encode(command.category)?;
+    let row = sqlx::query_as::<_, BreakGlassGrantRow>(
+        r#"
+        INSERT INTO patient_break_glass_grants (
+            id,
+            facility_id,
+            user_id,
+            patient_id,
+            category,
+            reason_text,
+            started_at,
+            expires_at,
+            request_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id,
+                  facility_id,
+                  user_id,
+                  patient_id,
+                  category,
+                  reason_text,
+                  started_at,
+                  expires_at,
+                  ended_at
+        "#,
+    )
+    .bind(command.id)
+    .bind(command.facility_id)
+    .bind(command.user_id)
+    .bind(command.patient_id)
+    .bind(&category)
+    .bind(reason_text)
+    .bind(command.now)
+    .bind(expires_at)
+    .bind(command.request_id.as_deref())
+    .fetch_one(&mut *transaction)
+    .await?;
+
+    insert_break_glass_audit_event(
+        &mut transaction,
+        command.facility_id,
+        command.user_id,
+        command.request_id.as_deref(),
+        "patient.break_glass.started",
+        command.patient_id,
+        serde_json::json!({ "category": category }),
+    )
+    .await?;
+    transaction.commit().await?;
+
+    Ok(BreakGlassGrantOutcome::Granted(break_glass_grant_from_row(
+        row,
+    )?))
+}
+
+pub async fn end_break_glass_grants(
+    pool: &PgPool,
+    command: EndBreakGlassGrants,
+) -> anyhow::Result<u64> {
+    let mut transaction = pool.begin().await?;
+    let result = sqlx::query(
+        r#"
+        UPDATE patient_break_glass_grants
+        SET ended_at = $5,
+            ended_by_user_id = $4
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND patient_id = $3
+          AND ended_at IS NULL
+          AND started_at <= $5
+          AND expires_at > $5
+        "#,
+    )
+    .bind(command.facility_id)
+    .bind(command.user_id)
+    .bind(command.patient_id)
+    .bind(command.ended_by_user_id)
+    .bind(command.now)
+    .execute(&mut *transaction)
+    .await?;
+
+    let ended = result.rows_affected();
+    if ended > 0 {
+        insert_break_glass_audit_event(
+            &mut transaction,
+            command.facility_id,
+            command.ended_by_user_id,
+            command.request_id.as_deref(),
+            "patient.break_glass.ended",
+            command.patient_id,
+            serde_json::json!({ "ended_count": ended }),
+        )
+        .await?;
+    }
+    transaction.commit().await?;
+    Ok(ended)
+}
+
+async fn active_break_glass_grant_count(
+    pool: &PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM patient_break_glass_grants
+        WHERE facility_id = $1
+          AND user_id = $2
+          AND ended_at IS NULL
+          AND started_at <= $3
+          AND expires_at > $3
+        "#,
+    )
+    .bind(facility_id)
+    .bind(user_id)
+    .bind(now)
+    .fetch_one(pool)
+    .await?)
+}
+
+fn reauth_is_fresh(reauth_verified_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
+    let Some(verified_at) = reauth_verified_at else {
+        return false;
+    };
+    verified_at <= now && now <= verified_at + Duration::minutes(15)
+}
+
+fn break_glass_grant_from_row(row: BreakGlassGrantRow) -> anyhow::Result<BreakGlassGrant> {
+    Ok(BreakGlassGrant {
+        id: row.id,
+        facility_id: row.facility_id,
+        user_id: row.user_id,
+        patient_id: row.patient_id,
+        category: codec::decode::<BreakGlassCategory>(&row.category)?,
+        reason_text: row.reason_text,
+        started_at: row.started_at,
+        expires_at: row.expires_at,
+        ended_at: row.ended_at,
+    })
+}
+
+async fn insert_break_glass_audit_event(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    facility_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<&str>,
+    event_type: &str,
+    patient_id: Uuid,
+    metadata: serde_json::Value,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO audit_events (
+            id,
+            facility_id,
+            actor_user_id,
+            request_id,
+            event_type,
+            resource_type,
+            resource_id,
+            metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, 'patient', $6, $7)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(facility_id)
+    .bind(actor_user_id)
+    .bind(request_id)
+    .bind(event_type)
+    .bind(patient_id)
+    .bind(metadata)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
 async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Option<UserAccount>> {
     let Some(row) = row else {
         return Ok(None);
@@ -652,6 +1357,27 @@ async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Opt
     .fetch_all(pool)
     .await?;
 
+    let permissions = permission_codes
+        .iter()
+        .map(|value| codec::decode(value))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let passkey_enrolled = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM auth_webauthn_credentials
+            WHERE facility_id = $1
+              AND user_id = $2
+              AND disabled_at IS NULL
+        )
+        "#,
+    )
+    .bind(row.facility_id)
+    .bind(row.id)
+    .fetch_one(pool)
+    .await?;
+    let recovery_codes_remaining = recovery_codes_remaining(pool, row.facility_id, row.id).await?;
+
     Ok(Some(UserAccount {
         id: row.id,
         email: row.email,
@@ -659,10 +1385,7 @@ async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Opt
         facility_id: row.facility_id,
         facility_code: row.facility_code,
         active_profile: codec::decode(&row.active_profile)?,
-        permissions: permission_codes
-            .iter()
-            .map(|value| codec::decode(value))
-            .collect::<anyhow::Result<_>>()?,
+        permissions: permissions.clone(),
         features: feature_keys
             .iter()
             .map(|value| codec::decode(value))
@@ -674,6 +1397,262 @@ async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Opt
         session_version: row.session_version,
         permission_version: row.permission_version,
         password_change_required: row.password_change_required,
+        auth_security: AuthSecurityState::from_permissions(
+            &permissions,
+            passkey_enrolled,
+            recovery_codes_remaining,
+        ),
         password_hash: row.password_hash,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+    use hms_domain::auth::{
+        BreakGlassCategory, BreakGlassGrantDenialReason, BreakGlassGrantOutcome,
+        BREAK_GLASS_PERMISSION_CODE,
+    };
+    use hms_domain::patients::{PatientAdministrativeStatus, Sex};
+
+    async fn grant_break_glass_permission(db: &crate::test_support::TestDb) {
+        sqlx::query(
+            r#"
+            INSERT INTO user_permissions (user_id, permission_code)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id, permission_code) DO NOTHING
+            "#,
+        )
+        .bind(db.owner_user_id())
+        .bind(BREAK_GLASS_PERMISSION_CODE)
+        .execute(db.pool())
+        .await
+        .expect("break-glass permission can be granted for test");
+    }
+
+    async fn revoke_break_glass_permission(db: &crate::test_support::TestDb) {
+        sqlx::query(
+            r#"
+            DELETE FROM user_permissions
+            WHERE user_id = $1 AND permission_code = $2
+            "#,
+        )
+        .bind(db.owner_user_id())
+        .bind(BREAK_GLASS_PERMISSION_CODE)
+        .execute(db.pool())
+        .await
+        .expect("break-glass permission can be revoked for test");
+    }
+
+    fn start_command(
+        db: &crate::test_support::TestDb,
+        patient_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> StartBreakGlassGrant {
+        StartBreakGlassGrant {
+            id: Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            user_id: db.owner_user_id(),
+            patient_id,
+            category: BreakGlassCategory::LifeThreateningEmergency,
+            reason_text: Some("acute airway risk".to_owned()),
+            request_id: Some("break-glass-test".to_owned()),
+            now,
+            reauth_verified_at: Some(now),
+        }
+    }
+
+    #[tokio::test]
+    async fn break_glass_start_requires_permission_reauth_and_active_patient() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        let patient = db
+            .scenario("break_glass_required")
+            .registered_patient()
+            .await
+            .expect("patient is created");
+        let now = Utc::now();
+
+        revoke_break_glass_permission(&db).await;
+        assert_eq!(
+            start_break_glass_grant(db.pool(), start_command(&db, patient.id, now))
+                .await
+                .expect("grant start evaluates"),
+            BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::MissingDedicatedPermission)
+        );
+
+        grant_break_glass_permission(&db).await;
+        let mut stale = start_command(&db, patient.id, now);
+        stale.reauth_verified_at = Some(now - Duration::minutes(16));
+        assert_eq!(
+            start_break_glass_grant(db.pool(), stale)
+                .await
+                .expect("stale reauth evaluates"),
+            BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::ReauthRequired)
+        );
+
+        crate::patients::update_patient(
+            db.pool(),
+            crate::patients::PatientUpdate {
+                id: patient.id,
+                facility_id: db.facility_id(),
+                first_name: None,
+                last_name: None,
+                date_of_birth: None,
+                sex: Some(Sex::Female),
+                status: Some(PatientAdministrativeStatus::Inactive),
+                actor_user_id: db.owner_user_id(),
+                request_id: Some("inactive-patient-test".to_owned()),
+            },
+        )
+        .await
+        .expect("patient can be marked inactive");
+        assert_eq!(
+            start_break_glass_grant(db.pool(), start_command(&db, patient.id, now))
+                .await
+                .expect("inactive patient evaluates"),
+            BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::PatientNotActive)
+        );
+    }
+
+    #[tokio::test]
+    async fn break_glass_grants_are_scoped_limited_non_extendable_and_audited() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        grant_break_glass_permission(&db).await;
+        let now = Utc::now();
+        let patient = db
+            .scenario("break_glass_scope")
+            .registered_patient()
+            .await
+            .expect("patient is created");
+
+        let first = start_break_glass_grant(db.pool(), start_command(&db, patient.id, now))
+            .await
+            .expect("grant starts");
+        let BreakGlassGrantOutcome::Granted(grant) = first else {
+            panic!("expected granted break-glass outcome, got {first:?}");
+        };
+        assert_eq!(grant.user_id, db.owner_user_id());
+        assert_eq!(grant.patient_id, patient.id);
+        assert_eq!(grant.facility_id, db.facility_id());
+        assert_eq!(
+            grant.expires_at.signed_duration_since(grant.started_at),
+            Duration::hours(2)
+        );
+        assert!(grant.ended_at.is_none());
+
+        assert_eq!(
+            start_break_glass_grant(db.pool(), start_command(&db, patient.id, now))
+                .await
+                .expect("duplicate active grant evaluates"),
+            BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::ActiveGrantAlreadyExists)
+        );
+
+        let active = active_break_glass_grant_for_patient(
+            db.pool(),
+            db.facility_id(),
+            db.owner_user_id(),
+            patient.id,
+            now,
+        )
+        .await
+        .expect("active grant loads")
+        .expect("grant is active");
+        assert_eq!(active.id, grant.id);
+
+        let ended = end_break_glass_grants(
+            db.pool(),
+            EndBreakGlassGrants {
+                facility_id: db.facility_id(),
+                user_id: db.owner_user_id(),
+                patient_id: patient.id,
+                ended_by_user_id: db.owner_user_id(),
+                request_id: Some("break-glass-end-test".to_owned()),
+                now,
+            },
+        )
+        .await
+        .expect("grant ends");
+        assert_eq!(ended, 1);
+        assert!(
+            active_break_glass_grant_for_patient(
+                db.pool(),
+                db.facility_id(),
+                db.owner_user_id(),
+                patient.id,
+                now,
+            )
+            .await
+            .expect("active grant check succeeds")
+            .is_none(),
+            "ended grant is no longer active across devices"
+        );
+
+        let audit_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM audit_events
+            WHERE facility_id = $1
+              AND actor_user_id = $2
+              AND resource_id = $3
+              AND event_type IN ('patient.break_glass.started', 'patient.break_glass.ended')
+            "#,
+        )
+        .bind(db.facility_id())
+        .bind(db.owner_user_id())
+        .bind(patient.id)
+        .fetch_one(db.pool())
+        .await
+        .expect("audit count loads");
+        assert_eq!(audit_count, 2);
+    }
+
+    #[tokio::test]
+    async fn break_glass_caps_active_grants_per_user() {
+        let db = crate::test_support::TestDb::hospital()
+            .await
+            .expect("test db starts");
+        grant_break_glass_permission(&db).await;
+        let now = Utc::now();
+
+        for index in 0..3 {
+            let patient = crate::patients::create_patient(
+                db.pool(),
+                crate::patients::NewPatient {
+                    id: Uuid::new_v4(),
+                    facility_id: db.facility_id(),
+                    patient_code: format!("P-BG-CAP-{index}"),
+                    first_name: format!("Grant{index}"),
+                    last_name: "Patient".to_owned(),
+                    date_of_birth: chrono::NaiveDate::from_ymd_opt(1990, 1, 1)
+                        .expect("static date is valid"),
+                    sex: Sex::Female,
+                },
+            )
+            .await
+            .expect("patient can be created");
+            assert!(matches!(
+                start_break_glass_grant(db.pool(), start_command(&db, patient.id, now))
+                    .await
+                    .expect("grant starts"),
+                BreakGlassGrantOutcome::Granted(_)
+            ));
+        }
+
+        let fourth = db
+            .scenario("break_glass_cap")
+            .registered_patient()
+            .await
+            .expect("fourth patient is created");
+        assert_eq!(
+            start_break_glass_grant(db.pool(), start_command(&db, fourth.id, now))
+                .await
+                .expect("cap evaluates"),
+            BreakGlassGrantOutcome::Denied(BreakGlassGrantDenialReason::TooManyActiveGrants)
+        );
+    }
 }

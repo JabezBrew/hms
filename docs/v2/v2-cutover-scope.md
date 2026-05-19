@@ -1,6 +1,6 @@
 # HMS V2 Cutover Scope
 
-Updated: 2026-05-18
+Updated: 2026-05-19
 
 This is the active planning tracker for the Rust V2 cutover. It replaces the
 older parity matrix, UI workflow matrix, product-decision list, and standalone
@@ -73,52 +73,65 @@ Baseline areas currently treated as cutover-ready:
 - Notifications/inbox, dashboard snapshots, same-facility referrals/SLA/clinic
   waitlist, and same-facility consent grant/revoke.
 
-## Decisions Required Before First Cutover
+## Locked Decisions Implemented For First Cutover
 
-These are the remaining high-value decisions that should be settled before the
-first real-client V2 cutover.
+These decisions are part of the first Rust V2 cutover scope and should remain
+covered by backend contract/repository tests plus generated frontend bridge
+tests.
 
 1. Break-glass / emergency access
-   Decide who can override patient access, required reason, expiry, alerting,
-   audit severity, revocation, and review workflow. Implement internal
-   emergency access only; do not bundle patient-record export with this work.
+   Patient identity discovery remains facility-scoped through
+   `patient.demographics.view`; Chronicle access requires patient-specific
+   workflow evidence or a dedicated break-glass grant. Break-glass requires the
+   dedicated permission, active/current patients, a required category, fresh
+   reauthentication, a user-patient-facility grant with a two-hour expiry, at
+   most three active grants per user, and start/end audit events only.
 
 2. Scheduling
-   Choose the source of appointment availability: staff roster, practitioner
-   calendar, manual clinic schedule, or hybrid. Define recurring generation,
-   blocked time, overbooking, clinic-pool versus practitioner-bound slots, and
-   conflict behavior before adding schedule/availability persistence.
+   Clinic Session / Appointment Book is the central model. Sessions can be
+   practitioner, team, clinic, service, or department owned, support fixed-slot
+   and capacity-block booking, use dynamic availability without generated slot
+   rows, allow appointment series creation, and require explicit audited
+   overbooking when policy permits it.
 
 3. Discharge blockers
-   Decide which blockers gate final discharge: billing clearance, nursing
-   tasks, pharmacy meds, discharge summary, prescriptions, admin clearance, or
-   other gates. Define blocker ownership, override rules, reopen authority, and
-   audit requirements.
+   Discharge blockers are source-driven and auto-clear only from their source
+   workflow. Summary, nursing release, pharmacy, and billing blockers gate final
+   discharge; billing/pharmacy can be held with reason; override is per blocker
+   with fresh reauthentication; completed discharge moves the bed to cleaning
+   before automatic availability.
 
 4. Billing finalization and payment voids
-   Decide when invoices lock, who can void/refund payments, whether fresh
-   re-authentication is required, approval requirements, and ledger/audit
-   behavior.
+   Invoices lock after payment, claim, export, or finalization. Voids/refunds
+   are append-only reversal ledger entries with supervisor approval and fresh
+   reauthentication. NHIS mappings are effective-dated, claims store the mapping
+   version, and write-offs affect NHIS/payer receivable, not patient liability.
 
 5. Controlled-substance discrepancies
-   Decide how missing or extra controlled drugs are reported, witnessed,
-   escalated, resolved, re-authenticated, and reviewed.
+   Controlled-substance discrepancy handling is log-only for V1, with missing,
+   surplus, breakage, expired, documentation-error, and other categories. A
+   confirmed physical count adjusts stock immediately, requires permission,
+   fresh reauthentication, reason/category, witness, and high-severity audit.
 
-6. NHIS AR and mappings
-   Decide who owns unpaid NHIS balances, how service-code mappings are
-   maintained/versioned, and how remittances, write-offs, adjustments, and
-   reconciliation work.
+6. Referrals and clinical context slices
+   Referrals schedule into the normal appointment contract. Waitlist promotion
+   creates appointment/offer state, not visits, and waitlist cancel/promote are
+   audited. Same-patient problem artifact links are supported. Pharmacy context
+   is limited to active problems, allergies, and order-relevant meds; lab
+   context is limited to order/encounter-linked diagnoses or problems.
+
+7. WebAuthn and privileged actions
+   Privileged users can log in before enrollment, but privileged/high-risk
+   actions fail closed until passkey enrollment exists. Recovery code
+   regeneration requires fresh password reauthentication and invalidates old
+   unused codes.
 
 ## Deferred After Baseline
 
 These remain valid product areas, but they should not block first cutover.
 
-- MFA/WebAuthn/security settings: enforcement level, authenticators, recovery,
-  and device/session UX.
 - Insurance / PSP / Hubtel: provider scope, patient-insurance capture,
   settlement reconciliation, and whether Hubtel is needed for the first client.
-- Clinic management: whether clinics are entities, org units, service areas, or
-  roster-derived schedules.
 - Ward transfers/reports/staff assignments: staff source of truth, transfer
   states, approval rules, amenity taxonomy, and report definitions.
 - Role dashboards: role taxonomy and metric ownership for doctor, nurse,
@@ -127,12 +140,29 @@ These remain valid product areas, but they should not block first cutover.
   customization, and migration strategy.
 - Lab catalog administration: whether facilities manage test/panel catalog
   mutations at cutover.
-- Inventory suppliers/expiry/audit/analytics: supplier fields, expiry policy,
-  audit event taxonomy, and analytics definitions.
-- Procurement internal requisitions, standing orders, and detail workflow
-  splits: approval/state boundaries.
-- Pharmacy supply-request dispensing, bulk dispense, and stock-check queue
-  behavior: queue ownership and action boundaries.
+- Inventory analytics beyond the cutover queue/state workflows: dashboard
+  ownership, report definitions, and long-range procurement analytics.
+
+## Future Stubs Requiring Separate Specs
+
+These are explicit stubs only. Do not add endpoint sketches, generated client
+methods, or UI paths until the listed decisions are approved.
+
+- FHIR interoperability: decide resource profile subset, source system trust,
+  validation strategy, async sync boundaries, conflict handling, PHI minimizers,
+  retry/dead-letter ownership, and audit review.
+- Patient/export bundles: decide recipient identity, consent linkage, minimum
+  payload, retention and expiry, revocation, breach-response ownership, export
+  approval, worker queue, and download controls.
+- Cross-facility exchange: decide facility trust model, patient matching,
+  access grants, emergency exceptions, consent revocation, routing, audit
+  escalation, and whether exchange is push, pull, or referral-attached.
+- AI/copilot: decide provider, data residency, prompt/data retention, clinical
+  safety responsibility, review workflow, liability boundary, cost controls,
+  and whether output can enter the record.
+- Onboarding runtime: decide tenant bootstrap authority, facility/profile
+  creation rules, first-admin identity proofing, seed data boundaries, billing
+  handoff, and rollback/deprovisioning workflow.
 
 ## Removed From First Cutover
 

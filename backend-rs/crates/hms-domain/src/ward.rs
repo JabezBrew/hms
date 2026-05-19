@@ -38,6 +38,52 @@ pub enum DischargeStatus {
     Cancelled,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DischargeBlockerKind {
+    DischargeSummary,
+    NursingRelease,
+    PharmacyClearance,
+    BillingClearance,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DischargeBlockerStatus {
+    Pending,
+    Completed,
+    Held,
+    Overridden,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DischargeBlocker {
+    pub id: String,
+    pub blocker_type: DischargeBlockerKind,
+    pub status: DischargeBlockerStatus,
+    pub blocking: bool,
+    pub workflow_label: String,
+    pub workflow_path: String,
+    pub hold_reason: Option<String>,
+    pub override_reason: Option<String>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub requires_reauth_for_override: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DischargeInvoiceSummary {
+    pub invoice_count: i64,
+    pub patient_balance_due: String,
+    pub patient_balance_due_minor: i64,
+    pub currency: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DischargeWorkflowAction {
+    pub label: String,
+    pub path: String,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NursingTaskType {
@@ -260,15 +306,32 @@ pub struct CancelDischargeRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RecordNursingReleaseRequest {
+    pub education: String,
+    pub instructions: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DischargeBlockerActionRequest {
+    pub blocker_type: DischargeBlockerKind,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct DischargeCaseListItem {
     pub id: Uuid,
     pub admission_case_id: Uuid,
     pub patient_id: Uuid,
     pub patient_code: String,
     pub patient_display_name: String,
+    pub ward_id: Uuid,
+    pub ward_name: String,
     pub status: DischargeStatus,
     pub requested_at: DateTime<Utc>,
     pub discharged_at: Option<DateTime<Utc>>,
+    pub blockers: Vec<DischargeBlocker>,
+    pub invoice_summary: DischargeInvoiceSummary,
+    pub schedule_follow_up_action: DischargeWorkflowAction,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

@@ -268,6 +268,46 @@ pub async fn update_bed(
     row.map(bed_from_row).transpose()
 }
 
+pub async fn release_cleaned_beds(
+    pool: &PgPool,
+    facility_id: Uuid,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> anyhow::Result<u64> {
+    let result = observe_db_query(
+        "ward.bed_management.beds.release_cleaned",
+        sqlx::query(
+            r#"
+        WITH due_beds AS (
+            SELECT id
+            FROM beds
+            WHERE facility_id = $1
+              AND status = $2
+              AND cleaning_due_at IS NOT NULL
+              AND cleaning_due_at <= $3
+            ORDER BY cleaning_due_at ASC, id ASC
+            LIMIT $4
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE beds
+        SET status = $5,
+            cleaning_due_at = NULL,
+            updated_at = now()
+        FROM due_beds
+        WHERE beds.id = due_beds.id
+        "#,
+        )
+        .bind(facility_id)
+        .bind(codec::encode(BedStatus::Cleaning)?)
+        .bind(now)
+        .bind(limit)
+        .bind(codec::encode(BedStatus::Available)?)
+        .execute(pool),
+    )
+    .await?;
+    Ok(result.rows_affected())
+}
+
 fn bed_from_row(row: BedRow) -> anyhow::Result<BedListItem> {
     Ok(BedListItem {
         id: row.id,

@@ -78,6 +78,57 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
         "Accepted for same-day review"
     );
 
+    let schedule_referral_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/referrals")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "to_service": "Eye Clinic",
+                        "priority": "routine",
+                        "reason": "Ophthalmology review"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("schedule referral create succeeds");
+    assert_eq!(schedule_referral_response.status(), StatusCode::OK);
+    let schedule_referral_body = json_body(schedule_referral_response).await;
+    let schedule_referral_id = schedule_referral_body["data"]["id"]
+        .as_str()
+        .expect("schedule referral id exists");
+    let scheduled_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/referrals/{schedule_referral_id}/schedule"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "starts_at": "2026-05-20T09:00:00Z",
+                        "ends_at": "2026-05-20T09:30:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("referral schedule succeeds");
+    assert_eq!(scheduled_response.status(), StatusCode::OK);
+    let scheduled_body = json_body(scheduled_response).await;
+    assert_eq!(scheduled_body["data"]["status"], "scheduled");
+    assert!(scheduled_body["data"]["scheduled_appointment_id"].is_string());
+    assert!(scheduled_body["data"]["scheduled_at"].is_string());
+
     let detail_response = app
         .clone()
         .oneshot(
@@ -245,6 +296,85 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
     assert_eq!(offer_response.status(), StatusCode::OK);
     let offer_body = json_body(offer_response).await;
     assert_eq!(offer_body["data"]["status"], "offered");
+    let waitlist_id = offer_body["data"]["id"]
+        .as_str()
+        .expect("waitlist id exists");
+
+    let promote_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/referrals/clinic-waitlist/{waitlist_id}/promote"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "starts_at": "2026-05-21T10:00:00Z",
+                        "ends_at": "2026-05-21T10:30:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("waitlist promote succeeds");
+    assert_eq!(promote_response.status(), StatusCode::OK);
+    let promote_body = json_body(promote_response).await;
+    assert_eq!(promote_body["data"]["status"], "promoted");
+    assert!(promote_body["data"]["scheduled_appointment_id"].is_string());
+
+    let cancel_waitlist_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/referrals/clinic-waitlist")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "service": "Surgery",
+                        "priority": "routine"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancel waitlist create succeeds");
+    assert_eq!(cancel_waitlist_response.status(), StatusCode::OK);
+    let cancel_waitlist_body = json_body(cancel_waitlist_response).await;
+    let cancel_waitlist_id = cancel_waitlist_body["data"]["id"]
+        .as_str()
+        .expect("cancel waitlist id exists");
+    let cancel_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/referrals/clinic-waitlist/{cancel_waitlist_id}/cancel"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "reason": "Patient no longer needs referral" }).to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("waitlist cancel succeeds");
+    assert_eq!(cancel_response.status(), StatusCode::OK);
+    let cancel_body = json_body(cancel_response).await;
+    assert_eq!(cancel_body["data"]["status"], "cancelled");
+    assert_eq!(
+        cancel_body["data"]["cancellation_reason"],
+        "Patient no longer needs referral"
+    );
 
     let list_response = app
         .clone()

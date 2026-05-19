@@ -1,16 +1,17 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::{
-    AppointmentUpdate, CareCursor, ClinicUpdate, EncounterUpdate, NewAppointment,
+    AppointmentUpdate, CareCursor, ClinicUpdate, EncounterUpdate, NewBookedAppointment,
     NewCareTeamAssignment, NewClinic, NewEncounter, NewTriage, NewVisit, TriageFilters,
 };
 use hms_domain::care::{
-    AppointmentListItem, AppointmentListQuery, AssignTriageRequest, CareTeamAssignment,
-    CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest,
-    CreateClinicRequest, CreateEncounterRequest, CreateTriageRequest, CursorListQuery,
-    EncounterListItem, EncounterListQuery, EncounterStatus, TriageAssessmentRequest,
-    TriageListItem, TriageListQuery, TriageStatus, UpdateAppointmentRequest, UpdateClinicRequest,
-    UpdateEncounterRequest, VisitListItem, VisitListQuery, VisitStatus,
+    AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem, AssignTriageRequest,
+    CancelAppointmentRequest, CareTeamAssignment, CheckInVisitRequest, ClinicListItem,
+    CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
+    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
+    EncounterListQuery, EncounterStatus, TriageAssessmentRequest, TriageListItem, TriageListQuery,
+    TriageStatus, UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest,
+    VisitListItem, VisitListQuery, VisitStatus,
 };
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
@@ -93,6 +94,32 @@ impl CareService {
         )
         .await
         .map_err(|_| ApiError::conflict("clinic_list_failed", "Clinics could not be loaded."))?;
+
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn list_appointment_types(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: CursorListQuery,
+    ) -> Result<ListResponse<AppointmentTypeListItem>, ApiError> {
+        require_workflow_list_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = hms_db::care::list_appointment_types(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "appointment_type_list_failed",
+                "Appointment types could not be loaded.",
+            )
+        })?;
 
         Ok(page_response(rows, page_size, |item| {
             encode_cursor(item.created_at, item.id)
@@ -191,14 +218,20 @@ impl CareService {
             ));
         }
 
-        let appointment = hms_db::care::create_appointment(
+        let appointment = hms_db::care::create_booked_appointment(
             self.pool(),
-            NewAppointment {
+            NewBookedAppointment {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
                 patient_id: payload.patient_id,
+                clinic_id: payload.clinic_id,
+                clinic_session_id: payload.clinic_session_id,
+                appointment_type_id: payload.appointment_type_id,
+                practitioner_user_id: payload.practitioner_user_id,
                 starts_at: payload.starts_at,
                 ends_at: payload.ends_at,
+                overbook_reason: validate_optional_reason(payload.overbook_reason)?,
+                series_id: None,
                 created_by_user_id: ctx.user_id,
             },
         )
@@ -281,25 +314,34 @@ impl CareService {
         &self,
         ctx: &hms_access::RequestContext,
         id: Uuid,
+        payload: CancelAppointmentRequest,
     ) -> Result<ObjectResponse<AppointmentListItem>, ApiError> {
         let _existing =
             load_appointment_for_access(&self.state, ctx, id, PermissionCode::AppointmentManage)
                 .await?;
-        let appointment =
-            hms_db::care::cancel_appointment(self.pool(), self.facility_id(), id, ctx.user_id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "appointment_cancel_failed",
-                        "Appointment could not be cancelled.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::conflict(
-                        "appointment_cancel_failed",
-                        "Only scheduled appointments can be cancelled.",
-                    )
-                })?;
+        let reason = validate_optional_reason(Some(payload.reason))?.ok_or_else(|| {
+            ApiError::bad_request("invalid_appointment", "Cancellation reason is required.")
+        })?;
+        let appointment = hms_db::care::cancel_appointment(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            reason,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "appointment_cancel_failed",
+                "Appointment could not be cancelled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "appointment_cancel_failed",
+                "Only scheduled appointments can be cancelled.",
+            )
+        })?;
 
         Ok(object(appointment))
     }
@@ -1003,6 +1045,26 @@ fn validate_optional_text(
                 "clinic_name" => "Clinic name is too long.",
                 _ => "Clinic field is too long.",
             },
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn validate_optional_reason(value: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Err(ApiError::bad_request(
+            "invalid_appointment",
+            "Reason cannot be blank.",
+        ));
+    }
+    if value.len() > 1_000 {
+        return Err(ApiError::bad_request(
+            "invalid_appointment",
+            "Reason is too long.",
         ));
     }
     Ok(Some(value))

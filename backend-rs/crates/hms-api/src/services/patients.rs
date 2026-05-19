@@ -1,5 +1,11 @@
+use chrono::Utc;
+use hms_db::auth::{EndBreakGlassGrants, StartBreakGlassGrant};
 use hms_db::patients::{
     NewPatient, PatientContextCursor, PatientContextFilters, PatientCursor, PatientUpdate,
+};
+use hms_domain::auth::{
+    BreakGlassGrant, BreakGlassGrantDenialReason, BreakGlassGrantOutcome,
+    EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest,
 };
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::deployment::{FeatureKey, PermissionCode};
@@ -20,6 +26,7 @@ const DEFAULT_CONTEXT_LIMIT: u8 = 10;
 const MAX_LIMIT: u8 = 100;
 const VALIDATION_RULE_LIMIT: u8 = 50;
 const CHRONICLE_SUMMARY_LIMIT: i64 = 25;
+const MAX_BREAK_GLASS_REASON_LEN: usize = 500;
 
 #[derive(Clone)]
 pub struct PatientsService {
@@ -199,14 +206,36 @@ impl PatientsService {
         ctx: &hms_access::RequestContext,
         id: Uuid,
     ) -> Result<ObjectResponse<PatientChronicleSummary>, ApiError> {
-        require_chronicle_read_access(ctx, self.facility_id())?;
-        let _patient = load_patient_for_access(
+        let patient = load_patient_for_access(
             &self.state,
             ctx,
             id,
             "You do not have access to this patient Chronicle.",
         )
         .await?;
+        let now = Utc::now();
+        let evidence = hms_db::auth::clinical_patient_access_evidence(
+            self.pool(),
+            self.facility_id(),
+            ctx.user_id,
+            patient.id,
+            now,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "patient_access_check_failed",
+                "Patient access could not be checked.",
+            )
+        })?;
+        hms_access::evaluate_clinical_patient_access(ctx, &patient, &evidence, now).map_err(
+            |_| {
+                ApiError::forbidden(
+                    "patient_access_denied",
+                    "You do not have access to this patient Chronicle.",
+                )
+            },
+        )?;
 
         let summary = hms_db::clinical::patient_chronicle_summary(
             self.pool(),
@@ -224,6 +253,68 @@ impl PatientsService {
         .ok_or_else(|| ApiError::not_found("patient_not_found", "Patient was not found."))?;
 
         Ok(object(summary))
+    }
+
+    pub async fn start_break_glass_grant(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+        payload: StartBreakGlassGrantRequest,
+    ) -> Result<ObjectResponse<BreakGlassGrant>, ApiError> {
+        let reason_text = normalize_break_glass_reason(payload.reason_text)?;
+        let outcome = hms_db::auth::start_break_glass_grant(
+            self.pool(),
+            StartBreakGlassGrant {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                user_id: ctx.user_id,
+                patient_id,
+                category: payload.category,
+                reason_text,
+                request_id: Some(ctx.request_id.clone()),
+                now: Utc::now(),
+                reauth_verified_at: ctx.reauth.verified_at,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "break_glass_grant_failed",
+                "Break-glass access could not be granted.",
+            )
+        })?;
+
+        match outcome {
+            BreakGlassGrantOutcome::Granted(grant) => Ok(object(grant)),
+            BreakGlassGrantOutcome::Denied(reason) => Err(break_glass_denied(reason)),
+        }
+    }
+
+    pub async fn end_break_glass_grants(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+    ) -> Result<ObjectResponse<EndBreakGlassGrantsResponse>, ApiError> {
+        let ended_count = hms_db::auth::end_break_glass_grants(
+            self.pool(),
+            EndBreakGlassGrants {
+                facility_id: self.facility_id(),
+                user_id: ctx.user_id,
+                patient_id,
+                ended_by_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
+                now: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "break_glass_end_failed",
+                "Break-glass grants could not be ended.",
+            )
+        })?;
+
+        Ok(object(EndBreakGlassGrantsResponse { ended_count }))
     }
 
     pub async fn update_patient(
@@ -370,19 +461,6 @@ fn require_patient_validation_rule_access(
     })
 }
 
-fn require_chronicle_read_access(
-    ctx: &hms_access::RequestContext,
-    facility_id: Uuid,
-) -> Result<(), ApiError> {
-    hms_access::require_chronicle_read_access(ctx, facility_id).map_err(|error| match error {
-        hms_access::AccessError::FeatureDisabled => ApiError::from(error),
-        _ => ApiError::forbidden(
-            "patient_access_denied",
-            "You do not have access to this patient Chronicle.",
-        ),
-    })
-}
-
 fn patient_page_request(
     query: &PatientListQuery,
 ) -> Result<cursor_list::CursorPage<PatientCursor>, ApiError> {
@@ -434,4 +512,46 @@ fn normalize_name(value: String, field: &'static str) -> Result<String, ApiError
         return Err(error);
     }
     Ok(value.to_owned())
+}
+
+fn normalize_break_glass_reason(value: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > MAX_BREAK_GLASS_REASON_LEN {
+        return Err(ApiError::bad_request(
+            "invalid_break_glass_reason",
+            "Break-glass reason is too long.",
+        ));
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn break_glass_denied(reason: BreakGlassGrantDenialReason) -> ApiError {
+    match reason {
+        BreakGlassGrantDenialReason::MissingDedicatedPermission => ApiError::forbidden(
+            "permission_denied",
+            "Dedicated break-glass permission is required.",
+        ),
+        BreakGlassGrantDenialReason::ReauthRequired => ApiError::forbidden(
+            "reauth_required",
+            "Fresh reauthentication is required for break-glass access.",
+        ),
+        BreakGlassGrantDenialReason::PatientNotActive => ApiError::conflict(
+            "break_glass_patient_not_active",
+            "Break-glass access is only available for active patients.",
+        ),
+        BreakGlassGrantDenialReason::ActiveGrantAlreadyExists => ApiError::conflict(
+            "break_glass_grant_exists",
+            "An active break-glass grant already exists for this patient.",
+        ),
+        BreakGlassGrantDenialReason::TooManyActiveGrants => ApiError::conflict(
+            "break_glass_grant_limit",
+            "Too many active break-glass grants are already open.",
+        ),
+    }
 }

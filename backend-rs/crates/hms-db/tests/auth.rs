@@ -250,3 +250,80 @@ async fn auth_sessions_are_listed_and_revoked_by_user_and_facility() {
     assert_eq!(current_session_still_active.len(), 1);
     assert_eq!(current_session_still_active[0].id, current_session_id);
 }
+
+#[tokio::test]
+async fn recovery_code_regeneration_invalidates_existing_unused_codes() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    hms_db::auth::replace_recovery_codes(
+        &pool,
+        facility_id,
+        owner_id,
+        vec!["old-code-hash-a".to_owned(), "old-code-hash-b".to_owned()],
+    )
+    .await
+    .expect("initial recovery codes insert");
+
+    assert_eq!(
+        hms_db::auth::recovery_codes_remaining(&pool, facility_id, owner_id)
+            .await
+            .expect("initial remaining count"),
+        2
+    );
+
+    hms_db::auth::replace_recovery_codes(
+        &pool,
+        facility_id,
+        owner_id,
+        vec!["new-code-hash-a".to_owned()],
+    )
+    .await
+    .expect("replacement recovery codes insert");
+
+    assert_eq!(
+        hms_db::auth::recovery_codes_remaining(&pool, facility_id, owner_id)
+            .await
+            .expect("replacement remaining count"),
+        1
+    );
+    assert!(
+        !hms_db::auth::consume_recovery_code(&pool, facility_id, owner_id, "old-code-hash-a")
+            .await
+            .expect("old code consume check")
+    );
+    assert!(
+        hms_db::auth::consume_recovery_code(&pool, facility_id, owner_id, "new-code-hash-a")
+            .await
+            .expect("new code consume")
+    );
+    assert_eq!(
+        hms_db::auth::recovery_codes_remaining(&pool, facility_id, owner_id)
+            .await
+            .expect("post-consume remaining count"),
+        0
+    );
+}

@@ -146,6 +146,7 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
 #[tokio::test]
 async fn request_context_rejects_stale_permission_versions() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
@@ -193,6 +194,7 @@ async fn request_context_rejects_stale_permission_versions() {
 #[tokio::test]
 async fn active_permission_assignments_are_resolved_into_request_context_policy() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
@@ -255,6 +257,7 @@ async fn active_permission_assignments_are_resolved_into_request_context_policy(
 #[tokio::test]
 async fn high_risk_admin_actions_reject_stale_reauth_context() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let stale_reauth_token = token_with_stale_reauth(&owner_token);
     let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
@@ -286,6 +289,41 @@ async fn high_risk_admin_actions_reject_stale_reauth_context() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = json_body(response).await;
     assert_eq!(body["error"]["code"], "reauth_required");
+}
+
+#[tokio::test]
+async fn privileged_admin_actions_require_passkey_enrollment() {
+    let app = app().await;
+    let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/permission-assignments")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "grantee_user_id": limited_id,
+                        "permission_code": "patient.create",
+                        "scope_type": "facility",
+                        "scope_id": null,
+                        "starts_at": null,
+                        "ends_at": null,
+                        "reason_code": "passkey_required_contract"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("passkey-required request succeeds");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = json_body(response).await;
+    assert_eq!(body["error"]["code"], "passkey_required");
 }
 
 #[tokio::test]

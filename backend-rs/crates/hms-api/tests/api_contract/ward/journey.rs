@@ -837,9 +837,12 @@ async fn ward_admission_and_nursing_workflows_are_patient_access_scoped() {
         )
         .await
         .expect("discharge complete succeeds");
-    assert_eq!(complete_discharge.status(), StatusCode::OK);
+    assert_eq!(complete_discharge.status(), StatusCode::CONFLICT);
     let complete_discharge_body = json_body(complete_discharge).await;
-    assert_eq!(complete_discharge_body["data"]["status"], "completed");
+    assert_eq!(
+        complete_discharge_body["error"]["code"],
+        "discharge_complete_failed"
+    );
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied_detail = app

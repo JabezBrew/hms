@@ -413,10 +413,93 @@ describe('Rust V2 auth bridge', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('fails closed for Rust V2 auth operations that are not exposed yet', async () => {
-    await expect(authApi.mfaStatus()).rejects.toThrow(
-      'Rust V2 does not expose MFA management yet',
+  it('uses Rust V2 passkey and recovery-code auth endpoints', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              totp_enrolled: false,
+              webauthn_enrolled: true,
+              recovery_codes_remaining: 4,
+              passkey_required: true,
+              privileged_actions_allowed: true,
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              challenge_id: 'challenge-1',
+              challenge: 'challenge',
+              rp: { id: 'localhost', name: 'HMS' },
+              user: { id: 'user-handle', name: 'owner@hms.local', displayName: 'HMS Owner' },
+              pubKeyCredParams: [],
+            },
+            meta: {},
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { verified: true }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { codes: ['A1B2-C3D4'] }, meta: {} }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+    const signal = new AbortController().signal;
+    await expect(authApi.mfaStatus(null, { signal })).resolves.toMatchObject({
+      webauthn_enrolled: true,
+      privileged_actions_allowed: true,
+    });
+    await expect(authApi.mfaWebAuthnRegistrationOptions(null, { signal })).resolves.toMatchObject({
+      challenge_id: 'challenge-1',
+    });
+    await expect(
+      authApi.mfaWebAuthnRegistrationVerify({ id: 'credential-id' }, null, { signal }),
+    ).resolves.toEqual({ verified: true });
+    await expect(authApi.mfaRecoveryGenerate({ currentPassword: 'ChangeMe123!', signal })).resolves.toEqual({
+      codes: ['A1B2-C3D4'],
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/auth/mfa/status',
+      expect.objectContaining({ method: 'GET', signal }),
     );
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/auth/mfa/webauthn/registration/options',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ mfa_session: null }), signal }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/auth/mfa/webauthn/registration/verify',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ credential: { id: 'credential-id' }, mfa_session: null }),
+        signal,
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/auth/mfa/recovery',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ current_password: 'ChangeMe123!' }),
+        signal,
+      }),
+    );
   });
 });

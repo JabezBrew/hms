@@ -28,6 +28,10 @@ pub fn routes() -> Router<AppState> {
             post(referrals::complete_referral),
         )
         .route(
+            "/api/v2/referrals/:id/schedule",
+            post(referrals::schedule_referral_appointment),
+        )
+        .route(
             "/api/v2/referrals/:id/sla-state",
             get(referrals::get_referral_sla_state),
         )
@@ -39,5 +43,13 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/referrals/clinic-waitlist/offer-next",
             post(referrals::offer_next_clinic_waitlist_entry),
+        )
+        .route(
+            "/api/v2/referrals/clinic-waitlist/:id/promote",
+            post(referrals::promote_clinic_waitlist_entry),
+        )
+        .route(
+            "/api/v2/referrals/clinic-waitlist/:id/cancel",
+            post(referrals::cancel_clinic_waitlist_entry),
         )
 }

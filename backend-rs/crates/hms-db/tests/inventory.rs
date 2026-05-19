@@ -1,10 +1,15 @@
 use chrono::{Duration, Utc};
 use hms_db::inventory::{
-    NewGoodsReceivedNote, NewPurchaseOrder, NewStockBatch, NewStockRequisition, StockBatchFilters,
+    CatalogEditCommand, NewControlledCount, NewControlledMovement, NewGoodsReceivedNote,
+    NewPurchaseOrder, NewStandingOrder, NewStockBatch, NewStockRequisition, StockBatchFilters,
+    SupplyDispenseLine,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::deployment::DeploymentProfile;
-use hms_domain::inventory::{GoodsReceivedStatus, PurchaseOrderStatus};
+use hms_domain::inventory::{
+    ControlledDiscrepancyCategory, ControlledMovementType, GoodsReceivedStatus,
+    PurchaseOrderStatus, RequisitionStatus, StandingOrderFrequency, StockCheckQueueStatus,
+};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -429,4 +434,294 @@ async fn inventory_dashboard_summary_uses_facility_scoped_aggregates() {
     assert_eq!(summary.total_stock_value_minor, 0);
     assert_eq!(summary.total_value_minor, 0);
     assert_eq!(summary.discrepancies, 0);
+}
+
+#[tokio::test]
+async fn controlled_count_logs_discrepancy_audit_and_adjusts_stock_immediately() {
+    let db = provisioned_inventory_db().await;
+    let pool = db.pool();
+    let facility_id = db.facility_id();
+    let owner_id = db.owner_user_id();
+    let item_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = true ORDER BY code LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("controlled item exists");
+    let location_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM storage_locations WHERE facility_id = $1 AND code = 'PHARM'",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("pharmacy location exists");
+
+    let receipt = hms_db::inventory::create_controlled_movement(
+        pool,
+        NewControlledMovement {
+            id: Uuid::new_v4(),
+            facility_id,
+            item_id,
+            location_id,
+            movement_type: ControlledMovementType::Receipt,
+            quantity_delta: 10,
+            witness_user_id: Some(owner_id),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("controlled receipt creates stock");
+
+    let stock_after_receipt =
+        hms_db::inventory::list_item_stock_by_location(&pool, facility_id, item_id)
+            .await
+            .expect("controlled stock lists");
+    assert!(stock_after_receipt
+        .iter()
+        .any(|row| row.location_id == location_id && row.quantity_on_hand == 10));
+
+    let count = hms_db::inventory::create_controlled_count(
+        pool,
+        NewControlledCount {
+            id: Uuid::new_v4(),
+            facility_id,
+            register_entry_id: receipt.id,
+            actual_count: 8,
+            witness_user_id: owner_id,
+            actor_user_id: owner_id,
+            category: ControlledDiscrepancyCategory::Missing,
+            reason: "Sealed count found two ampoules missing".to_owned(),
+        },
+    )
+    .await
+    .expect("controlled count logs discrepancy");
+
+    assert_eq!(count.movement_type, ControlledMovementType::Count);
+    assert_eq!(count.quantity_delta, -2);
+    assert_eq!(count.current_balance, 8);
+    assert_eq!(count.discrepancy_count, 1);
+
+    let stock_after_count =
+        hms_db::inventory::list_item_stock_by_location(pool, facility_id, item_id)
+            .await
+            .expect("controlled stock lists after count");
+    assert!(stock_after_count
+        .iter()
+        .any(|row| row.location_id == location_id && row.quantity_on_hand == 8));
+
+    let discrepancy = hms_db::inventory::list_controlled_discrepancies(pool, facility_id, None, 10)
+        .await
+        .expect("discrepancies list");
+    assert_eq!(discrepancy.len(), 1);
+    assert_eq!(discrepancy[0].register_entry_id, count.id);
+    assert_eq!(
+        discrepancy[0].category,
+        ControlledDiscrepancyCategory::Missing
+    );
+    assert_eq!(discrepancy[0].expected_balance, 10);
+    assert_eq!(discrepancy[0].actual_count, 8);
+    assert_eq!(discrepancy[0].severity, "high");
+
+    let audit_metadata = sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT metadata FROM audit_events
+         WHERE facility_id = $1
+           AND event_type = 'controlled_substance.discrepancy.logged'
+           AND resource_id = $2
+         LIMIT 1",
+    )
+    .bind(facility_id)
+    .bind(discrepancy[0].id)
+    .fetch_one(pool)
+    .await
+    .expect("high-severity discrepancy audit exists");
+    assert_eq!(audit_metadata["severity"], "high");
+    assert_eq!(audit_metadata["category"], "missing");
+}
+
+#[tokio::test]
+async fn effective_dated_catalog_edit_records_version_updates_item_and_audits() {
+    let db = provisioned_inventory_db().await;
+    let pool = db.pool();
+    let facility_id = db.facility_id();
+    let owner_id = db.owner_user_id();
+    let item_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = false ORDER BY code LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("inventory item exists");
+
+    let version = hms_db::inventory::apply_catalog_edit(
+        pool,
+        CatalogEditCommand {
+            id: Uuid::new_v4(),
+            facility_id,
+            item_id,
+            effective_from: Utc::now().date_naive(),
+            code: "PARA500".to_owned(),
+            name: "Paracetamol 500mg tablet - formulary preferred".to_owned(),
+            unit: "tablet".to_owned(),
+            reason: "Formulary catalog parity edit".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("catalog edit applies");
+
+    assert_eq!(version.item_id, item_id);
+    assert_eq!(version.effective_to, None);
+    assert_eq!(
+        version.name,
+        "Paracetamol 500mg tablet - formulary preferred"
+    );
+
+    let item = hms_db::inventory::get_item(pool, facility_id, item_id)
+        .await
+        .expect("item loads")
+        .expect("item exists");
+    assert_eq!(item.name, "Paracetamol 500mg tablet - formulary preferred");
+
+    let audit_count = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM audit_events
+         WHERE facility_id = $1
+           AND event_type = 'inventory.catalog.edited'
+           AND resource_id = $2
+           AND metadata->>'severity' = 'high'",
+    )
+    .bind(facility_id)
+    .bind(item_id)
+    .fetch_one(pool)
+    .await
+    .expect("audit count loads");
+    assert_eq!(audit_count, 1);
+}
+
+#[tokio::test]
+async fn standing_orders_supply_dispense_and_stock_check_queue_have_explicit_states() {
+    let db = provisioned_inventory_db().await;
+    let pool = db.pool();
+    let facility_id = db.facility_id();
+    let owner_id = db.owner_user_id();
+    let item_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM inventory_items WHERE facility_id = $1 AND controlled = false ORDER BY code LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("inventory item exists");
+    let location_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM storage_locations WHERE facility_id = $1 AND code = 'PHARM'",
+    )
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("pharmacy location exists");
+
+    hms_db::inventory::create_batch(
+        pool,
+        NewStockBatch {
+            id: Uuid::new_v4(),
+            facility_id,
+            item_id,
+            location_id,
+            batch_number: "SUPPLY-001".to_owned(),
+            expires_on: None,
+            quantity_received: 25,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("stock batch creates");
+
+    let standing_order = hms_db::inventory::create_standing_order(
+        pool,
+        NewStandingOrder {
+            id: Uuid::new_v4(),
+            facility_id,
+            requesting_location_id: location_id,
+            frequency: StandingOrderFrequency::Weekly,
+            next_run_on: Utc::now().date_naive(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("standing order creates");
+
+    let draft = hms_db::inventory::generate_draft_requisition_from_standing_order(
+        pool,
+        facility_id,
+        standing_order.id,
+        owner_id,
+    )
+    .await
+    .expect("standing order generates draft requisition");
+    assert_eq!(draft.status, RequisitionStatus::Requested);
+    assert_eq!(draft.requesting_location_id, location_id);
+
+    let dispense = hms_db::inventory::dispense_supply_request(
+        pool,
+        facility_id,
+        draft.id,
+        vec![SupplyDispenseLine {
+            item_id,
+            location_id,
+            quantity: 4,
+        }],
+        owner_id,
+    )
+    .await
+    .expect("supply request dispenses");
+    assert_eq!(dispense.status, "dispensed");
+    assert_eq!(dispense.line_count, 1);
+
+    let stock_after_dispense =
+        hms_db::inventory::list_item_stock_by_location(pool, facility_id, item_id)
+            .await
+            .expect("stock lists");
+    assert!(stock_after_dispense
+        .iter()
+        .any(|row| row.location_id == location_id && row.quantity_on_hand == 21));
+
+    let queue = hms_db::inventory::enqueue_stock_check(
+        pool,
+        facility_id,
+        location_id,
+        "Weekly cycle count".to_owned(),
+        owner_id,
+    )
+    .await
+    .expect("stock check queues");
+    assert_eq!(queue.status, StockCheckQueueStatus::Queued);
+
+    let in_progress = hms_db::inventory::transition_stock_check(
+        pool,
+        facility_id,
+        queue.id,
+        StockCheckQueueStatus::InProgress,
+        owner_id,
+    )
+    .await
+    .expect("stock check starts")
+    .expect("stock check exists");
+    assert_eq!(in_progress.status, StockCheckQueueStatus::InProgress);
+
+    let completed = hms_db::inventory::transition_stock_check(
+        pool,
+        facility_id,
+        queue.id,
+        StockCheckQueueStatus::Completed,
+        owner_id,
+    )
+    .await
+    .expect("stock check completes")
+    .expect("stock check exists");
+    assert_eq!(completed.status, StockCheckQueueStatus::Completed);
+}
+
+async fn provisioned_inventory_db() -> hms_db::test_support::TestDb {
+    hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database provisions")
 }

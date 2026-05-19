@@ -29,6 +29,28 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
         .as_str()
         .expect("clinic id exists");
 
+    let appointment_types = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/appointment-types?limit=10")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("appointment types list succeeds");
+    assert_eq!(appointment_types.status(), StatusCode::OK);
+    let appointment_types_body = json_body(appointment_types).await;
+    assert_eq!(appointment_types_body["page"]["limit"], 10);
+    assert_eq!(appointment_types_body["data"][0]["code"], "general");
+    assert_eq!(appointment_types_body["data"][0]["name"], "General");
+    assert_eq!(
+        appointment_types_body["data"][0]["default_duration_minutes"],
+        30
+    );
+
     let clinic_detail = app
         .clone()
         .oneshot(
@@ -832,7 +854,10 @@ async fn care_workflows_use_cursor_lists_and_patient_scoped_access() {
                     "/api/v2/appointments/{appointment_to_cancel_id}/cancel"
                 ))
                 .header(AUTHORIZATION, auth_header.clone())
-                .body(Body::empty())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "reason": "Patient requested cancellation" }).to_string(),
+                ))
                 .expect("request builds"),
         )
         .await

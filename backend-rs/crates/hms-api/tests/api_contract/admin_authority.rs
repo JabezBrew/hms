@@ -3,6 +3,7 @@ use super::*;
 #[tokio::test]
 async fn admin_authority_workflows_are_permission_scoped_and_audited() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);

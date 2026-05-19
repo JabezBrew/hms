@@ -1,7 +1,9 @@
 use chrono::{NaiveDate, TimeZone, Utc};
 use hms_db::care::{
-    AppointmentUpdate, ClinicUpdate, EncounterUpdate, NewAppointment, NewClinic, NewEncounter,
-    NewTriage, NewVisit, TriageFilters,
+    AppointmentUpdate, BlockedTimeScope, ClinicSessionMode, ClinicSessionOwnerType, ClinicUpdate,
+    EncounterUpdate, NewAppointmentSeries, NewAppointmentType, NewBlockedTime,
+    NewBookedAppointment, NewClinic, NewClinicSession, NewEncounter, NewTriage, NewVisit,
+    TriageFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::care::{
@@ -134,12 +136,16 @@ async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped()
     .fetch_one(&pool)
     .await
     .expect("patient exists");
-    let appointment = hms_db::care::create_appointment(
+    let appointment = hms_db::care::create_booked_appointment(
         &pool,
-        NewAppointment {
+        NewBookedAppointment {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            clinic_id: None,
+            clinic_session_id: None,
+            appointment_type_id: None,
+            practitioner_user_id: None,
             starts_at: Utc
                 .with_ymd_and_hms(2026, 5, 11, 9, 0, 0)
                 .single()
@@ -148,6 +154,8 @@ async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped()
                 .with_ymd_and_hms(2026, 5, 11, 9, 30, 0)
                 .single()
                 .expect("static timestamp is valid"),
+            overbook_reason: None,
+            series_id: None,
             created_by_user_id: owner_id,
         },
     )
@@ -189,10 +197,16 @@ async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped()
             .expect("static timestamp is valid")
     );
 
-    let cancelled = hms_db::care::cancel_appointment(&pool, facility_id, appointment.id, owner_id)
-        .await
-        .expect("appointment cancel succeeds")
-        .expect("appointment remains in facility");
+    let cancelled = hms_db::care::cancel_appointment(
+        &pool,
+        facility_id,
+        appointment.id,
+        owner_id,
+        "Patient unavailable".to_owned(),
+    )
+    .await
+    .expect("appointment cancel succeeds")
+    .expect("appointment remains in facility");
     assert_eq!(cancelled.status, AppointmentStatus::Cancelled);
 
     assert!(
@@ -201,6 +215,362 @@ async fn appointment_detail_update_and_cancel_repository_stays_facility_scoped()
             .expect("cross-facility lookup succeeds")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn clinic_session_capacity_block_cancellation_and_reschedule_history_are_enforced() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test db is available");
+    let patient_one = db
+        .scenario("session-capacity-one")
+        .registered_patient()
+        .await
+        .expect("patient one exists");
+    let patient_two = db
+        .scenario("session-capacity-two")
+        .registered_patient()
+        .await
+        .expect("patient two exists");
+    let clinic = hms_db::care::create_clinic(
+        db.pool(),
+        NewClinic {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            code: "CARDIO-CAP".to_owned(),
+            name: "Cardiology Capacity".to_owned(),
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("clinic creates");
+    let session = hms_db::care::create_clinic_session(
+        db.pool(),
+        NewClinicSession {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            clinic_id: Some(clinic.id),
+            service_code: Some("cardiology".to_owned()),
+            practitioner_user_id: None,
+            owner_type: ClinicSessionOwnerType::Clinic,
+            owner_id: Some(clinic.id),
+            name: "Morning cardiology book".to_owned(),
+            mode: ClinicSessionMode::CapacityBlock,
+            starts_at: Utc.with_ymd_and_hms(2030, 6, 3, 8, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 6, 3, 12, 0, 0).unwrap(),
+            slot_minutes: None,
+            capacity: 1,
+            allow_overbooking: false,
+            overbook_limit: 0,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("session creates");
+
+    let appointment = hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient_one.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: None,
+            practitioner_user_id: None,
+            starts_at: Utc.with_ymd_and_hms(2030, 6, 3, 9, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 6, 3, 9, 30, 0).unwrap(),
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("first appointment fits capacity");
+
+    let full_result = hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient_two.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: None,
+            practitioner_user_id: None,
+            starts_at: Utc.with_ymd_and_hms(2030, 6, 3, 9, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 6, 3, 9, 30, 0).unwrap(),
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await;
+    assert!(
+        full_result.is_err(),
+        "full capacity should reject a second booking"
+    );
+
+    let rescheduled = hms_db::care::update_appointment(
+        db.pool(),
+        AppointmentUpdate {
+            id: appointment.id,
+            facility_id: db.facility_id(),
+            starts_at: Some(Utc.with_ymd_and_hms(2030, 6, 3, 10, 0, 0).unwrap()),
+            ends_at: Some(Utc.with_ymd_and_hms(2030, 6, 3, 10, 30, 0).unwrap()),
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("reschedule succeeds")
+    .expect("appointment exists");
+    assert_eq!(rescheduled.id, appointment.id);
+    let history = hms_db::care::appointment_history(db.pool(), db.facility_id(), appointment.id)
+        .await
+        .expect("history loads");
+    assert!(history
+        .iter()
+        .any(|event| event.event_type == "rescheduled"));
+
+    let cancelled = hms_db::care::cancel_appointment(
+        db.pool(),
+        db.facility_id(),
+        appointment.id,
+        db.owner_user_id(),
+        "Patient requested a different week".to_owned(),
+    )
+    .await
+    .expect("appointment cancel succeeds")
+    .expect("appointment remains in facility");
+    assert_eq!(cancelled.status, AppointmentStatus::Cancelled);
+    assert_eq!(
+        cancelled.cancellation_reason.as_deref(),
+        Some("Patient requested a different week")
+    );
+
+    hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient_two.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: None,
+            practitioner_user_id: None,
+            starts_at: Utc.with_ymd_and_hms(2030, 6, 3, 10, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 6, 3, 10, 30, 0).unwrap(),
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("cancelled appointment frees capacity");
+}
+
+#[tokio::test]
+async fn clinic_session_overbooking_blocked_time_types_and_series_are_policy_bound() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test db is available");
+    let patient = db
+        .scenario("session-policy")
+        .registered_patient()
+        .await
+        .expect("patient exists");
+    let clinic = hms_db::care::create_clinic(
+        db.pool(),
+        NewClinic {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            code: "ORTHO-BOOK".to_owned(),
+            name: "Orthopaedic Book".to_owned(),
+            actor_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("clinic creates");
+    let appointment_type = hms_db::care::create_appointment_type(
+        db.pool(),
+        NewAppointmentType {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            code: "review".to_owned(),
+            name: "Review".to_owned(),
+            default_duration_minutes: 20,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("appointment type creates");
+    let session = hms_db::care::create_clinic_session(
+        db.pool(),
+        NewClinicSession {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            clinic_id: Some(clinic.id),
+            service_code: Some("orthopaedics".to_owned()),
+            practitioner_user_id: Some(db.owner_user_id()),
+            owner_type: ClinicSessionOwnerType::Practitioner,
+            owner_id: Some(db.owner_user_id()),
+            name: "Orthopaedic reviews".to_owned(),
+            mode: ClinicSessionMode::FixedSlot,
+            starts_at: Utc.with_ymd_and_hms(2030, 7, 4, 8, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 7, 4, 12, 0, 0).unwrap(),
+            slot_minutes: Some(20),
+            capacity: 1,
+            allow_overbooking: true,
+            overbook_limit: 1,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("session creates");
+    hms_db::care::constrain_appointment_type_to_session(
+        db.pool(),
+        db.facility_id(),
+        session.id,
+        appointment_type.id,
+    )
+    .await
+    .expect("session type constraint saves");
+    hms_db::care::create_blocked_time(
+        db.pool(),
+        NewBlockedTime {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            scope: BlockedTimeScope::Session,
+            clinic_session_id: Some(session.id),
+            practitioner_user_id: None,
+            starts_at: Utc.with_ymd_and_hms(2030, 7, 4, 11, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 7, 4, 11, 20, 0).unwrap(),
+            reason: "Team meeting".to_owned(),
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("blocked time saves");
+
+    let first = hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: Some(appointment_type.id),
+            practitioner_user_id: Some(db.owner_user_id()),
+            starts_at: Utc.with_ymd_and_hms(2030, 7, 4, 9, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 7, 4, 9, 20, 0).unwrap(),
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("first fixed slot booking succeeds");
+    assert_eq!(first.clinic_session_id, Some(session.id));
+    assert_eq!(first.appointment_type_id, Some(appointment_type.id));
+
+    let missing_reason = hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: Some(appointment_type.id),
+            practitioner_user_id: Some(db.owner_user_id()),
+            starts_at: Utc.with_ymd_and_hms(2030, 7, 4, 9, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 7, 4, 9, 20, 0).unwrap(),
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await;
+    assert!(missing_reason.is_err(), "overbooking must include a reason");
+
+    let overbooked = hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: Some(appointment_type.id),
+            practitioner_user_id: Some(db.owner_user_id()),
+            starts_at: Utc.with_ymd_and_hms(2030, 7, 4, 9, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 7, 4, 9, 20, 0).unwrap(),
+            overbook_reason: Some("Consultant approved urgent review".to_owned()),
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("policy-backed overbooking succeeds");
+    assert_eq!(
+        overbooked.overbook_reason.as_deref(),
+        Some("Consultant approved urgent review")
+    );
+    let history = hms_db::care::appointment_history(db.pool(), db.facility_id(), overbooked.id)
+        .await
+        .expect("history loads");
+    assert!(history.iter().any(|event| event.event_type == "overbooked"));
+
+    let blocked = hms_db::care::create_booked_appointment(
+        db.pool(),
+        NewBookedAppointment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: Some(session.id),
+            appointment_type_id: Some(appointment_type.id),
+            practitioner_user_id: Some(db.owner_user_id()),
+            starts_at: Utc.with_ymd_and_hms(2030, 7, 4, 11, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2030, 7, 4, 11, 20, 0).unwrap(),
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await;
+    assert!(
+        blocked.is_err(),
+        "blocked session time must reject bookings"
+    );
+
+    let series = hms_db::care::create_appointment_series(
+        db.pool(),
+        NewAppointmentSeries {
+            id: uuid::Uuid::new_v4(),
+            facility_id: db.facility_id(),
+            patient_id: patient.id,
+            clinic_id: Some(clinic.id),
+            clinic_session_id: None,
+            appointment_type_id: Some(appointment_type.id),
+            practitioner_user_id: Some(db.owner_user_id()),
+            starts_at: vec![
+                Utc.with_ymd_and_hms(2030, 7, 8, 9, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2030, 7, 15, 9, 0, 0).unwrap(),
+            ],
+            duration_minutes: 20,
+            repeat_rule: Some("weekly".to_owned()),
+            created_by_user_id: db.owner_user_id(),
+        },
+    )
+    .await
+    .expect("selected-date series creates");
+    assert_eq!(series.appointments.len(), 2);
+    assert!(series
+        .appointments
+        .iter()
+        .all(|appointment| appointment.series_id == Some(series.series_id)));
 }
 
 #[tokio::test]
@@ -255,12 +625,16 @@ async fn appointment_list_can_filter_by_schedule_date() {
     .await
     .expect("other clinic inserts");
 
-    let target = hms_db::care::create_appointment(
+    let target = hms_db::care::create_booked_appointment(
         &pool,
-        NewAppointment {
+        NewBookedAppointment {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            clinic_id: None,
+            clinic_session_id: None,
+            appointment_type_id: None,
+            practitioner_user_id: None,
             starts_at: Utc
                 .with_ymd_and_hms(2030, 5, 12, 9, 0, 0)
                 .single()
@@ -269,17 +643,23 @@ async fn appointment_list_can_filter_by_schedule_date() {
                 .with_ymd_and_hms(2030, 5, 12, 9, 30, 0)
                 .single()
                 .expect("static timestamp is valid"),
+            overbook_reason: None,
+            series_id: None,
             created_by_user_id: owner_id,
         },
     )
     .await
     .expect("target appointment is created");
-    let other_day = hms_db::care::create_appointment(
+    let other_day = hms_db::care::create_booked_appointment(
         &pool,
-        NewAppointment {
+        NewBookedAppointment {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            clinic_id: None,
+            clinic_session_id: None,
+            appointment_type_id: None,
+            practitioner_user_id: None,
             starts_at: Utc
                 .with_ymd_and_hms(2030, 5, 13, 9, 0, 0)
                 .single()
@@ -288,17 +668,23 @@ async fn appointment_list_can_filter_by_schedule_date() {
                 .with_ymd_and_hms(2030, 5, 13, 9, 30, 0)
                 .single()
                 .expect("static timestamp is valid"),
+            overbook_reason: None,
+            series_id: None,
             created_by_user_id: owner_id,
         },
     )
     .await
     .expect("other appointment is created");
-    let other_clinic_same_day = hms_db::care::create_appointment(
+    let other_clinic_same_day = hms_db::care::create_booked_appointment(
         &pool,
-        NewAppointment {
+        NewBookedAppointment {
             id: uuid::Uuid::new_v4(),
             facility_id,
             patient_id,
+            clinic_id: None,
+            clinic_session_id: None,
+            appointment_type_id: None,
+            practitioner_user_id: None,
             starts_at: Utc
                 .with_ymd_and_hms(2030, 5, 12, 10, 0, 0)
                 .single()
@@ -307,6 +693,8 @@ async fn appointment_list_can_filter_by_schedule_date() {
                 .with_ymd_and_hms(2030, 5, 12, 10, 30, 0)
                 .single()
                 .expect("static timestamp is valid"),
+            overbook_reason: None,
+            series_id: None,
             created_by_user_id: owner_id,
         },
     )

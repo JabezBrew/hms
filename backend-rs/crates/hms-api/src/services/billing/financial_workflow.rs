@@ -1,7 +1,9 @@
-use hms_db::billing::{NewInvoice, NewPayment};
+use chrono::Utc;
+use hms_db::billing::{NewInvoice, NewPayment, NewPaymentReversal};
 use hms_domain::billing::{
-    BillingListQuery, CreateInvoiceRequest, CreatePaymentRequest, InvoiceListItem, PaymentListItem,
-    ReceiptListItem,
+    BillingDischargeClearance, BillingListQuery, CreateInvoiceRequest, CreatePaymentRequest,
+    FinalizeInvoiceRequest, InvoiceListItem, PaymentListItem, PaymentReversalLedgerEntry,
+    ReceiptListItem, ReversePaymentRequest,
 };
 use hms_domain::deployment::PermissionCode;
 use uuid::Uuid;
@@ -143,6 +145,100 @@ impl FinancialWorkflowService {
         .await
         .map_err(|_| ApiError::conflict("payment_create_failed", "Payment could not be saved."))?;
         Ok(object(payment))
+    }
+
+    pub async fn finalize_invoice(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: FinalizeInvoiceRequest,
+    ) -> Result<ObjectResponse<InvoiceListItem>, ApiError> {
+        common::require_billing_high_risk_access(ctx, self.facility_id())?;
+        let _reason = common::normalize_text(payload.approval.reason, "reason")?;
+        common::require_invoice_patient_access(&self.state, ctx, id).await?;
+        let invoice = hms_db::billing::finalize_invoice(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            payload.approval.supervisor_user_id,
+            Utc::now(),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "invoice_finalization_failed",
+                "Invoice could not be finalized.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("invoice_not_found", "Invoice was not found."))?;
+        Ok(object(invoice))
+    }
+
+    pub async fn reverse_payment(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payment_id: Uuid,
+        payload: ReversePaymentRequest,
+    ) -> Result<ObjectResponse<PaymentReversalLedgerEntry>, ApiError> {
+        common::require_billing_high_risk_access(ctx, self.facility_id())?;
+        common::require_positive(payload.amount_minor, "amount_minor")?;
+        let reason = common::normalize_text(payload.approval.reason, "reason")?;
+        let invoice_id =
+            hms_db::billing::payment_invoice_id(self.pool(), self.facility_id(), payment_id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("payment_load_failed", "Payment could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("payment_not_found", "Payment was not found.")
+                })?;
+        common::require_invoice_patient_access(&self.state, ctx, invoice_id).await?;
+        let reversal = hms_db::billing::record_payment_reversal(
+            self.pool(),
+            NewPaymentReversal {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                payment_id,
+                reversal_kind: payload.reversal_kind,
+                amount_minor: payload.amount_minor,
+                reason,
+                approved_by_user_id: payload.approval.supervisor_user_id,
+                recorded_by_user_id: ctx.user_id,
+                reauthorized_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "payment_reversal_failed",
+                "Payment reversal could not be recorded.",
+            )
+        })?;
+        Ok(object(reversal))
+    }
+
+    pub async fn record_discharge_clearance(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+    ) -> Result<ObjectResponse<BillingDischargeClearance>, ApiError> {
+        common::require_billing_access(ctx, self.facility_id(), PermissionCode::BillingManage)?;
+        let _patient = common::load_patient_for_access(&self.state, ctx, patient_id).await?;
+        let clearance = hms_db::billing::record_discharge_billing_clearance(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "billing_discharge_clearance_failed",
+                "Billing clearance could not be recorded.",
+            )
+        })?;
+        Ok(object(clearance))
     }
 
     pub async fn list_receipts(

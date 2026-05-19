@@ -340,6 +340,52 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     );
     assert_eq!(problem_update_body["data"]["status"], "active");
 
+    let problem_link = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/clinical/problem-links")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "problem_id": problem_id,
+                        "clinical_note_id": note_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("problem link create succeeds");
+    assert_eq!(problem_link.status(), StatusCode::OK);
+    let problem_link_body = json_body(problem_link).await;
+    let problem_link_id = problem_link_body["data"]["id"]
+        .as_str()
+        .expect("problem link id exists");
+    assert_eq!(problem_link_body["data"]["problem_id"], problem_id);
+    assert_eq!(problem_link_body["data"]["artifact_kind"], "clinical_note");
+    assert_eq!(problem_link_body["data"]["artifact_id"], note_id);
+
+    let problem_links = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/clinical/problem-links?clinical_note_id={note_id}"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("problem link list succeeds");
+    assert_eq!(problem_links.status(), StatusCode::OK);
+    let problem_links_body = json_body(problem_links).await;
+    assert_eq!(problem_links_body["data"][0]["id"], problem_link_id);
+
     let allergy = app
         .clone()
         .oneshot(
@@ -426,6 +472,35 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
     let prescription_detail_body = json_body(prescription_detail).await;
     assert_eq!(
         prescription_detail_body["data"]["medication_name"],
+        "Amlodipine"
+    );
+
+    let pharmacy_context = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{patient_id}/clinical/pharmacy-context"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("pharmacy clinical context succeeds");
+    assert_eq!(pharmacy_context.status(), StatusCode::OK);
+    let pharmacy_context_body = json_body(pharmacy_context).await;
+    assert_eq!(
+        pharmacy_context_body["data"]["active_problems"][0]["label"],
+        "Essential hypertension"
+    );
+    assert_eq!(
+        pharmacy_context_body["data"]["active_allergies"][0]["substance"],
+        "Penicillin"
+    );
+    assert_eq!(
+        pharmacy_context_body["data"]["order_relevant_medications"][0]["medication_name"],
         "Amlodipine"
     );
 
@@ -656,4 +731,32 @@ async fn clinical_documentation_stays_patient_scoped_and_chronicle_ready() {
         .await
         .expect("clinical problem update denial succeeds");
     assert_eq!(denied_problem_update.status(), StatusCode::FORBIDDEN);
+
+    let denied_problem_link = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/v2/clinical/problem-links/{problem_link_id}"))
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinical problem link denial succeeds");
+    assert_eq!(denied_problem_link.status(), StatusCode::FORBIDDEN);
+
+    let problem_link_delete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/v2/clinical/problem-links/{problem_link_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("problem link delete succeeds");
+    assert_eq!(problem_link_delete.status(), StatusCode::OK);
 }

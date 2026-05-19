@@ -47,3 +47,20 @@ FHIR/export/cross-facility work must not be added to the cutover path until a
 later approved spec defines recipient identity, consent linkage, minimum export
 payloads, retention/expiry, revocation behavior, audit review, alerting, and
 breach-response ownership.
+
+## Future Stub Boundary
+
+These areas are named only to keep fail-closed product boundaries visible. Do
+not add routes, generated clients, or deployment checklist items until a
+separate approved spec exists.
+
+- FHIR interoperability: resource subset, trust model, validation, async sync,
+  conflict handling, PHI minimization, retries, and audit review.
+- Export bundles: recipient identity, consent linkage, payload minimums,
+  expiry, revocation, approvals, download controls, and breach ownership.
+- Cross-facility exchange: facility trust, patient matching, grant lifecycle,
+  emergency exceptions, routing, revocation, and audit escalation.
+- AI/copilot: provider, data residency, retention, clinical review, liability,
+  safety controls, and cost ceilings.
+- Onboarding runtime: tenant bootstrap authority, first-admin proofing, seed
+  data limits, billing handoff, rollback, and deprovisioning.

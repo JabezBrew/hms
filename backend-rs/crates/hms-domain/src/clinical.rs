@@ -20,6 +20,15 @@ pub enum ProblemStatus {
     Resolved,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProblemArtifactKind {
+    ClinicalNote,
+    Prescription,
+    LabOrder,
+    Encounter,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AllergySeverity {
@@ -137,6 +146,48 @@ pub struct ProblemListItem {
     pub status: ProblemStatus,
     pub onset_date: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct ProblemArtifactLinkQuery {
+    pub clinical_note_id: Option<Uuid>,
+    pub prescription_id: Option<Uuid>,
+    pub lab_order_id: Option<Uuid>,
+    pub encounter_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ProblemArtifactLinkRequest {
+    pub problem_id: Uuid,
+    pub clinical_note_id: Option<Uuid>,
+    pub prescription_id: Option<Uuid>,
+    pub lab_order_id: Option<Uuid>,
+    pub encounter_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ProblemArtifactLinkItem {
+    pub id: Uuid,
+    pub patient_id: Uuid,
+    pub problem_id: Uuid,
+    pub artifact_kind: ProblemArtifactKind,
+    pub artifact_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PharmacyClinicalContext {
+    pub patient_id: Uuid,
+    pub active_problems: Vec<ProblemListItem>,
+    pub active_allergies: Vec<AllergyListItem>,
+    pub order_relevant_medications: Vec<PrescriptionListItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct LaboratoryClinicalContext {
+    pub order_id: Uuid,
+    pub patient_id: Uuid,
+    pub linked_problems: Vec<ProblemListItem>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

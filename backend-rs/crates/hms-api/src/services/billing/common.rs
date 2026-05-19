@@ -31,6 +31,24 @@ pub(super) fn require_billing_access(
     })
 }
 
+pub(super) fn require_billing_high_risk_access(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_high_risk_facility_permission(
+        ctx,
+        facility_id,
+        PermissionCode::BillingManage,
+        Utc::now(),
+    )
+    .map_err(|_| {
+        ApiError::forbidden(
+            "high_risk_billing_denied",
+            "Fresh reauthentication and billing approval are required for this action.",
+        )
+    })
+}
+
 pub(super) fn require_nhis_access(
     ctx: &hms_access::RequestContext,
     facility_id: Uuid,
@@ -165,4 +183,75 @@ pub(super) fn validation_error(field: &'static str, message: &'static str) -> Ap
     let mut error = ApiError::bad_request("invalid_billing_request", "Billing request is invalid.");
     error.details = json!({ field: [message] });
     error
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use hms_access::{OffsiteState, ReauthState, RequestContext};
+    use hms_domain::auth::{AuthSecurityState, AuthUser, PatientDataVisibility};
+    use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
+    use uuid::Uuid;
+
+    use super::require_billing_high_risk_access;
+
+    fn ctx() -> RequestContext {
+        let facility_id = Uuid::new_v4();
+        let user = AuthUser {
+            id: Uuid::new_v4(),
+            email: "billing@hms.local".to_owned(),
+            display_name: "Billing Officer".to_owned(),
+            facility_id,
+            facility_code: "HMS".to_owned(),
+            active_profile: DeploymentProfile::Hospital,
+            permissions: vec![
+                PermissionCode::PatientDemographicsView,
+                PermissionCode::BillingManage,
+            ],
+            features: vec![],
+            patient_visibility: vec![
+                PatientDataVisibility::Demographics,
+                PatientDataVisibility::Billing,
+            ],
+            session_version: 1,
+            permission_version: 1,
+            password_change_required: false,
+            auth_security: AuthSecurityState::from_permissions(
+                &[
+                    PermissionCode::PatientDemographicsView,
+                    PermissionCode::BillingManage,
+                ],
+                true,
+                4,
+            ),
+        };
+        RequestContext::new(
+            "request-1".to_owned(),
+            Uuid::new_v4(),
+            user,
+            vec![FeatureKey::Patients, FeatureKey::Billing],
+            OffsiteState::Onsite,
+            ReauthState::from_authentication_time(Utc::now()),
+        )
+    }
+
+    #[test]
+    fn high_risk_billing_action_requires_permission_and_fresh_reauth() {
+        let valid = ctx();
+        assert!(require_billing_high_risk_access(&valid, valid.facility_id).is_ok());
+
+        let mut missing_permission = ctx();
+        missing_permission
+            .permissions
+            .retain(|permission| *permission != PermissionCode::BillingManage);
+        assert!(require_billing_high_risk_access(
+            &missing_permission,
+            missing_permission.facility_id
+        )
+        .is_err());
+
+        let mut stale_reauth = ctx();
+        stale_reauth.reauth = ReauthState::missing(Utc::now());
+        assert!(require_billing_high_risk_access(&stale_reauth, stale_reauth.facility_id).is_err());
+    }
 }

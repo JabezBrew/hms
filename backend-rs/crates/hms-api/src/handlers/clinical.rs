@@ -6,8 +6,10 @@ use hms_domain::clinical::{
     ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteTemplateListQuery, ClinicalNoteVersion,
     CreateAllergyRequest, CreateChartEntryRequest, CreateClinicalNoteRequest,
     CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
-    CreateProblemRequest, PrescriptionListItem, ProblemListItem, UpdateAllergyRequest,
-    UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
+    CreateProblemRequest, LaboratoryClinicalContext, PharmacyClinicalContext, PrescriptionListItem,
+    ProblemArtifactLinkItem, ProblemArtifactLinkQuery, ProblemArtifactLinkRequest, ProblemListItem,
+    UpdateAllergyRequest, UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest,
+    UpdateProblemRequest,
 };
 use uuid::Uuid;
 
@@ -434,6 +436,141 @@ pub async fn change_problem_status(
         state
             .clinical_service()
             .change_problem_status(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/clinical/problem-links",
+    operation_id = "getClinicalProblemLinks",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(ProblemArtifactLinkQuery),
+    responses(
+        (status = 200, description = "Problem artifact links", body = ListResponse<ProblemArtifactLinkItem>),
+        (status = 400, description = "Invalid artifact filter", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_problem_artifact_links(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<ProblemArtifactLinkQuery>,
+) -> Result<Json<ListResponse<ProblemArtifactLinkItem>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .list_problem_artifact_links(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/clinical/problem-links",
+    operation_id = "postClinicalProblemLinks",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    request_body = ProblemArtifactLinkRequest,
+    responses(
+        (status = 200, description = "Problem artifact link created", body = ObjectResponse<ProblemArtifactLinkItem>),
+        (status = 400, description = "Invalid problem link", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_problem_artifact_link(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<ProblemArtifactLinkRequest>,
+) -> Result<Json<ObjectResponse<ProblemArtifactLinkItem>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .create_problem_artifact_link(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v2/clinical/problem-links/{id}",
+    operation_id = "deleteClinicalProblemLink",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Problem link id")),
+    responses(
+        (status = 200, description = "Problem artifact link deleted", body = ObjectResponse<ProblemArtifactLinkItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Problem link not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_problem_artifact_link(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<ProblemArtifactLinkItem>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .delete_problem_artifact_link(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/patients/{patient_id}/clinical/pharmacy-context",
+    operation_id = "getPatientPharmacyClinicalContext",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("patient_id" = Uuid, Path, description = "Patient id")),
+    responses(
+        (status = 200, description = "Pharmacy clinical context", body = ObjectResponse<PharmacyClinicalContext>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Patient not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_pharmacy_clinical_context(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(patient_id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<PharmacyClinicalContext>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .pharmacy_clinical_context(&user, patient_id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/laboratory/orders/{order_id}/clinical-context",
+    operation_id = "getLaboratoryOrderClinicalContext",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("order_id" = Uuid, Path, description = "Laboratory order id")),
+    responses(
+        (status = 200, description = "Laboratory clinical context", body = ObjectResponse<LaboratoryClinicalContext>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Lab order not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_laboratory_clinical_context(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(order_id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<LaboratoryClinicalContext>>, ApiError> {
+    Ok(Json(
+        state
+            .clinical_service()
+            .laboratory_clinical_context(&user, order_id)
             .await?,
     ))
 }

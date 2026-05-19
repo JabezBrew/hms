@@ -1,5 +1,6 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
+use hms_domain::auth::{BreakGlassGrant, EndBreakGlassGrantsResponse, StartBreakGlassGrantRequest};
 use hms_domain::clinical::PatientChronicleSummary;
 use hms_domain::patients::{
     CreatePatientRequest, PatientContextListItem, PatientDetail, PatientListItem, PatientListQuery,
@@ -184,6 +185,62 @@ pub async fn get_patient_chronicle_print(
         state
             .patients_service()
             .get_patient_chronicle(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/patients/{id}/break-glass",
+    operation_id = "postPatientBreakGlass",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Patient id")),
+    request_body = StartBreakGlassGrantRequest,
+    responses(
+        (status = 200, description = "Break-glass grant opened", body = ObjectResponse<BreakGlassGrant>),
+        (status = 400, description = "Invalid break-glass request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Break-glass denied", body = ApiErrorResponse),
+        (status = 409, description = "Break-glass grant could not be opened", body = ApiErrorResponse)
+    )
+)]
+pub async fn start_break_glass_grant(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<StartBreakGlassGrantRequest>,
+) -> Result<Json<ObjectResponse<BreakGlassGrant>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .start_break_glass_grant(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/patients/{id}/break-glass/end",
+    operation_id = "postPatientBreakGlassEnd",
+    tag = "patients",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Patient id")),
+    responses(
+        (status = 200, description = "Break-glass grants ended", body = ObjectResponse<EndBreakGlassGrantsResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 409, description = "Break-glass grants could not be ended", body = ApiErrorResponse)
+    )
+)]
+pub async fn end_break_glass_grants(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<EndBreakGlassGrantsResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .end_break_glass_grants(&user, id)
             .await?,
     ))
 }

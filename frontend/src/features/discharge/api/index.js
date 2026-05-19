@@ -21,28 +21,59 @@ function mapV2Status(status) {
   }
 }
 
-function buildV2Blockers(discharge) {
+function mapV2Blocker(blocker, discharge) {
+  const taskType = blocker.blocker_type || blocker.task_type
+  return {
+    ...blocker,
+    id: blocker.id || `${discharge.id}:${taskType}`,
+    task_type: taskType,
+    status: blocker.status || 'pending',
+    blocking: blocker.blocking ?? true,
+    workflow_label: blocker.workflow_label || taskType?.replace(/_/g, ' ') || 'Workflow',
+    workflow_path: blocker.workflow_path || workflowPathForBlocker(taskType, discharge),
+    snapshot: {
+      hold_reason: blocker.hold_reason || null,
+      override_reason: blocker.override_reason || null,
+      completed_at: blocker.completed_at || null,
+    },
+  }
+}
+
+function workflowPathForBlocker(taskType, discharge) {
+  switch (taskType) {
+    case 'discharge_summary':
+      return `/patients/${discharge.patient_id}/chronicle?panel=clinical-notes&type=discharge_summary`
+    case 'nursing_release':
+      return `/nursing/discharges?case=${discharge.id}`
+    case 'billing_clearance':
+      return `/billing/discharges?case=${discharge.id}`
+    case 'pharmacy_clearance':
+      return `/pharmacy/dispensing?patient=${discharge.patient_id}&discharge=${discharge.id}`
+    default:
+      return `/patients/${discharge.patient_id}/chronicle`
+  }
+}
+
+function buildFallbackV2Blockers(discharge) {
   if (discharge?.status === 'completed') return []
   if (discharge?.status === 'cancelled') return []
   return [
     {
-      id: `${discharge.id}:billing_clearance`,
-      task_type: 'billing_clearance',
-      status: 'completed',
-      blocking: true,
-    },
-    {
-      id: `${discharge.id}:nursing_finalization`,
-      task_type: 'nursing_finalization',
+      id: `${discharge.id}:discharge_summary`,
+      task_type: 'discharge_summary',
       status: 'pending',
       blocking: true,
+      workflow_label: 'Discharge summary',
+      workflow_path: workflowPathForBlocker('discharge_summary', discharge),
     },
   ]
 }
 
 function adaptV2Discharge(discharge) {
   if (!discharge) return discharge
-  const blockers = buildV2Blockers(discharge)
+  const blockers = Array.isArray(discharge.blockers) && discharge.blockers.length > 0
+    ? discharge.blockers.map((blocker) => mapV2Blocker(blocker, discharge))
+    : buildFallbackV2Blockers(discharge)
   return {
     ...discharge,
     admission: discharge.admission_case_id,
@@ -50,16 +81,23 @@ function adaptV2Discharge(discharge) {
     patient: discharge.patient_id,
     patient_name: discharge.patient_display_name,
     medical_record_number: discharge.patient_code,
+    ward: discharge.ward_id,
     ward_name: discharge.ward_name || 'Ward not specified',
     status: mapV2Status(discharge.status),
     v2_status: discharge.status,
     medical_ready_at: discharge.requested_at,
     billing_cutoff_at: null,
     finalized_at: discharge.discharged_at || null,
-    advisory_tasks_open: 0,
-    invoice_summary: {
+    advisory_tasks_open: blockers.filter((task) => !task.blocking && task.status !== 'completed').length,
+    invoice_summary: discharge.invoice_summary || {
       invoice_count: 0,
       patient_balance_due: '0.00',
+      patient_balance_due_minor: 0,
+      currency: 'GHS',
+    },
+    schedule_follow_up_action: discharge.schedule_follow_up_action || {
+      label: 'Schedule follow-up',
+      path: `/appointments/create?patient=${discharge.patient_id}`,
     },
     blockers,
     tasks: blockers,

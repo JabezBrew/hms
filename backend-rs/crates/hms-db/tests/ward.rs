@@ -6,8 +6,9 @@ use hms_db::ward::{
 };
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::{
-    AdmissionStatus, BedStatus, DischargeStatus, MonitoringEventKind, NursingAlertSeverity,
-    NursingAlertStatus, NursingTaskStatus, NursingTaskType, WardStatus, WardStockRequestStatus,
+    AdmissionStatus, BedStatus, DischargeBlockerKind, DischargeBlockerStatus, DischargeStatus,
+    MonitoringEventKind, NursingAlertSeverity, NursingAlertStatus, NursingTaskStatus,
+    NursingTaskType, WardStatus, WardStockRequestStatus,
 };
 
 #[tokio::test]
@@ -217,6 +218,17 @@ async fn ward_detail_sections_and_beds_are_bounded_and_facility_scoped() {
     );
 }
 
+fn blocker(
+    discharge: &hms_domain::ward::DischargeCaseListItem,
+    kind: DischargeBlockerKind,
+) -> &hms_domain::ward::DischargeBlocker {
+    discharge
+        .blockers
+        .iter()
+        .find(|blocker| blocker.blocker_type == kind)
+        .expect("expected blocker exists")
+}
+
 #[tokio::test]
 async fn ward_list_search_filters_server_side_and_stays_facility_scoped() {
     let database =
@@ -419,6 +431,315 @@ async fn admission_case_reserve_activate_cancel_transitions_are_facility_scoped(
             .expect("cross-facility admission list succeeds")
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn discharge_blockers_are_source_driven_and_holdable_per_blocker() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("discharge-blockers")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+    let admission = hms_db::ward::activate_admission_case(
+        db.pool(),
+        db.facility_id(),
+        scenario.admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("activation query succeeds")
+    .expect("admission activates");
+
+    let discharge = hms_db::ward::request_discharge(
+        db.pool(),
+        uuid::Uuid::new_v4(),
+        db.facility_id(),
+        &AdmissionContext {
+            id: admission.id,
+            patient_id: admission.patient_id,
+            ward_id: admission.ward_id,
+            bed_id: admission.bed_id,
+        },
+        db.owner_user_id(),
+    )
+    .await
+    .expect("discharge request succeeds");
+
+    let summary = blocker(&discharge, DischargeBlockerKind::DischargeSummary);
+    let nursing = blocker(&discharge, DischargeBlockerKind::NursingRelease);
+    let billing = blocker(&discharge, DischargeBlockerKind::BillingClearance);
+    assert_eq!(summary.status, DischargeBlockerStatus::Pending);
+    assert_eq!(nursing.status, DischargeBlockerStatus::Pending);
+    assert_eq!(billing.status, DischargeBlockerStatus::Completed);
+    assert!(
+        hms_db::ward::complete_discharge(db.pool(), db.facility_id(), discharge.id)
+            .await
+            .expect_err("open source blockers prevent final discharge")
+            .to_string()
+            .contains("discharge blockers")
+    );
+
+    sqlx::query("UPDATE discharge_cases SET pharmacy_required = true WHERE id = $1")
+        .bind(discharge.id)
+        .execute(db.pool())
+        .await
+        .expect("pharmacy requirement updates");
+    let pharmacy_required =
+        hms_db::ward::get_discharge_case(db.pool(), db.facility_id(), discharge.id)
+            .await
+            .expect("pharmacy-required discharge reload succeeds")
+            .expect("pharmacy-required discharge exists");
+    assert_eq!(
+        blocker(&pharmacy_required, DischargeBlockerKind::PharmacyClearance).status,
+        DischargeBlockerStatus::Pending
+    );
+    hms_db::ward::hold_discharge_blocker(
+        db.pool(),
+        db.facility_id(),
+        discharge.id,
+        DischargeBlockerKind::PharmacyClearance,
+        "Take-home medicines are being packed".to_owned(),
+        db.owner_user_id(),
+    )
+    .await
+    .expect("pharmacy blocker hold succeeds");
+    let held_pharmacy = hms_db::ward::get_discharge_case(db.pool(), db.facility_id(), discharge.id)
+        .await
+        .expect("held pharmacy discharge reload succeeds")
+        .expect("held pharmacy discharge exists");
+    let held_pharmacy = blocker(&held_pharmacy, DischargeBlockerKind::PharmacyClearance);
+    assert_eq!(held_pharmacy.status, DischargeBlockerStatus::Held);
+    assert_eq!(
+        held_pharmacy.hold_reason.as_deref(),
+        Some("Take-home medicines are being packed")
+    );
+
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_notes (
+            id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
+        )
+        VALUES ($1, $2, $3, 'discharge_summary', 'Discharge summary', 'Stable for discharge.', 'signed', $4)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(db.facility_id())
+    .bind(admission.patient_id)
+    .bind(db.owner_user_id())
+    .execute(db.pool())
+    .await
+    .expect("signed discharge summary inserts");
+
+    let invoice_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO invoices (
+            id, facility_id, patient_id, invoice_number, status, gross_amount_minor,
+            paid_amount_minor, issued_by_user_id
+        )
+        VALUES ($1, $2, $3, 'INV-DISCHARGE-BLOCKER', 'issued', 12500, 0, $4)
+        "#,
+    )
+    .bind(invoice_id)
+    .bind(db.facility_id())
+    .bind(admission.patient_id)
+    .bind(db.owner_user_id())
+    .execute(db.pool())
+    .await
+    .expect("unpaid invoice inserts");
+
+    let after_sources = hms_db::ward::get_discharge_case(db.pool(), db.facility_id(), discharge.id)
+        .await
+        .expect("discharge reload succeeds")
+        .expect("discharge exists");
+    assert_eq!(
+        blocker(&after_sources, DischargeBlockerKind::DischargeSummary).status,
+        DischargeBlockerStatus::Completed
+    );
+    assert_eq!(
+        blocker(&after_sources, DischargeBlockerKind::BillingClearance).status,
+        DischargeBlockerStatus::Pending
+    );
+
+    hms_db::ward::hold_discharge_blocker(
+        db.pool(),
+        db.facility_id(),
+        discharge.id,
+        DischargeBlockerKind::BillingClearance,
+        "Awaiting NHIS cashier closeout".to_owned(),
+        db.owner_user_id(),
+    )
+    .await
+    .expect("billing blocker hold succeeds");
+    let held = hms_db::ward::get_discharge_case(db.pool(), db.facility_id(), discharge.id)
+        .await
+        .expect("held discharge reload succeeds")
+        .expect("held discharge exists");
+    let held_billing = blocker(&held, DischargeBlockerKind::BillingClearance);
+    assert_eq!(held_billing.status, DischargeBlockerStatus::Held);
+    assert_eq!(
+        held_billing.hold_reason.as_deref(),
+        Some("Awaiting NHIS cashier closeout")
+    );
+
+    hms_db::ward::override_discharge_blocker(
+        db.pool(),
+        db.facility_id(),
+        discharge.id,
+        DischargeBlockerKind::BillingClearance,
+        "Approved by matron after cashier outage".to_owned(),
+        db.owner_user_id(),
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("billing blocker override succeeds");
+    let overridden = hms_db::ward::get_discharge_case(db.pool(), db.facility_id(), discharge.id)
+        .await
+        .expect("overridden discharge reload succeeds")
+        .expect("overridden discharge exists");
+    let overridden_billing = blocker(&overridden, DischargeBlockerKind::BillingClearance);
+    assert_eq!(
+        overridden_billing.status,
+        DischargeBlockerStatus::Overridden
+    );
+    assert_eq!(
+        overridden_billing.override_reason.as_deref(),
+        Some("Approved by matron after cashier outage")
+    );
+
+    sqlx::query(
+        "UPDATE invoices SET status = 'paid', paid_amount_minor = gross_amount_minor WHERE id = $1",
+    )
+    .bind(invoice_id)
+    .execute(db.pool())
+    .await
+    .expect("invoice is paid");
+    let after_billing_source =
+        hms_db::ward::get_discharge_case(db.pool(), db.facility_id(), discharge.id)
+            .await
+            .expect("paid-billing discharge reload succeeds")
+            .expect("paid-billing discharge exists");
+    assert_eq!(
+        blocker(
+            &after_billing_source,
+            DischargeBlockerKind::BillingClearance
+        )
+        .status,
+        DischargeBlockerStatus::Completed
+    );
+}
+
+#[tokio::test]
+async fn discharge_completion_moves_bed_to_cleaning_then_releases_after_policy_interval() {
+    let db = hms_db::test_support::TestDb::hospital()
+        .await
+        .expect("test database is available");
+    let scenario = db
+        .scenario("discharge-cleaning")
+        .admission_case_with_available_bed()
+        .await
+        .expect("admission scenario builds");
+    sqlx::query("UPDATE wards SET bed_cleaning_minutes_override = 5 WHERE id = $1")
+        .bind(scenario.ward.id)
+        .execute(db.pool())
+        .await
+        .expect("ward cleaning override updates");
+    let admission = hms_db::ward::activate_admission_case(
+        db.pool(),
+        db.facility_id(),
+        scenario.admission.id,
+        db.owner_user_id(),
+    )
+    .await
+    .expect("activation query succeeds")
+    .expect("admission activates");
+
+    let discharge = hms_db::ward::request_discharge(
+        db.pool(),
+        uuid::Uuid::new_v4(),
+        db.facility_id(),
+        &AdmissionContext {
+            id: admission.id,
+            patient_id: admission.patient_id,
+            ward_id: admission.ward_id,
+            bed_id: admission.bed_id,
+        },
+        db.owner_user_id(),
+    )
+    .await
+    .expect("discharge request succeeds");
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_notes (
+            id, facility_id, patient_id, note_type, title, body, status, created_by_user_id
+        )
+        VALUES ($1, $2, $3, 'discharge_summary', 'Discharge summary', 'Stable.', 'signed', $4)
+        "#,
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(db.facility_id())
+    .bind(admission.patient_id)
+    .bind(db.owner_user_id())
+    .execute(db.pool())
+    .await
+    .expect("signed discharge summary inserts");
+    hms_db::ward::record_nursing_release(
+        db.pool(),
+        db.facility_id(),
+        discharge.id,
+        "Medication safety and red flags reviewed.".to_owned(),
+        "Return immediately if fever or bleeding develops.".to_owned(),
+        db.owner_user_id(),
+    )
+    .await
+    .expect("nursing release records");
+
+    let completed = hms_db::ward::complete_discharge(db.pool(), db.facility_id(), discharge.id)
+        .await
+        .expect("discharge complete query succeeds")
+        .expect("discharge completes");
+    assert_eq!(completed.status, DischargeStatus::Completed);
+    let cleaning_bed = hms_db::ward::get_bed_by_id(
+        db.pool(),
+        db.facility_id(),
+        admission.bed_id.expect("admission has bed"),
+    )
+    .await
+    .expect("bed reload succeeds")
+    .expect("bed exists");
+    assert_eq!(cleaning_bed.status, BedStatus::Cleaning);
+
+    let early_release = hms_db::ward::release_cleaned_beds(
+        db.pool(),
+        db.facility_id(),
+        chrono::Utc::now() + chrono::Duration::minutes(4),
+        25,
+    )
+    .await
+    .expect("early cleaning release succeeds");
+    assert_eq!(early_release, 0);
+
+    let released = hms_db::ward::release_cleaned_beds(
+        db.pool(),
+        db.facility_id(),
+        chrono::Utc::now() + chrono::Duration::minutes(6),
+        25,
+    )
+    .await
+    .expect("due cleaning release succeeds");
+    assert_eq!(released, 1);
+    let available_bed = hms_db::ward::get_bed_by_id(
+        db.pool(),
+        db.facility_id(),
+        admission.bed_id.expect("admission has bed"),
+    )
+    .await
+    .expect("bed reload succeeds")
+    .expect("bed exists");
+    assert_eq!(available_bed.status, BedStatus::Available);
 }
 
 #[tokio::test]

@@ -62,6 +62,26 @@ async fn patient_registry_uses_cursor_pagination_and_enforces_access() {
         .await
         .expect("patient create succeeds");
     assert_eq!(create.status(), StatusCode::OK);
+    let create_body = json_body(create).await;
+    let registry_only_patient_id = create_body["data"]["id"]
+        .as_str()
+        .expect("created patient id exists");
+
+    let denied_chronicle = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/patients/{registry_only_patient_id}/chronicle"
+                ))
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("chronicle denial succeeds");
+    assert_eq!(denied_chronicle.status(), StatusCode::FORBIDDEN);
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app

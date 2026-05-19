@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::clinical::{
     ClinicalCursor, NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate,
-    NewPrescription, NewProblem, NoteContext, UpdateClinicalNoteTemplate,
+    NewPrescription, NewProblem, NewProblemArtifactLink, NoteContext, UpdateClinicalNoteTemplate,
 };
 use hms_domain::care::CursorListQuery;
 use hms_domain::clinical::{
@@ -10,7 +10,9 @@ use hms_domain::clinical::{
     ClinicalNoteListItem, ClinicalNoteTemplate, ClinicalNoteTemplateListQuery, ClinicalNoteVersion,
     CreateAllergyRequest, CreateChartEntryRequest, CreateClinicalNoteRequest,
     CreateClinicalNoteTemplateRequest, CreateClinicalNoteVersionRequest, CreatePrescriptionRequest,
-    CreateProblemRequest, PrescriptionListItem, ProblemListItem, UpdateAllergyRequest,
+    CreateProblemRequest, LaboratoryClinicalContext, PharmacyClinicalContext, PrescriptionListItem,
+    ProblemArtifactKind, ProblemArtifactLinkItem, ProblemArtifactLinkQuery,
+    ProblemArtifactLinkRequest, ProblemListItem, UpdateAllergyRequest,
     UpdateClinicalNoteTemplateRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::PermissionCode;
@@ -455,6 +457,147 @@ impl ClinicalService {
         .ok_or_else(|| ApiError::not_found("problem_not_found", "Problem was not found."))?;
 
         Ok(object(problem))
+    }
+
+    pub async fn list_problem_artifact_links(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: ProblemArtifactLinkQuery,
+    ) -> Result<ListResponse<ProblemArtifactLinkItem>, ApiError> {
+        require_clinical_list_access(ctx, self.facility_id())?;
+        let (artifact_kind, artifact_id) = artifact_filter(query)?;
+        let links = hms_db::clinical::list_problem_artifact_links(
+            self.pool(),
+            self.facility_id(),
+            artifact_kind,
+            artifact_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "problem_link_list_failed",
+                "Problem links could not be loaded.",
+            )
+        })?;
+
+        Ok(cursor_list::static_list(links, MAX_LIMIT))
+    }
+
+    pub async fn create_problem_artifact_link(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: ProblemArtifactLinkRequest,
+    ) -> Result<ObjectResponse<ProblemArtifactLinkItem>, ApiError> {
+        require_clinical_write_access(ctx, self.facility_id())?;
+        let (artifact_kind, artifact_id) = artifact_payload(&payload)?;
+        let problem = load_problem_for_access(&self.state, ctx, payload.problem_id).await?;
+        let link = hms_db::clinical::create_problem_artifact_link(
+            self.pool(),
+            NewProblemArtifactLink {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                patient_id: problem.patient_id,
+                problem_id: payload.problem_id,
+                artifact_kind,
+                artifact_id,
+                actor_user_id: ctx.user_id,
+                request_id: Some(ctx.request_id.clone()),
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "problem_link_create_failed",
+                "Problem link could not be saved.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::bad_request(
+                "problem_link_patient_mismatch",
+                "Problem links must target artifacts for the same patient.",
+            )
+        })?;
+
+        Ok(object(link))
+    }
+
+    pub async fn delete_problem_artifact_link(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<ProblemArtifactLinkItem>, ApiError> {
+        require_clinical_write_access(ctx, self.facility_id())?;
+        let link = hms_db::clinical::delete_problem_artifact_link(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            Some(ctx.request_id.clone()),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "problem_link_delete_failed",
+                "Problem link could not be removed.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("problem_link_not_found", "Problem link was not found.")
+        })?;
+
+        Ok(object(link))
+    }
+
+    pub async fn pharmacy_clinical_context(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+    ) -> Result<ObjectResponse<PharmacyClinicalContext>, ApiError> {
+        require_action_permission(ctx, self.facility_id(), PermissionCode::PharmacyDispense)?;
+        let _patient = load_patient_for_access(&self.state, ctx, patient_id).await?;
+        let context = hms_db::clinical::pharmacy_clinical_context(
+            self.pool(),
+            self.facility_id(),
+            patient_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "pharmacy_context_failed",
+                "Pharmacy clinical context could not be loaded.",
+            )
+        })?;
+
+        Ok(object(context))
+    }
+
+    pub async fn laboratory_clinical_context(
+        &self,
+        ctx: &hms_access::RequestContext,
+        order_id: Uuid,
+    ) -> Result<ObjectResponse<LaboratoryClinicalContext>, ApiError> {
+        hms_access::require_lab_list_access(ctx, self.facility_id()).map_err(|_| {
+            ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission to view laboratory clinical context.",
+            )
+        })?;
+        let context = hms_db::clinical::laboratory_clinical_context(
+            self.pool(),
+            self.facility_id(),
+            order_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "laboratory_context_failed",
+                "Laboratory clinical context could not be loaded.",
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found("lab_order_not_found", "Lab order was not found."))?;
+        let _patient = load_patient_for_access(&self.state, ctx, context.patient_id).await?;
+
+        Ok(object(context))
     }
 
     pub async fn list_allergies(
@@ -942,6 +1085,77 @@ fn normalize_optional_text(
         return Err(validation_error(field, "This field is too long."));
     }
     Ok(Some(value.to_owned()))
+}
+
+fn artifact_filter(
+    query: ProblemArtifactLinkQuery,
+) -> Result<(ProblemArtifactKind, Uuid), ApiError> {
+    exactly_one_artifact([
+        (
+            ProblemArtifactKind::ClinicalNote,
+            query.clinical_note_id,
+            "clinical_note_id",
+        ),
+        (
+            ProblemArtifactKind::Prescription,
+            query.prescription_id,
+            "prescription_id",
+        ),
+        (
+            ProblemArtifactKind::LabOrder,
+            query.lab_order_id,
+            "lab_order_id",
+        ),
+        (
+            ProblemArtifactKind::Encounter,
+            query.encounter_id,
+            "encounter_id",
+        ),
+    ])
+}
+
+fn artifact_payload(
+    payload: &ProblemArtifactLinkRequest,
+) -> Result<(ProblemArtifactKind, Uuid), ApiError> {
+    exactly_one_artifact([
+        (
+            ProblemArtifactKind::ClinicalNote,
+            payload.clinical_note_id,
+            "clinical_note_id",
+        ),
+        (
+            ProblemArtifactKind::Prescription,
+            payload.prescription_id,
+            "prescription_id",
+        ),
+        (
+            ProblemArtifactKind::LabOrder,
+            payload.lab_order_id,
+            "lab_order_id",
+        ),
+        (
+            ProblemArtifactKind::Encounter,
+            payload.encounter_id,
+            "encounter_id",
+        ),
+    ])
+}
+
+fn exactly_one_artifact(
+    values: [(ProblemArtifactKind, Option<Uuid>, &'static str); 4],
+) -> Result<(ProblemArtifactKind, Uuid), ApiError> {
+    let selected: Vec<_> = values
+        .into_iter()
+        .filter_map(|(kind, id, field)| id.map(|id| (kind, id, field)))
+        .collect();
+    if selected.len() != 1 {
+        return Err(validation_error(
+            "artifact",
+            "Exactly one artifact identifier is required.",
+        ));
+    }
+    let (kind, id, _) = selected[0];
+    Ok((kind, id))
 }
 
 fn validation_error(field: &'static str, message: &'static str) -> ApiError {

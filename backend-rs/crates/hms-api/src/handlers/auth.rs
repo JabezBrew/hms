@@ -5,8 +5,11 @@ use axum::http::{HeaderMap, HeaderValue};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use cookie::{Cookie, SameSite};
+use hms_auth::{AuthenticatedPasskey, RegisteredPasskey, StoredPasskey, WebAuthnConfig};
+use hms_db::auth::{NewWebAuthnChallenge, NewWebAuthnCredential, WebAuthnCeremonyType};
 use hms_domain::auth::{AuthUser, UpdateAuthProfileRequest};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -104,6 +107,42 @@ pub struct RevokeAllSessionsRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct RevokeAllSessionsResponse {
     pub revoked_count: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct MfaStatusResponse {
+    pub totp_enrolled: bool,
+    pub webauthn_enrolled: bool,
+    pub recovery_codes_remaining: i64,
+    pub passkey_required: bool,
+    pub privileged_user: bool,
+    pub privileged_actions_allowed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct MfaSessionRequest {
+    pub mfa_session: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WebAuthnVerifyRequest {
+    pub credential: Value,
+    pub mfa_session: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct WebAuthnVerifyResponse {
+    pub verified: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RecoveryCodeGenerateRequest {
+    pub current_password: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct RecoveryCodeGenerateResponse {
+    pub codes: Vec<String>,
 }
 
 #[utoipa::path(
@@ -459,6 +498,331 @@ pub async fn revoke_all_sessions(
     Ok(Json(object(RevokeAllSessionsResponse { revoked_count })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v2/auth/mfa/status",
+    operation_id = "getAuthMfaStatus",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "MFA and privileged-action status", body = ObjectResponse<MfaStatusResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 400, description = "MFA status could not be loaded", body = ApiErrorResponse)
+    )
+)]
+pub async fn mfa_status(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+) -> Result<Json<ObjectResponse<MfaStatusResponse>>, ApiError> {
+    let remaining =
+        hms_db::auth::recovery_codes_remaining(state.db_pool(), user.facility_id, user.id)
+            .await
+            .map_err(|_| {
+                ApiError::bad_request("mfa_status_failed", "MFA status could not be loaded.")
+            })?;
+    let credentials =
+        hms_db::auth::list_webauthn_credentials(state.db_pool(), user.facility_id, user.id)
+            .await
+            .map_err(|_| {
+                ApiError::bad_request("mfa_status_failed", "MFA status could not be loaded.")
+            })?;
+    let security = hms_domain::auth::AuthSecurityState::from_permissions(
+        &user.permissions,
+        !credentials.is_empty(),
+        remaining,
+    );
+
+    Ok(Json(object(MfaStatusResponse {
+        totp_enrolled: false,
+        webauthn_enrolled: security.passkey_enrolled,
+        recovery_codes_remaining: security.recovery_codes_remaining,
+        passkey_required: security.passkey_required,
+        privileged_user: security.privileged_user,
+        privileged_actions_allowed: security.privileged_actions_allowed,
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/mfa/webauthn/register/options",
+    operation_id = "postAuthWebauthnRegisterOptions",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = MfaSessionRequest,
+    responses(
+        (status = 200, description = "WebAuthn registration options", body = ObjectResponse<Value>),
+        (status = 400, description = "Passkey setup could not start", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn webauthn_registration_options(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(_payload): Json<MfaSessionRequest>,
+) -> Result<Json<ObjectResponse<Value>>, ApiError> {
+    let existing =
+        hms_db::auth::list_webauthn_credentials(state.db_pool(), user.facility_id, user.id)
+            .await
+            .map_err(|_| {
+                ApiError::bad_request("webauthn_start_failed", "Passkey setup could not start.")
+            })?;
+    let existing_ids = existing
+        .iter()
+        .map(|credential| credential.credential_id.clone())
+        .collect::<Vec<_>>();
+    let start = hms_auth::start_passkey_registration(
+        &webauthn_config()?,
+        user.id,
+        &user.email,
+        &user.display_name,
+        &existing_ids,
+    )
+    .map_err(|_| {
+        ApiError::bad_request("webauthn_start_failed", "Passkey setup could not start.")
+    })?;
+
+    hms_db::auth::insert_webauthn_challenge(
+        state.db_pool(),
+        &NewWebAuthnChallenge {
+            id: start.challenge_id,
+            user_id: user.id,
+            facility_id: user.facility_id,
+            ceremony_type: WebAuthnCeremonyType::Registration,
+            state: start.state,
+            expires_at: start.expires_at,
+        },
+    )
+    .await
+    .map_err(|_| {
+        ApiError::bad_request("webauthn_start_failed", "Passkey setup could not start.")
+    })?;
+
+    Ok(Json(object(with_mfa_session(
+        start.public_key,
+        start.challenge_id,
+    ))))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/mfa/webauthn/register/verify",
+    operation_id = "postAuthWebauthnRegisterVerify",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = WebAuthnVerifyRequest,
+    responses(
+        (status = 200, description = "WebAuthn registration verified", body = ObjectResponse<WebAuthnVerifyResponse>),
+        (status = 400, description = "Passkey verification failed", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn webauthn_registration_verify(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<WebAuthnVerifyRequest>,
+) -> Result<Json<ObjectResponse<WebAuthnVerifyResponse>>, ApiError> {
+    let challenge_id = parse_mfa_session(payload.mfa_session.as_deref())?;
+    let challenge = hms_db::auth::consume_webauthn_challenge(
+        state.db_pool(),
+        user.facility_id,
+        user.id,
+        challenge_id,
+        WebAuthnCeremonyType::Registration,
+    )
+    .await
+    .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?
+    .ok_or_else(|| {
+        ApiError::bad_request(
+            "webauthn_challenge_invalid",
+            "Passkey challenge is invalid.",
+        )
+    })?;
+    let RegisteredPasskey {
+        credential_id,
+        passkey,
+    } = hms_auth::finish_passkey_registration(
+        &webauthn_config()?,
+        payload.credential,
+        challenge.state,
+    )
+    .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?;
+
+    hms_db::auth::insert_webauthn_credential(
+        state.db_pool(),
+        &NewWebAuthnCredential {
+            id: Uuid::new_v4(),
+            user_id: user.id,
+            facility_id: user.facility_id,
+            credential_id,
+            passkey,
+            label: None,
+        },
+    )
+    .await
+    .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?;
+
+    Ok(Json(object(WebAuthnVerifyResponse { verified: true })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/mfa/webauthn/authenticate/options",
+    operation_id = "postAuthWebauthnAuthenticateOptions",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = MfaSessionRequest,
+    responses(
+        (status = 200, description = "WebAuthn authentication options", body = ObjectResponse<Value>),
+        (status = 400, description = "Passkey verification could not start", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn webauthn_authentication_options(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(_payload): Json<MfaSessionRequest>,
+) -> Result<Json<ObjectResponse<Value>>, ApiError> {
+    let stored = stored_passkeys(state.db_pool(), user.facility_id, user.id).await?;
+    let start =
+        hms_auth::start_passkey_authentication(&webauthn_config()?, &stored).map_err(|_| {
+            ApiError::bad_request(
+                "webauthn_start_failed",
+                "Passkey verification could not start.",
+            )
+        })?;
+    hms_db::auth::insert_webauthn_challenge(
+        state.db_pool(),
+        &NewWebAuthnChallenge {
+            id: start.challenge_id,
+            user_id: user.id,
+            facility_id: user.facility_id,
+            ceremony_type: WebAuthnCeremonyType::Authentication,
+            state: start.state,
+            expires_at: start.expires_at,
+        },
+    )
+    .await
+    .map_err(|_| {
+        ApiError::bad_request(
+            "webauthn_start_failed",
+            "Passkey verification could not start.",
+        )
+    })?;
+
+    Ok(Json(object(with_mfa_session(
+        start.public_key,
+        start.challenge_id,
+    ))))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/mfa/webauthn/authenticate/verify",
+    operation_id = "postAuthWebauthnAuthenticateVerify",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = WebAuthnVerifyRequest,
+    responses(
+        (status = 200, description = "WebAuthn authentication verified", body = ObjectResponse<WebAuthnVerifyResponse>),
+        (status = 400, description = "Passkey verification failed", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
+pub async fn webauthn_authentication_verify(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<WebAuthnVerifyRequest>,
+) -> Result<Json<ObjectResponse<WebAuthnVerifyResponse>>, ApiError> {
+    let challenge_id = parse_mfa_session(payload.mfa_session.as_deref())?;
+    let challenge = hms_db::auth::consume_webauthn_challenge(
+        state.db_pool(),
+        user.facility_id,
+        user.id,
+        challenge_id,
+        WebAuthnCeremonyType::Authentication,
+    )
+    .await
+    .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?
+    .ok_or_else(|| {
+        ApiError::bad_request(
+            "webauthn_challenge_invalid",
+            "Passkey challenge is invalid.",
+        )
+    })?;
+    let stored = stored_passkeys(state.db_pool(), user.facility_id, user.id).await?;
+    let AuthenticatedPasskey {
+        credential_id,
+        passkey,
+    } = hms_auth::finish_passkey_authentication(
+        &webauthn_config()?,
+        payload.credential,
+        challenge.state,
+        &stored,
+    )
+    .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?;
+
+    hms_db::auth::update_webauthn_credential_after_authentication(
+        state.db_pool(),
+        user.facility_id,
+        user.id,
+        &credential_id,
+        &passkey,
+    )
+    .await
+    .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?;
+
+    Ok(Json(object(WebAuthnVerifyResponse { verified: true })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/auth/mfa/recovery-codes",
+    operation_id = "postAuthRecoveryCodes",
+    tag = "auth",
+    security(("bearerAuth" = [])),
+    request_body = RecoveryCodeGenerateRequest,
+    responses(
+        (status = 200, description = "Recovery codes regenerated", body = ObjectResponse<RecoveryCodeGenerateResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Fresh reauthentication required", body = ApiErrorResponse),
+        (status = 400, description = "Recovery codes could not be generated", body = ApiErrorResponse)
+    )
+)]
+pub async fn generate_recovery_codes(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<RecoveryCodeGenerateRequest>,
+) -> Result<Json<ObjectResponse<RecoveryCodeGenerateResponse>>, ApiError> {
+    let account = hms_db::auth::user_by_id(state.db_pool(), user.id)
+        .await
+        .map_err(|_| ApiError::unauthorized())?
+        .ok_or_else(ApiError::unauthorized)?;
+    if account.facility_id != user.facility_id
+        || !hms_auth::verify_password_hash(&account.password_hash, &payload.current_password)
+    {
+        return Err(ApiError::forbidden(
+            "fresh_reauth_required",
+            "Current password is required to regenerate recovery codes.",
+        ));
+    }
+
+    let codes = hms_auth::generate_recovery_codes(10);
+    let code_hashes = codes
+        .iter()
+        .map(|code| hms_auth::hash_recovery_code(code))
+        .collect::<Vec<_>>();
+    hms_db::auth::replace_recovery_codes(state.db_pool(), user.facility_id, user.id, code_hashes)
+        .await
+        .map_err(|_| {
+            ApiError::bad_request(
+                "recovery_codes_failed",
+                "Recovery codes could not be generated.",
+            )
+        })?;
+
+    Ok(Json(object(RecoveryCodeGenerateResponse { codes })))
+}
+
 fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), ApiError> {
     if let Some(value) = payload.display_name.as_ref() {
         if value.trim().is_empty() || value.len() > MAX_DISPLAY_NAME_LEN {
@@ -469,6 +833,63 @@ fn validate_profile_update(payload: &UpdateAuthProfileRequest) -> Result<(), Api
         }
     }
     Ok(())
+}
+
+async fn stored_passkeys(
+    pool: &hms_db::PgPool,
+    facility_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<StoredPasskey>, ApiError> {
+    let credentials = hms_db::auth::list_webauthn_credentials(pool, facility_id, user_id)
+        .await
+        .map_err(|_| {
+            ApiError::bad_request(
+                "webauthn_credentials_failed",
+                "Passkeys could not be loaded.",
+            )
+        })?;
+    Ok(credentials
+        .into_iter()
+        .map(|credential| StoredPasskey {
+            credential_id: credential.credential_id,
+            passkey: credential.passkey,
+        })
+        .collect())
+}
+
+fn webauthn_config() -> Result<WebAuthnConfig, ApiError> {
+    Ok(WebAuthnConfig {
+        rp_id: std::env::var("HMS_WEBAUTHN_RP_ID").unwrap_or_else(|_| "localhost".to_owned()),
+        rp_origin: std::env::var("HMS_WEBAUTHN_RP_ORIGIN")
+            .unwrap_or_else(|_| "http://localhost:8080".to_owned()),
+        rp_name: std::env::var("HMS_WEBAUTHN_RP_NAME").unwrap_or_else(|_| "HMS".to_owned()),
+        challenge_ttl: chrono::Duration::minutes(5),
+    })
+}
+
+fn with_mfa_session(mut value: Value, challenge_id: Uuid) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "challenge_id".to_owned(),
+            Value::String(challenge_id.to_string()),
+        );
+        object.insert(
+            "mfa_session".to_owned(),
+            Value::String(challenge_id.to_string()),
+        );
+    }
+    value
+}
+
+fn parse_mfa_session(value: Option<&str>) -> Result<Uuid, ApiError> {
+    value
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| {
+            ApiError::bad_request(
+                "webauthn_challenge_required",
+                "Passkey challenge is required.",
+            )
+        })
 }
 
 fn device_label_from_headers(headers: &HeaderMap) -> Option<String> {

@@ -1,4 +1,4 @@
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 
 use crate::handlers::clinical;
@@ -36,6 +36,22 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/clinical/problems/:id/status",
             post(clinical::change_problem_status),
+        )
+        .route(
+            "/api/v2/clinical/problem-links",
+            get(clinical::list_problem_artifact_links).post(clinical::create_problem_artifact_link),
+        )
+        .route(
+            "/api/v2/clinical/problem-links/:id",
+            delete(clinical::delete_problem_artifact_link),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/clinical/pharmacy-context",
+            get(clinical::get_pharmacy_clinical_context),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:order_id/clinical-context",
+            get(clinical::get_laboratory_clinical_context),
         )
         .route(
             "/api/v2/patients/:patient_id/clinical/allergies",

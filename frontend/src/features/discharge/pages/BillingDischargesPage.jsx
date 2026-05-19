@@ -3,7 +3,7 @@ import format from 'date-fns/format'
 import Receipt from 'lucide-react/dist/esm/icons/receipt-text.js'
 import Wallet from 'lucide-react/dist/esm/icons/wallet.js'
 import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,6 +42,7 @@ function formatDateTime(value) {
 }
 
 export default function BillingDischargesPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedCaseId = searchParams.get('case')
   const [cutoffDrafts, setCutoffDrafts] = useState({})
@@ -232,8 +233,26 @@ export default function BillingDischargesPage() {
                       .map((task) => (
                       <div key={task.id || task.task_type} className="rounded-lg border p-3 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <span>{task.task_type.replace(/_/g, ' ')}</span>
-                          <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
+                          <div>
+                            <span>{task.task_type.replace(/_/g, ' ')}</span>
+                            {(task.hold_reason || task.override_reason) && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {task.override_reason || task.hold_reason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {task.workflow_path && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate(task.workflow_path)}
+                              >
+                                Open source
+                              </Button>
+                            )}
+                            <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
+                          </div>
                         </div>
                       </div>
                       ))}
@@ -253,6 +272,15 @@ export default function BillingDischargesPage() {
                           </div>
                         ))}
                     </div>
+                  )}
+                  {activeCase.schedule_follow_up_action?.path && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => navigate(activeCase.schedule_follow_up_action.path)}
+                    >
+                      {activeCase.schedule_follow_up_action.label || 'Schedule follow-up'}
+                    </Button>
                   )}
                 </>
               )}

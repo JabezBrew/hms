@@ -342,6 +342,39 @@
       },
       "AppointmentListItem": {
         "properties": {
+          "appointment_type_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "appointment_type_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancellation_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -354,6 +387,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "overbook_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "patient_code": {
             "type": "string"
           },
@@ -363,6 +402,20 @@
           "patient_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "series_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "starts_at": {
             "format": "date-time",
@@ -426,6 +479,40 @@
         ],
         "type": "string"
       },
+      "AppointmentTypeListItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "default_duration_minutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "default_duration_minutes",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "AssignTriageRequest": {
         "properties": {
           "assigned_to_user_id": {
@@ -486,6 +573,34 @@
           "event_type",
           "resource_type",
           "occurred_at"
+        ],
+        "type": "object"
+      },
+      "AuthSecurityState": {
+        "properties": {
+          "passkey_enrolled": {
+            "type": "boolean"
+          },
+          "passkey_required": {
+            "type": "boolean"
+          },
+          "privileged_actions_allowed": {
+            "type": "boolean"
+          },
+          "privileged_user": {
+            "type": "boolean"
+          },
+          "recovery_codes_remaining": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "privileged_user",
+          "passkey_required",
+          "passkey_enrolled",
+          "privileged_actions_allowed",
+          "recovery_codes_remaining"
         ],
         "type": "object"
       },
@@ -572,6 +687,9 @@
           "active_profile": {
             "$ref": "#/components/schemas/DeploymentProfile"
           },
+          "auth_security": {
+            "$ref": "#/components/schemas/AuthSecurityState"
+          },
           "display_name": {
             "type": "string"
           },
@@ -631,7 +749,8 @@
           "patient_visibility",
           "session_version",
           "permission_version",
-          "password_change_required"
+          "password_change_required",
+          "auth_security"
         ],
         "type": "object"
       },
@@ -802,6 +921,55 @@
         ],
         "type": "object"
       },
+      "BillingDischargeClearance": {
+        "properties": {
+          "cleared": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "outstanding_amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outstanding_invoice_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "cleared",
+          "outstanding_invoice_count",
+          "outstanding_amount_minor",
+          "currency",
+          "reason",
+          "recorded_by_user_id",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "BillingListQuery": {
         "properties": {
           "cursor": {
@@ -826,6 +994,22 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "BillingRiskApprovalRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "supervisor_user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "supervisor_user_id",
+          "reason"
+        ],
         "type": "object"
       },
       "BillingRuleListItem": {
@@ -892,6 +1076,70 @@
           "co_pay"
         ],
         "type": "string"
+      },
+      "BreakGlassCategory": {
+        "enum": [
+          "life_threatening_emergency",
+          "patient_unconscious_or_unidentified",
+          "handover_or_assignment_gap",
+          "urgent_clinical_continuity",
+          "other_emergency"
+        ],
+        "type": "string"
+      },
+      "BreakGlassGrant": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/BreakGlassCategory"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "facility_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "facility_id",
+          "user_id",
+          "patient_id",
+          "category",
+          "started_at",
+          "expires_at"
+        ],
+        "type": "object"
       },
       "BulkCreateLabResultItem": {
         "properties": {
@@ -1009,6 +1257,28 @@
         "required": [
           "verified_count",
           "message"
+        ],
+        "type": "object"
+      },
+      "CancelAppointmentRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "CancelClinicWaitlistEntryRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
         ],
         "type": "object"
       },
@@ -1312,6 +1582,26 @@
             "format": "uuid",
             "type": "string"
           },
+          "nhis_service_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nhis_service_mapping_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nhis_service_mapping_version": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "patient_code": {
             "type": "string"
           },
@@ -1319,8 +1609,27 @@
             "format": "uuid",
             "type": "string"
           },
+          "patient_liability_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payer_receivable_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reconciled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/ClaimStatus"
+          },
+          "written_off_minor": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -1332,6 +1641,9 @@
           "status",
           "amount_minor",
           "currency",
+          "payer_receivable_minor",
+          "patient_liability_minor",
+          "written_off_minor",
           "created_at"
         ],
         "type": "object"
@@ -1377,6 +1689,19 @@
       },
       "ClinicWaitlistEntryListItem": {
         "properties": {
+          "cancellation_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -1407,6 +1732,13 @@
           },
           "promoted_at": {
             "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_appointment_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -1743,6 +2075,70 @@
         ],
         "type": "string"
       },
+      "ControlledDiscrepancyCategory": {
+        "enum": [
+          "missing",
+          "surplus",
+          "breakage",
+          "expired",
+          "documentation_error",
+          "other"
+        ],
+        "type": "string"
+      },
+      "ControlledDiscrepancyListItem": {
+        "properties": {
+          "actual_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ControlledDiscrepancyCategory"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expected_balance": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity_delta": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "register_entry_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "register_entry_id",
+          "category",
+          "expected_balance",
+          "actual_count",
+          "quantity_delta",
+          "reason",
+          "status",
+          "severity",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "ControlledMovementType": {
         "enum": [
           "receipt",
@@ -1965,13 +2361,47 @@
       },
       "CreateAppointmentRequest": {
         "properties": {
+          "appointment_type_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clinic_session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "ends_at": {
             "format": "date-time",
             "type": "string"
           },
+          "overbook_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "patient_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "starts_at": {
             "format": "date-time",
@@ -2228,7 +2658,23 @@
             "format": "int64",
             "type": "integer"
           },
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ControlledDiscrepancyCategory"
+              }
+            ]
+          },
           "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
             "type": [
               "string",
               "null"
@@ -2414,6 +2860,39 @@
         ],
         "type": "object"
       },
+      "CreateInventoryCatalogEditRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "effective_from": {
+            "format": "date",
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "effective_from",
+          "code",
+          "name",
+          "unit",
+          "reason"
+        ],
+        "type": "object"
+      },
       "CreateInvoiceRequest": {
         "properties": {
           "patient_id": {
@@ -2530,6 +3009,34 @@
         },
         "required": [
           "claim_ids"
+        ],
+        "type": "object"
+      },
+      "CreateNhisServiceMappingRequest": {
+        "properties": {
+          "effective_from": {
+            "format": "date",
+            "type": "string"
+          },
+          "effective_until": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nhis_code": {
+            "type": "string"
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_id",
+          "nhis_code",
+          "effective_from"
         ],
         "type": "object"
       },
@@ -3000,6 +3507,27 @@
         ],
         "type": "object"
       },
+      "CreateStandingOrderRequest": {
+        "properties": {
+          "frequency": {
+            "$ref": "#/components/schemas/StandingOrderFrequency"
+          },
+          "next_run_on": {
+            "format": "date",
+            "type": "string"
+          },
+          "requesting_location_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requesting_location_id",
+          "frequency",
+          "next_run_on"
+        ],
+        "type": "object"
+      },
       "CreateStockBatchRequest": {
         "properties": {
           "batch_number": {
@@ -3030,6 +3558,22 @@
           "location_id",
           "batch_number",
           "quantity_received"
+        ],
+        "type": "object"
+      },
+      "CreateStockCheckRequest": {
+        "properties": {
+          "location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "location_id",
+          "reason"
         ],
         "type": "object"
       },
@@ -3407,11 +3951,104 @@
         ],
         "type": "string"
       },
+      "DischargeBlocker": {
+        "properties": {
+          "blocker_type": {
+            "$ref": "#/components/schemas/DischargeBlockerKind"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hold_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "override_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requires_reauth_for_override": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DischargeBlockerStatus"
+          },
+          "workflow_label": {
+            "type": "string"
+          },
+          "workflow_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "blocker_type",
+          "status",
+          "blocking",
+          "workflow_label",
+          "workflow_path",
+          "requires_reauth_for_override"
+        ],
+        "type": "object"
+      },
+      "DischargeBlockerActionRequest": {
+        "properties": {
+          "blocker_type": {
+            "$ref": "#/components/schemas/DischargeBlockerKind"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blocker_type",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "DischargeBlockerKind": {
+        "enum": [
+          "discharge_summary",
+          "nursing_release",
+          "pharmacy_clearance",
+          "billing_clearance"
+        ],
+        "type": "string"
+      },
+      "DischargeBlockerStatus": {
+        "enum": [
+          "pending",
+          "completed",
+          "held",
+          "overridden"
+        ],
+        "type": "string"
+      },
       "DischargeCaseListItem": {
         "properties": {
           "admission_case_id": {
             "format": "uuid",
             "type": "string"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/DischargeBlocker"
+            },
+            "type": "array"
           },
           "discharged_at": {
             "format": "date-time",
@@ -3423,6 +4060,9 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "invoice_summary": {
+            "$ref": "#/components/schemas/DischargeInvoiceSummary"
           },
           "patient_code": {
             "type": "string"
@@ -3438,8 +4078,18 @@
             "format": "date-time",
             "type": "string"
           },
+          "schedule_follow_up_action": {
+            "$ref": "#/components/schemas/DischargeWorkflowAction"
+          },
           "status": {
             "$ref": "#/components/schemas/DischargeStatus"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
           }
         },
         "required": [
@@ -3448,8 +4098,38 @@
           "patient_id",
           "patient_code",
           "patient_display_name",
+          "ward_id",
+          "ward_name",
           "status",
-          "requested_at"
+          "requested_at",
+          "blockers",
+          "invoice_summary",
+          "schedule_follow_up_action"
+        ],
+        "type": "object"
+      },
+      "DischargeInvoiceSummary": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "invoice_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "patient_balance_due": {
+            "type": "string"
+          },
+          "patient_balance_due_minor": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "invoice_count",
+          "patient_balance_due",
+          "patient_balance_due_minor",
+          "currency"
         ],
         "type": "object"
       },
@@ -3461,11 +4141,40 @@
         ],
         "type": "string"
       },
+      "DischargeWorkflowAction": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "path"
+        ],
+        "type": "object"
+      },
       "DispenseStatus": {
         "enum": [
           "dispensed"
         ],
         "type": "string"
+      },
+      "DispenseSupplyRequest": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SupplyDispenseLineRequest"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "lines"
+        ],
+        "type": "object"
       },
       "EncounterListItem": {
         "properties": {
@@ -3535,6 +4244,19 @@
         ],
         "type": "string"
       },
+      "EndBreakGlassGrantsResponse": {
+        "properties": {
+          "ended_count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ended_count"
+        ],
+        "type": "object"
+      },
       "FeatureEntitlementListItem": {
         "properties": {
           "enabled": {
@@ -3592,6 +4314,17 @@
           "admin"
         ],
         "type": "string"
+      },
+      "FinalizeInvoiceRequest": {
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/BillingRiskApprovalRequest"
+          }
+        },
+        "required": [
+          "approval"
+        ],
+        "type": "object"
       },
       "FluidBalanceListItem": {
         "properties": {
@@ -3756,6 +4489,56 @@
           "status",
           "version",
           "started_at"
+        ],
+        "type": "object"
+      },
+      "InventoryCatalogVersionItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "effective_from": {
+            "format": "date",
+            "type": "string"
+          },
+          "effective_to": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item_id",
+          "effective_from",
+          "code",
+          "name",
+          "unit",
+          "reason",
+          "created_at"
         ],
         "type": "object"
       },
@@ -4364,6 +5147,30 @@
         ],
         "type": "object"
       },
+      "LaboratoryClinicalContext": {
+        "properties": {
+          "linked_problems": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemListItem"
+            },
+            "type": "array"
+          },
+          "order_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "patient_id",
+          "linked_problems"
+        ],
+        "type": "object"
+      },
       "LaboratoryListQuery": {
         "properties": {
           "cursor": {
@@ -4532,6 +5339,39 @@
           "data": {
             "items": {
               "properties": {
+                "appointment_type_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "appointment_type_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cancellation_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "clinic_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "clinic_session_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
@@ -4544,6 +5384,12 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "overbook_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "patient_code": {
                   "type": "string"
                 },
@@ -4553,6 +5399,20 @@
                 "patient_id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "practitioner_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "series_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "starts_at": {
                   "format": "date-time",
@@ -4570,6 +5430,57 @@
                 "starts_at",
                 "ends_at",
                 "status",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_AppointmentTypeListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "default_duration_minutes": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "default_duration_minutes",
+                "is_active",
                 "created_at"
               ],
               "type": "object"
@@ -5087,6 +5998,26 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "nhis_service_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nhis_service_mapping_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nhis_service_mapping_version": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "patient_code": {
                   "type": "string"
                 },
@@ -5094,8 +6025,27 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "patient_liability_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "payer_receivable_minor": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "reconciled_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "$ref": "#/components/schemas/ClaimStatus"
+                },
+                "written_off_minor": {
+                  "format": "int64",
+                  "type": "integer"
                 }
               },
               "required": [
@@ -5107,6 +6057,9 @@
                 "status",
                 "amount_minor",
                 "currency",
+                "payer_receivable_minor",
+                "patient_liability_minor",
+                "written_off_minor",
                 "created_at"
               ],
               "type": "object"
@@ -5176,6 +6129,19 @@
           "data": {
             "items": {
               "properties": {
+                "cancellation_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cancelled_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "created_at": {
                   "format": "date-time",
                   "type": "string"
@@ -5206,6 +6172,13 @@
                 },
                 "promoted_at": {
                   "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scheduled_appointment_id": {
+                  "format": "uuid",
                   "type": [
                     "string",
                     "null"
@@ -5516,6 +6489,76 @@
         ],
         "type": "object"
       },
+      "ListResponse_ControlledDiscrepancyListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "actual_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "category": {
+                  "$ref": "#/components/schemas/ControlledDiscrepancyCategory"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "expected_balance": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "quantity_delta": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "register_entry_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "register_entry_id",
+                "category",
+                "expected_balance",
+                "actual_count",
+                "quantity_delta",
+                "reason",
+                "status",
+                "severity",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_ControlledSubstanceRegisterEntryItem": {
         "properties": {
           "data": {
@@ -5777,6 +6820,12 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "blockers": {
+                  "items": {
+                    "$ref": "#/components/schemas/DischargeBlocker"
+                  },
+                  "type": "array"
+                },
                 "discharged_at": {
                   "format": "date-time",
                   "type": [
@@ -5787,6 +6836,9 @@
                 "id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "invoice_summary": {
+                  "$ref": "#/components/schemas/DischargeInvoiceSummary"
                 },
                 "patient_code": {
                   "type": "string"
@@ -5802,8 +6854,18 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "schedule_follow_up_action": {
+                  "$ref": "#/components/schemas/DischargeWorkflowAction"
+                },
                 "status": {
                   "$ref": "#/components/schemas/DischargeStatus"
+                },
+                "ward_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "ward_name": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -5812,8 +6874,13 @@
                 "patient_id",
                 "patient_code",
                 "patient_display_name",
+                "ward_id",
+                "ward_name",
                 "status",
-                "requested_at"
+                "requested_at",
+                "blockers",
+                "invoice_summary",
+                "schedule_follow_up_action"
               ],
               "type": "object"
             },
@@ -7764,6 +8831,59 @@
         ],
         "type": "object"
       },
+      "ListResponse_ProblemArtifactLinkItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "artifact_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "artifact_kind": {
+                  "$ref": "#/components/schemas/ProblemArtifactKind"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "patient_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "problem_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "patient_id",
+                "problem_id",
+                "artifact_kind",
+                "artifact_id",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ListResponse_ProblemListItem": {
         "properties": {
           "data": {
@@ -8016,6 +9136,20 @@
                   ]
                 },
                 "recommendations": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scheduled_appointment_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scheduled_at": {
+                  "format": "date-time",
                   "type": [
                     "string",
                     "null"
@@ -9442,6 +10576,49 @@
         ],
         "type": "string"
       },
+      "MfaSessionRequest": {
+        "properties": {
+          "mfa_session": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "MfaStatusResponse": {
+        "properties": {
+          "passkey_required": {
+            "type": "boolean"
+          },
+          "privileged_actions_allowed": {
+            "type": "boolean"
+          },
+          "privileged_user": {
+            "type": "boolean"
+          },
+          "recovery_codes_remaining": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totp_enrolled": {
+            "type": "boolean"
+          },
+          "webauthn_enrolled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "totp_enrolled",
+          "webauthn_enrolled",
+          "recovery_codes_remaining",
+          "passkey_required",
+          "privileged_user",
+          "privileged_actions_allowed"
+        ],
+        "type": "object"
+      },
       "MonitoringEventKind": {
         "enum": [
           "observation",
@@ -9557,6 +10734,59 @@
         ],
         "type": "object"
       },
+      "NhisArAdjustmentEntry": {
+        "properties": {
+          "adjustment_kind": {
+            "$ref": "#/components/schemas/NhisArAdjustmentKind"
+          },
+          "affects_patient_liability": {
+            "type": "boolean"
+          },
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "claim_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "claim_id",
+          "adjustment_kind",
+          "amount_minor",
+          "reason",
+          "affects_patient_liability",
+          "recorded_by_user_id",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "NhisArAdjustmentKind": {
+        "enum": [
+          "remittance",
+          "write_off",
+          "adjustment",
+          "reconciliation"
+        ],
+        "type": "string"
+      },
       "NhisBatchExport": {
         "properties": {
           "batch_id": {
@@ -9645,6 +10875,90 @@
           "remitted"
         ],
         "type": "string"
+      },
+      "NhisClaimArState": {
+        "properties": {
+          "claim_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_liability_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payer_receivable_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reconciled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "written_off_minor": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claim_id",
+          "payer_receivable_minor",
+          "patient_liability_minor",
+          "written_off_minor"
+        ],
+        "type": "object"
+      },
+      "NhisServiceMappingListItem": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "effective_from": {
+            "format": "date",
+            "type": "string"
+          },
+          "effective_until": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nhis_code": {
+            "type": "string"
+          },
+          "service_code": {
+            "type": "string"
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "version_number": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "service_id",
+          "service_code",
+          "service_name",
+          "nhis_code",
+          "version_number",
+          "effective_from",
+          "active"
+        ],
+        "type": "object"
       },
       "NotificationCounts": {
         "properties": {
@@ -10037,6 +11351,39 @@
         "properties": {
           "data": {
             "properties": {
+              "appointment_type_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "appointment_type_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cancellation_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "clinic_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "clinic_session_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
@@ -10049,6 +11396,12 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "overbook_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "patient_code": {
                 "type": "string"
               },
@@ -10058,6 +11411,20 @@
               "patient_id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "practitioner_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "series_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "starts_at": {
                 "format": "date-time",
@@ -10153,6 +11520,9 @@
               "active_profile": {
                 "$ref": "#/components/schemas/DeploymentProfile"
               },
+              "auth_security": {
+                "$ref": "#/components/schemas/AuthSecurityState"
+              },
               "display_name": {
                 "type": "string"
               },
@@ -10212,7 +11582,8 @@
               "patient_visibility",
               "session_version",
               "permission_version",
-              "password_change_required"
+              "password_change_required",
+              "auth_security"
             ],
             "type": "object"
           },
@@ -10403,6 +11774,65 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_BillingDischargeClearance": {
+        "properties": {
+          "data": {
+            "properties": {
+              "cleared": {
+                "type": "boolean"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "outstanding_amount_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "outstanding_invoice_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "patient_id",
+              "cleared",
+              "outstanding_invoice_count",
+              "outstanding_amount_minor",
+              "currency",
+              "reason",
+              "recorded_by_user_id",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_BillingRuleListItem": {
         "properties": {
           "data": {
@@ -10430,6 +11860,70 @@
               "name",
               "rule_type",
               "active"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_BreakGlassGrant": {
+        "properties": {
+          "data": {
+            "properties": {
+              "category": {
+                "$ref": "#/components/schemas/BreakGlassCategory"
+              },
+              "ended_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "facility_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason_text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "started_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "user_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "facility_id",
+              "user_id",
+              "patient_id",
+              "category",
+              "started_at",
+              "expires_at"
             ],
             "type": "object"
           },
@@ -10718,6 +12212,26 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "nhis_service_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nhis_service_mapping_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nhis_service_mapping_version": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "patient_code": {
                 "type": "string"
               },
@@ -10725,8 +12239,27 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "patient_liability_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "payer_receivable_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "reconciled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "status": {
                 "$ref": "#/components/schemas/ClaimStatus"
+              },
+              "written_off_minor": {
+                "format": "int64",
+                "type": "integer"
               }
             },
             "required": [
@@ -10738,6 +12271,9 @@
               "status",
               "amount_minor",
               "currency",
+              "payer_receivable_minor",
+              "patient_liability_minor",
+              "written_off_minor",
               "created_at"
             ],
             "type": "object"
@@ -10793,6 +12329,19 @@
         "properties": {
           "data": {
             "properties": {
+              "cancellation_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cancelled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "created_at": {
                 "format": "date-time",
                 "type": "string"
@@ -10823,6 +12372,13 @@
               },
               "promoted_at": {
                 "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scheduled_appointment_id": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -11500,6 +13056,12 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "blockers": {
+                "items": {
+                  "$ref": "#/components/schemas/DischargeBlocker"
+                },
+                "type": "array"
+              },
               "discharged_at": {
                 "format": "date-time",
                 "type": [
@@ -11510,6 +13072,9 @@
               "id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "invoice_summary": {
+                "$ref": "#/components/schemas/DischargeInvoiceSummary"
               },
               "patient_code": {
                 "type": "string"
@@ -11525,8 +13090,18 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "schedule_follow_up_action": {
+                "$ref": "#/components/schemas/DischargeWorkflowAction"
+              },
               "status": {
                 "$ref": "#/components/schemas/DischargeStatus"
+              },
+              "ward_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ward_name": {
+                "type": "string"
               }
             },
             "required": [
@@ -11535,8 +13110,13 @@
               "patient_id",
               "patient_code",
               "patient_display_name",
+              "ward_id",
+              "ward_name",
               "status",
-              "requested_at"
+              "requested_at",
+              "blockers",
+              "invoice_summary",
+              "schedule_follow_up_action"
             ],
             "type": "object"
           },
@@ -11599,6 +13179,29 @@
               "encounter_type",
               "status",
               "started_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_EndBreakGlassGrantsResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "ended_count": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "ended_count"
             ],
             "type": "object"
           },
@@ -11836,6 +13439,66 @@
               "status",
               "version",
               "started_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_InventoryCatalogVersionItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "effective_from": {
+                "format": "date",
+                "type": "string"
+              },
+              "effective_to": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "item_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "item_id",
+              "effective_from",
+              "code",
+              "name",
+              "unit",
+              "reason",
+              "created_at"
             ],
             "type": "object"
           },
@@ -12266,6 +13929,40 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_LaboratoryClinicalContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "linked_problems": {
+                "items": {
+                  "$ref": "#/components/schemas/ProblemListItem"
+                },
+                "type": "array"
+              },
+              "order_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "order_id",
+              "patient_id",
+              "linked_problems"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_LogoutResponse": {
         "properties": {
           "data": {
@@ -12347,6 +14044,48 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_MfaStatusResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "passkey_required": {
+                "type": "boolean"
+              },
+              "privileged_actions_allowed": {
+                "type": "boolean"
+              },
+              "privileged_user": {
+                "type": "boolean"
+              },
+              "recovery_codes_remaining": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totp_enrolled": {
+                "type": "boolean"
+              },
+              "webauthn_enrolled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "totp_enrolled",
+              "webauthn_enrolled",
+              "recovery_codes_remaining",
+              "passkey_required",
+              "privileged_user",
+              "privileged_actions_allowed"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_MonitoringEventListItem": {
         "properties": {
           "data": {
@@ -12389,6 +14128,60 @@
               "event_kind",
               "summary",
               "recorded_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NhisArAdjustmentEntry": {
+        "properties": {
+          "data": {
+            "properties": {
+              "adjustment_kind": {
+                "$ref": "#/components/schemas/NhisArAdjustmentKind"
+              },
+              "affects_patient_liability": {
+                "type": "boolean"
+              },
+              "amount_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "claim_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "claim_id",
+              "adjustment_kind",
+              "amount_minor",
+              "reason",
+              "affects_patient_liability",
+              "recorded_by_user_id",
+              "created_at"
             ],
             "type": "object"
           },
@@ -12489,6 +14282,110 @@
               "total_amount_minor",
               "currency",
               "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NhisClaimArState": {
+        "properties": {
+          "data": {
+            "properties": {
+              "claim_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "patient_liability_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "payer_receivable_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "reconciled_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "written_off_minor": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "claim_id",
+              "payer_receivable_minor",
+              "patient_liability_minor",
+              "written_off_minor"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_NhisServiceMappingListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "active": {
+                "type": "boolean"
+              },
+              "effective_from": {
+                "format": "date",
+                "type": "string"
+              },
+              "effective_until": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "nhis_code": {
+                "type": "string"
+              },
+              "service_code": {
+                "type": "string"
+              },
+              "service_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "service_name": {
+                "type": "string"
+              },
+              "version_number": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "service_id",
+              "service_code",
+              "service_name",
+              "nhis_code",
+              "version_number",
+              "effective_from",
+              "active"
             ],
             "type": "object"
           },
@@ -13116,6 +15013,75 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_PaymentReversalLedgerEntry": {
+        "properties": {
+          "data": {
+            "properties": {
+              "amount_minor": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "approved_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "invoice_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "payment_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "reauthorized_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "recorded_by_user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reversal_kind": {
+                "$ref": "#/components/schemas/ReversalKind"
+              }
+            },
+            "required": [
+              "id",
+              "payment_id",
+              "invoice_id",
+              "reversal_kind",
+              "amount_minor",
+              "currency",
+              "reason",
+              "approved_by_user_id",
+              "recorded_by_user_id",
+              "reauthorized_at",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_PermissionAssignmentListItem": {
         "properties": {
           "data": {
@@ -13172,6 +15138,49 @@
               "starts_at",
               "status",
               "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_PharmacyClinicalContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "active_allergies": {
+                "items": {
+                  "$ref": "#/components/schemas/AllergyListItem"
+                },
+                "type": "array"
+              },
+              "active_problems": {
+                "items": {
+                  "$ref": "#/components/schemas/ProblemListItem"
+                },
+                "type": "array"
+              },
+              "order_relevant_medications": {
+                "items": {
+                  "$ref": "#/components/schemas/PrescriptionListItem"
+                },
+                "type": "array"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "patient_id",
+              "active_problems",
+              "active_allergies",
+              "order_relevant_medications"
             ],
             "type": "object"
           },
@@ -13458,6 +15467,52 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_ProblemArtifactLinkItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "artifact_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "artifact_kind": {
+                "$ref": "#/components/schemas/ProblemArtifactKind"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "patient_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "problem_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "patient_id",
+              "problem_id",
+              "artifact_kind",
+              "artifact_id",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_ProblemListItem": {
         "properties": {
           "data": {
@@ -13590,6 +15645,30 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_RecoveryCodeGenerateResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "codes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "codes"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_ReferralListItem": {
         "properties": {
           "data": {
@@ -13648,6 +15727,20 @@
                 ]
               },
               "recommendations": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scheduled_appointment_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scheduled_at": {
+                "format": "date-time",
                 "type": [
                   "string",
                   "null"
@@ -13988,6 +16081,51 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_StandingOrderListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "frequency": {
+                "$ref": "#/components/schemas/StandingOrderFrequency"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "next_run_on": {
+                "format": "date",
+                "type": "string"
+              },
+              "requesting_location_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/StandingOrderStatus"
+              }
+            },
+            "required": [
+              "id",
+              "requesting_location_id",
+              "frequency",
+              "status",
+              "next_run_on",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_StockBatchListItem": {
         "properties": {
           "data": {
@@ -14038,6 +16176,46 @@
               "batch_number",
               "quantity_on_hand",
               "received_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_StockCheckQueueItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "location_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/StockCheckQueueStatus"
+              }
+            },
+            "required": [
+              "id",
+              "location_id",
+              "status",
+              "reason",
+              "created_at"
             ],
             "type": "object"
           },
@@ -14199,6 +16377,47 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_SupplyRequestDispenseResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "dispensed_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "line_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "requisition_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "requisition_id",
+              "status",
+              "line_count",
+              "dispensed_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_TreatmentSheetListItem": {
         "properties": {
           "data": {
@@ -14304,6 +16523,17 @@
             ],
             "type": "object"
           },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_Value": {
+        "properties": {
+          "data": {},
           "meta": {}
         },
         "required": [
@@ -14596,6 +16826,27 @@
               "quantity_requested",
               "status",
               "requested_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_WebAuthnVerifyResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "verified": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "verified"
             ],
             "type": "object"
           },
@@ -15443,6 +17694,65 @@
         ],
         "type": "string"
       },
+      "PaymentReversalLedgerEntry": {
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "approved_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invoice_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "payment_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reauthorized_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recorded_by_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reversal_kind": {
+            "$ref": "#/components/schemas/ReversalKind"
+          }
+        },
+        "required": [
+          "id",
+          "payment_id",
+          "invoice_id",
+          "reversal_kind",
+          "amount_minor",
+          "currency",
+          "reason",
+          "approved_by_user_id",
+          "recorded_by_user_id",
+          "reauthorized_at",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "PaymentStatus": {
         "enum": [
           "recorded",
@@ -15522,6 +17832,7 @@
           "patient.demographics.view",
           "patient.create",
           "patient.update",
+          "patient.break_glass.invoke",
           "appointment.view",
           "appointment.manage",
           "encounter.view",
@@ -15550,6 +17861,39 @@
           "notification.view"
         ],
         "type": "string"
+      },
+      "PharmacyClinicalContext": {
+        "properties": {
+          "active_allergies": {
+            "items": {
+              "$ref": "#/components/schemas/AllergyListItem"
+            },
+            "type": "array"
+          },
+          "active_problems": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemListItem"
+            },
+            "type": "array"
+          },
+          "order_relevant_medications": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionListItem"
+            },
+            "type": "array"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "active_problems",
+          "active_allergies",
+          "order_relevant_medications"
+        ],
+        "type": "object"
       },
       "PharmacyDispenseListItem": {
         "properties": {
@@ -15822,6 +18166,124 @@
         ],
         "type": "string"
       },
+      "ProblemArtifactKind": {
+        "enum": [
+          "clinical_note",
+          "prescription",
+          "lab_order",
+          "encounter"
+        ],
+        "type": "string"
+      },
+      "ProblemArtifactLinkItem": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "artifact_kind": {
+            "$ref": "#/components/schemas/ProblemArtifactKind"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "problem_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "problem_id",
+          "artifact_kind",
+          "artifact_id",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ProblemArtifactLinkQuery": {
+        "properties": {
+          "clinical_note_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lab_order_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ProblemArtifactLinkRequest": {
+        "properties": {
+          "clinical_note_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lab_order_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prescription_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "problem_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "problem_id"
+        ],
+        "type": "object"
+      },
       "ProblemListItem": {
         "properties": {
           "created_at": {
@@ -15865,6 +18327,23 @@
           "resolved"
         ],
         "type": "string"
+      },
+      "PromoteClinicWaitlistEntryRequest": {
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at"
+        ],
+        "type": "object"
       },
       "PurchaseOrderListItem": {
         "properties": {
@@ -16008,6 +18487,66 @@
         ],
         "type": "object"
       },
+      "RecordNhisArAdjustmentRequest": {
+        "properties": {
+          "adjustment_kind": {
+            "$ref": "#/components/schemas/NhisArAdjustmentKind"
+          },
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "adjustment_kind",
+          "amount_minor",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "RecordNursingReleaseRequest": {
+        "properties": {
+          "education": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "education",
+          "instructions"
+        ],
+        "type": "object"
+      },
+      "RecoveryCodeGenerateRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password"
+        ],
+        "type": "object"
+      },
+      "RecoveryCodeGenerateResponse": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "type": "object"
+      },
       "ReferralListItem": {
         "properties": {
           "acceptance_notes": {
@@ -16064,6 +18603,20 @@
             ]
           },
           "recommendations": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_appointment_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_at": {
+            "format": "date-time",
             "type": [
               "string",
               "null"
@@ -16217,6 +18770,7 @@
         "enum": [
           "sent",
           "accepted",
+          "scheduled",
           "declined",
           "completed",
           "cancelled"
@@ -16302,6 +18856,33 @@
         },
         "type": "object"
       },
+      "ReversalKind": {
+        "enum": [
+          "void",
+          "refund"
+        ],
+        "type": "string"
+      },
+      "ReversePaymentRequest": {
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/BillingRiskApprovalRequest"
+          },
+          "reversal_kind": {
+            "$ref": "#/components/schemas/ReversalKind"
+          }
+        },
+        "required": [
+          "amount_minor",
+          "reversal_kind",
+          "approval"
+        ],
+        "type": "object"
+      },
       "RevokeAllSessionsRequest": {
         "properties": {
           "exclude_current": {
@@ -16355,6 +18936,23 @@
           "admission_case_id",
           "medication_name",
           "scheduled_at"
+        ],
+        "type": "object"
+      },
+      "ScheduleReferralAppointmentRequest": {
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at"
         ],
         "type": "object"
       },
@@ -16724,6 +19322,74 @@
         ],
         "type": "object"
       },
+      "StandingOrderFrequency": {
+        "enum": [
+          "daily",
+          "weekly",
+          "monthly"
+        ],
+        "type": "string"
+      },
+      "StandingOrderListItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/StandingOrderFrequency"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "next_run_on": {
+            "format": "date",
+            "type": "string"
+          },
+          "requesting_location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StandingOrderStatus"
+          }
+        },
+        "required": [
+          "id",
+          "requesting_location_id",
+          "frequency",
+          "status",
+          "next_run_on",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "StandingOrderStatus": {
+        "enum": [
+          "active",
+          "paused",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "StartBreakGlassGrantRequest": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/BreakGlassCategory"
+          },
+          "reason_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "category"
+        ],
+        "type": "object"
+      },
       "StockBatchListItem": {
         "properties": {
           "batch_number": {
@@ -16774,6 +19440,45 @@
           "received_at"
         ],
         "type": "object"
+      },
+      "StockCheckQueueItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StockCheckQueueStatus"
+          }
+        },
+        "required": [
+          "id",
+          "location_id",
+          "status",
+          "reason",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "StockCheckQueueStatus": {
+        "enum": [
+          "queued",
+          "in_progress",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
       },
       "StockMovementListItem": {
         "properties": {
@@ -17077,6 +19782,59 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "SupplyDispenseLineRequest": {
+        "properties": {
+          "item_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "location_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "location_id",
+          "quantity"
+        ],
+        "type": "object"
+      },
+      "SupplyRequestDispenseResult": {
+        "properties": {
+          "dispensed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "line_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requisition_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requisition_id",
+          "status",
+          "line_count",
+          "dispensed_at"
+        ],
         "type": "object"
       },
       "TransferStatus": {
@@ -17571,6 +20329,17 @@
         },
         "type": "object"
       },
+      "UpdateStockCheckStatusRequest": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/StockCheckQueueStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "UpdateWardRequest": {
         "properties": {
           "code": {
@@ -17951,6 +20720,32 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "WebAuthnVerifyRequest": {
+        "properties": {
+          "credential": {},
+          "mfa_session": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "type": "object"
+      },
+      "WebAuthnVerifyResponse": {
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verified"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -20939,6 +23734,77 @@
         ]
       }
     },
+    "/api/v2/appointment-types": {
+      "get": {
+        "operationId": "getAppointmentTypes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_AppointmentTypeListItem"
+                }
+              }
+            },
+            "description": "Appointment types list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "care"
+        ]
+      }
+    },
     "/api/v2/appointments": {
       "get": {
         "operationId": "getAppointments",
@@ -21264,6 +24130,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelAppointmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -21473,6 +24349,336 @@
               }
             },
             "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/recovery-codes": {
+      "post": {
+        "operationId": "postAuthRecoveryCodes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryCodeGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_RecoveryCodeGenerateResponse"
+                }
+              }
+            },
+            "description": "Recovery codes regenerated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Recovery codes could not be generated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Fresh reauthentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/status": {
+      "get": {
+        "operationId": "getAuthMfaStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_MfaStatusResponse"
+                }
+              }
+            },
+            "description": "MFA and privileged-action status"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "MFA status could not be loaded"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/webauthn/authenticate/options": {
+      "post": {
+        "operationId": "postAuthWebauthnAuthenticateOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_Value"
+                }
+              }
+            },
+            "description": "WebAuthn authentication options"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Passkey verification could not start"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/webauthn/authenticate/verify": {
+      "post": {
+        "operationId": "postAuthWebauthnAuthenticateVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WebAuthnVerifyResponse"
+                }
+              }
+            },
+            "description": "WebAuthn authentication verified"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Passkey verification failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/webauthn/register/options": {
+      "post": {
+        "operationId": "postAuthWebauthnRegisterOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_Value"
+                }
+              }
+            },
+            "description": "WebAuthn registration options"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Passkey setup could not start"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/mfa/webauthn/register/verify": {
+      "post": {
+        "operationId": "postAuthWebauthnRegisterVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_WebAuthnVerifyResponse"
+                }
+              }
+            },
+            "description": "WebAuthn registration verified"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Passkey verification failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
           }
         },
         "security": [
@@ -22191,6 +25397,83 @@
         ]
       }
     },
+    "/api/v2/billing/discharge-clearances/{patient_id}": {
+      "post": {
+        "operationId": "postBillingDischargeClearance",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BillingDischargeClearance"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v2/billing/invoices": {
       "get": {
         "operationId": "getBillingInvoices",
@@ -22414,6 +25697,103 @@
         ]
       }
     },
+    "/api/v2/billing/invoices/{id}/finalize": {
+      "post": {
+        "operationId": "postBillingInvoiceFinalize",
+        "parameters": [
+          {
+            "description": "Invoice id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeInvoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InvoiceListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v2/billing/payments": {
       "get": {
         "operationId": "getBillingPayments",
@@ -22617,6 +25997,103 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v2/billing/payments/{id}/reverse": {
+      "post": {
+        "operationId": "postBillingPaymentReverse",
+        "parameters": [
+          {
+            "description": "Payment id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversePaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PaymentReversalLedgerEntry"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -24072,6 +27549,241 @@
         ]
       }
     },
+    "/api/v2/clinical/problem-links": {
+      "get": {
+        "operationId": "getClinicalProblemLinks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "clinical_note_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "prescription_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lab_order_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "encounter_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_ProblemArtifactLinkItem"
+                }
+              }
+            },
+            "description": "Problem artifact links"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid artifact filter"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      },
+      "post": {
+        "operationId": "postClinicalProblemLinks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProblemArtifactLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ProblemArtifactLinkItem"
+                }
+              }
+            },
+            "description": "Problem artifact link created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid problem link"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/clinical/problem-links/{id}": {
+      "delete": {
+        "operationId": "deleteClinicalProblemLink",
+        "parameters": [
+          {
+            "description": "Problem link id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ProblemArtifactLinkItem"
+                }
+              }
+            },
+            "description": "Problem artifact link deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Problem link not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
     "/api/v2/clinical/problems/{id}": {
       "get": {
         "operationId": "getClinicalProblemById",
@@ -25221,6 +28933,200 @@
         ]
       }
     },
+    "/api/v2/discharges/{id}/blockers/hold": {
+      "post": {
+        "operationId": "postDischargeBlockerHold",
+        "parameters": [
+          {
+            "description": "Discharge case id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DischargeBlockerActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_DischargeCaseListItem"
+                }
+              }
+            },
+            "description": "Discharge blocker held"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid blocker hold"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Discharge not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Blocker cannot be held"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/discharges/{id}/blockers/override": {
+      "post": {
+        "operationId": "postDischargeBlockerOverride",
+        "parameters": [
+          {
+            "description": "Discharge case id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DischargeBlockerActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_DischargeCaseListItem"
+                }
+              }
+            },
+            "description": "Discharge blocker overridden"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid blocker override"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Discharge not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Blocker cannot be overridden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
     "/api/v2/discharges/{id}/cancel": {
       "post": {
         "operationId": "postDischargeCancel",
@@ -25373,6 +29279,103 @@
               }
             },
             "description": "Discharge not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "wards"
+        ]
+      }
+    },
+    "/api/v2/discharges/{id}/nursing-release": {
+      "post": {
+        "operationId": "postDischargeNursingRelease",
+        "parameters": [
+          {
+            "description": "Discharge case id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordNursingReleaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_DischargeCaseListItem"
+                }
+              }
+            },
+            "description": "Nursing release recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid nursing release"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Discharge not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Nursing release cannot be recorded"
           }
         },
         "security": [
@@ -25996,6 +29999,91 @@
         },
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v2/inventory/catalog-edits": {
+      "post": {
+        "operationId": "postInventoryCatalogEdit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInventoryCatalogEditRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_InventoryCatalogVersionItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
         ]
       }
     },
@@ -27522,6 +31610,103 @@
         ]
       }
     },
+    "/api/v2/inventory/requisitions/{id}/dispense": {
+      "post": {
+        "operationId": "postStockRequisitionDispense",
+        "parameters": [
+          {
+            "description": "Stock requisition ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispenseSupplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_SupplyRequestDispenseResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/v2/inventory/requisitions/{id}/fulfill": {
       "post": {
         "operationId": "postStockRequisitionFulfill",
@@ -27743,6 +31928,168 @@
         ]
       }
     },
+    "/api/v2/inventory/standing-orders": {
+      "post": {
+        "operationId": "postInventoryStandingOrders",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStandingOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StandingOrderListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/standing-orders/{id}/generate-requisition": {
+      "post": {
+        "operationId": "postInventoryStandingOrderGenerateRequisition",
+        "parameters": [
+          {
+            "description": "Standing order ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StockRequisitionListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/v2/inventory/stock-batches": {
       "get": {
         "operationId": "getStockBatches",
@@ -27881,6 +32228,188 @@
             "description": ""
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/stock-checks": {
+      "post": {
+        "operationId": "postInventoryStockChecks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStockCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StockCheckQueueItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/v2/inventory/stock-checks/{id}/status": {
+      "post": {
+        "operationId": "postInventoryStockCheckStatus",
+        "parameters": [
+          {
+            "description": "Stock check ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStockCheckStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_StockCheckQueueItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -29046,6 +33575,73 @@
         ],
         "tags": [
           "laboratory"
+        ]
+      }
+    },
+    "/api/v2/laboratory/orders/{order_id}/clinical-context": {
+      "get": {
+        "operationId": "getLaboratoryOrderClinicalContext",
+        "parameters": [
+          {
+            "description": "Laboratory order id",
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_LaboratoryClinicalContext"
+                }
+              }
+            },
+            "description": "Laboratory clinical context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Lab order not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
         ]
       }
     },
@@ -30481,6 +35077,180 @@
         ]
       }
     },
+    "/api/v2/nhis/claims/{id}/ar-adjustments": {
+      "post": {
+        "operationId": "postNhisClaimArAdjustment",
+        "parameters": [
+          {
+            "description": "NHIS claim id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordNhisArAdjustmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NhisArAdjustmentEntry"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      }
+    },
+    "/api/v2/nhis/claims/{id}/ar-state": {
+      "get": {
+        "operationId": "getNhisClaimArState",
+        "parameters": [
+          {
+            "description": "NHIS claim id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NhisClaimArState"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      }
+    },
     "/api/v2/nhis/remittance-imports": {
       "get": {
         "operationId": "getNhisRemittanceImports",
@@ -30617,6 +35387,81 @@
             "description": ""
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "nhis"
+        ]
+      }
+    },
+    "/api/v2/nhis/service-mappings": {
+      "post": {
+        "operationId": "postNhisServiceMappings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNhisServiceMappingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_NhisServiceMappingListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -33115,6 +37960,150 @@
         ]
       }
     },
+    "/api/v2/patients/{id}/break-glass": {
+      "post": {
+        "operationId": "postPatientBreakGlass",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBreakGlassGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BreakGlassGrant"
+                }
+              }
+            },
+            "description": "Break-glass grant opened"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid break-glass request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Break-glass denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Break-glass grant could not be opened"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v2/patients/{id}/break-glass/end": {
+      "post": {
+        "operationId": "postPatientBreakGlassEnd",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_EndBreakGlassGrantsResponse"
+                }
+              }
+            },
+            "description": "Break-glass grants ended"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Break-glass grants could not be ended"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "patients"
+        ]
+      }
+    },
     "/api/v2/patients/{id}/chronicle": {
       "get": {
         "operationId": "getPatientChronicle",
@@ -33777,6 +38766,73 @@
         ]
       }
     },
+    "/api/v2/patients/{patient_id}/clinical/pharmacy-context": {
+      "get": {
+        "operationId": "getPatientPharmacyClinicalContext",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_PharmacyClinicalContext"
+                }
+              }
+            },
+            "description": "Pharmacy clinical context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
     "/api/v2/patients/{patient_id}/clinical/prescriptions": {
       "get": {
         "operationId": "getPatientPrescriptions",
@@ -34126,6 +39182,77 @@
         ],
         "tags": [
           "clinical"
+        ]
+      }
+    },
+    "/api/v2/pharmacy/controlled-substances/discrepancies": {
+      "get": {
+        "operationId": "getControlledSubstanceDiscrepancies",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_ControlledDiscrepancyListItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "pharmacy"
         ]
       }
     },
@@ -35142,6 +40269,180 @@
         ]
       }
     },
+    "/api/v2/referrals/clinic-waitlist/{id}/cancel": {
+      "post": {
+        "operationId": "postClinicWaitlistCancel",
+        "parameters": [
+          {
+            "description": "Clinic waitlist entry id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelClinicWaitlistEntryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicWaitlistEntryListItem"
+                }
+              }
+            },
+            "description": "Clinic waitlist entry cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid cancellation request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Clinic waitlist entry not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/clinic-waitlist/{id}/promote": {
+      "post": {
+        "operationId": "postClinicWaitlistPromote",
+        "parameters": [
+          {
+            "description": "Clinic waitlist entry id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteClinicWaitlistEntryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ClinicWaitlistEntryListItem"
+                }
+              }
+            },
+            "description": "Clinic waitlist entry promoted to appointment"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid promotion request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Clinic waitlist entry not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
     "/api/v2/referrals/sla-dashboard": {
       "get": {
         "operationId": "getReferralSlaDashboard",
@@ -35463,6 +40764,93 @@
               }
             },
             "description": "Invalid decline request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Referral not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/v2/referrals/{id}/schedule": {
+      "post": {
+        "operationId": "postReferralSchedule",
+        "parameters": [
+          {
+            "description": "Referral id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleReferralAppointmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_ReferralListItem"
+                }
+              }
+            },
+            "description": "Referral scheduled to appointment"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid appointment request"
           },
           "401": {
             "content": {

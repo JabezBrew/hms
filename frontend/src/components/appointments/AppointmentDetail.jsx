@@ -11,7 +11,7 @@ import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +47,7 @@ import {toast} from 'sonner';
 import {
   useAppointment,
   useUpdateAppointmentStatus,
+  useCancelAppointment,
   useDeleteAppointment
 } from '@/features/appointments/hooks/useAppointmentQueries';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
@@ -91,6 +94,7 @@ const statusConfig = {
 
 const AppointmentDetail = ({ appointmentId, onBack }) => {
   const navigate = useNavigate();
+  const [cancellationReason, setCancellationReason] = useState('');
 
   // Use React Query hooks for data fetching
   const { 
@@ -240,6 +244,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
   // Use the update appointment status mutation
   const updateStatusMutation = useUpdateAppointmentStatus();
+  const cancelAppointmentMutation = useCancelAppointment();
 
   // Handle status update
   const handleStatusUpdate = (newStatus) => {
@@ -252,6 +257,30 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
         onError: (error) => {
           console.error('Error updating appointment status:', error);
           toast.error(error.message || 'Failed to update appointment status');
+        }
+      }
+    );
+  };
+
+  const handleCancelAppointment = (event) => {
+    const reason = cancellationReason.trim();
+    if (!reason) {
+      event?.preventDefault();
+      toast.error('Enter a cancellation reason');
+      return;
+    }
+
+    cancelAppointmentMutation.mutate(
+      { id: appointmentId, reason },
+      {
+        onSuccess: () => {
+          setCancellationReason('');
+          toast.success('Appointment cancelled');
+        },
+        onError: (error) => {
+          event?.preventDefault();
+          console.error('Error cancelling appointment:', error);
+          toast.error(error.message || 'Failed to cancel appointment');
         }
       }
     );
@@ -476,7 +505,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                       variant="outline"
                       size="sm"
                       className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                      disabled={updateStatusMutation.isPending}
+                      disabled={updateStatusMutation.isPending || cancelAppointmentMutation.isPending}
                     >
                       <XCircle className="h-3.5 w-3.5 mr-1.5" />
                       Cancel Appointment
@@ -489,11 +518,24 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
                         This will cancel the appointment without deleting its schedule record.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-2">
+                      <Label htmlFor="appointment-cancellation-reason" className="font-mono text-xs">
+                        Cancellation reason
+                      </Label>
+                      <Textarea
+                        id="appointment-cancellation-reason"
+                        value={cancellationReason}
+                        onChange={(event) => setCancellationReason(event.target.value)}
+                        placeholder="Document why this appointment is being cancelled."
+                        className="min-h-24 font-mono text-sm"
+                      />
+                    </div>
                     <AlertDialogFooter>
                       <AlertDialogCancel className="font-mono text-xs">Keep Appointment</AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => handleStatusUpdate('cancelled')}
+                        onClick={handleCancelAppointment}
                         className="font-mono text-xs bg-destructive hover:bg-destructive/90"
+                        disabled={cancelAppointmentMutation.isPending || !cancellationReason.trim()}
                       >
                         Confirm Cancellation
                       </AlertDialogAction>

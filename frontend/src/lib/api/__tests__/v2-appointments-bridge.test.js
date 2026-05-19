@@ -168,6 +168,11 @@ describe('Rust V2 appointments bridge', () => {
             starts_at: '2026-05-12T10:00:00Z',
             ends_at: '2026-05-12T10:30:00Z',
             status: 'scheduled',
+            clinic_session_id: 'session-1',
+            appointment_type_id: 'type-review',
+            practitioner_user_id: 'practitioner-1',
+            appointment_type_name: 'Review',
+            clinic_id: 'clinic-1',
             created_at: '2026-05-11T08:30:00Z',
           },
           meta: {},
@@ -184,7 +189,10 @@ describe('Rust V2 appointments bridge', () => {
       start_time: '2026-05-12T10:00:00Z',
       end_time: '2026-05-12T10:30:00Z',
       practitioner: 'practitioner-1',
-      appointment_type: 'general',
+      appointment_type: 'type-review',
+      clinic_session: 'session-1',
+      clinic: 'clinic-1',
+      overbook_reason: 'Consultant approved urgent review',
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -195,6 +203,11 @@ describe('Rust V2 appointments bridge', () => {
           patient_id: 'patient-2',
           starts_at: '2026-05-12T10:00:00Z',
           ends_at: '2026-05-12T10:30:00Z',
+          clinic_id: 'clinic-1',
+          clinic_session_id: 'session-1',
+          appointment_type_id: 'type-review',
+          practitioner_user_id: 'practitioner-1',
+          overbook_reason: 'Consultant approved urgent review',
         }),
       }),
     );
@@ -202,6 +215,11 @@ describe('Rust V2 appointments bridge', () => {
       id: 'appointment-2',
       patient_name: 'Kojo Boateng',
       status: 'booked',
+      clinic_id: 'clinic-1',
+      clinic_session_id: 'session-1',
+      appointment_type_id: 'type-review',
+      practitioner: 'practitioner-1',
+      appointment_type_name: 'Review',
     });
   });
 
@@ -335,13 +353,21 @@ describe('Rust V2 appointments bridge', () => {
       'http://localhost:8080/api/v2/appointments/appointment-1/cancel',
       expect.objectContaining({
         method: 'POST',
-        body: undefined,
+        body: JSON.stringify({ reason: 'Patient unavailable' }),
       }),
     );
     expect(response).toMatchObject({
       id: 'appointment-1',
       status: 'cancelled',
     });
+  });
+
+  it('requires a cancellation reason before calling the Rust cancel action', async () => {
+    await expect(appointmentsApi.cancelAppointment('appointment-1', '  '))
+      .rejects
+      .toThrow('Cancellation reason is required');
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('checks in appointments through the Rust visit check-in contract', async () => {

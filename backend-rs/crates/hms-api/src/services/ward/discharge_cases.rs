@@ -1,7 +1,9 @@
+use chrono::Utc;
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::ward::{
-    CancelDischargeRequest, CreateDischargeRequest, DischargeCaseListItem, DischargeStatus,
+    CancelDischargeRequest, CreateDischargeRequest, DischargeBlockerKind, DischargeCaseListItem,
+    DischargeStatus,
 };
 use uuid::Uuid;
 
@@ -14,6 +16,9 @@ use crate::state::AppState;
 pub struct DischargeCasesService {
     state: AppState,
 }
+
+const MAX_BLOCKER_REASON_LEN: usize = 500;
+const MAX_NURSING_RELEASE_TEXT_LEN: usize = 2_000;
 
 impl DischargeCasesService {
     pub(super) fn new(state: AppState) -> Self {
@@ -150,6 +155,175 @@ impl DischargeCasesService {
                         "Discharge could not be cancelled in its current state.",
                     )
                 })?;
+
+        Ok(object(discharge))
+    }
+
+    pub async fn record_nursing_release(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        education: String,
+        instructions: String,
+    ) -> Result<ObjectResponse<DischargeCaseListItem>, ApiError> {
+        common::require_facility_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::NursingTaskManage,
+        )?;
+        let education = common::normalize_required_text(
+            Some(education),
+            "education",
+            MAX_NURSING_RELEASE_TEXT_LEN,
+        )?;
+        let instructions = common::normalize_required_text(
+            Some(instructions),
+            "instructions",
+            MAX_NURSING_RELEASE_TEXT_LEN,
+        )?;
+        let existing =
+            hms_db::ward::get_discharge_case(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
+        let _patient =
+            common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
+        let discharge = hms_db::ward::record_nursing_release(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            education,
+            instructions,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "discharge_nursing_release_failed",
+                "Nursing release could not be recorded.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "discharge_nursing_release_invalid_status",
+                "Nursing release could not be recorded for this discharge.",
+            )
+        })?;
+
+        Ok(object(discharge))
+    }
+
+    pub async fn hold_blocker(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        blocker_type: DischargeBlockerKind,
+        reason: String,
+    ) -> Result<ObjectResponse<DischargeCaseListItem>, ApiError> {
+        common::require_facility_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::AdmissionManage,
+        )?;
+        if !matches!(
+            blocker_type,
+            DischargeBlockerKind::BillingClearance | DischargeBlockerKind::PharmacyClearance
+        ) {
+            return Err(ApiError::bad_request(
+                "invalid_discharge_blocker_hold",
+                "Only billing and pharmacy blockers can be held.",
+            ));
+        }
+        let reason =
+            common::normalize_required_text(Some(reason), "reason", MAX_BLOCKER_REASON_LEN)?;
+        let existing =
+            hms_db::ward::get_discharge_case(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
+        let _patient =
+            common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
+        let discharge = hms_db::ward::hold_discharge_blocker(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            blocker_type,
+            reason,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "discharge_blocker_hold_failed",
+                "Blocker could not be held.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "discharge_blocker_hold_invalid_status",
+                "Blocker could not be held for this discharge.",
+            )
+        })?;
+
+        Ok(object(discharge))
+    }
+
+    pub async fn override_blocker(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        blocker_type: DischargeBlockerKind,
+        reason: String,
+    ) -> Result<ObjectResponse<DischargeCaseListItem>, ApiError> {
+        hms_access::require_high_risk_facility_permission(
+            ctx,
+            self.state.facility_id(),
+            PermissionCode::AdmissionManage,
+            Utc::now(),
+        )?;
+        let reason =
+            common::normalize_required_text(Some(reason), "reason", MAX_BLOCKER_REASON_LEN)?;
+        let existing =
+            hms_db::ward::get_discharge_case(self.state.db_pool(), self.state.facility_id(), id)
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("discharge_load_failed", "Discharge could not be loaded.")
+                })?
+                .ok_or_else(|| {
+                    ApiError::not_found("discharge_not_found", "Discharge was not found.")
+                })?;
+        let _patient =
+            common::load_patient_for_access(&self.state, ctx, existing.patient_id).await?;
+        let discharge = hms_db::ward::override_discharge_blocker(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            id,
+            blocker_type,
+            reason,
+            ctx.user_id,
+            ctx.reauth.verified_at.unwrap_or_else(Utc::now),
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "discharge_blocker_override_failed",
+                "Blocker could not be overridden.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::conflict(
+                "discharge_blocker_override_invalid_status",
+                "Blocker could not be overridden for this discharge.",
+            )
+        })?;
 
         Ok(object(discharge))
     }

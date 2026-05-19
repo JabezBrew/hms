@@ -2,14 +2,17 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::clinical::{
     AllergyListItem, AllergySeverity, AllergyStatus, ChartEntryListItem, ChartEntryType,
     ClinicalNoteDetail, ClinicalNoteListItem, ClinicalNoteStatus, ClinicalNoteTemplate,
-    ClinicalNoteVersion, PatientChronicleSummary, PrescriptionListItem, PrescriptionStatus,
-    ProblemListItem, ProblemStatus, UpdateAllergyRequest, UpdatePrescriptionRequest,
-    UpdateProblemRequest,
+    ClinicalNoteVersion, LaboratoryClinicalContext, PatientChronicleSummary,
+    PharmacyClinicalContext, PrescriptionListItem, PrescriptionStatus, ProblemArtifactKind,
+    ProblemArtifactLinkItem, ProblemListItem, ProblemStatus, UpdateAllergyRequest,
+    UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::patients::PatientDetail;
+use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
+use crate::admin::{insert_audit_event, NewAuditEvent};
 use crate::codec;
 use crate::PgPool;
 
@@ -97,6 +100,18 @@ pub struct NewChartEntry {
     pub actor_user_id: Uuid,
 }
 
+#[derive(Clone, Debug)]
+pub struct NewProblemArtifactLink {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub patient_id: Uuid,
+    pub problem_id: Uuid,
+    pub artifact_kind: ProblemArtifactKind,
+    pub artifact_id: Uuid,
+    pub actor_user_id: Uuid,
+    pub request_id: Option<String>,
+}
+
 #[derive(Clone, Debug, FromRow)]
 struct TemplateRow {
     id: Uuid,
@@ -145,6 +160,16 @@ struct ProblemRow {
     label: String,
     status: String,
     onset_date: Option<NaiveDate>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ProblemArtifactLinkRow {
+    id: Uuid,
+    patient_id: Uuid,
+    problem_id: Uuid,
+    artifact_kind: String,
+    artifact_id: Uuid,
     created_at: DateTime<Utc>,
 }
 
@@ -596,6 +621,190 @@ pub async fn update_problem(
     row.map(problem_from_row).transpose()
 }
 
+pub async fn create_problem_artifact_link(
+    pool: &PgPool,
+    link: NewProblemArtifactLink,
+) -> anyhow::Result<Option<ProblemArtifactLinkItem>> {
+    let problem_patient_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT patient_id
+        FROM patient_problems
+        WHERE facility_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(link.facility_id)
+    .bind(link.problem_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(problem_patient_id) = problem_patient_id else {
+        return Ok(None);
+    };
+
+    let Some(artifact_patient_id) =
+        artifact_patient_id(pool, link.facility_id, link.artifact_kind, link.artifact_id).await?
+    else {
+        return Ok(None);
+    };
+
+    if problem_patient_id != link.patient_id || artifact_patient_id != link.patient_id {
+        return Ok(None);
+    }
+
+    let row = sqlx::query_as::<_, ProblemArtifactLinkRow>(
+        r#"
+        INSERT INTO problem_artifact_links (
+            id,
+            facility_id,
+            patient_id,
+            problem_id,
+            artifact_kind,
+            artifact_id,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (problem_id, artifact_kind, artifact_id)
+        DO UPDATE SET problem_id = EXCLUDED.problem_id
+        RETURNING id, patient_id, problem_id, artifact_kind, artifact_id, created_at
+        "#,
+    )
+    .bind(link.id)
+    .bind(link.facility_id)
+    .bind(link.patient_id)
+    .bind(link.problem_id)
+    .bind(codec::encode(link.artifact_kind)?)
+    .bind(link.artifact_id)
+    .bind(link.actor_user_id)
+    .fetch_one(pool)
+    .await?;
+
+    insert_audit_event(
+        pool,
+        NewAuditEvent {
+            facility_id: link.facility_id,
+            actor_user_id: Some(link.actor_user_id),
+            request_id: link.request_id,
+            event_type: "problem_artifact_link.created".to_owned(),
+            resource_type: "problem_artifact_link".to_owned(),
+            resource_id: Some(row.id),
+            metadata: json!({
+                "artifact_kind": row.artifact_kind,
+                "artifact_id": row.artifact_id,
+            }),
+        },
+    )
+    .await?;
+
+    problem_artifact_link_from_row(row).map(Some)
+}
+
+pub async fn list_problem_artifact_links(
+    pool: &PgPool,
+    facility_id: Uuid,
+    artifact_kind: ProblemArtifactKind,
+    artifact_id: Uuid,
+) -> anyhow::Result<Vec<ProblemArtifactLinkItem>> {
+    let rows = sqlx::query_as::<_, ProblemArtifactLinkRow>(
+        r#"
+        SELECT id, patient_id, problem_id, artifact_kind, artifact_id, created_at
+        FROM problem_artifact_links
+        WHERE facility_id = $1
+          AND artifact_kind = $2
+          AND artifact_id = $3
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(facility_id)
+    .bind(codec::encode(artifact_kind)?)
+    .bind(artifact_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(problem_artifact_link_from_row)
+        .collect()
+}
+
+pub async fn delete_problem_artifact_link(
+    pool: &PgPool,
+    facility_id: Uuid,
+    link_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<ProblemArtifactLinkItem>> {
+    let row = sqlx::query_as::<_, ProblemArtifactLinkRow>(
+        r#"
+        DELETE FROM problem_artifact_links
+        WHERE facility_id = $1
+          AND id = $2
+        RETURNING id, patient_id, problem_id, artifact_kind, artifact_id, created_at
+        "#,
+    )
+    .bind(facility_id)
+    .bind(link_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = row {
+        insert_audit_event(
+            pool,
+            NewAuditEvent {
+                facility_id,
+                actor_user_id: Some(actor_user_id),
+                request_id,
+                event_type: "problem_artifact_link.deleted".to_owned(),
+                resource_type: "problem_artifact_link".to_owned(),
+                resource_id: Some(row.id),
+                metadata: json!({
+                    "artifact_kind": row.artifact_kind,
+                    "artifact_id": row.artifact_id,
+                }),
+            },
+        )
+        .await?;
+        return problem_artifact_link_from_row(row).map(Some);
+    }
+
+    Ok(None)
+}
+
+pub async fn pharmacy_clinical_context(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+) -> anyhow::Result<PharmacyClinicalContext> {
+    Ok(PharmacyClinicalContext {
+        patient_id,
+        active_problems: list_active_problems(pool, facility_id, patient_id).await?,
+        active_allergies: list_active_allergies(pool, facility_id, patient_id).await?,
+        order_relevant_medications: list_active_prescriptions(pool, facility_id, patient_id)
+            .await?,
+    })
+}
+
+pub async fn laboratory_clinical_context(
+    pool: &PgPool,
+    facility_id: Uuid,
+    order_id: Uuid,
+) -> anyhow::Result<Option<LaboratoryClinicalContext>> {
+    let Some(patient_id) =
+        artifact_patient_id(pool, facility_id, ProblemArtifactKind::LabOrder, order_id).await?
+    else {
+        return Ok(None);
+    };
+    let linked_problems =
+        linked_problems_for_artifact(pool, facility_id, ProblemArtifactKind::LabOrder, order_id)
+            .await?;
+
+    Ok(Some(LaboratoryClinicalContext {
+        order_id,
+        patient_id,
+        linked_problems,
+    }))
+}
+
 pub async fn list_allergies(
     pool: &PgPool,
     facility_id: Uuid,
@@ -935,6 +1144,141 @@ fn apply_patient_cursor(
     query.push_bind(limit);
 }
 
+async fn artifact_patient_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    kind: ProblemArtifactKind,
+    artifact_id: Uuid,
+) -> anyhow::Result<Option<Uuid>> {
+    let sql = match kind {
+        ProblemArtifactKind::ClinicalNote => {
+            "SELECT patient_id FROM clinical_notes WHERE facility_id = $1 AND id = $2"
+        }
+        ProblemArtifactKind::Prescription => {
+            "SELECT patient_id FROM prescriptions WHERE facility_id = $1 AND id = $2"
+        }
+        ProblemArtifactKind::LabOrder => {
+            "SELECT patient_id FROM lab_orders WHERE facility_id = $1 AND id = $2"
+        }
+        ProblemArtifactKind::Encounter => {
+            "SELECT patient_id FROM encounters WHERE facility_id = $1 AND id = $2"
+        }
+    };
+
+    Ok(sqlx::query_scalar::<_, Uuid>(sql)
+        .bind(facility_id)
+        .bind(artifact_id)
+        .fetch_optional(pool)
+        .await?)
+}
+
+async fn list_active_problems(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+) -> anyhow::Result<Vec<ProblemListItem>> {
+    let rows = sqlx::query_as::<_, ProblemRow>(
+        r#"
+        SELECT id, patient_id, label, status, onset_date, created_at
+        FROM patient_problems
+        WHERE facility_id = $1
+          AND patient_id = $2
+          AND status = $3
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(codec::encode(ProblemStatus::Active)?)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(problem_from_row).collect()
+}
+
+async fn list_active_allergies(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+) -> anyhow::Result<Vec<AllergyListItem>> {
+    let rows = sqlx::query_as::<_, AllergyRow>(
+        r#"
+        SELECT id, patient_id, substance, reaction, severity, status, created_at
+        FROM patient_allergies
+        WHERE facility_id = $1
+          AND patient_id = $2
+          AND status = $3
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(codec::encode(AllergyStatus::Active)?)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(allergy_from_row).collect()
+}
+
+async fn list_active_prescriptions(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+) -> anyhow::Result<Vec<PrescriptionListItem>> {
+    let rows = sqlx::query_as::<_, PrescriptionRow>(
+        r#"
+        SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+        FROM prescriptions
+        WHERE facility_id = $1
+          AND patient_id = $2
+          AND status IN ($3, $4)
+        ORDER BY prescribed_at DESC, id DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(codec::encode(PrescriptionStatus::Active)?)
+    .bind(codec::encode(PrescriptionStatus::OnHold)?)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(prescription_from_row).collect()
+}
+
+async fn linked_problems_for_artifact(
+    pool: &PgPool,
+    facility_id: Uuid,
+    artifact_kind: ProblemArtifactKind,
+    artifact_id: Uuid,
+) -> anyhow::Result<Vec<ProblemListItem>> {
+    let rows = sqlx::query_as::<_, ProblemRow>(
+        r#"
+        SELECT patient_problems.id,
+               patient_problems.patient_id,
+               patient_problems.label,
+               patient_problems.status,
+               patient_problems.onset_date,
+               patient_problems.created_at
+        FROM problem_artifact_links
+        JOIN patient_problems
+          ON patient_problems.id = problem_artifact_links.problem_id
+         AND patient_problems.facility_id = problem_artifact_links.facility_id
+         AND patient_problems.patient_id = problem_artifact_links.patient_id
+        WHERE problem_artifact_links.facility_id = $1
+          AND problem_artifact_links.artifact_kind = $2
+          AND problem_artifact_links.artifact_id = $3
+        ORDER BY problem_artifact_links.created_at DESC, problem_artifact_links.id DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(facility_id)
+    .bind(codec::encode(artifact_kind)?)
+    .bind(artifact_id)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(problem_from_row).collect()
+}
+
 fn template_from_row(row: TemplateRow) -> ClinicalNoteTemplate {
     ClinicalNoteTemplate {
         id: row.id,
@@ -987,6 +1331,19 @@ fn problem_from_row(row: ProblemRow) -> anyhow::Result<ProblemListItem> {
         label: row.label,
         status: codec::decode(&row.status)?,
         onset_date: row.onset_date,
+        created_at: row.created_at,
+    })
+}
+
+fn problem_artifact_link_from_row(
+    row: ProblemArtifactLinkRow,
+) -> anyhow::Result<ProblemArtifactLinkItem> {
+    Ok(ProblemArtifactLinkItem {
+        id: row.id,
+        patient_id: row.patient_id,
+        problem_id: row.problem_id,
+        artifact_kind: codec::decode(&row.artifact_kind)?,
+        artifact_id: row.artifact_id,
         created_at: row.created_at,
     })
 }

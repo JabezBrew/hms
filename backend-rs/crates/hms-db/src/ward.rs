@@ -22,11 +22,12 @@ pub use admission_cases::{
     list_ward_board, reserve_admission_bed, AdmissionContext, NewAdmission, NewAdmissionCase,
 };
 pub use bed_management::{
-    create_bed, get_bed_by_id, list_section_beds, list_ward_beds, update_bed, BedUpdate, NewBed,
+    create_bed, get_bed_by_id, list_section_beds, list_ward_beds, release_cleaned_beds, update_bed,
+    BedUpdate, NewBed,
 };
 pub use discharge_cases::{
-    cancel_discharge, complete_discharge, get_discharge_case, list_discharge_cases,
-    request_discharge,
+    cancel_discharge, complete_discharge, get_discharge_case, hold_discharge_blocker,
+    list_discharge_cases, override_discharge_blocker, record_nursing_release, request_discharge,
 };
 pub use handoff::{complete_handoff, create_handoff, get_handoff, list_handoffs, NewHandoff};
 pub use mar::{

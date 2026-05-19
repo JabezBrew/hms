@@ -27,6 +27,14 @@ pub fn routes() -> Router<AppState> {
             get(patients::get_patient_chronicle_print),
         )
         .route(
+            "/api/v2/patients/:id/break-glass",
+            axum::routing::post(patients::start_break_glass_grant),
+        )
+        .route(
+            "/api/v2/patients/:id/break-glass/end",
+            axum::routing::post(patients::end_break_glass_grants),
+        )
+        .route(
             "/api/v2/patients/:id",
             get(patients::get_patient).patch(patients::update_patient),
         )

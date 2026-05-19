@@ -2,15 +2,16 @@ use chrono::Utc;
 use hms_db::inventory::{NewControlledCount, NewControlledMovement};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
-    ControlledSubstanceBalanceValidation, ControlledSubstanceRegisterEntryItem,
-    ControlledSubstanceRegisterItem, CreateControlledSubstanceCountRequest,
-    CreateControlledSubstanceMovementRequest, InventoryListQuery,
+    ControlledDiscrepancyListItem, ControlledSubstanceBalanceValidation,
+    ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
+    CreateControlledSubstanceCountRequest, CreateControlledSubstanceMovementRequest,
+    InventoryListQuery,
 };
 use uuid::Uuid;
 
 use super::common::{
-    encode_cursor, page_request, page_response, require_inventory_access, require_non_negative,
-    validation_error,
+    encode_cursor, normalize_text, page_request, page_response, require_inventory_access,
+    require_non_negative, validation_error,
 };
 use crate::error::ApiError;
 use crate::response::{object, ListResponse, ObjectResponse};
@@ -120,6 +121,31 @@ impl ControlledSubstancesService {
         Ok(object(validation))
     }
 
+    pub async fn list_discrepancies(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: InventoryListQuery,
+    ) -> Result<ListResponse<ControlledDiscrepancyListItem>, ApiError> {
+        require_controlled_access(ctx, self.facility_id())?;
+        let (cursor, page_size) = page_request(query)?;
+        let rows = hms_db::inventory::list_controlled_discrepancies(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            i64::from(page_size) + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "controlled_discrepancy_list_failed",
+                "Controlled discrepancies could not be loaded.",
+            )
+        })?;
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
     pub async fn create_count(
         &self,
         ctx: &hms_access::RequestContext,
@@ -131,6 +157,13 @@ impl ControlledSubstancesService {
         let witness_user_id = payload
             .witness_user_id
             .ok_or_else(|| validation_error("witness_user_id", "Witness is required."))?;
+        let category = payload
+            .category
+            .ok_or_else(|| validation_error("category", "Discrepancy category is required."))?;
+        let reason = normalize_text(
+            payload.reason.or(payload.notes).unwrap_or_else(String::new),
+            "reason",
+        )?;
         let _entry = load_controlled_entry(self.pool(), self.facility_id(), id).await?;
         let entry = hms_db::inventory::create_controlled_count(
             self.pool(),
@@ -141,6 +174,8 @@ impl ControlledSubstancesService {
                 actual_count: payload.actual_count,
                 witness_user_id,
                 actor_user_id: ctx.user_id,
+                category,
+                reason,
             },
         )
         .await

@@ -119,6 +119,8 @@ function adaptV2WaitlistEntry(entry) {
     patient_id: entry.patient_id,
     patient_name: entry.patient_display_name,
     patient_mrn: entry.patient_code,
+    scheduled_appointment_id: entry.scheduled_appointment_id || null,
+    cancellation_reason: entry.cancellation_reason || '',
   };
 }
 
@@ -174,6 +176,19 @@ function v2WaitlistPayload(data = {}) {
     patient_id: data.patient_id || data.patient,
     service: data.service || data.referred_to_department || data.department,
     priority: normalizePriority(data.priority || data.urgency),
+  };
+}
+
+function v2AppointmentSchedulePayload(data = {}) {
+  const payload = typeof data === 'object' && data !== null ? data : {};
+  const startsAt = payload.starts_at || payload.start || payload.start_time || payload.appointment_start;
+  const endsAt = payload.ends_at || payload.end || payload.end_time || payload.appointment_end;
+  if (!startsAt || !endsAt) {
+    throw new Error('Appointment start and end times are required for Rust V2 scheduling.');
+  }
+  return {
+    starts_at: startsAt,
+    ends_at: endsAt,
   };
 }
 
@@ -308,15 +323,23 @@ export const referralsApi = {
     }
   },
 
-  scheduleReferral: async (id, appointmentId) => {
+  scheduleReferral: async (id, appointment) => {
     try {
       if (isRustV2ApiMode()) {
-        throw unsupportedInRustV2('Rust V2 does not expose referral scheduling yet.');
+        const response = await v2Api.postReferralSchedule(
+          { id },
+          v2AppointmentSchedulePayload(appointment),
+        );
+        return adaptV2Referral(response?.data);
       }
       return await apiClient.post(`/referrals/${id}/schedule/`, {
-        scheduled_appointment_id: appointmentId,
+        scheduled_appointment_id: appointment,
       });
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to schedule referral'));
+      }
       throw new Error(handleApiError(error, 'Failed to schedule referral'));
     }
   },
@@ -531,24 +554,42 @@ export const referralsApi = {
     }
   },
 
-  promoteClinicWaitlistEntry: async (id, data) => {
+  promoteClinicWaitlistEntry: async (id, data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        throw unsupportedInRustV2('Rust V2 does not expose clinic waitlist promotion yet.');
+        const response = await v2Api.postClinicWaitlistPromote(
+          { id },
+          v2AppointmentSchedulePayload(data),
+          options,
+        );
+        return adaptV2WaitlistEntry(response?.data);
       }
       return await apiClient.post(`/referrals/clinic-waitlist/${id}/promote/`, data);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to promote waitlist entry'));
+      }
       throw new Error(handleApiError(error, 'Failed to promote waitlist entry'));
     }
   },
 
-  cancelClinicWaitlistEntry: async (id) => {
+  cancelClinicWaitlistEntry: async (id, data = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        throw unsupportedInRustV2('Rust V2 does not expose clinic waitlist cancellation yet.');
+        const response = await v2Api.postClinicWaitlistCancel(
+          { id },
+          { reason: data?.reason || data?.cancellation_reason || 'Cancelled from waitlist' },
+          options,
+        );
+        return adaptV2WaitlistEntry(response?.data);
       }
       return await apiClient.post(`/referrals/clinic-waitlist/${id}/cancel/`, {});
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to cancel waitlist entry'));
+      }
       throw new Error(handleApiError(error, 'Failed to cancel waitlist entry'));
     }
   },

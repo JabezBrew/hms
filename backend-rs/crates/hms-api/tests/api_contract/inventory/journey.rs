@@ -3,6 +3,7 @@ use super::*;
 #[tokio::test]
 async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_rules() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
     let stale_reauth_header = format!("Bearer {}", token_with_stale_reauth(&access_token));
@@ -1013,6 +1014,8 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
                     json!({
                         "actual_count": 8,
                         "witness_user_id": owner_id,
+                        "category": "missing",
+                        "reason": "non-PHI controlled count test",
                         "notes": "non-PHI controlled count test"
                     })
                     .to_string(),
@@ -1060,6 +1063,28 @@ async fn inventory_controlled_substances_and_pharmacy_dispensing_follow_access_r
     assert_eq!(controlled_summary["total_dispensed"], 1);
     assert_eq!(controlled_summary["has_discrepancy"], true);
     assert_eq!(controlled_summary["discrepancy_count"], 1);
+
+    let controlled_stock_after_count = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/inventory/items/{morphine_id}/stock-by-location"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("controlled stock by location succeeds");
+    assert_eq!(controlled_stock_after_count.status(), StatusCode::OK);
+    let controlled_stock_after_count_body = json_body(controlled_stock_after_count).await;
+    assert!(controlled_stock_after_count_body["data"]
+        .as_array()
+        .expect("controlled stock by location is an array")
+        .iter()
+        .any(|row| row["location_id"] == pharmacy_location_id && row["quantity_on_hand"] == 8));
 
     let patient_response = app
         .clone()

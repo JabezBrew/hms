@@ -1,12 +1,15 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::billing::{
-    BillingDashboardSummary, BillingListQuery, BillingRuleListItem, BillingRuleListQuery,
-    CashDrawerListItem, CashSessionListItem, CashSessionListQuery, ClaimListItem,
-    CloseCashSessionRequest, CreateClaimRequest, CreateInvoiceRequest, CreateNhisBatchRequest,
-    CreatePaymentRequest, CreateRemittanceImportRequest, InvoiceListItem, NhisBatchExport,
-    NhisBatchListItem, OpenCashSessionRequest, PaymentListItem, ReceiptListItem,
-    RemittanceImportListItem, ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
+    BillingDashboardSummary, BillingDischargeClearance, BillingListQuery, BillingRuleListItem,
+    BillingRuleListQuery, CashDrawerListItem, CashSessionListItem, CashSessionListQuery,
+    ClaimListItem, CloseCashSessionRequest, CreateClaimRequest, CreateInvoiceRequest,
+    CreateNhisBatchRequest, CreateNhisServiceMappingRequest, CreatePaymentRequest,
+    CreateRemittanceImportRequest, FinalizeInvoiceRequest, InvoiceListItem, NhisArAdjustmentEntry,
+    NhisBatchExport, NhisBatchListItem, NhisClaimArState, NhisServiceMappingListItem,
+    OpenCashSessionRequest, PaymentListItem, PaymentReversalLedgerEntry, ReceiptListItem,
+    RecordNhisArAdjustmentRequest, RemittanceImportListItem, ReversePaymentRequest,
+    ServiceCatalogItem, ServiceCatalogQuery, ServicePriceListItem,
 };
 use uuid::Uuid;
 
@@ -133,6 +136,22 @@ pub async fn create_invoice(
     ))
 }
 
+#[utoipa::path(post, path = "/api/v2/billing/invoices/{id}/finalize", operation_id = "postBillingInvoiceFinalize", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Invoice id")), request_body = FinalizeInvoiceRequest, responses((status = 200, body = ObjectResponse<InvoiceListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn finalize_invoice(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<FinalizeInvoiceRequest>,
+) -> Result<Json<ObjectResponse<InvoiceListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .finalize_invoice(&user, id, payload)
+            .await?,
+    ))
+}
+
 #[utoipa::path(get, path = "/api/v2/billing/payments", operation_id = "getBillingPayments", tag = "billing", security(("bearerAuth" = [])), params(BillingListQuery), responses((status = 200, body = ListResponse<PaymentListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_payments(
     State(state): State<AppState>,
@@ -159,6 +178,37 @@ pub async fn create_payment(
             .billing_services()
             .financial_workflow()
             .create_payment(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/payments/{id}/reverse", operation_id = "postBillingPaymentReverse", tag = "billing", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Payment id")), request_body = ReversePaymentRequest, responses((status = 200, body = ObjectResponse<PaymentReversalLedgerEntry>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn reverse_payment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ReversePaymentRequest>,
+) -> Result<Json<ObjectResponse<PaymentReversalLedgerEntry>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .reverse_payment(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/billing/discharge-clearances/{patient_id}", operation_id = "postBillingDischargeClearance", tag = "billing", security(("bearerAuth" = [])), params(("patient_id" = Uuid, Path, description = "Patient id")), responses((status = 200, body = ObjectResponse<BillingDischargeClearance>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn record_discharge_clearance(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(patient_id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<BillingDischargeClearance>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .financial_workflow()
+            .record_discharge_clearance(&user, patient_id)
             .await?,
     ))
 }
@@ -335,6 +385,52 @@ pub async fn create_claim(
             .billing_services()
             .nhis()
             .create_claim(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/nhis/service-mappings", operation_id = "postNhisServiceMappings", tag = "nhis", security(("bearerAuth" = [])), request_body = CreateNhisServiceMappingRequest, responses((status = 200, body = ObjectResponse<NhisServiceMappingListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn create_nhis_service_mapping(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<CreateNhisServiceMappingRequest>,
+) -> Result<Json<ObjectResponse<NhisServiceMappingListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .create_service_mapping(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/nhis/claims/{id}/ar-state", operation_id = "getNhisClaimArState", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS claim id")), responses((status = 200, body = ObjectResponse<NhisClaimArState>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn get_claim_ar_state(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<NhisClaimArState>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .get_claim_ar_state(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/nhis/claims/{id}/ar-adjustments", operation_id = "postNhisClaimArAdjustment", tag = "nhis", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "NHIS claim id")), request_body = RecordNhisArAdjustmentRequest, responses((status = 200, body = ObjectResponse<NhisArAdjustmentEntry>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn record_claim_ar_adjustment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<RecordNhisArAdjustmentRequest>,
+) -> Result<Json<ObjectResponse<NhisArAdjustmentEntry>>, ApiError> {
+    Ok(Json(
+        state
+            .billing_services()
+            .nhis()
+            .record_claim_ar_adjustment(&user, id, payload)
             .await?,
     ))
 }

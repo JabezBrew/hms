@@ -1,13 +1,16 @@
 use chrono::{DateTime, Utc};
 use hms_domain::inventory::{
-    GoodsReceivedStatus, InventoryCategoryListItem, InventoryDashboardSummary,
-    InventoryItemListItem, RequisitionStatus, StorageLocationListItem, SupplierListItem,
+    GoodsReceivedStatus, InventoryCatalogVersionItem, InventoryCategoryListItem,
+    InventoryDashboardSummary, InventoryItemListItem, RequisitionStatus, StorageLocationListItem,
+    SupplierListItem,
 };
+use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::{
-    apply_cursor, apply_forward_cursor, InventoryCursor, InventoryItemFilters, SupplierFilters,
+    apply_cursor, apply_forward_cursor, CatalogEditCommand, InventoryCursor, InventoryItemFilters,
+    SupplierFilters,
 };
 use crate::codec;
 use crate::PgPool;
@@ -65,6 +68,19 @@ struct InventoryDashboardSummaryRow {
     pending_requisitions: i64,
     pending_grns: i64,
     discrepancies: i64,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct CatalogVersionRow {
+    id: Uuid,
+    item_id: Uuid,
+    effective_from: chrono::NaiveDate,
+    effective_to: Option<chrono::NaiveDate>,
+    code: String,
+    name: String,
+    unit: String,
+    reason: String,
+    created_at: DateTime<Utc>,
 }
 
 pub async fn list_categories(
@@ -281,6 +297,103 @@ pub async fn get_location(
     Ok(row.map(location_from_row))
 }
 
+pub async fn apply_catalog_edit(
+    pool: &PgPool,
+    edit: CatalogEditCommand,
+) -> anyhow::Result<InventoryCatalogVersionItem> {
+    let mut tx = pool.begin().await?;
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1 FROM inventory_items
+            WHERE facility_id = $1 AND id = $2 AND is_active = TRUE
+         )",
+    )
+    .bind(edit.facility_id)
+    .bind(edit.item_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !exists {
+        anyhow::bail!("inventory item was not found");
+    }
+
+    let previous_effective_to = edit
+        .effective_from
+        .pred_opt()
+        .unwrap_or(edit.effective_from);
+    sqlx::query(
+        "UPDATE inventory_item_catalog_versions
+         SET effective_to = $3
+         WHERE facility_id = $1
+           AND item_id = $2
+           AND effective_to IS NULL",
+    )
+    .bind(edit.facility_id)
+    .bind(edit.item_id)
+    .bind(previous_effective_to)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO inventory_item_catalog_versions (
+            id, facility_id, item_id, effective_from, code, name, unit, reason, created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "#,
+    )
+    .bind(edit.id)
+    .bind(edit.facility_id)
+    .bind(edit.item_id)
+    .bind(edit.effective_from)
+    .bind(&edit.code)
+    .bind(&edit.name)
+    .bind(&edit.unit)
+    .bind(&edit.reason)
+    .bind(edit.actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if edit.effective_from <= Utc::now().date_naive() {
+        sqlx::query(
+            "UPDATE inventory_items
+             SET code = $3, name = $4, unit = $5, updated_at = now()
+             WHERE facility_id = $1 AND id = $2",
+        )
+        .bind(edit.facility_id)
+        .bind(edit.item_id)
+        .bind(&edit.code)
+        .bind(&edit.name)
+        .bind(&edit.unit)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO audit_events (
+            id, facility_id, actor_user_id, event_type, resource_type, resource_id, metadata
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(edit.facility_id)
+    .bind(edit.actor_user_id)
+    .bind("inventory.catalog.edited")
+    .bind("inventory_item")
+    .bind(edit.item_id)
+    .bind(json!({
+        "severity": "high",
+        "effective_from": edit.effective_from,
+        "reason": edit.reason,
+    }))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    fetch_catalog_version_by_id(pool, edit.facility_id, edit.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created catalog version was not found"))
+}
+
 pub async fn inventory_dashboard_summary(
     pool: &PgPool,
     facility_id: Uuid,
@@ -321,6 +434,12 @@ pub async fn inventory_dashboard_summary(
             FROM goods_received_notes
             WHERE facility_id = $1
               AND status IN ($5, $6, $7)
+        ),
+        discrepancy_metrics AS (
+            SELECT COUNT(*)::BIGINT AS discrepancies
+            FROM controlled_substance_discrepancies
+            WHERE facility_id = $1
+              AND status = 'logged'
         )
         SELECT item_metrics.total_items,
                batch_metrics.low_stock_count,
@@ -330,11 +449,12 @@ pub async fn inventory_dashboard_summary(
                0::BIGINT AS total_value_minor,
                requisition_metrics.pending_requisitions,
                grn_metrics.pending_grns,
-               0::BIGINT AS discrepancies
+               discrepancy_metrics.discrepancies
         FROM item_metrics
         CROSS JOIN batch_metrics
         CROSS JOIN requisition_metrics
         CROSS JOIN grn_metrics
+        CROSS JOIN discrepancy_metrics
         "#,
     )
     .bind(facility_id)
@@ -399,6 +519,40 @@ fn like_contains_pattern(search: Option<&str>) -> Option<String> {
         }
     }
     Some(format!("%{escaped}%"))
+}
+
+async fn fetch_catalog_version_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<InventoryCatalogVersionItem>> {
+    let row = sqlx::query_as::<_, CatalogVersionRow>(
+        r#"
+        SELECT id, item_id, effective_from, effective_to, code, name, unit, reason, created_at
+        FROM inventory_item_catalog_versions
+        WHERE facility_id = $1 AND id = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(catalog_version_from_row))
+}
+
+fn catalog_version_from_row(row: CatalogVersionRow) -> InventoryCatalogVersionItem {
+    InventoryCatalogVersionItem {
+        id: row.id,
+        item_id: row.item_id,
+        effective_from: row.effective_from,
+        effective_to: row.effective_to,
+        code: row.code,
+        name: row.name,
+        unit: row.unit,
+        reason: row.reason,
+        created_at: row.created_at,
+    }
 }
 
 fn category_from_row(row: CategoryRow) -> InventoryCategoryListItem {

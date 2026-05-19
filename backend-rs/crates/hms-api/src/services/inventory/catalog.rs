@@ -1,14 +1,16 @@
-use hms_db::inventory::{InventoryItemFilters, SupplierFilters};
+use hms_db::inventory::{CatalogEditCommand, InventoryItemFilters, SupplierFilters};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
-    InventoryCategoryListItem, InventoryDashboardSummary, InventoryDashboardSummaryQuery,
-    InventoryItemListItem, InventoryItemsQuery, InventoryListQuery, StorageLocationListItem,
-    SupplierListItem, SupplierListQuery,
+    CreateInventoryCatalogEditRequest, InventoryCatalogVersionItem, InventoryCategoryListItem,
+    InventoryDashboardSummary, InventoryDashboardSummaryQuery, InventoryItemListItem,
+    InventoryItemsQuery, InventoryListQuery, StorageLocationListItem, SupplierListItem,
+    SupplierListQuery,
 };
 use uuid::Uuid;
 
 use super::common::{
-    decode_page, encode_cursor, page_request, page_response, require_inventory_access, static_list,
+    decode_page, encode_cursor, normalize_text, page_request, page_response,
+    require_inventory_access, static_list,
 };
 use crate::error::ApiError;
 use crate::response::{object, ListResponse, ObjectResponse};
@@ -185,6 +187,36 @@ impl InventoryCatalogService {
                 ApiError::not_found("storage_location_not_found", "Location could not be found.")
             })?;
         Ok(object(location))
+    }
+
+    pub async fn apply_catalog_edit(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateInventoryCatalogEditRequest,
+    ) -> Result<ObjectResponse<InventoryCatalogVersionItem>, ApiError> {
+        require_inventory_access(ctx, self.facility_id(), PermissionCode::InventoryManage)?;
+        let edit = hms_db::inventory::apply_catalog_edit(
+            self.pool(),
+            CatalogEditCommand {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                item_id: payload.item_id,
+                effective_from: payload.effective_from,
+                code: normalize_text(payload.code, "code")?,
+                name: normalize_text(payload.name, "name")?,
+                unit: normalize_text(payload.unit, "unit")?,
+                reason: normalize_text(payload.reason, "reason")?,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "inventory_catalog_edit_failed",
+                "Inventory catalog edit could not be saved.",
+            )
+        })?;
+        Ok(object(edit))
     }
 }
 

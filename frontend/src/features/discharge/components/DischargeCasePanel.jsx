@@ -129,9 +129,15 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {openBlockers.map((blocker) => (
-                    <Badge key={`${blocker.task_type}-${blocker.status}`} variant="outline">
+                    <Button
+                      key={`${blocker.task_type}-${blocker.status}`}
+                      variant="outline"
+                      size="sm"
+                      className="h-auto justify-start whitespace-normal"
+                      onClick={() => blocker.workflow_path && navigate(blocker.workflow_path)}
+                    >
                       {blocker.task_type.replace(/_/g, ' ')}: {blocker.status.replace(/_/g, ' ')}
-                    </Badge>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -155,6 +161,15 @@ export function DischargeCasePanel({ admissionId, title = 'Discharge Status', cl
                     onClick={() => navigate(`/nursing/discharges?case=${caseItem.id}`)}
                   >
                     Open Nursing Queue
+                  </Button>
+                )}
+                {caseItem.schedule_follow_up_action?.path && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(caseItem.schedule_follow_up_action.path)}
+                  >
+                    {caseItem.schedule_follow_up_action.label || 'Schedule follow-up'}
                   </Button>
                 )}
               </div>

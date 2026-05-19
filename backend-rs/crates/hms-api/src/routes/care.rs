@@ -19,6 +19,10 @@ pub fn routes() -> Router<AppState> {
             post(care::cancel_appointment),
         )
         .route(
+            "/api/v2/appointment-types",
+            get(care::list_appointment_types),
+        )
+        .route(
             "/api/v2/clinics",
             get(care::list_clinics).post(care::create_clinic),
         )

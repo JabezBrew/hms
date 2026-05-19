@@ -270,6 +270,55 @@ describe('Rust V2 referrals bridge', () => {
     );
   });
 
+  it('schedules referrals through Rust appointment contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'referral-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-1',
+            patient_display_name: 'Ama Mensah',
+            to_service: 'Medicine',
+            priority: 'urgent',
+            status: 'scheduled',
+            scheduled_appointment_id: 'appointment-1',
+            scheduled_at: '2026-05-12T08:00:00Z',
+            created_at: '2026-05-12T08:00:00Z',
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const scheduled = await referralsApi.scheduleReferral('referral-1', {
+      starts_at: '2026-05-20T09:00:00Z',
+      ends_at: '2026-05-20T09:30:00Z',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/referrals/referral-1/schedule',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          starts_at: '2026-05-20T09:00:00Z',
+          ends_at: '2026-05-20T09:30:00Z',
+        }),
+      }),
+    );
+    expect(scheduled).toEqual(
+      expect.objectContaining({
+        id: 'referral-1',
+        v2_status: 'scheduled',
+        scheduled_appointment_id: 'appointment-1',
+      }),
+    );
+  });
+
   it('threads AbortSignal through Rust referral and waitlist mutation calls', async () => {
     const signal = new AbortController().signal;
     globalThis.fetch
@@ -319,7 +368,7 @@ describe('Rust V2 referrals bridge', () => {
     ]);
   });
 
-  it('loads and mutates clinic waitlist entries through Rust /api/v2', async () => {
+  it('loads, promotes, and cancels clinic waitlist entries through Rust /api/v2', async () => {
     globalThis.fetch
       .mockResolvedValueOnce(
         new Response(
@@ -356,6 +405,38 @@ describe('Rust V2 referrals bridge', () => {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'wait-1',
+              status: 'promoted',
+              scheduled_appointment_id: 'appointment-1',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'wait-2',
+              status: 'cancelled',
+              cancellation_reason: 'Patient unavailable',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
       );
 
     const waitlist = await referralsApi.getClinicWaitlist({ page_size: 50 });
@@ -365,6 +446,13 @@ describe('Rust V2 referrals bridge', () => {
       priority: 'urgent',
     });
     await referralsApi.offerNextClinicWaitlistEntry({ service: 'Medicine' });
+    const promoted = await referralsApi.promoteClinicWaitlistEntry('wait-1', {
+      starts_at: '2026-05-21T10:00:00Z',
+      ends_at: '2026-05-21T10:30:00Z',
+    });
+    const cancelled = await referralsApi.cancelClinicWaitlistEntry('wait-2', {
+      reason: 'Patient unavailable',
+    });
 
     expect(waitlist).toEqual([
       expect.objectContaining({
@@ -399,6 +487,39 @@ describe('Rust V2 referrals bridge', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ service: 'Medicine' }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      4,
+      'http://localhost:8080/api/v2/referrals/clinic-waitlist/wait-1/promote',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          starts_at: '2026-05-21T10:00:00Z',
+          ends_at: '2026-05-21T10:30:00Z',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      5,
+      'http://localhost:8080/api/v2/referrals/clinic-waitlist/wait-2/cancel',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Patient unavailable' }),
+      }),
+    );
+    expect(promoted).toEqual(
+      expect.objectContaining({
+        id: 'wait-1',
+        status: 'promoted',
+        scheduled_appointment_id: 'appointment-1',
+      }),
+    );
+    expect(cancelled).toEqual(
+      expect.objectContaining({
+        id: 'wait-2',
+        status: 'cancelled',
+        cancellation_reason: 'Patient unavailable',
       }),
     );
   });

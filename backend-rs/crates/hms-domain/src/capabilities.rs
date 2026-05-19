@@ -120,6 +120,7 @@ fn permissions_for_features(features: &HashMap<FeatureKey, bool>) -> Vec<Permiss
     let mut permissions = Vec::new();
     if enabled(&features, FeatureKey::Patients) {
         permissions.push(PermissionCode::ConsentManage);
+        permissions.push(PermissionCode::PatientBreakGlassInvoke);
     }
     if enabled(&features, FeatureKey::Appointments) {
         permissions.extend([

@@ -33,6 +33,7 @@ pub const DEFAULT_PATIENT_VALIDATION_LAST_NAME_ID: u128 = 0x30000000000000000000
 pub const DEFAULT_PATIENT_VALIDATION_DATE_OF_BIRTH_ID: u128 = 0x30000000000000000000000000000102;
 pub const DEFAULT_PATIENT_VALIDATION_SEX_ID: u128 = 0x30000000000000000000000000000103;
 pub const DEFAULT_CLINIC_ID: u128 = 0x40000000000000000000000000000001;
+pub const DEFAULT_APPOINTMENT_TYPE_GENERAL_ID: u128 = 0x40000000000000000000000000000010;
 pub const DEFAULT_WARD_ID: u128 = 0x50000000000000000000000000000001;
 pub const DEFAULT_BED_ID: u128 = 0x50000000000000000000000000000002;
 pub const DEFAULT_NOTE_TEMPLATE_ID: u128 = 0x60000000000000000000000000000001;
@@ -113,6 +114,7 @@ pub async fn provision_baseline(
     seed_deployment_profiles(pool).await?;
     seed_facility(pool, baseline).await?;
     seed_default_clinic(pool, baseline).await?;
+    seed_default_appointment_types(pool, baseline).await?;
     seed_default_ward(pool, baseline).await?;
     seed_clinical_templates(pool, baseline).await?;
     seed_lab_catalog(pool, baseline).await?;
@@ -237,6 +239,35 @@ async fn seed_default_clinic(pool: &PgPool, baseline: &BaselineProvisioning) -> 
         "#,
     )
     .bind(Uuid::from_u128(DEFAULT_CLINIC_ID))
+    .bind(baseline.facility_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn seed_default_appointment_types(
+    pool: &PgPool,
+    baseline: &BaselineProvisioning,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO appointment_types (
+            id,
+            facility_id,
+            code,
+            name,
+            default_duration_minutes
+        )
+        VALUES ($1, $2, 'general', 'General', 30)
+        ON CONFLICT (facility_id, code) DO UPDATE
+        SET id = EXCLUDED.id,
+            name = EXCLUDED.name,
+            default_duration_minutes = EXCLUDED.default_duration_minutes,
+            is_active = TRUE
+        "#,
+    )
+    .bind(Uuid::from_u128(DEFAULT_APPOINTMENT_TYPE_GENERAL_ID))
     .bind(baseline.facility_id)
     .execute(pool)
     .await?;

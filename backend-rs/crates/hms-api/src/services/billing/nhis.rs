@@ -1,8 +1,14 @@
-use hms_db::billing::{NewClaim, NewNhisBatch, NewRemittanceImport};
+use chrono::Utc;
+use hms_db::billing::{
+    NewClaim, NewNhisArAdjustment, NewNhisBatch, NewNhisServiceMapping, NewRemittanceImport,
+};
 use hms_domain::billing::{
     BillingListQuery, ClaimListItem, CreateClaimRequest, CreateNhisBatchRequest,
-    CreateRemittanceImportRequest, NhisBatchExport, NhisBatchListItem, RemittanceImportListItem,
+    CreateNhisServiceMappingRequest, CreateRemittanceImportRequest, NhisArAdjustmentEntry,
+    NhisBatchExport, NhisBatchListItem, NhisClaimArState, NhisServiceMappingListItem,
+    RecordNhisArAdjustmentRequest, RemittanceImportListItem,
 };
+use hms_domain::deployment::PermissionCode;
 use uuid::Uuid;
 
 use super::common;
@@ -84,6 +90,44 @@ impl NhisService {
         .await
         .map_err(|_| ApiError::conflict("claim_create_failed", "Claim could not be saved."))?;
         Ok(object(claim))
+    }
+
+    pub async fn create_service_mapping(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateNhisServiceMappingRequest,
+    ) -> Result<ObjectResponse<NhisServiceMappingListItem>, ApiError> {
+        common::require_nhis_access(ctx, self.facility_id())?;
+        let nhis_code = common::normalize_text(payload.nhis_code, "nhis_code")?;
+        if payload
+            .effective_until
+            .is_some_and(|until| until <= payload.effective_from)
+        {
+            return Err(common::validation_error(
+                "effective_until",
+                "Effective-until must be after effective-from.",
+            ));
+        }
+        let mapping = hms_db::billing::create_nhis_service_mapping(
+            self.pool(),
+            NewNhisServiceMapping {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                service_id: payload.service_id,
+                nhis_code,
+                effective_from: payload.effective_from,
+                effective_until: payload.effective_until,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nhis_mapping_create_failed",
+                "NHIS service mapping could not be saved.",
+            )
+        })?;
+        Ok(object(mapping))
     }
 
     pub async fn list_batches(
@@ -170,6 +214,67 @@ impl NhisService {
                 ApiError::not_found("nhis_batch_not_found", "NHIS batch was not found.")
             })?;
         Ok(object(exported))
+    }
+
+    pub async fn get_claim_ar_state(
+        &self,
+        ctx: &hms_access::RequestContext,
+        claim_id: Uuid,
+    ) -> Result<ObjectResponse<NhisClaimArState>, ApiError> {
+        common::require_nhis_access(ctx, self.facility_id())?;
+        let claim = hms_db::billing::get_claim(self.pool(), self.facility_id(), claim_id)
+            .await
+            .map_err(|_| ApiError::conflict("claim_load_failed", "Claim could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("claim_not_found", "Claim was not found."))?;
+        let _patient = common::load_patient_for_access(&self.state, ctx, claim.patient_id).await?;
+        let state = hms_db::billing::nhis_claim_ar_state(self.pool(), self.facility_id(), claim_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("nhis_ar_load_failed", "NHIS AR state could not be loaded.")
+            })?
+            .ok_or_else(|| ApiError::not_found("claim_not_found", "Claim was not found."))?;
+        Ok(object(state))
+    }
+
+    pub async fn record_claim_ar_adjustment(
+        &self,
+        ctx: &hms_access::RequestContext,
+        claim_id: Uuid,
+        payload: RecordNhisArAdjustmentRequest,
+    ) -> Result<ObjectResponse<NhisArAdjustmentEntry>, ApiError> {
+        hms_access::require_high_risk_facility_permission(
+            ctx,
+            self.facility_id(),
+            PermissionCode::NhisClaimManage,
+            Utc::now(),
+        )?;
+        common::require_positive(payload.amount_minor, "amount_minor")?;
+        let reason = common::normalize_text(payload.reason, "reason")?;
+        let claim = hms_db::billing::get_claim(self.pool(), self.facility_id(), claim_id)
+            .await
+            .map_err(|_| ApiError::conflict("claim_load_failed", "Claim could not be loaded."))?
+            .ok_or_else(|| ApiError::not_found("claim_not_found", "Claim was not found."))?;
+        let _patient = common::load_patient_for_access(&self.state, ctx, claim.patient_id).await?;
+        let entry = hms_db::billing::record_nhis_ar_adjustment(
+            self.pool(),
+            NewNhisArAdjustment {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                claim_id,
+                adjustment_kind: payload.adjustment_kind,
+                amount_minor: payload.amount_minor,
+                reason,
+                recorded_by_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "nhis_ar_adjustment_failed",
+                "NHIS AR adjustment could not be recorded.",
+            )
+        })?;
+        Ok(object(entry))
     }
 
     pub async fn list_remittance_imports(

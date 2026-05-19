@@ -2,7 +2,9 @@ use std::ops::Deref;
 
 use chrono::{DateTime, Duration, Utc};
 use hms_domain::auth::{
-    ActiveAuthority, AuthUser, AuthorityScope, AuthoritySource, PatientDataVisibility,
+    ActiveAuthority, AuthUser, AuthorityScope, AuthoritySource, ClinicalPatientAccessDecision,
+    ClinicalPatientAccessEvidence, ClinicalPatientAccessReason, ClinicalPatientAccessSource,
+    PatientDataVisibility,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use hms_domain::patients::PatientRecord;
@@ -257,6 +259,8 @@ pub enum AccessError {
     AdminAuthorityAccessDenied,
     #[error("fresh reauthentication is required")]
     ReauthRequired,
+    #[error("passkey enrollment is required")]
+    PasskeyRequired,
     #[error("offsite context is read only")]
     OffsiteReadOnly,
 }
@@ -702,7 +706,8 @@ pub fn require_clinical_write_access(
         ctx,
         facility_id,
         PermissionCode::ClinicalDocumentationManage,
-    )
+    )?;
+    require_offsite_write_allowed(ctx)
 }
 
 pub fn require_chronicle_read_access(
@@ -714,6 +719,41 @@ pub fn require_chronicle_read_access(
     require_patient_workflow_access(ctx, facility_id, PermissionCode::ClinicalDocumentationView)
 }
 
+pub fn evaluate_clinical_patient_access(
+    ctx: &RequestContext,
+    patient: &PatientRecord,
+    evidence: &ClinicalPatientAccessEvidence,
+    now: DateTime<Utc>,
+) -> Result<ClinicalPatientAccessDecision, AccessError> {
+    require_facility(ctx, patient.facility_id)?;
+
+    if let Some(reason) = evidence.workflow_reason {
+        require_chronicle_read_access(ctx, patient.facility_id)?;
+        return Ok(ClinicalPatientAccessDecision {
+            source: ClinicalPatientAccessSource::Workflow,
+            reason,
+            read_only: ctx.offsite.is_read_only(),
+        });
+    }
+
+    if let Some(grant) = evidence.break_glass_grant.as_ref() {
+        if grant.facility_id == patient.facility_id
+            && grant.facility_id == ctx.facility_id
+            && grant.user_id == ctx.user_id
+            && grant.patient_id == patient.id
+            && grant.is_active_at(now)
+        {
+            return Ok(ClinicalPatientAccessDecision {
+                source: ClinicalPatientAccessSource::BreakGlass,
+                reason: ClinicalPatientAccessReason::BreakGlassEmergency,
+                read_only: ctx.offsite.is_read_only(),
+            });
+        }
+    }
+
+    Err(AccessError::PatientAccessDenied)
+}
+
 pub fn require_high_risk_reauth(
     ctx: &RequestContext,
     now: DateTime<Utc>,
@@ -722,6 +762,14 @@ pub fn require_high_risk_reauth(
         Ok(())
     } else {
         Err(AccessError::ReauthRequired)
+    }
+}
+
+pub fn require_privileged_action_allowed(ctx: &RequestContext) -> Result<(), AccessError> {
+    if ctx.user.auth_security.passkey_required && !ctx.user.auth_security.passkey_enrolled {
+        Err(AccessError::PasskeyRequired)
+    } else {
+        Ok(())
     }
 }
 
@@ -736,6 +784,7 @@ pub fn require_high_risk_facility_permission(
         AccessRequirement::facility_permission(AccessDomain::HighRisk, facility_id, permission)
             .high_risk_write(),
     )?;
+    require_privileged_action_allowed(ctx)?;
     require_high_risk_reauth(ctx, now)?;
     require_offsite_write_allowed(ctx)
 }
@@ -765,9 +814,20 @@ pub fn can_update_patient(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hms_domain::auth::AuthSecurityState;
 
     fn make_ctx() -> RequestContext {
         let facility_id = Uuid::new_v4();
+        let permissions = vec![
+            PermissionCode::PatientDemographicsView,
+            PermissionCode::PatientUpdate,
+            PermissionCode::ClinicalDocumentationView,
+            PermissionCode::ClinicalDocumentationManage,
+            PermissionCode::BillingView,
+            PermissionCode::LaboratoryOrderManage,
+            PermissionCode::InventoryView,
+            PermissionCode::AdminAuthorityManage,
+        ];
         let user = AuthUser {
             id: Uuid::new_v4(),
             email: "doctor@hms.local".to_owned(),
@@ -775,15 +835,7 @@ mod tests {
             facility_id,
             facility_code: "HMS".to_owned(),
             active_profile: DeploymentProfile::Hospital,
-            permissions: vec![
-                PermissionCode::PatientDemographicsView,
-                PermissionCode::PatientUpdate,
-                PermissionCode::ClinicalDocumentationView,
-                PermissionCode::BillingView,
-                PermissionCode::LaboratoryOrderManage,
-                PermissionCode::InventoryView,
-                PermissionCode::AdminAuthorityManage,
-            ],
+            permissions: permissions.clone(),
             features: vec![],
             patient_visibility: vec![
                 PatientDataVisibility::Demographics,
@@ -792,6 +844,7 @@ mod tests {
             session_version: 1,
             permission_version: 1,
             password_change_required: false,
+            auth_security: AuthSecurityState::from_permissions(&permissions, true, 4),
         };
         RequestContext::new(
             "request-1".to_owned(),
@@ -1218,5 +1271,115 @@ mod tests {
             ),
             Err(AccessError::OffsiteReadOnly)
         );
+    }
+
+    #[test]
+    fn high_risk_facility_permission_requires_privileged_passkey_enrollment() {
+        let mut ctx = make_ctx();
+        ctx.user.auth_security = AuthSecurityState::from_permissions(&ctx.permissions, false, 0);
+        assert_eq!(
+            require_high_risk_facility_permission(
+                &ctx,
+                ctx.facility_id,
+                PermissionCode::AdminAuthorityManage,
+                Utc::now(),
+            ),
+            Err(AccessError::PasskeyRequired)
+        );
+    }
+
+    #[test]
+    fn clinical_patient_access_separates_registry_from_chronicle_access() {
+        let mut registry_only = make_ctx();
+        let patient = patient(registry_only.facility_id);
+        registry_only.permissions = vec![PermissionCode::PatientDemographicsView];
+        registry_only.patient_visibility = vec![PatientDataVisibility::Demographics];
+
+        assert_eq!(
+            require_patient_workflow_access(
+                &registry_only,
+                registry_only.facility_id,
+                PermissionCode::PatientDemographicsView,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            evaluate_clinical_patient_access(
+                &registry_only,
+                &patient,
+                &hms_domain::auth::ClinicalPatientAccessEvidence::default(),
+                Utc::now(),
+            ),
+            Err(AccessError::PatientAccessDenied)
+        );
+    }
+
+    #[test]
+    fn clinical_patient_access_reports_workflow_source_and_read_only_state() {
+        let ctx = make_ctx();
+        let patient = patient(ctx.facility_id);
+        let evidence = hms_domain::auth::ClinicalPatientAccessEvidence {
+            workflow_reason: Some(
+                hms_domain::auth::ClinicalPatientAccessReason::ActiveClinicalRelationship,
+            ),
+            break_glass_grant: None,
+        };
+
+        let onsite = evaluate_clinical_patient_access(&ctx, &patient, &evidence, Utc::now())
+            .expect("workflow evidence grants chronicle access");
+        assert_eq!(
+            onsite.source,
+            hms_domain::auth::ClinicalPatientAccessSource::Workflow
+        );
+        assert_eq!(
+            onsite.reason,
+            hms_domain::auth::ClinicalPatientAccessReason::ActiveClinicalRelationship
+        );
+        assert!(!onsite.read_only);
+
+        let mut offsite = ctx;
+        offsite.offsite = OffsiteState::OffsiteReadOnly;
+        let offsite_decision =
+            evaluate_clinical_patient_access(&offsite, &patient, &evidence, Utc::now())
+                .expect("offsite workflow evidence grants read-only chronicle access");
+        assert!(offsite_decision.read_only);
+        assert_eq!(
+            require_clinical_write_access(&offsite, offsite.facility_id),
+            Err(AccessError::OffsiteReadOnly)
+        );
+    }
+
+    #[test]
+    fn clinical_patient_access_accepts_active_break_glass_grant() {
+        let ctx = make_ctx();
+        let patient = patient(ctx.facility_id);
+        let now = Utc::now();
+        let grant = hms_domain::auth::BreakGlassGrant {
+            id: Uuid::new_v4(),
+            facility_id: ctx.facility_id,
+            user_id: ctx.user_id,
+            patient_id: patient.id,
+            category: hms_domain::auth::BreakGlassCategory::LifeThreateningEmergency,
+            reason_text: Some("airway compromise".to_owned()),
+            started_at: now,
+            expires_at: now + Duration::hours(2),
+            ended_at: None,
+        };
+        let evidence = hms_domain::auth::ClinicalPatientAccessEvidence {
+            workflow_reason: None,
+            break_glass_grant: Some(grant),
+        };
+
+        let decision = evaluate_clinical_patient_access(&ctx, &patient, &evidence, now)
+            .expect("active break-glass grant grants chronicle access");
+        assert_eq!(
+            decision.source,
+            hms_domain::auth::ClinicalPatientAccessSource::BreakGlass
+        );
+        assert_eq!(
+            decision.reason,
+            hms_domain::auth::ClinicalPatientAccessReason::BreakGlassEmergency
+        );
+        assert!(!decision.read_only);
     }
 }

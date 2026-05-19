@@ -14,6 +14,23 @@ pub enum AppointmentStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum ClinicSessionOwnerType {
+    Practitioner,
+    Team,
+    Clinic,
+    Service,
+    Department,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClinicSessionMode {
+    FixedSlot,
+    CapacityBlock,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum VisitStatus {
     Waiting,
     Called,
@@ -115,6 +132,36 @@ pub struct ClinicListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ClinicSessionListItem {
+    pub id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub service_code: Option<String>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub owner_type: ClinicSessionOwnerType,
+    pub owner_id: Option<Uuid>,
+    pub name: String,
+    pub mode: ClinicSessionMode,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub slot_minutes: Option<i32>,
+    pub capacity: i32,
+    pub allow_overbooking: bool,
+    pub overbook_limit: i32,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct AppointmentTypeListItem {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub default_duration_minutes: i32,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateClinicRequest {
     pub code: String,
     pub name: String,
@@ -133,23 +180,41 @@ pub struct AppointmentListItem {
     pub patient_id: Uuid,
     pub patient_code: String,
     pub patient_display_name: String,
+    pub clinic_id: Option<Uuid>,
+    pub clinic_session_id: Option<Uuid>,
+    pub appointment_type_id: Option<Uuid>,
+    pub appointment_type_name: Option<String>,
+    pub practitioner_user_id: Option<Uuid>,
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
     pub status: AppointmentStatus,
+    pub cancellation_reason: Option<String>,
+    pub overbook_reason: Option<String>,
+    pub series_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateAppointmentRequest {
     pub patient_id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub clinic_session_id: Option<Uuid>,
+    pub appointment_type_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
+    pub overbook_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct UpdateAppointmentRequest {
     pub starts_at: Option<DateTime<Utc>>,
     pub ends_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CancelAppointmentRequest {
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

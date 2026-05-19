@@ -248,11 +248,110 @@ describe('Rust V2 problems bridge', () => {
     );
   });
 
-  it('does not call legacy problem catalog or link endpoints in Rust mode', async () => {
+  it('does not call the legacy problem catalog in Rust mode', async () => {
     await expect(problemsApi.searchCodes('hyp')).resolves.toEqual([]);
-    await expect(problemsApi.listLinks({ patient: 'patient-1' })).resolves.toEqual([]);
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('lists, creates, and deletes same-patient problem links through Rust /api/v2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'link-1',
+                patient_id: 'patient-1',
+                problem_id: 'problem-1',
+                artifact_kind: 'clinical_note',
+                artifact_id: 'note-1',
+                created_at: '2026-05-12T08:00:00Z',
+              },
+            ],
+            page: { limit: 100, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'link-1',
+              patient_id: 'patient-1',
+              problem_id: 'problem-1',
+              artifact_kind: 'clinical_note',
+              artifact_id: 'note-1',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'link-1',
+              patient_id: 'patient-1',
+              problem_id: 'problem-1',
+              artifact_kind: 'clinical_note',
+              artifact_id: 'note-1',
+              created_at: '2026-05-12T08:00:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const links = await problemsApi.listLinks({ note_entry: 'note-1' });
+    const created = await problemsApi.createLink({
+      problem: 'problem-1',
+      note_entry: 'note-1',
+    });
+    const deleted = await problemsApi.deleteLink('link-1');
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/clinical/problem-links?clinical_note_id=note-1',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/clinical/problem-links',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          problem_id: 'problem-1',
+          clinical_note_id: 'note-1',
+        }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:8080/api/v2/clinical/problem-links/link-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(links[0]).toEqual(expect.objectContaining({
+      id: 'link-1',
+      problem: 'problem-1',
+      note_entry: 'note-1',
+    }));
+    expect(created).toEqual(expect.objectContaining({ problem: 'problem-1' }));
+    expect(deleted).toEqual(expect.objectContaining({ id: 'link-1' }));
   });
 
   it('preserves AbortError from Rust problem list calls', async () => {

@@ -2,10 +2,11 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::care::CursorListQuery;
 use hms_domain::referrals::{
-    AcceptReferralRequest, ClinicWaitlistEntryListItem, CompleteReferralRequest,
-    CreateClinicWaitlistEntryRequest, CreateReferralRequest, DeclineReferralRequest,
-    OfferNextClinicWaitlistEntryRequest, ReferralListItem, ReferralListQuery, ReferralSlaDashboard,
-    ReferralSlaState,
+    AcceptReferralRequest, CancelClinicWaitlistEntryRequest, ClinicWaitlistEntryListItem,
+    CompleteReferralRequest, CreateClinicWaitlistEntryRequest, CreateReferralRequest,
+    DeclineReferralRequest, OfferNextClinicWaitlistEntryRequest, PromoteClinicWaitlistEntryRequest,
+    ReferralListItem, ReferralListQuery, ReferralSlaDashboard, ReferralSlaState,
+    ScheduleReferralAppointmentRequest,
 };
 use uuid::Uuid;
 
@@ -182,6 +183,36 @@ pub async fn complete_referral(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/v2/referrals/{id}/schedule",
+    operation_id = "postReferralSchedule",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Referral id")),
+    request_body = ScheduleReferralAppointmentRequest,
+    responses(
+        (status = 200, description = "Referral scheduled to appointment", body = ObjectResponse<ReferralListItem>),
+        (status = 400, description = "Invalid appointment request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Referral not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn schedule_referral_appointment(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ScheduleReferralAppointmentRequest>,
+) -> Result<Json<ObjectResponse<ReferralListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .referrals_service()
+            .schedule_referral_appointment(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
     get,
     path = "/api/v2/referrals/{id}/sla-state",
     operation_id = "getReferralSlaState",
@@ -310,6 +341,66 @@ pub async fn offer_next_clinic_waitlist_entry(
         state
             .referrals_service()
             .offer_next_clinic_waitlist_entry(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/referrals/clinic-waitlist/{id}/promote",
+    operation_id = "postClinicWaitlistPromote",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinic waitlist entry id")),
+    request_body = PromoteClinicWaitlistEntryRequest,
+    responses(
+        (status = 200, description = "Clinic waitlist entry promoted to appointment", body = ObjectResponse<ClinicWaitlistEntryListItem>),
+        (status = 400, description = "Invalid promotion request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinic waitlist entry not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn promote_clinic_waitlist_entry(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<PromoteClinicWaitlistEntryRequest>,
+) -> Result<Json<ObjectResponse<ClinicWaitlistEntryListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .referrals_service()
+            .promote_clinic_waitlist_entry(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/referrals/clinic-waitlist/{id}/cancel",
+    operation_id = "postClinicWaitlistCancel",
+    tag = "referrals",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Clinic waitlist entry id")),
+    request_body = CancelClinicWaitlistEntryRequest,
+    responses(
+        (status = 200, description = "Clinic waitlist entry cancelled", body = ObjectResponse<ClinicWaitlistEntryListItem>),
+        (status = 400, description = "Invalid cancellation request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Clinic waitlist entry not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn cancel_clinic_waitlist_entry(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CancelClinicWaitlistEntryRequest>,
+) -> Result<Json<ObjectResponse<ClinicWaitlistEntryListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .referrals_service()
+            .cancel_clinic_waitlist_entry(&user, id, payload)
             .await?,
     ))
 }

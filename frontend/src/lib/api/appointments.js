@@ -1,7 +1,7 @@
 import { apiClient, handleApiError } from '../api-client';
 import { handleV2ApiError } from './v2/errors';
 import { isRustV2ApiMode } from './v2/runtime';
-import { v2Api } from './v2/client';
+import { v2Api, v2Request } from './v2/client';
 
 const DEFAULT_APPOINTMENT_TYPES = [
   {
@@ -14,6 +14,21 @@ const DEFAULT_APPOINTMENT_TYPES = [
 ];
 
 const appointmentCursorCache = new Map();
+
+function adaptV2AppointmentType(type) {
+  if (!type) {
+    return type;
+  }
+  return {
+    id: type.id,
+    name: type.name,
+    code: type.code,
+    duration_minutes: type.duration_minutes ?? type.default_duration_minutes ?? 30,
+    default_duration_minutes: type.default_duration_minutes ?? type.duration_minutes ?? 30,
+    is_active: Boolean(type.is_active ?? true),
+    created_at: type.created_at,
+  };
+}
 
 function rethrowAbortError(error) {
   if (error?.name === 'AbortError') {
@@ -105,11 +120,24 @@ function normalizeV2AppointmentPayload(data = {}) {
   const patientId = data.patient_id || data.patient;
   const startsAt = data.starts_at || data.start_time || data.start;
   const endsAt = data.ends_at || data.end_time || data.end;
-  return {
+  const payload = {
     patient_id: patientId,
     starts_at: startsAt,
     ends_at: endsAt,
   };
+  const optionalFields = {
+    clinic_id: data.clinic_id || data.clinic,
+    clinic_session_id: data.clinic_session_id || data.clinic_session || data.session_id,
+    appointment_type_id: data.appointment_type_id || data.appointment_type,
+    practitioner_user_id: data.practitioner_user_id || data.practitioner,
+    overbook_reason: data.overbook_reason,
+  };
+  for (const [key, value] of Object.entries(optionalFields)) {
+    if (value !== undefined && value !== null && value !== '') {
+      payload[key] = value;
+    }
+  }
+  return payload;
 }
 
 function adaptV2Appointment(appointment) {
@@ -123,6 +151,15 @@ function adaptV2Appointment(appointment) {
     id: appointment.id,
     patient: appointment.patient_id,
     patient_id: appointment.patient_id,
+    ...(appointment.clinic_id ? { clinic_id: appointment.clinic_id } : {}),
+    ...(appointment.clinic_session_id ? { clinic_session_id: appointment.clinic_session_id } : {}),
+    ...(appointment.appointment_type_id ? { appointment_type_id: appointment.appointment_type_id } : {}),
+    ...(appointment.practitioner_user_id
+      ? {
+          practitioner: appointment.practitioner_user_id,
+          practitioner_user_id: appointment.practitioner_user_id,
+        }
+      : {}),
     patient_name: appointment.patient_display_name,
     patient_identifier: appointment.patient_code,
     patient_mrn: appointment.patient_code,
@@ -139,10 +176,23 @@ function adaptV2Appointment(appointment) {
     end_time: appointment.ends_at,
     status: mapV2AppointmentStatus(appointment.status),
     v2_status: appointment.status,
-    appointment_type_name: 'General',
-    appointment_type_details: DEFAULT_APPOINTMENT_TYPES[0],
+    appointment_type_name: appointment.appointment_type_name || 'General',
+    appointment_type_details: appointment.appointment_type_id
+      ? {
+          id: appointment.appointment_type_id,
+          name: appointment.appointment_type_name || 'Appointment',
+          code: appointment.appointment_type_id,
+          duration_minutes: 30,
+          is_active: true,
+        }
+      : DEFAULT_APPOINTMENT_TYPES[0],
     comment: '',
     description: '',
+    ...(appointment.cancellation_reason
+      ? { cancellation_reason: appointment.cancellation_reason }
+      : {}),
+    ...(appointment.overbook_reason ? { overbook_reason: appointment.overbook_reason } : {}),
+    ...(appointment.series_id ? { series_id: appointment.series_id } : {}),
     created_at: appointment.created_at,
   };
 }
@@ -601,10 +651,17 @@ export const appointmentsApi = {
   cancelAppointment: async (id, reason, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const response = await v2Api.postAppointmentCancel(
-          { id },
-          { signal: options.signal },
-        );
+        const normalizedReason = String(reason || '').trim();
+        if (!normalizedReason) {
+          throw unsupportedInRustV2('Cancellation reason is required.');
+        }
+        const response = await v2Request({
+          method: 'POST',
+          path: '/api/v2/appointments/{id}/cancel',
+          pathParams: { id },
+          body: { reason: normalizedReason },
+          signal: options.signal,
+        });
         return adaptV2Appointment(response?.data);
       }
 
@@ -775,7 +832,8 @@ export const appointmentsApi = {
   getAppointmentTypes: async (_options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return DEFAULT_APPOINTMENT_TYPES;
+        const response = await v2Api.getAppointmentTypes({ query: { limit: 100 } });
+        return (response?.data || []).map(adaptV2AppointmentType);
       }
 
       return await apiClient.get('/appointments/types/');
@@ -795,7 +853,8 @@ export const appointmentsApi = {
   getAppointmentType: async (id, _options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return DEFAULT_APPOINTMENT_TYPES.find((type) => type.id === id) || null;
+        const response = await v2Api.getAppointmentTypes({ query: { limit: 100 } });
+        return (response?.data || []).map(adaptV2AppointmentType).find((type) => type.id === id) || null;
       }
 
       return await apiClient.get(`/appointments/types/${id}/`);

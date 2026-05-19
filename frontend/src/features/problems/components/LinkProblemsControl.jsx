@@ -19,7 +19,6 @@ import {
   usePatientProblems,
   useProblemLinks,
 } from '../hooks';
-import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 /**
  * LinkProblemsControl
@@ -65,24 +64,10 @@ export default function LinkProblemsControl({
   const { data: links = [] } = useProblemLinks(sourceFilters || {});
   const createLink = useCreateProblemLink();
   const deleteLink = useDeleteProblemLink();
-  const problemArtifactLinksAvailable = !isRustV2ApiMode();
 
   const linkedProblemIds = new Set(links.map((l) => l.problem));
 
   if (!sourcePayload || !patientId) return null;
-
-  if (!problemArtifactLinksAvailable) {
-    return (
-      <div className={cn('rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground', className)}>
-        <p className="font-mono text-xs uppercase tracking-wide">
-          Rust V2 problem context
-        </p>
-        <p className="mt-1">
-          Problem artifact linking is not available in Rust V2 mode yet. Existing problems remain available in the Patient Chronicle problem list.
-        </p>
-      </div>
-    );
-  }
 
   const linkProblem = async (problemId) => {
     try {

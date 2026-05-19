@@ -208,3 +208,19 @@ pub(super) fn validate_optional_text(value: Option<&str>, max_len: usize) -> Res
     }
     Ok(())
 }
+
+pub(super) fn normalize_required_text(
+    value: Option<String>,
+    field: &'static str,
+    max_len: usize,
+) -> Result<String, ApiError> {
+    let value = value.unwrap_or_default();
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::bad_request(field, "Text value is required."));
+    }
+    if trimmed.chars().count() > max_len {
+        return Err(ApiError::bad_request(field, "Text value is too long."));
+    }
+    Ok(trimmed.to_owned())
+}

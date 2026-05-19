@@ -1,15 +1,16 @@
 use chrono::{DateTime, Utc};
 use hms_domain::inventory::{
-    InventoryItemStockLocationItem, RequisitionStatus, StockBatchListItem, StockMovementListItem,
+    InventoryItemStockLocationItem, RequisitionStatus, StandingOrderListItem, StandingOrderStatus,
+    StockBatchListItem, StockCheckQueueItem, StockCheckQueueStatus, StockMovementListItem,
     StockMovementType, StockRequisitionListItem, StockTransferListItem, StorageLocationStockItem,
-    TransferStatus,
+    SupplyRequestDispenseResult, TransferStatus,
 };
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::{
-    apply_cursor, insert_movement, InventoryCursor, NewStockBatch, NewStockRequisition,
-    NewStockTransfer, StockBatchFilters,
+    apply_cursor, apply_stock_delta_tx, insert_movement, InventoryCursor, NewStandingOrder,
+    NewStockBatch, NewStockRequisition, NewStockTransfer, StockBatchFilters, SupplyDispenseLine,
 };
 use crate::codec;
 use crate::PgPool;
@@ -82,6 +83,34 @@ struct StorageLocationStockRow {
     batch_count: i64,
     earliest_expiry: Option<chrono::NaiveDate>,
     last_received_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct StandingOrderRow {
+    id: Uuid,
+    requesting_location_id: Uuid,
+    frequency: String,
+    status: String,
+    next_run_on: chrono::NaiveDate,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct SupplyDispenseRow {
+    id: Uuid,
+    requisition_id: Uuid,
+    status: String,
+    line_count: i64,
+    dispensed_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct StockCheckQueueRow {
+    id: Uuid,
+    location_id: Uuid,
+    status: String,
+    reason: String,
+    created_at: DateTime<Utc>,
 }
 
 pub async fn list_storage_location_stock(
@@ -533,6 +562,231 @@ pub async fn cancel_requisition(
     fetch_requisition_by_id(pool, facility_id, requisition_id).await
 }
 
+pub async fn create_standing_order(
+    pool: &PgPool,
+    standing_order: NewStandingOrder,
+) -> anyhow::Result<StandingOrderListItem> {
+    sqlx::query(
+        r#"
+        INSERT INTO inventory_standing_orders (
+            id, facility_id, requesting_location_id, frequency, status, next_run_on, created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+    )
+    .bind(standing_order.id)
+    .bind(standing_order.facility_id)
+    .bind(standing_order.requesting_location_id)
+    .bind(codec::encode(standing_order.frequency)?)
+    .bind(codec::encode(StandingOrderStatus::Active)?)
+    .bind(standing_order.next_run_on)
+    .bind(standing_order.actor_user_id)
+    .execute(pool)
+    .await?;
+    fetch_standing_order_by_id(pool, standing_order.facility_id, standing_order.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created standing order was not found"))
+}
+
+pub async fn generate_draft_requisition_from_standing_order(
+    pool: &PgPool,
+    facility_id: Uuid,
+    standing_order_id: Uuid,
+    actor_user_id: Uuid,
+) -> anyhow::Result<StockRequisitionListItem> {
+    let standing_order = fetch_standing_order_by_id(pool, facility_id, standing_order_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("standing order was not found"))?;
+    if standing_order.status != StandingOrderStatus::Active {
+        anyhow::bail!("standing order must be active");
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO stock_requisitions (
+            id, facility_id, requesting_location_id, status, created_by_user_id, source_type, source_id
+        )
+        VALUES ($1, $2, $3, $4, $5, 'standing_order', $6)
+        "#,
+    )
+    .bind(id)
+    .bind(facility_id)
+    .bind(standing_order.requesting_location_id)
+    .bind(codec::encode(RequisitionStatus::Requested)?)
+    .bind(actor_user_id)
+    .bind(standing_order_id)
+    .execute(pool)
+    .await?;
+    fetch_requisition_by_id(pool, facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("generated requisition was not found"))
+}
+
+pub async fn dispense_supply_request(
+    pool: &PgPool,
+    facility_id: Uuid,
+    requisition_id: Uuid,
+    lines: Vec<SupplyDispenseLine>,
+    actor_user_id: Uuid,
+) -> anyhow::Result<SupplyRequestDispenseResult> {
+    if lines.is_empty() {
+        anyhow::bail!("at least one supply dispense line is required");
+    }
+    let mut tx = pool.begin().await?;
+    let status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM stock_requisitions WHERE facility_id = $1 AND id = $2 FOR UPDATE",
+    )
+    .bind(facility_id)
+    .bind(requisition_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("requisition was not found"))?;
+    let status: RequisitionStatus = codec::decode(&status)?;
+    if !matches!(
+        status,
+        RequisitionStatus::Requested
+            | RequisitionStatus::Pending
+            | RequisitionStatus::Approved
+            | RequisitionStatus::Fulfilled
+    ) {
+        anyhow::bail!("requisition cannot be dispensed from its current state");
+    }
+    for line in &lines {
+        if line.quantity <= 0 {
+            anyhow::bail!("supply dispense quantity must be positive");
+        }
+        apply_stock_delta_tx(
+            &mut tx,
+            facility_id,
+            line.item_id,
+            line.location_id,
+            -line.quantity,
+            "supply_request_dispense",
+            actor_user_id,
+        )
+        .await?;
+    }
+    sqlx::query("UPDATE stock_requisitions SET status = $3 WHERE facility_id = $1 AND id = $2")
+        .bind(facility_id)
+        .bind(requisition_id)
+        .bind(codec::encode(RequisitionStatus::Fulfilled)?)
+        .execute(&mut *tx)
+        .await?;
+
+    let dispense_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO supply_request_dispenses (
+            id, facility_id, requisition_id, status, line_count, dispensed_by_user_id
+        )
+        VALUES ($1, $2, $3, 'dispensed', $4, $5)
+        "#,
+    )
+    .bind(dispense_id)
+    .bind(facility_id)
+    .bind(requisition_id)
+    .bind(lines.len() as i64)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    fetch_supply_dispense_by_id(pool, facility_id, dispense_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created supply dispense was not found"))
+}
+
+pub async fn enqueue_stock_check(
+    pool: &PgPool,
+    facility_id: Uuid,
+    location_id: Uuid,
+    reason: String,
+    actor_user_id: Uuid,
+) -> anyhow::Result<StockCheckQueueItem> {
+    if reason.trim().is_empty() {
+        anyhow::bail!("stock check reason is required");
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO stock_check_queue (
+            id, facility_id, location_id, status, reason, created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(id)
+    .bind(facility_id)
+    .bind(location_id)
+    .bind(codec::encode(StockCheckQueueStatus::Queued)?)
+    .bind(reason.trim())
+    .bind(actor_user_id)
+    .execute(pool)
+    .await?;
+    fetch_stock_check_by_id(pool, facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created stock check was not found"))
+}
+
+pub async fn transition_stock_check(
+    pool: &PgPool,
+    facility_id: Uuid,
+    stock_check_id: Uuid,
+    target_status: StockCheckQueueStatus,
+    actor_user_id: Uuid,
+) -> anyhow::Result<Option<StockCheckQueueItem>> {
+    match target_status {
+        StockCheckQueueStatus::Queued => {
+            anyhow::bail!("stock check cannot transition back to queued")
+        }
+        StockCheckQueueStatus::InProgress => {
+            sqlx::query(
+                "UPDATE stock_check_queue
+                 SET status = $4, started_by_user_id = $5, started_at = now()
+                 WHERE facility_id = $1 AND id = $2 AND status = $3",
+            )
+            .bind(facility_id)
+            .bind(stock_check_id)
+            .bind(codec::encode(StockCheckQueueStatus::Queued)?)
+            .bind(codec::encode(target_status)?)
+            .bind(actor_user_id)
+            .execute(pool)
+            .await?;
+        }
+        StockCheckQueueStatus::Completed => {
+            sqlx::query(
+                "UPDATE stock_check_queue
+                 SET status = $4, completed_by_user_id = $5, completed_at = now()
+                 WHERE facility_id = $1 AND id = $2 AND status = $3",
+            )
+            .bind(facility_id)
+            .bind(stock_check_id)
+            .bind(codec::encode(StockCheckQueueStatus::InProgress)?)
+            .bind(codec::encode(target_status)?)
+            .bind(actor_user_id)
+            .execute(pool)
+            .await?;
+        }
+        StockCheckQueueStatus::Cancelled => {
+            sqlx::query(
+                "UPDATE stock_check_queue
+                 SET status = $4, cancelled_by_user_id = $5, cancelled_at = now()
+                 WHERE facility_id = $1 AND id = $2 AND status = ANY($3)",
+            )
+            .bind(facility_id)
+            .bind(stock_check_id)
+            .bind(codec::encode_slice(&[
+                StockCheckQueueStatus::Queued,
+                StockCheckQueueStatus::InProgress,
+            ])?)
+            .bind(codec::encode(target_status)?)
+            .bind(actor_user_id)
+            .execute(pool)
+            .await?;
+        }
+    }
+    fetch_stock_check_by_id(pool, facility_id, stock_check_id).await
+}
+
 fn apply_batch_filters(query: &mut QueryBuilder<Postgres>, filters: &StockBatchFilters) {
     if filters.expired == Some(true) {
         query.push(
@@ -606,6 +860,68 @@ async fn fetch_requisition_by_id(
         .await?
         .map(requisition_from_row)
         .transpose()
+}
+
+async fn fetch_standing_order_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<StandingOrderListItem>> {
+    sqlx::query_as::<_, StandingOrderRow>(
+        r#"
+        SELECT id, requesting_location_id, frequency, status, next_run_on, created_at
+        FROM inventory_standing_orders
+        WHERE facility_id = $1 AND id = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .map(standing_order_from_row)
+    .transpose()
+}
+
+async fn fetch_supply_dispense_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<SupplyRequestDispenseResult>> {
+    let row = sqlx::query_as::<_, SupplyDispenseRow>(
+        r#"
+        SELECT id, requisition_id, status, line_count, dispensed_at
+        FROM supply_request_dispenses
+        WHERE facility_id = $1 AND id = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(supply_dispense_from_row))
+}
+
+async fn fetch_stock_check_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<StockCheckQueueItem>> {
+    sqlx::query_as::<_, StockCheckQueueRow>(
+        r#"
+        SELECT id, location_id, status, reason, created_at
+        FROM stock_check_queue
+        WHERE facility_id = $1 AND id = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .map(stock_check_from_row)
+    .transpose()
 }
 
 async fn transition_requisition_status(
@@ -778,6 +1094,37 @@ fn requisition_from_row(row: RequisitionRow) -> anyhow::Result<StockRequisitionL
         rejection_reason: row.rejection_reason,
         rejected_at: row.rejected_at,
         cancelled_at: row.cancelled_at,
+        created_at: row.created_at,
+    })
+}
+
+fn standing_order_from_row(row: StandingOrderRow) -> anyhow::Result<StandingOrderListItem> {
+    Ok(StandingOrderListItem {
+        id: row.id,
+        requesting_location_id: row.requesting_location_id,
+        frequency: codec::decode(&row.frequency)?,
+        status: codec::decode(&row.status)?,
+        next_run_on: row.next_run_on,
+        created_at: row.created_at,
+    })
+}
+
+fn supply_dispense_from_row(row: SupplyDispenseRow) -> SupplyRequestDispenseResult {
+    SupplyRequestDispenseResult {
+        id: row.id,
+        requisition_id: row.requisition_id,
+        status: row.status,
+        line_count: row.line_count,
+        dispensed_at: row.dispensed_at,
+    }
+}
+
+fn stock_check_from_row(row: StockCheckQueueRow) -> anyhow::Result<StockCheckQueueItem> {
+    Ok(StockCheckQueueItem {
+        id: row.id,
+        location_id: row.location_id,
+        status: codec::decode(&row.status)?,
+        reason: row.reason,
         created_at: row.created_at,
     })
 }

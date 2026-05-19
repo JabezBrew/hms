@@ -47,6 +47,8 @@ pub enum PermissionCode {
     PatientCreate,
     #[serde(rename = "patient.update")]
     PatientUpdate,
+    #[serde(rename = "patient.break_glass.invoke")]
+    PatientBreakGlassInvoke,
     #[serde(rename = "appointment.view")]
     AppointmentView,
     #[serde(rename = "appointment.manage")]

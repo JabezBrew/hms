@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use hms_db::ward::{BedUpdate, NewBed};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
@@ -177,5 +178,25 @@ impl BedManagementService {
         .map_err(|_| ApiError::conflict("bed_create_failed", "Bed could not be created."))?;
 
         Ok(object(bed))
+    }
+
+    pub async fn release_due_cleaning_beds(
+        &self,
+        now: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<u64, ApiError> {
+        hms_db::ward::release_cleaned_beds(
+            self.state.db_pool(),
+            self.state.facility_id(),
+            now,
+            limit,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bed_cleaning_release_failed",
+                "Cleaned beds could not be released.",
+            )
+        })
     }
 }

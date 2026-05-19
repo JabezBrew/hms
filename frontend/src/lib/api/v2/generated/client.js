@@ -31,6 +31,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "deleteClinicalProblemLink": {
+    "operationId": "deleteClinicalProblemLink",
+    "method": "DELETE",
+    "path": "/api/v2/clinical/problem-links/{id}",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "deleteClinicById": {
     "operationId": "deleteClinicById",
     "method": "DELETE",
@@ -303,10 +313,29 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getAppointmentTypes": {
+    "operationId": "getAppointmentTypes",
+    "method": "GET",
+    "path": "/api/v2/appointment-types",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
   "getAuthMe": {
     "operationId": "getAuthMe",
     "method": "GET",
     "path": "/api/v2/auth/me",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "getAuthMfaStatus": {
+    "operationId": "getAuthMfaStatus",
+    "method": "GET",
+    "path": "/api/v2/auth/mfa/status",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": false
@@ -546,6 +575,19 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getClinicalProblemLinks": {
+    "operationId": "getClinicalProblemLinks",
+    "method": "GET",
+    "path": "/api/v2/clinical/problem-links",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "clinical_note_id",
+      "prescription_id",
+      "lab_order_id",
+      "encounter_id"
+    ],
+    "hasBody": false
+  },
   "getClinicById": {
     "operationId": "getClinicById",
     "method": "GET",
@@ -579,6 +621,17 @@ export const operations = {
     "operationId": "getConsents",
     "method": "GET",
     "path": "/api/v2/consents",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getControlledSubstanceDiscrepancies": {
+    "operationId": "getControlledSubstanceDiscrepancies",
+    "method": "GET",
+    "path": "/api/v2/pharmacy/controlled-substances/discrepancies",
     "pathParamNames": [],
     "queryParamNames": [
       "cursor",
@@ -852,6 +905,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getLaboratoryOrderClinicalContext": {
+    "operationId": "getLaboratoryOrderClinicalContext",
+    "method": "GET",
+    "path": "/api/v2/laboratory/orders/{order_id}/clinical-context",
+    "pathParamNames": [
+      "order_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
   "getLaboratoryOrders": {
     "operationId": "getLaboratoryOrders",
     "method": "GET",
@@ -984,6 +1047,16 @@ export const operations = {
       "limit",
       "patient_id"
     ],
+    "hasBody": false
+  },
+  "getNhisClaimArState": {
+    "operationId": "getNhisClaimArState",
+    "method": "GET",
+    "path": "/api/v2/nhis/claims/{id}/ar-state",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getNhisClaimById": {
@@ -1143,6 +1216,16 @@ export const operations = {
       "patient_id",
       "status"
     ],
+    "hasBody": false
+  },
+  "getPatientPharmacyClinicalContext": {
+    "operationId": "getPatientPharmacyClinicalContext",
+    "method": "GET",
+    "path": "/api/v2/patients/{patient_id}/clinical/pharmacy-context",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
     "hasBody": false
   },
   "getPatientPrescriptions": {
@@ -1853,7 +1936,7 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
-    "hasBody": false
+    "hasBody": true
   },
   "postAppointments": {
     "operationId": "postAppointments",
@@ -1903,6 +1986,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAuthRecoveryCodes": {
+    "operationId": "postAuthRecoveryCodes",
+    "method": "POST",
+    "path": "/api/v2/auth/mfa/recovery-codes",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postAuthRefresh": {
     "operationId": "postAuthRefresh",
     "method": "POST",
@@ -1929,11 +2020,73 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postAuthWebauthnAuthenticateOptions": {
+    "operationId": "postAuthWebauthnAuthenticateOptions",
+    "method": "POST",
+    "path": "/api/v2/auth/mfa/webauthn/authenticate/options",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthWebauthnAuthenticateVerify": {
+    "operationId": "postAuthWebauthnAuthenticateVerify",
+    "method": "POST",
+    "path": "/api/v2/auth/mfa/webauthn/authenticate/verify",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthWebauthnRegisterOptions": {
+    "operationId": "postAuthWebauthnRegisterOptions",
+    "method": "POST",
+    "path": "/api/v2/auth/mfa/webauthn/register/options",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postAuthWebauthnRegisterVerify": {
+    "operationId": "postAuthWebauthnRegisterVerify",
+    "method": "POST",
+    "path": "/api/v2/auth/mfa/webauthn/register/verify",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postBillingDischargeClearance": {
+    "operationId": "postBillingDischargeClearance",
+    "method": "POST",
+    "path": "/api/v2/billing/discharge-clearances/{patient_id}",
+    "pathParamNames": [
+      "patient_id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postBillingInvoiceFinalize": {
+    "operationId": "postBillingInvoiceFinalize",
+    "method": "POST",
+    "path": "/api/v2/billing/invoices/{id}/finalize",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postBillingInvoices": {
     "operationId": "postBillingInvoices",
     "method": "POST",
     "path": "/api/v2/billing/invoices",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postBillingPaymentReverse": {
+    "operationId": "postBillingPaymentReverse",
+    "method": "POST",
+    "path": "/api/v2/billing/payments/{id}/reverse",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -1981,6 +2134,14 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postClinicalProblemLinks": {
+    "operationId": "postClinicalProblemLinks",
+    "method": "POST",
+    "path": "/api/v2/clinical/problem-links",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postClinicalProblemStatus": {
     "operationId": "postClinicalProblemStatus",
     "method": "POST",
@@ -2007,11 +2168,31 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postClinicWaitlistCancel": {
+    "operationId": "postClinicWaitlistCancel",
+    "method": "POST",
+    "path": "/api/v2/referrals/clinic-waitlist/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postClinicWaitlistOfferNext": {
     "operationId": "postClinicWaitlistOfferNext",
     "method": "POST",
     "path": "/api/v2/referrals/clinic-waitlist/offer-next",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postClinicWaitlistPromote": {
+    "operationId": "postClinicWaitlistPromote",
+    "method": "POST",
+    "path": "/api/v2/referrals/clinic-waitlist/{id}/promote",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -2051,6 +2232,26 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postDischargeBlockerHold": {
+    "operationId": "postDischargeBlockerHold",
+    "method": "POST",
+    "path": "/api/v2/discharges/{id}/blockers/hold",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postDischargeBlockerOverride": {
+    "operationId": "postDischargeBlockerOverride",
+    "method": "POST",
+    "path": "/api/v2/discharges/{id}/blockers/override",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postDischargeCancel": {
     "operationId": "postDischargeCancel",
     "method": "POST",
@@ -2070,6 +2271,16 @@ export const operations = {
     ],
     "queryParamNames": [],
     "hasBody": false
+  },
+  "postDischargeNursingRelease": {
+    "operationId": "postDischargeNursingRelease",
+    "method": "POST",
+    "path": "/api/v2/discharges/{id}/nursing-release",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
   },
   "postDischarges": {
     "operationId": "postDischarges",
@@ -2168,6 +2379,50 @@ export const operations = {
     "method": "POST",
     "path": "/api/v2/nursing/handoffs",
     "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryCatalogEdit": {
+    "operationId": "postInventoryCatalogEdit",
+    "method": "POST",
+    "path": "/api/v2/inventory/catalog-edits",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryStandingOrderGenerateRequisition": {
+    "operationId": "postInventoryStandingOrderGenerateRequisition",
+    "method": "POST",
+    "path": "/api/v2/inventory/standing-orders/{id}/generate-requisition",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
+  },
+  "postInventoryStandingOrders": {
+    "operationId": "postInventoryStandingOrders",
+    "method": "POST",
+    "path": "/api/v2/inventory/standing-orders",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryStockChecks": {
+    "operationId": "postInventoryStockChecks",
+    "method": "POST",
+    "path": "/api/v2/inventory/stock-checks",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postInventoryStockCheckStatus": {
+    "operationId": "postInventoryStockCheckStatus",
+    "method": "POST",
+    "path": "/api/v2/inventory/stock-checks/{id}/status",
+    "pathParamNames": [
+      "id"
+    ],
     "queryParamNames": [],
     "hasBody": true
   },
@@ -2315,6 +2570,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "postNhisClaimArAdjustment": {
+    "operationId": "postNhisClaimArAdjustment",
+    "method": "POST",
+    "path": "/api/v2/nhis/claims/{id}/ar-adjustments",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postNhisClaims": {
     "operationId": "postNhisClaims",
     "method": "POST",
@@ -2327,6 +2592,14 @@ export const operations = {
     "operationId": "postNhisRemittanceImports",
     "method": "POST",
     "path": "/api/v2/nhis/remittance-imports",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postNhisServiceMappings": {
+    "operationId": "postNhisServiceMappings",
+    "method": "POST",
+    "path": "/api/v2/nhis/service-mappings",
     "pathParamNames": [],
     "queryParamNames": [],
     "hasBody": true
@@ -2396,6 +2669,26 @@ export const operations = {
     ],
     "queryParamNames": [],
     "hasBody": true
+  },
+  "postPatientBreakGlass": {
+    "operationId": "postPatientBreakGlass",
+    "method": "POST",
+    "path": "/api/v2/patients/{id}/break-glass",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postPatientBreakGlassEnd": {
+    "operationId": "postPatientBreakGlassEnd",
+    "method": "POST",
+    "path": "/api/v2/patients/{id}/break-glass/end",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": false
   },
   "postPatientChartEntries": {
     "operationId": "postPatientChartEntries",
@@ -2527,6 +2820,16 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postReferralSchedule": {
+    "operationId": "postReferralSchedule",
+    "method": "POST",
+    "path": "/api/v2/referrals/{id}/schedule",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postSearchOmni": {
     "operationId": "postSearchOmni",
     "method": "POST",
@@ -2562,6 +2865,16 @@ export const operations = {
     ],
     "queryParamNames": [],
     "hasBody": false
+  },
+  "postStockRequisitionDispense": {
+    "operationId": "postStockRequisitionDispense",
+    "method": "POST",
+    "path": "/api/v2/inventory/requisitions/{id}/dispense",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
   },
   "postStockRequisitionFulfill": {
     "operationId": "postStockRequisitionFulfill",
@@ -2796,6 +3109,7 @@ export function createGeneratedClient(request) {
     deleteAdminFeature: createOperation(request, operations.deleteAdminFeature),
     deleteClinicalAllergy: createOperation(request, operations.deleteClinicalAllergy),
     deleteClinicalNoteTemplate: createOperation(request, operations.deleteClinicalNoteTemplate),
+    deleteClinicalProblemLink: createOperation(request, operations.deleteClinicalProblemLink),
     deleteClinicById: createOperation(request, operations.deleteClinicById),
     getAdminAuditEvents: createOperation(request, operations.getAdminAuditEvents),
     getAdminAuthorityAppointments: createOperation(request, operations.getAdminAuthorityAppointments),
@@ -2820,7 +3134,9 @@ export function createGeneratedClient(request) {
     getAdmissionCases: createOperation(request, operations.getAdmissionCases),
     getAppointmentById: createOperation(request, operations.getAppointmentById),
     getAppointments: createOperation(request, operations.getAppointments),
+    getAppointmentTypes: createOperation(request, operations.getAppointmentTypes),
     getAuthMe: createOperation(request, operations.getAuthMe),
+    getAuthMfaStatus: createOperation(request, operations.getAuthMfaStatus),
     getAuthSessions: createOperation(request, operations.getAuthSessions),
     getBillingDashboardSummary: createOperation(request, operations.getBillingDashboardSummary),
     getBillingInvoiceById: createOperation(request, operations.getBillingInvoiceById),
@@ -2844,10 +3160,12 @@ export function createGeneratedClient(request) {
     getClinicalNoteVersions: createOperation(request, operations.getClinicalNoteVersions),
     getClinicalPrescriptionById: createOperation(request, operations.getClinicalPrescriptionById),
     getClinicalProblemById: createOperation(request, operations.getClinicalProblemById),
+    getClinicalProblemLinks: createOperation(request, operations.getClinicalProblemLinks),
     getClinicById: createOperation(request, operations.getClinicById),
     getClinics: createOperation(request, operations.getClinics),
     getClinicWaitlist: createOperation(request, operations.getClinicWaitlist),
     getConsents: createOperation(request, operations.getConsents),
+    getControlledSubstanceDiscrepancies: createOperation(request, operations.getControlledSubstanceDiscrepancies),
     getControlledSubstanceRegister: createOperation(request, operations.getControlledSubstanceRegister),
     getControlledSubstanceRegisterBalanceValidation: createOperation(request, operations.getControlledSubstanceRegisterBalanceValidation),
     getControlledSubstanceRegisterById: createOperation(request, operations.getControlledSubstanceRegisterById),
@@ -2873,6 +3191,7 @@ export function createGeneratedClient(request) {
     getInventoryItemStockMovements: createOperation(request, operations.getInventoryItemStockMovements),
     getInventorySuppliers: createOperation(request, operations.getInventorySuppliers),
     getLaboratoryOrderById: createOperation(request, operations.getLaboratoryOrderById),
+    getLaboratoryOrderClinicalContext: createOperation(request, operations.getLaboratoryOrderClinicalContext),
     getLaboratoryOrders: createOperation(request, operations.getLaboratoryOrders),
     getLaboratoryPanelById: createOperation(request, operations.getLaboratoryPanelById),
     getLaboratoryPanels: createOperation(request, operations.getLaboratoryPanels),
@@ -2886,6 +3205,7 @@ export function createGeneratedClient(request) {
     getMetrics: createOperation(request, operations.getMetrics),
     getMonitoringEvents: createOperation(request, operations.getMonitoringEvents),
     getNhisBatches: createOperation(request, operations.getNhisBatches),
+    getNhisClaimArState: createOperation(request, operations.getNhisClaimArState),
     getNhisClaimById: createOperation(request, operations.getNhisClaimById),
     getNhisClaims: createOperation(request, operations.getNhisClaims),
     getNhisRemittanceImports: createOperation(request, operations.getNhisRemittanceImports),
@@ -2900,6 +3220,7 @@ export function createGeneratedClient(request) {
     getPatientChroniclePrint: createOperation(request, operations.getPatientChroniclePrint),
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
+    getPatientPharmacyClinicalContext: createOperation(request, operations.getPatientPharmacyClinicalContext),
     getPatientPrescriptions: createOperation(request, operations.getPatientPrescriptions),
     getPatientProblems: createOperation(request, operations.getPatientProblems),
     getPatients: createOperation(request, operations.getPatients),
@@ -2975,25 +3296,39 @@ export function createGeneratedClient(request) {
     postAuthPassword: createOperation(request, operations.postAuthPassword),
     postAuthPasswordResetComplete: createOperation(request, operations.postAuthPasswordResetComplete),
     postAuthPasswordResetRequest: createOperation(request, operations.postAuthPasswordResetRequest),
+    postAuthRecoveryCodes: createOperation(request, operations.postAuthRecoveryCodes),
     postAuthRefresh: createOperation(request, operations.postAuthRefresh),
     postAuthSessionRevoke: createOperation(request, operations.postAuthSessionRevoke),
     postAuthSessionsRevokeAll: createOperation(request, operations.postAuthSessionsRevokeAll),
+    postAuthWebauthnAuthenticateOptions: createOperation(request, operations.postAuthWebauthnAuthenticateOptions),
+    postAuthWebauthnAuthenticateVerify: createOperation(request, operations.postAuthWebauthnAuthenticateVerify),
+    postAuthWebauthnRegisterOptions: createOperation(request, operations.postAuthWebauthnRegisterOptions),
+    postAuthWebauthnRegisterVerify: createOperation(request, operations.postAuthWebauthnRegisterVerify),
+    postBillingDischargeClearance: createOperation(request, operations.postBillingDischargeClearance),
+    postBillingInvoiceFinalize: createOperation(request, operations.postBillingInvoiceFinalize),
     postBillingInvoices: createOperation(request, operations.postBillingInvoices),
+    postBillingPaymentReverse: createOperation(request, operations.postBillingPaymentReverse),
     postBillingPayments: createOperation(request, operations.postBillingPayments),
     postCashSessionClose: createOperation(request, operations.postCashSessionClose),
     postCashSessions: createOperation(request, operations.postCashSessions),
     postClinicalNoteTemplates: createOperation(request, operations.postClinicalNoteTemplates),
     postClinicalNoteVersions: createOperation(request, operations.postClinicalNoteVersions),
+    postClinicalProblemLinks: createOperation(request, operations.postClinicalProblemLinks),
     postClinicalProblemStatus: createOperation(request, operations.postClinicalProblemStatus),
     postClinics: createOperation(request, operations.postClinics),
     postClinicWaitlist: createOperation(request, operations.postClinicWaitlist),
+    postClinicWaitlistCancel: createOperation(request, operations.postClinicWaitlistCancel),
     postClinicWaitlistOfferNext: createOperation(request, operations.postClinicWaitlistOfferNext),
+    postClinicWaitlistPromote: createOperation(request, operations.postClinicWaitlistPromote),
     postConsentRevoke: createOperation(request, operations.postConsentRevoke),
     postConsents: createOperation(request, operations.postConsents),
     postControlledSubstanceRegister: createOperation(request, operations.postControlledSubstanceRegister),
     postControlledSubstanceRegisterCounts: createOperation(request, operations.postControlledSubstanceRegisterCounts),
+    postDischargeBlockerHold: createOperation(request, operations.postDischargeBlockerHold),
+    postDischargeBlockerOverride: createOperation(request, operations.postDischargeBlockerOverride),
     postDischargeCancel: createOperation(request, operations.postDischargeCancel),
     postDischargeComplete: createOperation(request, operations.postDischargeComplete),
+    postDischargeNursingRelease: createOperation(request, operations.postDischargeNursingRelease),
     postDischarges: createOperation(request, operations.postDischarges),
     postEncounterCancel: createOperation(request, operations.postEncounterCancel),
     postEncounterCareTeam: createOperation(request, operations.postEncounterCareTeam),
@@ -3005,6 +3340,11 @@ export function createGeneratedClient(request) {
     postGoodsReceivedNotes: createOperation(request, operations.postGoodsReceivedNotes),
     postHandoffComplete: createOperation(request, operations.postHandoffComplete),
     postHandoffs: createOperation(request, operations.postHandoffs),
+    postInventoryCatalogEdit: createOperation(request, operations.postInventoryCatalogEdit),
+    postInventoryStandingOrderGenerateRequisition: createOperation(request, operations.postInventoryStandingOrderGenerateRequisition),
+    postInventoryStandingOrders: createOperation(request, operations.postInventoryStandingOrders),
+    postInventoryStockChecks: createOperation(request, operations.postInventoryStockChecks),
+    postInventoryStockCheckStatus: createOperation(request, operations.postInventoryStockCheckStatus),
     postLaboratoryOrderCancel: createOperation(request, operations.postLaboratoryOrderCancel),
     postLaboratoryOrderCollect: createOperation(request, operations.postLaboratoryOrderCollect),
     postLaboratoryOrders: createOperation(request, operations.postLaboratoryOrders),
@@ -3021,8 +3361,10 @@ export function createGeneratedClient(request) {
     postMonitoringEvents: createOperation(request, operations.postMonitoringEvents),
     postNhisBatches: createOperation(request, operations.postNhisBatches),
     postNhisBatchExport: createOperation(request, operations.postNhisBatchExport),
+    postNhisClaimArAdjustment: createOperation(request, operations.postNhisClaimArAdjustment),
     postNhisClaims: createOperation(request, operations.postNhisClaims),
     postNhisRemittanceImports: createOperation(request, operations.postNhisRemittanceImports),
+    postNhisServiceMappings: createOperation(request, operations.postNhisServiceMappings),
     postNotificationRead: createOperation(request, operations.postNotificationRead),
     postNursingAlertAcknowledge: createOperation(request, operations.postNursingAlertAcknowledge),
     postNursingAlerts: createOperation(request, operations.postNursingAlerts),
@@ -3030,6 +3372,8 @@ export function createGeneratedClient(request) {
     postNursingTaskComplete: createOperation(request, operations.postNursingTaskComplete),
     postNursingTasks: createOperation(request, operations.postNursingTasks),
     postPatientAllergies: createOperation(request, operations.postPatientAllergies),
+    postPatientBreakGlass: createOperation(request, operations.postPatientBreakGlass),
+    postPatientBreakGlassEnd: createOperation(request, operations.postPatientBreakGlassEnd),
     postPatientChartEntries: createOperation(request, operations.postPatientChartEntries),
     postPatientClinicalNotes: createOperation(request, operations.postPatientClinicalNotes),
     postPatientPrescriptions: createOperation(request, operations.postPatientPrescriptions),
@@ -3044,10 +3388,12 @@ export function createGeneratedClient(request) {
     postReferralComplete: createOperation(request, operations.postReferralComplete),
     postReferralDecline: createOperation(request, operations.postReferralDecline),
     postReferrals: createOperation(request, operations.postReferrals),
+    postReferralSchedule: createOperation(request, operations.postReferralSchedule),
     postSearchOmni: createOperation(request, operations.postSearchOmni),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),
     postStockRequisitionCancel: createOperation(request, operations.postStockRequisitionCancel),
+    postStockRequisitionDispense: createOperation(request, operations.postStockRequisitionDispense),
     postStockRequisitionFulfill: createOperation(request, operations.postStockRequisitionFulfill),
     postStockRequisitionReject: createOperation(request, operations.postStockRequisitionReject),
     postStockRequisitions: createOperation(request, operations.postStockRequisitions),

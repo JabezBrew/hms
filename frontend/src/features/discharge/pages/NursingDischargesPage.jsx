@@ -3,7 +3,7 @@ import format from 'date-fns/format'
 import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check-big.js'
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js'
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,9 @@ function getBillingBlocker(item) {
 }
 
 function getNursingBlocker(item) {
-  return getBlockingTasks(item).find((task) => task.task_type === 'nursing_finalization') || null
+  return getBlockingTasks(item).find((task) =>
+    task.task_type === 'nursing_release' || task.task_type === 'nursing_finalization'
+  ) || null
 }
 
 function formatDateTime(value) {
@@ -37,6 +39,7 @@ function formatDateTime(value) {
 }
 
 export default function NursingDischargesPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedCaseId = searchParams.get('case')
   const [acknowledgedTaskIds, setAcknowledgedTaskIds] = useState({})
@@ -173,8 +176,26 @@ export default function NursingDischargesPage() {
                     <div className="space-y-2">
                       {getBlockingTasks(activeCase).map((task) => (
                           <div key={task.id || task.task_type} className="flex items-center justify-between gap-3 text-sm">
-                            <span>{task.task_type.replace(/_/g, ' ')}</span>
-                            <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
+                            <div>
+                              <span>{task.task_type.replace(/_/g, ' ')}</span>
+                              {(task.hold_reason || task.override_reason) && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {task.override_reason || task.hold_reason}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {task.workflow_path && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => navigate(task.workflow_path)}
+                                >
+                                  Open source
+                                </Button>
+                              )}
+                              <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
+                            </div>
                           </div>
                         ))}
                     </div>
@@ -249,6 +270,15 @@ export default function NursingDischargesPage() {
                     <p className="text-sm text-muted-foreground">
                       Billing clearance must be completed before nursing can finalize ward release.
                     </p>
+                  )}
+                  {activeCase.schedule_follow_up_action?.path && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => navigate(activeCase.schedule_follow_up_action.path)}
+                    >
+                      {activeCase.schedule_follow_up_action.label || 'Schedule follow-up'}
+                    </Button>
                   )}
                 </>
               )}

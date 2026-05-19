@@ -38,9 +38,40 @@ describe('Rust V2 discharge bridge', () => {
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
               patient_display_name: 'Ama Mensah',
+              ward_id: 'ward-1',
+              ward_name: 'Medical Ward',
               status: 'requested',
               requested_at: '2026-05-12T09:00:00Z',
               discharged_at: null,
+              invoice_summary: {
+                invoice_count: 1,
+                patient_balance_due: '120.00',
+              },
+              blockers: [
+                {
+                  blocker_type: 'discharge_summary',
+                  status: 'completed',
+                  blocking: true,
+                  workflow_path: '/patients/patient-1/chronicle?panel=clinical-notes&type=discharge_summary',
+                },
+                {
+                  blocker_type: 'nursing_release',
+                  status: 'pending',
+                  blocking: true,
+                  workflow_path: '/nursing/discharges?case=discharge-1',
+                },
+                {
+                  blocker_type: 'billing_clearance',
+                  status: 'held',
+                  blocking: true,
+                  hold_reason: 'Awaiting insurer response',
+                  workflow_path: '/billing/discharges?case=discharge-1',
+                },
+              ],
+              schedule_follow_up_action: {
+                label: 'Schedule follow-up',
+                path: '/appointments/create?patient=patient-1',
+              },
             },
           ],
           page: { limit: 25, has_next: false, next_cursor: null },
@@ -74,13 +105,26 @@ describe('Rust V2 discharge bridge', () => {
         patient: 'patient-1',
         patient_name: 'Ama Mensah',
         medical_record_number: 'MRN-001',
+        ward_name: 'Medical Ward',
         status: 'ready_for_finalization',
         medical_ready_at: '2026-05-12T09:00:00Z',
-        blockers: expect.arrayContaining([
-          expect.objectContaining({ task_type: 'billing_clearance', status: 'completed' }),
-          expect.objectContaining({ task_type: 'nursing_finalization', status: 'pending' }),
-        ]),
-        invoice_summary: expect.objectContaining({ patient_balance_due: '0.00' }),
+        blockers: [
+          expect.objectContaining({
+            task_type: 'discharge_summary',
+            status: 'completed',
+            workflow_path: '/patients/patient-1/chronicle?panel=clinical-notes&type=discharge_summary',
+          }),
+          expect.objectContaining({ task_type: 'nursing_release', status: 'pending' }),
+          expect.objectContaining({
+            task_type: 'billing_clearance',
+            status: 'held',
+            hold_reason: 'Awaiting insurer response',
+          }),
+        ],
+        invoice_summary: expect.objectContaining({ patient_balance_due: '120.00' }),
+        schedule_follow_up_action: expect.objectContaining({
+          path: '/appointments/create?patient=patient-1',
+        }),
       }),
     ]);
   });
@@ -217,9 +261,23 @@ describe('Rust V2 discharge bridge', () => {
               patient_id: 'patient-1',
               patient_code: 'MRN-001',
               patient_display_name: 'Ama Mensah',
+              ward_id: 'ward-1',
+              ward_name: 'Medical Ward',
               status: 'requested',
               requested_at: '2026-05-12T09:00:00Z',
               discharged_at: null,
+              blockers: [
+                {
+                  blocker_type: 'billing_clearance',
+                  status: 'completed',
+                  blocking: true,
+                },
+                {
+                  blocker_type: 'nursing_release',
+                  status: 'pending',
+                  blocking: true,
+                },
+              ],
             },
           ],
           page: { limit: 25, has_next: false, next_cursor: null },
@@ -249,10 +307,10 @@ describe('Rust V2 discharge bridge', () => {
         status: 'completed',
       }),
       expect.objectContaining({
-        id: 'discharge-1:nursing_finalization',
+        id: 'discharge-1:nursing_release',
         discharge_case: 'discharge-1',
         admission_case: 'admission-1',
-        task_type: 'nursing_finalization',
+        task_type: 'nursing_release',
         status: 'pending',
       }),
     ]);

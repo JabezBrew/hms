@@ -26,12 +26,24 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v2/billing/invoices/:id", get(billing::get_invoice))
         .route(
+            "/api/v2/billing/invoices/:id/finalize",
+            axum::routing::post(billing::finalize_invoice),
+        )
+        .route(
             "/api/v2/billing/payments",
             get(billing::list_payments).post(billing::create_payment),
         )
         .route(
+            "/api/v2/billing/payments/:id/reverse",
+            axum::routing::post(billing::reverse_payment),
+        )
+        .route(
             "/api/v2/billing/payments/:id/receipt",
             get(billing::get_receipt_by_payment),
+        )
+        .route(
+            "/api/v2/billing/discharge-clearances/:patient_id",
+            axum::routing::post(billing::record_discharge_clearance),
         )
         .route("/api/v2/billing/receipts", get(billing::list_receipts))
         .route("/api/v2/billing/receipts/:id", get(billing::get_receipt))
@@ -60,6 +72,18 @@ pub fn routes() -> Router<AppState> {
             get(billing::list_claims).post(billing::create_claim),
         )
         .route("/api/v2/nhis/claims/:id", get(billing::get_claim))
+        .route(
+            "/api/v2/nhis/claims/:id/ar-state",
+            get(billing::get_claim_ar_state),
+        )
+        .route(
+            "/api/v2/nhis/claims/:id/ar-adjustments",
+            axum::routing::post(billing::record_claim_ar_adjustment),
+        )
+        .route(
+            "/api/v2/nhis/service-mappings",
+            axum::routing::post(billing::create_nhis_service_mapping),
+        )
         .route(
             "/api/v2/nhis/batches",
             get(billing::list_batches).post(billing::create_batch),

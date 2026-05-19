@@ -1,10 +1,14 @@
-use hms_db::inventory::{NewStockBatch, NewStockRequisition, NewStockTransfer};
+use hms_db::inventory::{
+    NewStandingOrder, NewStockBatch, NewStockRequisition, NewStockTransfer, SupplyDispenseLine,
+};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::inventory::{
-    CreateStockBatchRequest, CreateStockRequisitionRequest, CreateStockTransferRequest,
+    CreateStandingOrderRequest, CreateStockBatchRequest, CreateStockCheckRequest,
+    CreateStockRequisitionRequest, CreateStockTransferRequest, DispenseSupplyRequest,
     InventoryItemStockLocationItem, InventoryListQuery, RejectStockRequisitionRequest,
-    StockBatchListItem, StockBatchListQuery, StockMovementListItem, StockRequisitionListItem,
-    StockTransferListItem, StorageLocationStockItem,
+    StandingOrderListItem, StockBatchListItem, StockBatchListQuery, StockCheckQueueItem,
+    StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
+    StorageLocationStockItem, SupplyRequestDispenseResult, UpdateStockCheckStatusRequest,
 };
 use uuid::Uuid;
 
@@ -450,6 +454,143 @@ impl StockControlService {
                 })?
                 .ok_or_else(requisition_not_found)?;
         Ok(object(requisition))
+    }
+
+    pub async fn create_standing_order(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateStandingOrderRequest,
+    ) -> Result<ObjectResponse<StandingOrderListItem>, ApiError> {
+        require_stock_write_access(ctx, self.facility_id())?;
+        ensure_location_exists(&self.state, payload.requesting_location_id).await?;
+        let order = hms_db::inventory::create_standing_order(
+            self.pool(),
+            NewStandingOrder {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                requesting_location_id: payload.requesting_location_id,
+                frequency: payload.frequency,
+                next_run_on: payload.next_run_on,
+                actor_user_id: ctx.user_id,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "standing_order_create_failed",
+                "Standing order could not be saved.",
+            )
+        })?;
+        Ok(object(order))
+    }
+
+    pub async fn generate_standing_order_requisition(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+    ) -> Result<ObjectResponse<StockRequisitionListItem>, ApiError> {
+        require_stock_write_access(ctx, self.facility_id())?;
+        let requisition = hms_db::inventory::generate_draft_requisition_from_standing_order(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "standing_order_generate_failed",
+                "Standing order requisition could not be generated.",
+            )
+        })?;
+        Ok(object(requisition))
+    }
+
+    pub async fn dispense_supply_request(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: DispenseSupplyRequest,
+    ) -> Result<ObjectResponse<SupplyRequestDispenseResult>, ApiError> {
+        require_stock_write_access(ctx, self.facility_id())?;
+        let lines = payload
+            .lines
+            .into_iter()
+            .map(|line| {
+                require_positive(line.quantity, "quantity")?;
+                Ok(SupplyDispenseLine {
+                    item_id: line.item_id,
+                    location_id: line.location_id,
+                    quantity: line.quantity,
+                })
+            })
+            .collect::<Result<Vec<_>, ApiError>>()?;
+        let result = hms_db::inventory::dispense_supply_request(
+            self.pool(),
+            self.facility_id(),
+            id,
+            lines,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "supply_request_dispense_failed",
+                "Supply request could not be dispensed.",
+            )
+        })?;
+        Ok(object(result))
+    }
+
+    pub async fn enqueue_stock_check(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateStockCheckRequest,
+    ) -> Result<ObjectResponse<StockCheckQueueItem>, ApiError> {
+        require_stock_write_access(ctx, self.facility_id())?;
+        ensure_location_exists(&self.state, payload.location_id).await?;
+        let check = hms_db::inventory::enqueue_stock_check(
+            self.pool(),
+            self.facility_id(),
+            payload.location_id,
+            normalize_text(payload.reason, "reason")?,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_check_queue_failed",
+                "Stock check could not be queued.",
+            )
+        })?;
+        Ok(object(check))
+    }
+
+    pub async fn transition_stock_check(
+        &self,
+        ctx: &hms_access::RequestContext,
+        id: Uuid,
+        payload: UpdateStockCheckStatusRequest,
+    ) -> Result<ObjectResponse<StockCheckQueueItem>, ApiError> {
+        require_stock_write_access(ctx, self.facility_id())?;
+        let check = hms_db::inventory::transition_stock_check(
+            self.pool(),
+            self.facility_id(),
+            id,
+            payload.status,
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "stock_check_transition_failed",
+                "Stock check could not be updated.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found("stock_check_not_found", "Stock check was not found.")
+        })?;
+        Ok(object(check))
     }
 }
 

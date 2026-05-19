@@ -112,6 +112,10 @@ impl From<hms_access::AccessError> for ApiError {
                 "reauth_required",
                 "Fresh reauthentication is required for this action.",
             ),
+            hms_access::AccessError::PasskeyRequired => ApiError::forbidden(
+                "passkey_required",
+                "Passkey enrollment is required for this privileged action.",
+            ),
             hms_access::AccessError::OffsiteReadOnly => ApiError::forbidden(
                 "offsite_read_only",
                 "This action is not allowed from an offsite context.",

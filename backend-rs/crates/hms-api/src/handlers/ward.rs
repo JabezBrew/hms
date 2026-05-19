@@ -7,9 +7,10 @@ use hms_domain::ward::{
     CreateFluidBalanceEntryRequest, CreateHandoffRequest, CreateMonitoringEventRequest,
     CreateNursingAlertRequest, CreateNursingTaskRequest, CreatePatientVitalsRequest,
     CreateTreatmentSheetRequest, CreateWardRequest, CreateWardSectionRequest,
-    CreateWardStockRequestRequest, DischargeCaseListItem, FluidBalanceListItem, HandoffListItem,
-    MedicationAdministrationListItem, MonitoringEventListItem, NursingAlertListItem,
-    NursingTaskListItem, PatientVitalsListItem, PatientVitalsListQuery, ReserveAdmissionBedRequest,
+    CreateWardStockRequestRequest, DischargeBlockerActionRequest, DischargeCaseListItem,
+    FluidBalanceListItem, HandoffListItem, MedicationAdministrationListItem,
+    MonitoringEventListItem, NursingAlertListItem, NursingTaskListItem, PatientVitalsListItem,
+    PatientVitalsListQuery, RecordNursingReleaseRequest, ReserveAdmissionBedRequest,
     ScheduleMedicationAdministrationRequest, TreatmentSheetListItem, UpdateBedRequest,
     UpdateWardRequest, UpdateWardSectionRequest, WardBoardItem, WardBoardQuery, WardListItem,
     WardListQuery, WardSectionListItem, WardStockRequestListItem,
@@ -767,6 +768,102 @@ pub async fn cancel_discharge(
             .ward_services()
             .discharge_cases()
             .cancel_discharge(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/discharges/{id}/nursing-release",
+    operation_id = "postDischargeNursingRelease",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Discharge case id")),
+    request_body = RecordNursingReleaseRequest,
+    responses(
+        (status = 200, description = "Nursing release recorded", body = ObjectResponse<DischargeCaseListItem>),
+        (status = 400, description = "Invalid nursing release", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Discharge not found", body = ApiErrorResponse),
+        (status = 409, description = "Nursing release cannot be recorded", body = ApiErrorResponse)
+    )
+)]
+pub async fn record_nursing_release(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<RecordNursingReleaseRequest>,
+) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .record_nursing_release(&user, id, payload.education, payload.instructions)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/discharges/{id}/blockers/hold",
+    operation_id = "postDischargeBlockerHold",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Discharge case id")),
+    request_body = DischargeBlockerActionRequest,
+    responses(
+        (status = 200, description = "Discharge blocker held", body = ObjectResponse<DischargeCaseListItem>),
+        (status = 400, description = "Invalid blocker hold", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Discharge not found", body = ApiErrorResponse),
+        (status = 409, description = "Blocker cannot be held", body = ApiErrorResponse)
+    )
+)]
+pub async fn hold_discharge_blocker(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<DischargeBlockerActionRequest>,
+) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .hold_blocker(&user, id, payload.blocker_type, payload.reason)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/discharges/{id}/blockers/override",
+    operation_id = "postDischargeBlockerOverride",
+    tag = "wards",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Discharge case id")),
+    request_body = DischargeBlockerActionRequest,
+    responses(
+        (status = 200, description = "Discharge blocker overridden", body = ObjectResponse<DischargeCaseListItem>),
+        (status = 400, description = "Invalid blocker override", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Discharge not found", body = ApiErrorResponse),
+        (status = 409, description = "Blocker cannot be overridden", body = ApiErrorResponse)
+    )
+)]
+pub async fn override_discharge_blocker(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<DischargeBlockerActionRequest>,
+) -> Result<Json<ObjectResponse<DischargeCaseListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .ward_services()
+            .discharge_cases()
+            .override_blocker(&user, id, payload.blocker_type, payload.reason)
             .await?,
     ))
 }

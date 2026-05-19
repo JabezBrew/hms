@@ -1,12 +1,12 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::care::{
-    AppointmentListItem, AppointmentListQuery, CareTeamAssignment, CheckInVisitRequest,
-    ClinicListItem, CreateAppointmentRequest, CreateCareTeamAssignmentRequest, CreateClinicRequest,
-    CreateEncounterRequest, CreateTriageRequest, CursorListQuery, EncounterListItem,
-    EncounterListQuery, TriageAssessmentRequest, TriageListItem, TriageListQuery,
-    UpdateAppointmentRequest, UpdateClinicRequest, UpdateEncounterRequest, VisitListItem,
-    VisitListQuery,
+    AppointmentListItem, AppointmentListQuery, AppointmentTypeListItem, CancelAppointmentRequest,
+    CareTeamAssignment, CheckInVisitRequest, ClinicListItem, CreateAppointmentRequest,
+    CreateCareTeamAssignmentRequest, CreateClinicRequest, CreateEncounterRequest,
+    CreateTriageRequest, CursorListQuery, EncounterListItem, EncounterListQuery,
+    TriageAssessmentRequest, TriageListItem, TriageListQuery, UpdateAppointmentRequest,
+    UpdateClinicRequest, UpdateEncounterRequest, VisitListItem, VisitListQuery,
 };
 use uuid::Uuid;
 
@@ -57,6 +57,32 @@ pub async fn list_clinics(
     Query(query): Query<CursorListQuery>,
 ) -> Result<Json<ListResponse<ClinicListItem>>, ApiError> {
     Ok(Json(state.care_service().list_clinics(&user, query).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/appointment-types",
+    operation_id = "getAppointmentTypes",
+    tag = "care",
+    security(("bearerAuth" = [])),
+    params(CursorListQuery),
+    responses(
+        (status = 200, description = "Appointment types list", body = ListResponse<AppointmentTypeListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_appointment_types(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<CursorListQuery>,
+) -> Result<Json<ListResponse<AppointmentTypeListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .care_service()
+            .list_appointment_types(&user, query)
+            .await?,
+    ))
 }
 
 #[utoipa::path(
@@ -246,6 +272,7 @@ pub async fn update_appointment(
     tag = "care",
     security(("bearerAuth" = [])),
     params(("id" = Uuid, Path, description = "Appointment id")),
+    request_body = CancelAppointmentRequest,
     responses(
         (status = 200, description = "Appointment cancelled", body = ObjectResponse<AppointmentListItem>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -257,9 +284,13 @@ pub async fn cancel_appointment(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
+    Json(payload): Json<CancelAppointmentRequest>,
 ) -> Result<Json<ObjectResponse<AppointmentListItem>>, ApiError> {
     Ok(Json(
-        state.care_service().cancel_appointment(&user, id).await?,
+        state
+            .care_service()
+            .cancel_appointment(&user, id, payload)
+            .await?,
     ))
 }
 

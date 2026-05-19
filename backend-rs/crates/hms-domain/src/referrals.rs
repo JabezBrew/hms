@@ -16,6 +16,7 @@ pub enum ReferralPriority {
 pub enum ReferralStatus {
     Sent,
     Accepted,
+    Scheduled,
     Declined,
     Completed,
     Cancelled,
@@ -51,9 +52,11 @@ pub struct ReferralListItem {
     pub decline_reason: Option<String>,
     pub specialist_notes: Option<String>,
     pub recommendations: Option<String>,
+    pub scheduled_appointment_id: Option<Uuid>,
     pub sla_due_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub accepted_at: Option<DateTime<Utc>>,
+    pub scheduled_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
 }
@@ -78,6 +81,9 @@ pub struct ClinicWaitlistEntryListItem {
     pub created_at: DateTime<Utc>,
     pub offered_at: Option<DateTime<Utc>>,
     pub promoted_at: Option<DateTime<Utc>>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub scheduled_appointment_id: Option<Uuid>,
+    pub cancellation_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -90,6 +96,23 @@ pub struct CreateClinicWaitlistEntryRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct OfferNextClinicWaitlistEntryRequest {
     pub service: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ScheduleReferralAppointmentRequest {
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PromoteClinicWaitlistEntryRequest {
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CancelClinicWaitlistEntryRequest {
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

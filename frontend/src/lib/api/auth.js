@@ -3,7 +3,7 @@ import { getClientDeviceLabel } from '../device-label';
 import { getDefaultFacilityCode } from '../runtime-config';
 import { isRustV2ApiMode } from './v2/runtime';
 import { handleV2ApiError } from './v2/errors';
-import { performV2TokenRefresh, v2Api } from './v2/client';
+import { performV2TokenRefresh, v2Api, v2Request } from './v2/client';
 
 function splitDisplayName(displayName, email) {
   const parts = String(displayName || '').trim().split(/\s+/).filter(Boolean);
@@ -59,6 +59,7 @@ function adaptV2AuthTokenResponse(response) {
       facility_id: user.facility_id,
       session_version: user.session_version,
       permission_version: user.permission_version,
+      auth_security: user.auth_security || null,
     },
     user: {
       id: user.id,
@@ -72,6 +73,7 @@ function adaptV2AuthTokenResponse(response) {
       admin_access: {
         capabilities: permissions,
       },
+      auth_security: user.auth_security || null,
     },
   };
 }
@@ -95,6 +97,7 @@ function adaptV2AuthUser(user) {
     features: Array.isArray(user.features) ? user.features : [],
     patient_visibility: Array.isArray(user.patient_visibility) ? user.patient_visibility : [],
     password_change_required: Boolean(user.password_change_required),
+    auth_security: user.auth_security || null,
     admin_access: {
       capabilities: permissions,
     },
@@ -113,6 +116,16 @@ function normalizeV2ProfileUpdate(data = {}) {
 
 function unsupportedInRustV2(message) {
   return Promise.reject(new Error(message));
+}
+
+async function v2AuthRequest(path, { method = 'GET', body, signal } = {}) {
+  const response = await v2Request({
+    method,
+    path,
+    body,
+    signal,
+  });
+  return response?.data || response;
 }
 
 function rethrowAbortError(error) {
@@ -452,10 +465,12 @@ export const authApi = {
     }
   },
 
-  mfaStatus: async (mfaSession = null) => {
+  mfaStatus: async (mfaSession = null, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+        return await v2AuthRequest('/api/v2/auth/mfa/status', {
+          signal: options.signal,
+        });
       }
       const headers = mfaSession ? { 'X-MFA-Session': mfaSession } : undefined;
       return await apiClient.get('/auth/mfa/status/', { headers });
@@ -509,10 +524,16 @@ export const authApi = {
     }
   },
 
-  mfaRecoveryGenerate: async () => {
+  mfaRecoveryGenerate: async (options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+        return await v2AuthRequest('/api/v2/auth/mfa/recovery', {
+          method: 'POST',
+          body: {
+            current_password: options.currentPassword,
+          },
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/mfa/recovery/', {});
     } catch (error) {
@@ -537,10 +558,14 @@ export const authApi = {
     }
   },
 
-  mfaWebAuthnRegistrationOptions: async (mfaSession) => {
+  mfaWebAuthnRegistrationOptions: async (mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/registration/options', {
+          method: 'POST',
+          body: { mfa_session: mfaSession || null },
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/mfa/webauthn/registration/options/', { mfa_session: mfaSession });
     } catch (error) {
@@ -551,10 +576,17 @@ export const authApi = {
     }
   },
 
-  mfaWebAuthnRegistrationVerify: async (credential, mfaSession) => {
+  mfaWebAuthnRegistrationVerify: async (credential, mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/registration/verify', {
+          method: 'POST',
+          body: {
+            credential,
+            mfa_session: mfaSession || null,
+          },
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/mfa/webauthn/registration/verify/', {
         credential,
@@ -568,10 +600,14 @@ export const authApi = {
     }
   },
 
-  mfaWebAuthnAuthOptions: async (mfaSession) => {
+  mfaWebAuthnAuthOptions: async (mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/authentication/options', {
+          method: 'POST',
+          body: { mfa_session: mfaSession || null },
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/mfa/webauthn/authentication/options/', { mfa_session: mfaSession });
     } catch (error) {
@@ -582,10 +618,17 @@ export const authApi = {
     }
   },
 
-  mfaWebAuthnAuthVerify: async (credential, mfaSession) => {
+  mfaWebAuthnAuthVerify: async (credential, mfaSession, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return unsupportedInRustV2('Rust V2 does not expose MFA management yet');
+        return await v2AuthRequest('/api/v2/auth/mfa/webauthn/authentication/verify', {
+          method: 'POST',
+          body: {
+            credential,
+            mfa_session: mfaSession || null,
+          },
+          signal: options.signal,
+        });
       }
       return await apiClient.post('/auth/mfa/webauthn/authentication/verify/', {
         credential,

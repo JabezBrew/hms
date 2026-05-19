@@ -71,6 +71,7 @@ async fn deployment_capabilities_are_permission_gated() {
 #[tokio::test]
 async fn feature_entitlements_are_admin_scoped_and_reflected_in_capabilities() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 
@@ -203,6 +204,7 @@ async fn feature_entitlements_are_admin_scoped_and_reflected_in_capabilities() {
 #[tokio::test]
 async fn staff_management_is_admin_scoped_and_practitioner_ready() {
     let app = app().await;
+    enroll_owner_test_passkey(&app).await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let auth_header = format!("Bearer {access_token}");
 

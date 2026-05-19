@@ -17,6 +17,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v2/inventory/items", get(inventory::list_items))
         .route("/api/v2/inventory/items/:id", get(inventory::get_item))
         .route(
+            "/api/v2/inventory/catalog-edits",
+            post(inventory::apply_catalog_edit),
+        )
+        .route(
             "/api/v2/inventory/items/:id/stock-batches",
             get(inventory::list_item_batches),
         )
@@ -89,6 +93,26 @@ pub fn routes() -> Router<AppState> {
             post(inventory::cancel_requisition),
         )
         .route(
+            "/api/v2/inventory/requisitions/:id/dispense",
+            post(inventory::dispense_supply_request),
+        )
+        .route(
+            "/api/v2/inventory/standing-orders",
+            post(inventory::create_standing_order),
+        )
+        .route(
+            "/api/v2/inventory/standing-orders/:id/generate-requisition",
+            post(inventory::generate_standing_order_requisition),
+        )
+        .route(
+            "/api/v2/inventory/stock-checks",
+            post(inventory::enqueue_stock_check),
+        )
+        .route(
+            "/api/v2/inventory/stock-checks/:id/status",
+            post(inventory::transition_stock_check),
+        )
+        .route(
             "/api/v2/inventory/purchase-orders",
             get(inventory::list_purchase_orders).post(inventory::create_purchase_order),
         )
@@ -123,6 +147,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/pharmacy/controlled-substances/register",
             get(inventory::list_controlled_register).post(inventory::create_controlled_movement),
+        )
+        .route(
+            "/api/v2/pharmacy/controlled-substances/discrepancies",
+            get(inventory::list_controlled_discrepancies),
         )
         .route(
             "/api/v2/pharmacy/controlled-substances/register/:id",

@@ -1,10 +1,12 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::billing::{
-    BillingDashboardSummary, BillingRuleListItem, BillingRuleType, CashDrawerListItem,
-    CashSessionListItem, CashSessionStatus, ClaimListItem, ClaimStatus, InvoiceListItem,
-    InvoiceStatus, NhisBatchExport, NhisBatchListItem, NhisBatchStatus, PaymentListItem,
-    PaymentMethod, PaymentStatus, ReceiptListItem, RemittanceImportListItem,
-    RemittanceImportStatus, ServiceCatalogItem, ServiceKind, ServicePriceListItem,
+    BillingDashboardSummary, BillingDischargeClearance, BillingRuleListItem, BillingRuleType,
+    CashDrawerListItem, CashSessionListItem, CashSessionStatus, ClaimListItem, ClaimStatus,
+    InvoiceListItem, InvoiceLockReason, InvoiceLockState, InvoiceStatus, NhisArAdjustmentEntry,
+    NhisArAdjustmentKind, NhisBatchExport, NhisBatchListItem, NhisBatchStatus, NhisClaimArState,
+    NhisServiceMappingListItem, PaymentListItem, PaymentMethod, PaymentReversalLedgerEntry,
+    PaymentStatus, ReceiptListItem, RemittanceImportListItem, RemittanceImportStatus, ReversalKind,
+    ServiceCatalogItem, ServiceKind, ServicePriceListItem,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -98,6 +100,41 @@ pub struct NewRemittanceImport {
     pub reference: String,
     pub total_paid_minor: i64,
     pub actor_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewPaymentReversal {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub payment_id: Uuid,
+    pub reversal_kind: ReversalKind,
+    pub amount_minor: i64,
+    pub reason: String,
+    pub approved_by_user_id: Uuid,
+    pub recorded_by_user_id: Uuid,
+    pub reauthorized_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewNhisServiceMapping {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub service_id: Uuid,
+    pub nhis_code: String,
+    pub effective_from: NaiveDate,
+    pub effective_until: Option<NaiveDate>,
+    pub actor_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewNhisArAdjustment {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub claim_id: Uuid,
+    pub adjustment_kind: NhisArAdjustmentKind,
+    pub amount_minor: i64,
+    pub reason: String,
+    pub recorded_by_user_id: Uuid,
 }
 
 #[derive(Clone, Debug)]
@@ -202,6 +239,13 @@ struct ClaimRow {
     status: String,
     amount_minor: i64,
     currency: String,
+    nhis_service_mapping_id: Option<Uuid>,
+    nhis_service_mapping_version: Option<i64>,
+    nhis_service_code: Option<String>,
+    payer_receivable_minor: i64,
+    patient_liability_minor: i64,
+    written_off_minor: i64,
+    reconciled_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -279,6 +323,91 @@ struct BatchExportRow {
     batch_number: String,
     claim_count: i64,
     total_amount_minor: i64,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct InvoiceLockStateRow {
+    invoice_id: Uuid,
+    locked_at: Option<DateTime<Utc>>,
+    locked_reason: Option<String>,
+    finalized_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PaymentReversalRow {
+    id: Uuid,
+    payment_id: Uuid,
+    invoice_id: Uuid,
+    reversal_kind: String,
+    amount_minor: i64,
+    currency: String,
+    reason: String,
+    approved_by_user_id: Uuid,
+    recorded_by_user_id: Uuid,
+    reauthorized_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct PaymentReversalContextRow {
+    invoice_id: Uuid,
+    amount_minor: i64,
+    reversed_amount_minor: i64,
+    currency: String,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct NhisServiceMappingRow {
+    id: Uuid,
+    service_id: Uuid,
+    service_code: String,
+    service_name: String,
+    nhis_code: String,
+    version_number: i64,
+    effective_from: NaiveDate,
+    effective_until: Option<NaiveDate>,
+    active: bool,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ClaimMappingContextRow {
+    mapping_id: Option<Uuid>,
+    version_number: Option<i64>,
+    nhis_code: Option<String>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct NhisClaimArStateRow {
+    claim_id: Uuid,
+    payer_receivable_minor: i64,
+    patient_liability_minor: i64,
+    written_off_minor: i64,
+    reconciled_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct NhisArAdjustmentRow {
+    id: Uuid,
+    claim_id: Uuid,
+    adjustment_kind: String,
+    amount_minor: i64,
+    reason: String,
+    affects_patient_liability: bool,
+    recorded_by_user_id: Uuid,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct BillingDischargeClearanceRow {
+    id: Uuid,
+    patient_id: Uuid,
+    cleared: bool,
+    outstanding_invoice_count: i64,
+    outstanding_amount_minor: i64,
+    currency: String,
+    reason: String,
+    recorded_by_user_id: Uuid,
+    created_at: DateTime<Utc>,
 }
 
 pub async fn list_service_catalog(
@@ -625,6 +754,26 @@ pub async fn invoice_context(
     Ok(row.map(|(id, patient_id)| InvoiceContext { id, patient_id }))
 }
 
+pub async fn invoice_lock_state(
+    pool: &PgPool,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+) -> anyhow::Result<Option<InvoiceLockState>> {
+    let row = sqlx::query_as::<_, InvoiceLockStateRow>(
+        r#"
+        SELECT id AS invoice_id, locked_at, locked_reason, finalized_at
+        FROM invoices
+        WHERE facility_id = $1 AND id = $2
+          AND locked_at IS NOT NULL
+        "#,
+    )
+    .bind(facility_id)
+    .bind(invoice_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(invoice_lock_state_from_row))
+}
+
 pub async fn list_payments(
     pool: &PgPool,
     facility_id: Uuid,
@@ -639,6 +788,21 @@ pub async fn list_payments(
     query.push_bind(limit);
     let rows = query.build_query_as::<PaymentRow>().fetch_all(pool).await?;
     rows.into_iter().map(payment_from_row).collect()
+}
+
+pub async fn payment_invoice_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    payment_id: Uuid,
+) -> anyhow::Result<Option<Uuid>> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT invoice_id FROM payments WHERE facility_id = $1 AND id = $2",
+    )
+    .bind(facility_id)
+    .bind(payment_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn create_payment(pool: &PgPool, payment: NewPayment) -> anyhow::Result<PaymentListItem> {
@@ -733,12 +897,15 @@ pub async fn create_payment(pool: &PgPool, payment: NewPayment) -> anyhow::Resul
         UPDATE invoices
         SET paid_amount_minor = $1,
             status = $2,
+            locked_at = COALESCE(locked_at, now()),
+            locked_reason = COALESCE(locked_reason, $3),
             updated_at = now()
-        WHERE facility_id = $3 AND id = $4
+        WHERE facility_id = $4 AND id = $5
         "#,
     )
     .bind(paid_amount)
     .bind(codec::encode(status)?)
+    .bind(codec::encode(InvoiceLockReason::PaymentRecorded)?)
     .bind(payment.facility_id)
     .bind(payment.invoice_id)
     .execute(&mut *transaction)
@@ -820,26 +987,32 @@ pub async fn get_claim(
 }
 
 pub async fn create_claim(pool: &PgPool, claim: NewClaim) -> anyhow::Result<ClaimListItem> {
+    let mut transaction = pool.begin().await?;
     let invoice = sqlx::query_as::<_, InvoiceContextRow>(
         r#"
         SELECT patient_id, gross_amount_minor, paid_amount_minor, currency
         FROM invoices
         WHERE facility_id = $1 AND id = $2
+        FOR UPDATE
         "#,
     )
     .bind(claim.facility_id)
     .bind(claim.invoice_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?
     .ok_or_else(|| anyhow::anyhow!("invoice was not found"))?;
+    let mapping =
+        claim_mapping_context(&mut transaction, claim.facility_id, claim.invoice_id).await?;
 
     sqlx::query(
         r#"
         INSERT INTO nhis_claims (
             id, facility_id, invoice_id, patient_id, claim_number, status,
-            amount_minor, currency, created_by_user_id
+            amount_minor, currency, nhis_service_mapping_id, nhis_service_mapping_version,
+            nhis_service_code, payer_receivable_minor, patient_liability_minor, written_off_minor,
+            created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, 0, $13)
         "#,
     )
     .bind(claim.id)
@@ -850,10 +1023,23 @@ pub async fn create_claim(pool: &PgPool, claim: NewClaim) -> anyhow::Result<Clai
     .bind(codec::encode(ClaimStatus::Draft)?)
     .bind(invoice.gross_amount_minor)
     .bind(&invoice.currency)
+    .bind(mapping.mapping_id)
+    .bind(mapping.version_number)
+    .bind(mapping.nhis_code)
+    .bind(invoice.gross_amount_minor)
     .bind(claim.actor_user_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
+    lock_invoice_in_transaction(
+        &mut transaction,
+        claim.facility_id,
+        claim.invoice_id,
+        InvoiceLockReason::ClaimCreated,
+    )
+    .await?;
+
+    transaction.commit().await?;
     fetch_claim_by_id(pool, claim.facility_id, claim.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created claim was not found"))
@@ -1019,6 +1205,7 @@ pub async fn export_nhis_batch(
         row.claim_count,
         row.total_amount_minor,
     );
+    let mut transaction = pool.begin().await?;
     sqlx::query(
         r#"
         UPDATE nhis_batches
@@ -1032,7 +1219,7 @@ pub async fn export_nhis_batch(
     .bind(&checksum)
     .bind(facility_id)
     .bind(batch_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
     sqlx::query(
@@ -1051,8 +1238,34 @@ pub async fn export_nhis_batch(
     .bind(codec::encode(ClaimStatus::Submitted)?)
     .bind(facility_id)
     .bind(batch_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE invoices
+        SET locked_at = COALESCE(locked_at, now()),
+            locked_reason = $1,
+            updated_at = now()
+        WHERE facility_id = $2
+          AND id IN (
+              SELECT nhis_claims.invoice_id
+              FROM nhis_claims
+              INNER JOIN nhis_batch_claims
+                ON nhis_batch_claims.claim_id = nhis_claims.id
+               AND nhis_batch_claims.facility_id = nhis_claims.facility_id
+              WHERE nhis_claims.facility_id = $2
+                AND nhis_batch_claims.batch_id = $3
+          )
+        "#,
+    )
+    .bind(codec::encode(InvoiceLockReason::NhisBatchExported)?)
+    .bind(facility_id)
+    .bind(batch_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
 
     Ok(Some(NhisBatchExport {
         batch_id,
@@ -1152,6 +1365,372 @@ pub async fn create_remittance_import(
     fetch_remittance_by_id(pool, import.facility_id, import.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("created remittance import was not found"))
+}
+
+pub async fn finalize_invoice(
+    pool: &PgPool,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+    actor_user_id: Uuid,
+    approval_user_id: Uuid,
+    reauthorized_at: DateTime<Utc>,
+) -> anyhow::Result<Option<InvoiceListItem>> {
+    if actor_user_id == approval_user_id {
+        anyhow::bail!("billing finalization requires supervisor approval");
+    }
+    let result = sqlx::query(
+        r#"
+        UPDATE invoices
+        SET locked_at = COALESCE(locked_at, now()),
+            locked_reason = $1,
+            finalized_at = COALESCE(finalized_at, now()),
+            finalized_by_user_id = $2,
+            finalized_approval_user_id = $3,
+            finalized_reauthorized_at = $4,
+            updated_at = now()
+        WHERE facility_id = $5 AND id = $6
+        "#,
+    )
+    .bind(codec::encode(InvoiceLockReason::Finalized)?)
+    .bind(actor_user_id)
+    .bind(approval_user_id)
+    .bind(reauthorized_at)
+    .bind(facility_id)
+    .bind(invoice_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Ok(None);
+    }
+    fetch_invoice_by_id(pool, facility_id, invoice_id).await
+}
+
+pub async fn record_payment_reversal(
+    pool: &PgPool,
+    reversal: NewPaymentReversal,
+) -> anyhow::Result<PaymentReversalLedgerEntry> {
+    if reversal.approved_by_user_id == reversal.recorded_by_user_id {
+        anyhow::bail!("payment reversal requires supervisor approval");
+    }
+    if reversal.amount_minor <= 0 {
+        anyhow::bail!("payment reversal amount must be positive");
+    }
+    let mut transaction = pool.begin().await?;
+    let payment = sqlx::query_as::<_, PaymentReversalContextRow>(
+        r#"
+        SELECT payments.invoice_id,
+               payments.amount_minor,
+               COALESCE((
+                   SELECT SUM(payment_reversal_ledger.amount_minor)
+                   FROM payment_reversal_ledger
+                   WHERE payment_reversal_ledger.facility_id = payments.facility_id
+                     AND payment_reversal_ledger.payment_id = payments.id
+               ), 0)::BIGINT
+                   AS reversed_amount_minor,
+               payments.currency
+        FROM payments
+        WHERE payments.facility_id = $1 AND payments.id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(reversal.facility_id)
+    .bind(reversal.payment_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("payment was not found"))?;
+    let remaining_reversible = payment.amount_minor - payment.reversed_amount_minor;
+    if reversal.amount_minor > remaining_reversible {
+        anyhow::bail!("payment reversal exceeds unreversed payment amount");
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO payment_reversal_ledger (
+            id, facility_id, payment_id, invoice_id, reversal_kind, amount_minor, currency,
+            reason, approved_by_user_id, recorded_by_user_id, reauthorized_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "#,
+    )
+    .bind(reversal.id)
+    .bind(reversal.facility_id)
+    .bind(reversal.payment_id)
+    .bind(payment.invoice_id)
+    .bind(codec::encode(reversal.reversal_kind)?)
+    .bind(reversal.amount_minor)
+    .bind(&payment.currency)
+    .bind(&reversal.reason)
+    .bind(reversal.approved_by_user_id)
+    .bind(reversal.recorded_by_user_id)
+    .bind(reversal.reauthorized_at)
+    .execute(&mut *transaction)
+    .await?;
+
+    let total_reversed = payment.reversed_amount_minor + reversal.amount_minor;
+    if total_reversed >= payment.amount_minor {
+        sqlx::query(
+            r#"
+            UPDATE payments
+            SET status = $1
+            WHERE facility_id = $2 AND id = $3
+            "#,
+        )
+        .bind(codec::encode(PaymentStatus::Void)?)
+        .bind(reversal.facility_id)
+        .bind(reversal.payment_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+    sqlx::query(
+        r#"
+        UPDATE invoices
+        SET paid_amount_minor = GREATEST(paid_amount_minor - $1, 0),
+            status = CASE
+                WHEN GREATEST(paid_amount_minor - $1, 0) = 0 THEN $2
+                WHEN GREATEST(paid_amount_minor - $1, 0) >= gross_amount_minor THEN $3
+                ELSE $4
+            END,
+            updated_at = now()
+        WHERE facility_id = $5 AND id = $6
+        "#,
+    )
+    .bind(reversal.amount_minor)
+    .bind(codec::encode(InvoiceStatus::Issued)?)
+    .bind(codec::encode(InvoiceStatus::Paid)?)
+    .bind(codec::encode(InvoiceStatus::PartiallyPaid)?)
+    .bind(reversal.facility_id)
+    .bind(payment.invoice_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+    fetch_payment_reversal_by_id(pool, reversal.facility_id, reversal.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created payment reversal was not found"))
+}
+
+pub async fn payment_reversal_ledger(
+    pool: &PgPool,
+    facility_id: Uuid,
+    payment_id: Uuid,
+) -> anyhow::Result<Vec<PaymentReversalLedgerEntry>> {
+    let rows = sqlx::query_as::<_, PaymentReversalRow>(
+        r#"
+        SELECT id, payment_id, invoice_id, reversal_kind, amount_minor, currency, reason,
+               approved_by_user_id, recorded_by_user_id, reauthorized_at, created_at
+        FROM payment_reversal_ledger
+        WHERE facility_id = $1 AND payment_id = $2
+        ORDER BY created_at ASC, id ASC
+        "#,
+    )
+    .bind(facility_id)
+    .bind(payment_id)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(payment_reversal_from_row).collect()
+}
+
+pub async fn create_nhis_service_mapping(
+    pool: &PgPool,
+    mapping: NewNhisServiceMapping,
+) -> anyhow::Result<NhisServiceMappingListItem> {
+    let version_number = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COALESCE(MAX(version_number), 0) + 1
+        FROM nhis_service_mappings
+        WHERE facility_id = $1 AND service_id = $2
+        "#,
+    )
+    .bind(mapping.facility_id)
+    .bind(mapping.service_id)
+    .fetch_one(pool)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO nhis_service_mappings (
+            id, facility_id, service_id, nhis_code, version_number, effective_from,
+            effective_until, active, created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8)
+        "#,
+    )
+    .bind(mapping.id)
+    .bind(mapping.facility_id)
+    .bind(mapping.service_id)
+    .bind(&mapping.nhis_code)
+    .bind(version_number)
+    .bind(mapping.effective_from)
+    .bind(mapping.effective_until)
+    .bind(mapping.actor_user_id)
+    .execute(pool)
+    .await?;
+    fetch_nhis_service_mapping_by_id(pool, mapping.facility_id, mapping.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created NHIS mapping was not found"))
+}
+
+pub async fn record_nhis_ar_adjustment(
+    pool: &PgPool,
+    adjustment: NewNhisArAdjustment,
+) -> anyhow::Result<NhisArAdjustmentEntry> {
+    if adjustment.amount_minor <= 0 {
+        anyhow::bail!("NHIS AR adjustment amount must be positive");
+    }
+    let mut transaction = pool.begin().await?;
+    let claim = sqlx::query_as::<_, NhisClaimArStateRow>(
+        r#"
+        SELECT id AS claim_id, payer_receivable_minor, patient_liability_minor,
+               written_off_minor, reconciled_at
+        FROM nhis_claims
+        WHERE facility_id = $1 AND id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(adjustment.facility_id)
+    .bind(adjustment.claim_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("NHIS claim was not found"))?;
+
+    let (payer_delta, patient_delta, written_off_delta, reconciled) =
+        match adjustment.adjustment_kind {
+            NhisArAdjustmentKind::Remittance | NhisArAdjustmentKind::Reconciliation => (
+                -adjustment.amount_minor,
+                0,
+                0,
+                matches!(
+                    adjustment.adjustment_kind,
+                    NhisArAdjustmentKind::Reconciliation
+                ),
+            ),
+            NhisArAdjustmentKind::WriteOff => {
+                (-adjustment.amount_minor, 0, adjustment.amount_minor, false)
+            }
+            NhisArAdjustmentKind::Adjustment => (-adjustment.amount_minor, 0, 0, false),
+        };
+    if claim.payer_receivable_minor + payer_delta < 0 {
+        anyhow::bail!("NHIS AR adjustment exceeds payer receivable");
+    }
+    let affects_patient_liability = patient_delta != 0;
+
+    sqlx::query(
+        r#"
+        INSERT INTO nhis_claim_ar_adjustments (
+            id, facility_id, claim_id, adjustment_kind, amount_minor, reason,
+            affects_patient_liability, recorded_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(adjustment.id)
+    .bind(adjustment.facility_id)
+    .bind(adjustment.claim_id)
+    .bind(codec::encode(adjustment.adjustment_kind)?)
+    .bind(adjustment.amount_minor)
+    .bind(&adjustment.reason)
+    .bind(affects_patient_liability)
+    .bind(adjustment.recorded_by_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE nhis_claims
+        SET payer_receivable_minor = payer_receivable_minor + $1,
+            patient_liability_minor = patient_liability_minor + $2,
+            written_off_minor = written_off_minor + $3,
+            reconciled_at = CASE WHEN $4 THEN now() ELSE reconciled_at END,
+            updated_at = now()
+        WHERE facility_id = $5 AND id = $6
+        "#,
+    )
+    .bind(payer_delta)
+    .bind(patient_delta)
+    .bind(written_off_delta)
+    .bind(reconciled)
+    .bind(adjustment.facility_id)
+    .bind(adjustment.claim_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    fetch_nhis_ar_adjustment_by_id(pool, adjustment.facility_id, adjustment.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created NHIS AR adjustment was not found"))
+}
+
+pub async fn nhis_claim_ar_state(
+    pool: &PgPool,
+    facility_id: Uuid,
+    claim_id: Uuid,
+) -> anyhow::Result<Option<NhisClaimArState>> {
+    let row = sqlx::query_as::<_, NhisClaimArStateRow>(
+        r#"
+        SELECT id AS claim_id, payer_receivable_minor, patient_liability_minor,
+               written_off_minor, reconciled_at
+        FROM nhis_claims
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(claim_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(nhis_claim_ar_state_from_row))
+}
+
+pub async fn record_discharge_billing_clearance(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+    actor_user_id: Uuid,
+) -> anyhow::Result<BillingDischargeClearance> {
+    let outstanding = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+        SELECT COUNT(*)::BIGINT AS outstanding_invoice_count,
+               COALESCE(SUM(gross_amount_minor - paid_amount_minor), 0)::BIGINT
+                   AS outstanding_amount_minor,
+               COALESCE(MAX(currency), 'GHS') AS currency
+        FROM invoices
+        WHERE facility_id = $1
+          AND patient_id = $2
+          AND status <> $3
+          AND gross_amount_minor > paid_amount_minor
+        "#,
+    )
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(codec::encode(InvoiceStatus::Void)?)
+    .fetch_one(pool)
+    .await?;
+    let id = Uuid::new_v4();
+    let cleared = outstanding.0 == 0 && outstanding.1 == 0;
+    let reason = if cleared {
+        "billing_clearance_granted"
+    } else {
+        "billing_clearance_blocked_outstanding_balance"
+    };
+    sqlx::query(
+        r#"
+        INSERT INTO billing_discharge_clearances (
+            id, facility_id, patient_id, cleared, outstanding_invoice_count,
+            outstanding_amount_minor, currency, reason, recorded_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "#,
+    )
+    .bind(id)
+    .bind(facility_id)
+    .bind(patient_id)
+    .bind(cleared)
+    .bind(outstanding.0)
+    .bind(outstanding.1)
+    .bind(&outstanding.2)
+    .bind(reason)
+    .bind(actor_user_id)
+    .execute(pool)
+    .await?;
+    fetch_discharge_clearance_by_id(pool, facility_id, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created billing clearance was not found"))
 }
 
 pub async fn list_cash_drawers(
@@ -1305,6 +1884,69 @@ pub async fn close_cash_session(
     fetch_cash_session_by_id(pool, facility_id, session_id).await
 }
 
+async fn lock_invoice_in_transaction(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+    reason: InvoiceLockReason,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE invoices
+        SET locked_at = COALESCE(locked_at, now()),
+            locked_reason = COALESCE(locked_reason, $1),
+            updated_at = now()
+        WHERE facility_id = $2 AND id = $3
+        "#,
+    )
+    .bind(codec::encode(reason)?)
+    .bind(facility_id)
+    .bind(invoice_id)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn claim_mapping_context(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    invoice_id: Uuid,
+) -> anyhow::Result<ClaimMappingContextRow> {
+    let mapping = sqlx::query_as::<_, ClaimMappingContextRow>(
+        r#"
+        SELECT nhis_service_mappings.id AS mapping_id,
+               nhis_service_mappings.version_number,
+               nhis_service_mappings.nhis_code
+        FROM invoice_lines
+        INNER JOIN service_prices ON service_prices.id = invoice_lines.service_price_id
+        INNER JOIN nhis_service_mappings
+          ON nhis_service_mappings.facility_id = invoice_lines.facility_id
+         AND nhis_service_mappings.service_id = service_prices.service_id
+         AND nhis_service_mappings.active = TRUE
+         AND nhis_service_mappings.effective_from <= CURRENT_DATE
+         AND (
+             nhis_service_mappings.effective_until IS NULL
+             OR nhis_service_mappings.effective_until > CURRENT_DATE
+         )
+        WHERE invoice_lines.facility_id = $1
+          AND invoice_lines.invoice_id = $2
+        ORDER BY nhis_service_mappings.effective_from DESC,
+                 nhis_service_mappings.version_number DESC,
+                 nhis_service_mappings.id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(facility_id)
+    .bind(invoice_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    Ok(mapping.unwrap_or(ClaimMappingContextRow {
+        mapping_id: None,
+        version_number: None,
+        nhis_code: None,
+    }))
+}
+
 fn invoice_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::new(
         r#"
@@ -1352,6 +1994,13 @@ fn claim_query() -> QueryBuilder<'static, Postgres> {
                nhis_claims.status,
                nhis_claims.amount_minor,
                nhis_claims.currency,
+               nhis_claims.nhis_service_mapping_id,
+               nhis_claims.nhis_service_mapping_version,
+               nhis_claims.nhis_service_code,
+               nhis_claims.payer_receivable_minor,
+               nhis_claims.patient_liability_minor,
+               nhis_claims.written_off_minor,
+               nhis_claims.reconciled_at,
                nhis_claims.created_at
         FROM nhis_claims
         INNER JOIN patients ON patients.id = nhis_claims.patient_id
@@ -1517,6 +2166,95 @@ async fn fetch_claim_by_id(
         .await?
         .map(claim_from_row)
         .transpose()
+}
+
+async fn fetch_payment_reversal_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<PaymentReversalLedgerEntry>> {
+    let row = sqlx::query_as::<_, PaymentReversalRow>(
+        r#"
+        SELECT id, payment_id, invoice_id, reversal_kind, amount_minor, currency, reason,
+               approved_by_user_id, recorded_by_user_id, reauthorized_at, created_at
+        FROM payment_reversal_ledger
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(payment_reversal_from_row).transpose()
+}
+
+async fn fetch_nhis_service_mapping_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<NhisServiceMappingListItem>> {
+    let row = sqlx::query_as::<_, NhisServiceMappingRow>(
+        r#"
+        SELECT nhis_service_mappings.id,
+               nhis_service_mappings.service_id,
+               service_catalog.code AS service_code,
+               service_catalog.name AS service_name,
+               nhis_service_mappings.nhis_code,
+               nhis_service_mappings.version_number,
+               nhis_service_mappings.effective_from,
+               nhis_service_mappings.effective_until,
+               nhis_service_mappings.active
+        FROM nhis_service_mappings
+        INNER JOIN service_catalog ON service_catalog.id = nhis_service_mappings.service_id
+        WHERE nhis_service_mappings.facility_id = $1
+          AND nhis_service_mappings.id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(nhis_service_mapping_from_row))
+}
+
+async fn fetch_nhis_ar_adjustment_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<NhisArAdjustmentEntry>> {
+    let row = sqlx::query_as::<_, NhisArAdjustmentRow>(
+        r#"
+        SELECT id, claim_id, adjustment_kind, amount_minor, reason,
+               affects_patient_liability, recorded_by_user_id, created_at
+        FROM nhis_claim_ar_adjustments
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(nhis_ar_adjustment_from_row).transpose()
+}
+
+async fn fetch_discharge_clearance_by_id(
+    pool: &PgPool,
+    facility_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<BillingDischargeClearance>> {
+    let row = sqlx::query_as::<_, BillingDischargeClearanceRow>(
+        r#"
+        SELECT id, patient_id, cleared, outstanding_invoice_count, outstanding_amount_minor,
+               currency, reason, recorded_by_user_id, created_at
+        FROM billing_discharge_clearances
+        WHERE facility_id = $1 AND id = $2
+        "#,
+    )
+    .bind(facility_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(discharge_clearance_from_row))
 }
 
 async fn fetch_batch_by_id(
@@ -1695,8 +2433,93 @@ fn claim_from_row(row: ClaimRow) -> anyhow::Result<ClaimListItem> {
         status: codec::decode::<ClaimStatus>(&row.status)?,
         amount_minor: row.amount_minor,
         currency: row.currency,
+        nhis_service_mapping_id: row.nhis_service_mapping_id,
+        nhis_service_mapping_version: row.nhis_service_mapping_version,
+        nhis_service_code: row.nhis_service_code,
+        payer_receivable_minor: row.payer_receivable_minor,
+        patient_liability_minor: row.patient_liability_minor,
+        written_off_minor: row.written_off_minor,
+        reconciled_at: row.reconciled_at,
         created_at: row.created_at,
     })
+}
+
+fn invoice_lock_state_from_row(row: InvoiceLockStateRow) -> InvoiceLockState {
+    InvoiceLockState {
+        invoice_id: row.invoice_id,
+        locked_at: row.locked_at,
+        locked_reason: row.locked_reason,
+        finalized_at: row.finalized_at,
+    }
+}
+
+fn payment_reversal_from_row(
+    row: PaymentReversalRow,
+) -> anyhow::Result<PaymentReversalLedgerEntry> {
+    Ok(PaymentReversalLedgerEntry {
+        id: row.id,
+        payment_id: row.payment_id,
+        invoice_id: row.invoice_id,
+        reversal_kind: codec::decode::<ReversalKind>(&row.reversal_kind)?,
+        amount_minor: row.amount_minor,
+        currency: row.currency,
+        reason: row.reason,
+        approved_by_user_id: row.approved_by_user_id,
+        recorded_by_user_id: row.recorded_by_user_id,
+        reauthorized_at: row.reauthorized_at,
+        created_at: row.created_at,
+    })
+}
+
+fn nhis_service_mapping_from_row(row: NhisServiceMappingRow) -> NhisServiceMappingListItem {
+    NhisServiceMappingListItem {
+        id: row.id,
+        service_id: row.service_id,
+        service_code: row.service_code,
+        service_name: row.service_name,
+        nhis_code: row.nhis_code,
+        version_number: row.version_number,
+        effective_from: row.effective_from,
+        effective_until: row.effective_until,
+        active: row.active,
+    }
+}
+
+fn nhis_claim_ar_state_from_row(row: NhisClaimArStateRow) -> NhisClaimArState {
+    NhisClaimArState {
+        claim_id: row.claim_id,
+        payer_receivable_minor: row.payer_receivable_minor,
+        patient_liability_minor: row.patient_liability_minor,
+        written_off_minor: row.written_off_minor,
+        reconciled_at: row.reconciled_at,
+    }
+}
+
+fn nhis_ar_adjustment_from_row(row: NhisArAdjustmentRow) -> anyhow::Result<NhisArAdjustmentEntry> {
+    Ok(NhisArAdjustmentEntry {
+        id: row.id,
+        claim_id: row.claim_id,
+        adjustment_kind: codec::decode::<NhisArAdjustmentKind>(&row.adjustment_kind)?,
+        amount_minor: row.amount_minor,
+        reason: row.reason,
+        affects_patient_liability: row.affects_patient_liability,
+        recorded_by_user_id: row.recorded_by_user_id,
+        created_at: row.created_at,
+    })
+}
+
+fn discharge_clearance_from_row(row: BillingDischargeClearanceRow) -> BillingDischargeClearance {
+    BillingDischargeClearance {
+        id: row.id,
+        patient_id: row.patient_id,
+        cleared: row.cleared,
+        outstanding_invoice_count: row.outstanding_invoice_count,
+        outstanding_amount_minor: row.outstanding_amount_minor,
+        currency: row.currency,
+        reason: row.reason,
+        recorded_by_user_id: row.recorded_by_user_id,
+        created_at: row.created_at,
+    }
 }
 
 fn batch_from_row(row: BatchRow) -> anyhow::Result<NhisBatchListItem> {

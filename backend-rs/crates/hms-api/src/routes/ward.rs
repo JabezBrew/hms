@@ -67,6 +67,18 @@ pub fn routes() -> Router<AppState> {
             post(ward::cancel_discharge),
         )
         .route(
+            "/api/v2/discharges/:id/nursing-release",
+            post(ward::record_nursing_release),
+        )
+        .route(
+            "/api/v2/discharges/:id/blockers/hold",
+            post(ward::hold_discharge_blocker),
+        )
+        .route(
+            "/api/v2/discharges/:id/blockers/override",
+            post(ward::override_discharge_blocker),
+        )
+        .route(
             "/api/v2/discharges/:id/complete",
             post(ward::complete_discharge),
         )

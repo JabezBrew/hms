@@ -1,14 +1,15 @@
 use chrono::{DateTime, Utc};
 use hms_domain::inventory::{
-    ControlledMovementType, ControlledSubstanceBalanceValidation,
+    ControlledDiscrepancyListItem, ControlledMovementType, ControlledSubstanceBalanceValidation,
     ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
 };
+use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::{
-    apply_cursor, apply_forward_cursor, item_context, InventoryCursor, NewControlledCount,
-    NewControlledMovement,
+    apply_cursor, apply_forward_cursor, apply_stock_delta_tx, item_context, InventoryCursor,
+    NewControlledCount, NewControlledMovement,
 };
 use crate::codec;
 use crate::PgPool;
@@ -57,6 +58,20 @@ struct ControlledContextRow {
 struct ControlledBalanceRow {
     current_balance: i64,
     computed_balance: i64,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ControlledDiscrepancyRow {
+    id: Uuid,
+    register_entry_id: Uuid,
+    category: String,
+    expected_balance: i64,
+    actual_count: i64,
+    quantity_delta: i64,
+    reason: String,
+    status: String,
+    severity: String,
+    created_at: DateTime<Utc>,
 }
 
 pub async fn list_controlled_register(
@@ -263,20 +278,77 @@ pub async fn create_controlled_count(
         context.location_id,
     )
     .await?;
-    create_controlled_movement(
-        pool,
+    let quantity_delta = count.actual_count - current_balance;
+    if count.reason.trim().is_empty() {
+        anyhow::bail!("controlled discrepancy reason is required");
+    }
+
+    let mut tx = pool.begin().await?;
+    insert_controlled_movement_tx(
+        &mut tx,
         NewControlledMovement {
             id: count.id,
             facility_id: count.facility_id,
             item_id: context.item_id,
             location_id: context.location_id,
             movement_type: ControlledMovementType::Count,
-            quantity_delta: count.actual_count - current_balance,
+            quantity_delta,
             witness_user_id: Some(count.witness_user_id),
             actor_user_id: count.actor_user_id,
         },
+        current_balance,
     )
-    .await
+    .await?;
+
+    if quantity_delta != 0 {
+        let discrepancy_id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO controlled_substance_discrepancies (
+                id, facility_id, register_entry_id, category, expected_balance, actual_count,
+                quantity_delta, reason, status, severity, created_by_user_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'logged', 'high', $9)
+            "#,
+        )
+        .bind(discrepancy_id)
+        .bind(count.facility_id)
+        .bind(count.id)
+        .bind(codec::encode(count.category)?)
+        .bind(current_balance)
+        .bind(count.actual_count)
+        .bind(quantity_delta)
+        .bind(count.reason.trim())
+        .bind(count.actor_user_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO audit_events (
+                id, facility_id, actor_user_id, event_type, resource_type, resource_id, metadata
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(count.facility_id)
+        .bind(count.actor_user_id)
+        .bind("controlled_substance.discrepancy.logged")
+        .bind("controlled_substance_discrepancy")
+        .bind(discrepancy_id)
+        .bind(json!({
+            "severity": "high",
+            "category": count.category,
+            "expected_balance": current_balance,
+            "actual_count": count.actual_count,
+            "quantity_delta": quantity_delta,
+        }))
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    fetch_controlled_by_id(pool, count.facility_id, count.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created controlled count was not found"))
 }
 
 pub async fn create_controlled_movement(
@@ -302,16 +374,78 @@ pub async fn create_controlled_movement(
         anyhow::bail!("controlled balance cannot become negative");
     }
 
+    let mut tx = pool.begin().await?;
+    insert_controlled_movement_tx(&mut tx, movement.clone(), current_balance).await?;
+    sqlx::query(
+        "INSERT INTO audit_events (
+            id, facility_id, actor_user_id, event_type, resource_type, resource_id, metadata
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(movement.facility_id)
+    .bind(movement.actor_user_id)
+    .bind("controlled_substance.movement.recorded")
+    .bind("controlled_substance_register")
+    .bind(movement.id)
+    .bind(json!({
+        "severity": "high",
+        "movement_type": movement.movement_type,
+        "quantity_delta": movement.quantity_delta,
+        "balance_after": next_balance,
+    }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    fetch_controlled_by_id(pool, movement.facility_id, movement.id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("created controlled register entry was not found"))
+}
+
+pub async fn list_controlled_discrepancies(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<InventoryCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<ControlledDiscrepancyListItem>> {
+    let mut query = QueryBuilder::new(
+        r#"
+        SELECT id, register_entry_id, category, expected_balance, actual_count, quantity_delta,
+               reason, status, severity, created_at
+        FROM controlled_substance_discrepancies
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    apply_cursor(&mut query, "created_at", "id", cursor);
+    query.push(" ORDER BY created_at DESC, id DESC LIMIT ");
+    query.push_bind(limit);
+    let rows = query
+        .build_query_as::<ControlledDiscrepancyRow>()
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(discrepancy_from_row).collect()
+}
+
+async fn insert_controlled_movement_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    movement: NewControlledMovement,
+    current_balance: i64,
+) -> anyhow::Result<()> {
+    let next_balance = current_balance + movement.quantity_delta;
+    if next_balance < 0 {
+        anyhow::bail!("controlled balance cannot become negative");
+    }
     hms_observability::observe_db_query(
         "inventory.controlled_register.insert_movement",
         sqlx::query(
             r#"
-        INSERT INTO controlled_substance_register (
-            id, facility_id, item_id, location_id, movement_type, quantity_delta, balance_after,
-            witness_user_id, created_by_user_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#,
+            INSERT INTO controlled_substance_register (
+                id, facility_id, item_id, location_id, movement_type, quantity_delta,
+                balance_after, witness_user_id, created_by_user_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "#,
         )
         .bind(movement.id)
         .bind(movement.facility_id)
@@ -322,12 +456,19 @@ pub async fn create_controlled_movement(
         .bind(next_balance)
         .bind(movement.witness_user_id)
         .bind(movement.actor_user_id)
-        .execute(pool),
+        .execute(&mut **tx),
     )
     .await?;
-    fetch_controlled_by_id(pool, movement.facility_id, movement.id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("created controlled register entry was not found"))
+    apply_stock_delta_tx(
+        tx,
+        movement.facility_id,
+        movement.item_id,
+        movement.location_id,
+        movement.quantity_delta,
+        "controlled_substance_register",
+        movement.actor_user_id,
+    )
+    .await
 }
 
 async fn current_controlled_balance(
@@ -511,6 +652,23 @@ fn controlled_entry_from_row(
         balance_before: row.balance_before,
         balance_after: row.balance_after,
         witness_user_id: row.witness_user_id,
+        created_at: row.created_at,
+    })
+}
+
+fn discrepancy_from_row(
+    row: ControlledDiscrepancyRow,
+) -> anyhow::Result<ControlledDiscrepancyListItem> {
+    Ok(ControlledDiscrepancyListItem {
+        id: row.id,
+        register_entry_id: row.register_entry_id,
+        category: codec::decode(&row.category)?,
+        expected_balance: row.expected_balance,
+        actual_count: row.actual_count,
+        quantity_delta: row.quantity_delta,
+        reason: row.reason,
+        status: row.status,
+        severity: row.severity,
         created_at: row.created_at,
     })
 }

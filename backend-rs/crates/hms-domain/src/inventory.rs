@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InventoryItemType {
     Medication,
@@ -11,7 +11,7 @@ pub enum InventoryItemType {
     ControlledSubstance,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StockMovementType {
     Receipt,
@@ -21,14 +21,14 @@ pub enum StockMovementType {
     Dispense,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferStatus {
     Requested,
     Completed,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RequisitionStatus {
     Requested,
@@ -39,7 +39,7 @@ pub enum RequisitionStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PurchaseOrderStatus {
     Draft,
@@ -49,7 +49,7 @@ pub enum PurchaseOrderStatus {
     Closed,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GoodsReceivedStatus {
     Received,
@@ -60,7 +60,7 @@ pub enum GoodsReceivedStatus {
     Rejected,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlledMovementType {
     Receipt,
@@ -69,10 +69,46 @@ pub enum ControlledMovementType {
     Count,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DispenseStatus {
     Dispensed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlledDiscrepancyCategory {
+    Missing,
+    Surplus,
+    Breakage,
+    Expired,
+    DocumentationError,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StandingOrderFrequency {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StandingOrderStatus {
+    Active,
+    Paused,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StockCheckQueueStatus {
+    Queued,
+    InProgress,
+    Completed,
+    Cancelled,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -313,7 +349,104 @@ pub struct CreateControlledSubstanceMovementRequest {
 pub struct CreateControlledSubstanceCountRequest {
     pub actual_count: i64,
     pub witness_user_id: Option<Uuid>,
+    pub category: Option<ControlledDiscrepancyCategory>,
+    pub reason: Option<String>,
     pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateInventoryCatalogEditRequest {
+    pub item_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub code: String,
+    pub name: String,
+    pub unit: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct ControlledDiscrepancyListItem {
+    pub id: Uuid,
+    pub register_entry_id: Uuid,
+    pub category: ControlledDiscrepancyCategory,
+    pub expected_balance: i64,
+    pub actual_count: i64,
+    pub quantity_delta: i64,
+    pub reason: String,
+    pub status: String,
+    pub severity: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct InventoryCatalogVersionItem {
+    pub id: Uuid,
+    pub item_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub effective_to: Option<NaiveDate>,
+    pub code: String,
+    pub name: String,
+    pub unit: String,
+    pub reason: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct StandingOrderListItem {
+    pub id: Uuid,
+    pub requesting_location_id: Uuid,
+    pub frequency: StandingOrderFrequency,
+    pub status: StandingOrderStatus,
+    pub next_run_on: NaiveDate,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateStandingOrderRequest {
+    pub requesting_location_id: Uuid,
+    pub frequency: StandingOrderFrequency,
+    pub next_run_on: NaiveDate,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct SupplyRequestDispenseResult {
+    pub id: Uuid,
+    pub requisition_id: Uuid,
+    pub status: String,
+    pub line_count: i64,
+    pub dispensed_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct SupplyDispenseLineRequest {
+    pub item_id: Uuid,
+    pub location_id: Uuid,
+    pub quantity: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct DispenseSupplyRequest {
+    pub lines: Vec<SupplyDispenseLineRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct StockCheckQueueItem {
+    pub id: Uuid,
+    pub location_id: Uuid,
+    pub status: StockCheckQueueStatus,
+    pub reason: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateStockCheckRequest {
+    pub location_id: Uuid,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct UpdateStockCheckStatusRequest {
+    pub status: StockCheckQueueStatus,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

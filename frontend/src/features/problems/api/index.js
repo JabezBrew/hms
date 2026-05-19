@@ -65,8 +65,35 @@ function normalizeUpdatePayload(payload = {}) {
   };
 }
 
-function unsupportedInRustV2(message) {
-  return new Error(message);
+function normalizeProblemLinkFilters(params = {}) {
+  return {
+    ...(params.clinical_note_id || params.note_entry ? { clinical_note_id: params.clinical_note_id || params.note_entry } : {}),
+    ...(params.prescription_id || params.prescription ? { prescription_id: params.prescription_id || params.prescription } : {}),
+    ...(params.lab_order_id || params.lab_order ? { lab_order_id: params.lab_order_id || params.lab_order } : {}),
+    ...(params.encounter_id || params.encounter ? { encounter_id: params.encounter_id || params.encounter } : {}),
+  };
+}
+
+function normalizeProblemLinkPayload(payload = {}) {
+  return {
+    problem_id: payload.problem_id || payload.problem,
+    ...normalizeProblemLinkFilters(payload),
+  };
+}
+
+function adaptV2ProblemLink(link) {
+  if (!link) return link;
+  const sourceField = {
+    clinical_note: 'note_entry',
+    prescription: 'prescription',
+    lab_order: 'lab_order',
+    encounter: 'encounter',
+  }[link.artifact_kind];
+  return {
+    ...link,
+    problem: link.problem_id,
+    ...(sourceField ? { [sourceField]: link.artifact_id } : {}),
+  };
 }
 
 export const problemsApi = {
@@ -209,7 +236,11 @@ export const problemsApi = {
   listLinks: async (params = {}, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return [];
+        const response = await v2Api.getClinicalProblemLinks({
+          query: normalizeProblemLinkFilters(params),
+          signal: options.signal,
+        });
+        return Array.isArray(response?.data) ? response.data.map(adaptV2ProblemLink) : [];
       }
 
       const response = await apiClient.getWithPagination('/problems/links/', {
@@ -227,23 +258,36 @@ export const problemsApi = {
   },
 
   createLink: async (payload) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose problem artifact links yet.');
-    }
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postClinicalProblemLinks(
+          normalizeProblemLinkPayload(payload),
+          { signal: payload?.signal },
+        );
+        return adaptV2ProblemLink(response?.data);
+      }
       return await apiClient.post('/problems/links/', payload);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to link problem'));
+      }
       throw new Error(handleApiError(error, 'Failed to link problem'));
     }
   },
 
   deleteLink: async (id) => {
-    if (isRustV2ApiMode()) {
-      throw unsupportedInRustV2('Rust V2 does not expose problem artifact links yet.');
-    }
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.deleteClinicalProblemLink({ id });
+        return adaptV2ProblemLink(response?.data);
+      }
       return await apiClient.delete(`/problems/links/${id}/`);
     } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to remove problem link'));
+      }
       throw new Error(handleApiError(error, 'Failed to remove problem link'));
     }
   },

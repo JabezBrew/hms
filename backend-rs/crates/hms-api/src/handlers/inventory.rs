@@ -1,17 +1,20 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use hms_domain::inventory::{
-    ControlledSubstanceBalanceValidation, ControlledSubstanceRegisterEntryItem,
-    ControlledSubstanceRegisterItem, CreateControlledSubstanceCountRequest,
-    CreateControlledSubstanceMovementRequest, CreateGoodsReceivedNoteRequest,
-    CreatePharmacyDispenseRequest, CreatePurchaseOrderRequest, CreateStockBatchRequest,
-    CreateStockRequisitionRequest, CreateStockTransferRequest, GoodsReceivedNoteListItem,
-    InventoryCategoryListItem, InventoryDashboardSummary, InventoryDashboardSummaryQuery,
-    InventoryItemListItem, InventoryItemStockLocationItem, InventoryItemsQuery, InventoryListQuery,
-    PharmacyDispenseListItem, PurchaseOrderListItem, RejectStockRequisitionRequest,
-    StockBatchListItem, StockBatchListQuery, StockMovementListItem, StockRequisitionListItem,
-    StockTransferListItem, StorageLocationListItem, StorageLocationStockItem, SupplierListItem,
-    SupplierListQuery,
+    ControlledDiscrepancyListItem, ControlledSubstanceBalanceValidation,
+    ControlledSubstanceRegisterEntryItem, ControlledSubstanceRegisterItem,
+    CreateControlledSubstanceCountRequest, CreateControlledSubstanceMovementRequest,
+    CreateGoodsReceivedNoteRequest, CreateInventoryCatalogEditRequest,
+    CreatePharmacyDispenseRequest, CreatePurchaseOrderRequest, CreateStandingOrderRequest,
+    CreateStockBatchRequest, CreateStockCheckRequest, CreateStockRequisitionRequest,
+    CreateStockTransferRequest, DispenseSupplyRequest, GoodsReceivedNoteListItem,
+    InventoryCatalogVersionItem, InventoryCategoryListItem, InventoryDashboardSummary,
+    InventoryDashboardSummaryQuery, InventoryItemListItem, InventoryItemStockLocationItem,
+    InventoryItemsQuery, InventoryListQuery, PharmacyDispenseListItem, PurchaseOrderListItem,
+    RejectStockRequisitionRequest, StandingOrderListItem, StockBatchListItem, StockBatchListQuery,
+    StockCheckQueueItem, StockMovementListItem, StockRequisitionListItem, StockTransferListItem,
+    StorageLocationListItem, StorageLocationStockItem, SupplierListItem, SupplierListQuery,
+    SupplyRequestDispenseResult, UpdateStockCheckStatusRequest,
 };
 use uuid::Uuid;
 
@@ -75,6 +78,21 @@ pub async fn get_item(
             .inventory_services()
             .catalog()
             .get_item(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/catalog-edits", operation_id = "postInventoryCatalogEdit", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateInventoryCatalogEditRequest, responses((status = 200, body = ObjectResponse<InventoryCatalogVersionItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn apply_catalog_edit(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<CreateInventoryCatalogEditRequest>,
+) -> Result<Json<ObjectResponse<InventoryCatalogVersionItem>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .catalog()
+            .apply_catalog_edit(&user, payload)
             .await?,
     ))
 }
@@ -398,6 +416,83 @@ pub async fn cancel_requisition(
     ))
 }
 
+#[utoipa::path(post, path = "/api/v2/inventory/requisitions/{id}/dispense", operation_id = "postStockRequisitionDispense", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock requisition ID")), request_body = DispenseSupplyRequest, responses((status = 200, body = ObjectResponse<SupplyRequestDispenseResult>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn dispense_supply_request(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<DispenseSupplyRequest>,
+) -> Result<Json<ObjectResponse<SupplyRequestDispenseResult>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .dispense_supply_request(&user, id, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/standing-orders", operation_id = "postInventoryStandingOrders", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStandingOrderRequest, responses((status = 200, body = ObjectResponse<StandingOrderListItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn create_standing_order(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<CreateStandingOrderRequest>,
+) -> Result<Json<ObjectResponse<StandingOrderListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .create_standing_order(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/standing-orders/{id}/generate-requisition", operation_id = "postInventoryStandingOrderGenerateRequisition", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Standing order ID")), responses((status = 200, body = ObjectResponse<StockRequisitionListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn generate_standing_order_requisition(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ObjectResponse<StockRequisitionListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .generate_standing_order_requisition(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/stock-checks", operation_id = "postInventoryStockChecks", tag = "inventory", security(("bearerAuth" = [])), request_body = CreateStockCheckRequest, responses((status = 200, body = ObjectResponse<StockCheckQueueItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn enqueue_stock_check(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<CreateStockCheckRequest>,
+) -> Result<Json<ObjectResponse<StockCheckQueueItem>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .enqueue_stock_check(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v2/inventory/stock-checks/{id}/status", operation_id = "postInventoryStockCheckStatus", tag = "inventory", security(("bearerAuth" = [])), params(("id" = Uuid, Path, description = "Stock check ID")), request_body = UpdateStockCheckStatusRequest, responses((status = 200, body = ObjectResponse<StockCheckQueueItem>), (status = 400, body = ApiErrorResponse), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse), (status = 404, body = ApiErrorResponse), (status = 409, body = ApiErrorResponse)))]
+pub async fn transition_stock_check(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateStockCheckStatusRequest>,
+) -> Result<Json<ObjectResponse<StockCheckQueueItem>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .stock_control()
+            .transition_stock_check(&user, id, payload)
+            .await?,
+    ))
+}
+
 #[utoipa::path(get, path = "/api/v2/inventory/purchase-orders", operation_id = "getPurchaseOrders", tag = "inventory", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<PurchaseOrderListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
 pub async fn list_purchase_orders(
     State(state): State<AppState>,
@@ -605,6 +700,21 @@ pub async fn validate_controlled_register_balance(
             .inventory_services()
             .controlled_substances()
             .validate_register_balance(&user, id)
+            .await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v2/pharmacy/controlled-substances/discrepancies", operation_id = "getControlledSubstanceDiscrepancies", tag = "pharmacy", security(("bearerAuth" = [])), params(InventoryListQuery), responses((status = 200, body = ListResponse<ControlledDiscrepancyListItem>), (status = 401, body = ApiErrorResponse), (status = 403, body = ApiErrorResponse)))]
+pub async fn list_controlled_discrepancies(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<InventoryListQuery>,
+) -> Result<Json<ListResponse<ControlledDiscrepancyListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .inventory_services()
+            .controlled_substances()
+            .list_discrepancies(&user, query)
             .await?,
     ))
 }

@@ -42,6 +42,10 @@ vi.mock('@/features/appointments/hooks/useAppointmentQueries', () => {
       mutate: vi.fn(),
       isPending: false,
     }),
+    useCancelAppointment: () => ({
+      mutate: vi.fn(),
+      isPending: false,
+    }),
     useDeleteAppointment: () => ({
       mutate: vi.fn(),
       isPending: false,

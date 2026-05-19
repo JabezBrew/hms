@@ -1,9 +1,12 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use hms_domain::care::{
-    AppointmentListItem, AppointmentStatus, CareTeamAssignment, CareTeamRole, ClinicListItem,
-    EncounterListItem, EncounterStatus, EncounterType, TriageAcuity, TriageAssessmentRequest,
-    TriageListItem, TriageStatus, VisitListItem, VisitStatus,
+    AppointmentListItem, AppointmentStatus, AppointmentTypeListItem, CareTeamAssignment,
+    CareTeamRole, ClinicListItem, ClinicSessionListItem, EncounterListItem, EncounterStatus,
+    EncounterType, TriageAcuity, TriageAssessmentRequest, TriageListItem, TriageStatus,
+    VisitListItem, VisitStatus,
 };
+pub use hms_domain::care::{ClinicSessionMode, ClinicSessionOwnerType};
+use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -33,6 +36,22 @@ pub struct NewAppointment {
 }
 
 #[derive(Clone, Debug)]
+pub struct NewBookedAppointment {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub patient_id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub clinic_session_id: Option<Uuid>,
+    pub appointment_type_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub overbook_reason: Option<String>,
+    pub series_id: Option<Uuid>,
+    pub created_by_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
 pub struct AppointmentUpdate {
     pub id: Uuid,
     pub facility_id: Uuid,
@@ -48,6 +67,89 @@ pub struct NewClinic {
     pub code: String,
     pub name: String,
     pub actor_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewClinicSession {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub service_code: Option<String>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub owner_type: ClinicSessionOwnerType,
+    pub owner_id: Option<Uuid>,
+    pub name: String,
+    pub mode: ClinicSessionMode,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub slot_minutes: Option<i32>,
+    pub capacity: i32,
+    pub allow_overbooking: bool,
+    pub overbook_limit: i32,
+    pub created_by_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewAppointmentType {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub default_duration_minutes: i32,
+    pub created_by_user_id: Uuid,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum BlockedTimeScope {
+    Session,
+    Practitioner,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewBlockedTime {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub scope: BlockedTimeScope,
+    pub clinic_session_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub reason: String,
+    pub created_by_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct AppointmentHistoryItem {
+    pub id: Uuid,
+    pub appointment_id: Uuid,
+    pub event_type: String,
+    pub reason: Option<String>,
+    pub previous_starts_at: Option<DateTime<Utc>>,
+    pub previous_ends_at: Option<DateTime<Utc>>,
+    pub new_starts_at: Option<DateTime<Utc>>,
+    pub new_ends_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewAppointmentSeries {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub patient_id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub clinic_session_id: Option<Uuid>,
+    pub appointment_type_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub starts_at: Vec<DateTime<Utc>>,
+    pub duration_minutes: i64,
+    pub repeat_rule: Option<String>,
+    pub created_by_user_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+pub struct AppointmentSeriesCreated {
+    pub series_id: Uuid,
+    pub appointments: Vec<AppointmentListItem>,
 }
 
 #[derive(Clone, Debug)]
@@ -114,9 +216,17 @@ struct AppointmentRow {
     patient_id: Uuid,
     patient_code: String,
     patient_display_name: String,
+    clinic_id: Option<Uuid>,
+    clinic_session_id: Option<Uuid>,
+    appointment_type_id: Option<Uuid>,
+    appointment_type_name: Option<String>,
+    practitioner_user_id: Option<Uuid>,
     starts_at: DateTime<Utc>,
     ends_at: DateTime<Utc>,
     status: String,
+    cancellation_reason: Option<String>,
+    overbook_reason: Option<String>,
+    series_id: Option<Uuid>,
     created_at: DateTime<Utc>,
 }
 
@@ -126,6 +236,49 @@ struct ClinicRow {
     code: String,
     name: String,
     is_active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ClinicSessionRow {
+    id: Uuid,
+    clinic_id: Option<Uuid>,
+    service_code: Option<String>,
+    practitioner_user_id: Option<Uuid>,
+    owner_type: String,
+    owner_id: Option<Uuid>,
+    name: String,
+    mode: String,
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
+    slot_minutes: Option<i32>,
+    capacity: i32,
+    allow_overbooking: bool,
+    overbook_limit: i32,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct AppointmentTypeRow {
+    id: Uuid,
+    code: String,
+    name: String,
+    default_duration_minutes: i32,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct AppointmentHistoryRow {
+    id: Uuid,
+    appointment_id: Uuid,
+    event_type: String,
+    reason: Option<String>,
+    previous_starts_at: Option<DateTime<Utc>>,
+    previous_ends_at: Option<DateTime<Utc>>,
+    new_starts_at: Option<DateTime<Utc>>,
+    new_ends_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -191,12 +344,22 @@ pub async fn list_appointments(
                appointments.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               appointments.clinic_id,
+               appointments.clinic_session_id,
+               appointments.appointment_type_id,
+               appointment_types.name AS appointment_type_name,
+               appointments.practitioner_user_id,
                appointments.starts_at,
                appointments.ends_at,
                appointments.status,
+               appointments.cancellation_reason,
+               appointments.overbook_reason,
+               appointments.series_id,
                appointments.created_at
         FROM appointments
         JOIN patients ON patients.id = appointments.patient_id
+        LEFT JOIN appointment_types ON appointment_types.id = appointments.appointment_type_id
+             AND appointment_types.facility_id = appointments.facility_id
         WHERE appointments.facility_id =
         "#,
     );
@@ -329,6 +492,230 @@ pub async fn create_clinic(pool: &PgPool, clinic: NewClinic) -> anyhow::Result<C
     Ok(clinic_from_row(row))
 }
 
+pub async fn create_clinic_session(
+    pool: &PgPool,
+    session: NewClinicSession,
+) -> anyhow::Result<ClinicSessionListItem> {
+    if session.ends_at <= session.starts_at {
+        anyhow::bail!("clinic session end time must be after start time");
+    }
+    if session.capacity < 1 {
+        anyhow::bail!("clinic session capacity must be positive");
+    }
+    if let Some(slot_minutes) = session.slot_minutes {
+        if slot_minutes < 1 {
+            anyhow::bail!("slot duration must be positive");
+        }
+    }
+
+    let row = sqlx::query_as::<_, ClinicSessionRow>(
+        r#"
+        INSERT INTO clinic_sessions (
+            id,
+            facility_id,
+            clinic_id,
+            service_code,
+            practitioner_user_id,
+            owner_type,
+            owner_id,
+            name,
+            mode,
+            starts_at,
+            ends_at,
+            slot_minutes,
+            capacity,
+            allow_overbooking,
+            overbook_limit,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        RETURNING id,
+                  clinic_id,
+                  service_code,
+                  practitioner_user_id,
+                  owner_type,
+                  owner_id,
+                  name,
+                  mode,
+                  starts_at,
+                  ends_at,
+                  slot_minutes,
+                  capacity,
+                  allow_overbooking,
+                  overbook_limit,
+                  is_active,
+                  created_at
+        "#,
+    )
+    .bind(session.id)
+    .bind(session.facility_id)
+    .bind(session.clinic_id)
+    .bind(session.service_code)
+    .bind(session.practitioner_user_id)
+    .bind(codec::encode(session.owner_type)?)
+    .bind(session.owner_id)
+    .bind(session.name)
+    .bind(codec::encode(session.mode)?)
+    .bind(session.starts_at)
+    .bind(session.ends_at)
+    .bind(session.slot_minutes)
+    .bind(session.capacity)
+    .bind(session.allow_overbooking)
+    .bind(session.overbook_limit)
+    .bind(session.created_by_user_id)
+    .fetch_one(pool)
+    .await?;
+
+    clinic_session_from_row(row)
+}
+
+pub async fn create_appointment_type(
+    pool: &PgPool,
+    appointment_type: NewAppointmentType,
+) -> anyhow::Result<AppointmentTypeListItem> {
+    let row = sqlx::query_as::<_, AppointmentTypeRow>(
+        r#"
+        INSERT INTO appointment_types (
+            id,
+            facility_id,
+            code,
+            name,
+            default_duration_minutes,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id,
+                  code,
+                  name,
+                  default_duration_minutes,
+                  is_active,
+                  created_at
+        "#,
+    )
+    .bind(appointment_type.id)
+    .bind(appointment_type.facility_id)
+    .bind(appointment_type.code)
+    .bind(appointment_type.name)
+    .bind(appointment_type.default_duration_minutes)
+    .bind(appointment_type.created_by_user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(appointment_type_from_row(row))
+}
+
+pub async fn list_appointment_types(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<CareCursor>,
+    limit: i64,
+) -> anyhow::Result<Vec<AppointmentTypeListItem>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT id,
+               code,
+               name,
+               default_duration_minutes,
+               is_active,
+               created_at
+        FROM appointment_types
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+    query.push(" AND is_active = TRUE");
+
+    if let Some(cursor) = cursor {
+        query.push(" AND (created_at, id) > (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+
+    query.push(" ORDER BY created_at ASC, id ASC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = query
+        .build_query_as::<AppointmentTypeRow>()
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows.into_iter().map(appointment_type_from_row).collect())
+}
+
+pub async fn constrain_appointment_type_to_session(
+    pool: &PgPool,
+    facility_id: Uuid,
+    clinic_session_id: Uuid,
+    appointment_type_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO clinic_session_appointment_types (
+            facility_id,
+            clinic_session_id,
+            appointment_type_id
+        )
+        VALUES ($1, $2, $3)
+        ON CONFLICT (clinic_session_id, appointment_type_id) DO NOTHING
+        "#,
+    )
+    .bind(facility_id)
+    .bind(clinic_session_id)
+    .bind(appointment_type_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn create_blocked_time(
+    pool: &PgPool,
+    blocked_time: NewBlockedTime,
+) -> anyhow::Result<()> {
+    if blocked_time.ends_at <= blocked_time.starts_at {
+        anyhow::bail!("blocked time end must be after start");
+    }
+    let reason = blocked_time.reason.trim();
+    if reason.is_empty() {
+        anyhow::bail!("blocked time reason is required");
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO appointment_blocked_times (
+            id,
+            facility_id,
+            scope,
+            clinic_session_id,
+            practitioner_user_id,
+            starts_at,
+            ends_at,
+            reason,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "#,
+    )
+    .bind(blocked_time.id)
+    .bind(blocked_time.facility_id)
+    .bind(match blocked_time.scope {
+        BlockedTimeScope::Session => "session",
+        BlockedTimeScope::Practitioner => "practitioner",
+    })
+    .bind(blocked_time.clinic_session_id)
+    .bind(blocked_time.practitioner_user_id)
+    .bind(blocked_time.starts_at)
+    .bind(blocked_time.ends_at)
+    .bind(reason)
+    .bind(blocked_time.created_by_user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn update_clinic(
     pool: &PgPool,
     clinic: ClinicUpdate,
@@ -385,7 +772,54 @@ pub async fn create_appointment(
     pool: &PgPool,
     appointment: NewAppointment,
 ) -> anyhow::Result<AppointmentListItem> {
-    let clinic_id = default_clinic_id(pool, appointment.facility_id).await?;
+    create_booked_appointment(
+        pool,
+        NewBookedAppointment {
+            id: appointment.id,
+            facility_id: appointment.facility_id,
+            patient_id: appointment.patient_id,
+            clinic_id: None,
+            clinic_session_id: None,
+            appointment_type_id: None,
+            practitioner_user_id: None,
+            starts_at: appointment.starts_at,
+            ends_at: appointment.ends_at,
+            overbook_reason: None,
+            series_id: None,
+            created_by_user_id: appointment.created_by_user_id,
+        },
+    )
+    .await
+}
+
+pub async fn create_booked_appointment(
+    pool: &PgPool,
+    appointment: NewBookedAppointment,
+) -> anyhow::Result<AppointmentListItem> {
+    if appointment.ends_at <= appointment.starts_at {
+        anyhow::bail!("appointment end time must be after start time");
+    }
+    let mut transaction = pool.begin().await?;
+    let session = if let Some(session_id) = appointment.clinic_session_id {
+        Some(
+            load_clinic_session_for_update(&mut transaction, appointment.facility_id, session_id)
+                .await?,
+        )
+    } else {
+        None
+    };
+    let clinic_id = if let Some(clinic_id) = appointment.clinic_id {
+        Some(clinic_id)
+    } else if let Some(session) = &session {
+        session.clinic_id
+    } else {
+        default_clinic_id(pool, appointment.facility_id).await?
+    };
+
+    if let Some(session) = &session {
+        validate_session_booking(&mut transaction, session, &appointment).await?;
+    }
+
     let row = sqlx::query_as::<_, AppointmentRow>(
         r#"
         WITH inserted AS (
@@ -394,42 +828,91 @@ pub async fn create_appointment(
                 facility_id,
                 patient_id,
                 clinic_id,
+                clinic_session_id,
+                appointment_type_id,
+                practitioner_user_id,
+                series_id,
                 starts_at,
                 ends_at,
                 status,
+                overbook_reason,
+                overbooked_at,
+                overbooked_by_user_id,
                 created_by_user_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                    CASE WHEN $12::text IS NULL THEN NULL ELSE now() END,
+                    CASE WHEN $12::text IS NULL THEN NULL ELSE $13 END,
+                    $13)
             RETURNING id,
                       patient_id,
+                      clinic_id,
+                      clinic_session_id,
+                      appointment_type_id,
+                      practitioner_user_id,
+                      series_id,
                       starts_at,
                       ends_at,
                       status,
+                      cancellation_reason,
+                      overbook_reason,
                       created_at
         )
         SELECT inserted.id,
                inserted.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               inserted.clinic_id,
+               inserted.clinic_session_id,
+               inserted.appointment_type_id,
+               appointment_types.name AS appointment_type_name,
+               inserted.practitioner_user_id,
                inserted.starts_at,
                inserted.ends_at,
                inserted.status,
+               inserted.cancellation_reason,
+               inserted.overbook_reason,
+               inserted.series_id,
                inserted.created_at
         FROM inserted
         JOIN patients ON patients.id = inserted.patient_id
+        LEFT JOIN appointment_types ON appointment_types.id = inserted.appointment_type_id
+             AND appointment_types.facility_id = $2
         "#,
     )
     .bind(appointment.id)
     .bind(appointment.facility_id)
     .bind(appointment.patient_id)
     .bind(clinic_id)
+    .bind(appointment.clinic_session_id)
+    .bind(appointment.appointment_type_id)
+    .bind(appointment.practitioner_user_id)
+    .bind(appointment.series_id)
     .bind(appointment.starts_at)
     .bind(appointment.ends_at)
     .bind(codec::encode(AppointmentStatus::Scheduled)?)
+    .bind(appointment.overbook_reason.as_deref())
     .bind(appointment.created_by_user_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
 
+    if appointment.overbook_reason.is_some() {
+        insert_appointment_history(
+            &mut transaction,
+            appointment.facility_id,
+            appointment.id,
+            "overbooked",
+            appointment.created_by_user_id,
+            appointment.overbook_reason.as_deref(),
+            None,
+            None,
+            Some(appointment.starts_at),
+            Some(appointment.ends_at),
+        )
+        .await?;
+    }
+
+    transaction.commit().await?;
     appointment_from_row(row)
 }
 
@@ -444,12 +927,22 @@ pub async fn get_appointment(
                appointments.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               appointments.clinic_id,
+               appointments.clinic_session_id,
+               appointments.appointment_type_id,
+               appointment_types.name AS appointment_type_name,
+               appointments.practitioner_user_id,
                appointments.starts_at,
                appointments.ends_at,
                appointments.status,
+               appointments.cancellation_reason,
+               appointments.overbook_reason,
+               appointments.series_id,
                appointments.created_at
         FROM appointments
         JOIN patients ON patients.id = appointments.patient_id
+        LEFT JOIN appointment_types ON appointment_types.id = appointments.appointment_type_id
+             AND appointment_types.facility_id = appointments.facility_id
         WHERE appointments.facility_id = $1
           AND appointments.id = $2
           AND patients.facility_id = $1
@@ -467,44 +960,148 @@ pub async fn update_appointment(
     pool: &PgPool,
     appointment: AppointmentUpdate,
 ) -> anyhow::Result<Option<AppointmentListItem>> {
+    let mut transaction = pool.begin().await?;
+    let existing = sqlx::query_as::<_, AppointmentRow>(
+        r#"
+        SELECT appointments.id,
+               appointments.patient_id,
+               patients.patient_code,
+               patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               appointments.clinic_id,
+               appointments.clinic_session_id,
+               appointments.appointment_type_id,
+               appointment_types.name AS appointment_type_name,
+               appointments.practitioner_user_id,
+               appointments.starts_at,
+               appointments.ends_at,
+               appointments.status,
+               appointments.cancellation_reason,
+               appointments.overbook_reason,
+               appointments.series_id,
+               appointments.created_at
+        FROM appointments
+        JOIN patients ON patients.id = appointments.patient_id
+        LEFT JOIN appointment_types ON appointment_types.id = appointments.appointment_type_id
+             AND appointment_types.facility_id = appointments.facility_id
+        WHERE appointments.facility_id = $1
+          AND appointments.id = $2
+          AND appointments.status = 'scheduled'
+          AND patients.facility_id = $1
+        FOR UPDATE OF appointments
+        "#,
+    )
+    .bind(appointment.facility_id)
+    .bind(appointment.id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    let Some(existing) = existing else {
+        return Ok(None);
+    };
+    let starts_at = appointment.starts_at.unwrap_or(existing.starts_at);
+    let ends_at = appointment.ends_at.unwrap_or(existing.ends_at);
+    if ends_at <= starts_at {
+        anyhow::bail!("appointment end time must be after start time");
+    }
+
+    if let Some(session_id) = existing.clinic_session_id {
+        let session =
+            load_clinic_session_for_update(&mut transaction, appointment.facility_id, session_id)
+                .await?;
+        let validation_appointment = NewBookedAppointment {
+            id: appointment.id,
+            facility_id: appointment.facility_id,
+            patient_id: existing.patient_id,
+            clinic_id: existing.clinic_id,
+            clinic_session_id: existing.clinic_session_id,
+            appointment_type_id: existing.appointment_type_id,
+            practitioner_user_id: existing.practitioner_user_id,
+            starts_at,
+            ends_at,
+            overbook_reason: existing.overbook_reason.clone(),
+            series_id: existing.series_id,
+            created_by_user_id: appointment.actor_user_id,
+        };
+        validate_session_booking_excluding(
+            &mut transaction,
+            &session,
+            &validation_appointment,
+            Some(appointment.id),
+        )
+        .await?;
+    }
+
     let row = sqlx::query_as::<_, AppointmentRow>(
         r#"
         WITH updated AS (
             UPDATE appointments
-            SET starts_at = COALESCE($3, starts_at),
-                ends_at = COALESCE($4, ends_at),
+            SET starts_at = $3,
+                ends_at = $4,
                 updated_at = now()
             WHERE facility_id = $1
               AND id = $2
               AND status = 'scheduled'
             RETURNING id,
                       patient_id,
+                      clinic_id,
+                      clinic_session_id,
+                      appointment_type_id,
+                      practitioner_user_id,
+                      series_id,
                       starts_at,
                       ends_at,
                       status,
+                      cancellation_reason,
+                      overbook_reason,
                       created_at
         )
         SELECT updated.id,
                updated.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               updated.clinic_id,
+               updated.clinic_session_id,
+               updated.appointment_type_id,
+               appointment_types.name AS appointment_type_name,
+               updated.practitioner_user_id,
                updated.starts_at,
                updated.ends_at,
                updated.status,
+               updated.cancellation_reason,
+               updated.overbook_reason,
+               updated.series_id,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
+        LEFT JOIN appointment_types ON appointment_types.id = updated.appointment_type_id
+             AND appointment_types.facility_id = $1
         WHERE patients.facility_id = $1
         "#,
     )
     .bind(appointment.facility_id)
     .bind(appointment.id)
-    .bind(appointment.starts_at)
-    .bind(appointment.ends_at)
-    .fetch_optional(pool)
+    .bind(starts_at)
+    .bind(ends_at)
+    .fetch_optional(&mut *transaction)
     .await?;
 
-    let _ = appointment.actor_user_id;
+    if starts_at != existing.starts_at || ends_at != existing.ends_at {
+        insert_appointment_history(
+            &mut transaction,
+            appointment.facility_id,
+            appointment.id,
+            "rescheduled",
+            appointment.actor_user_id,
+            None,
+            Some(existing.starts_at),
+            Some(existing.ends_at),
+            Some(starts_at),
+            Some(ends_at),
+        )
+        .await?;
+    }
+
+    transaction.commit().await?;
     row.map(appointment_from_row).transpose()
 }
 
@@ -513,43 +1110,87 @@ pub async fn cancel_appointment(
     facility_id: Uuid,
     appointment_id: Uuid,
     actor_user_id: Uuid,
+    reason: String,
 ) -> anyhow::Result<Option<AppointmentListItem>> {
+    let reason = reason.trim().to_owned();
+    if reason.is_empty() {
+        anyhow::bail!("appointment cancellation reason is required");
+    }
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query_as::<_, AppointmentRow>(
         r#"
         WITH updated AS (
             UPDATE appointments
             SET status = $3,
+                cancellation_reason = $4,
+                cancelled_at = now(),
+                cancelled_by_user_id = $5,
                 updated_at = now()
             WHERE facility_id = $1
               AND id = $2
               AND status = 'scheduled'
             RETURNING id,
                       patient_id,
+                      clinic_id,
+                      clinic_session_id,
+                      appointment_type_id,
+                      practitioner_user_id,
+                      series_id,
                       starts_at,
                       ends_at,
                       status,
+                      cancellation_reason,
+                      overbook_reason,
                       created_at
         )
         SELECT updated.id,
                updated.patient_id,
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
+               updated.clinic_id,
+               updated.clinic_session_id,
+               updated.appointment_type_id,
+               appointment_types.name AS appointment_type_name,
+               updated.practitioner_user_id,
                updated.starts_at,
                updated.ends_at,
                updated.status,
+               updated.cancellation_reason,
+               updated.overbook_reason,
+               updated.series_id,
                updated.created_at
         FROM updated
         JOIN patients ON patients.id = updated.patient_id
+        LEFT JOIN appointment_types ON appointment_types.id = updated.appointment_type_id
+             AND appointment_types.facility_id = $1
         WHERE patients.facility_id = $1
         "#,
     )
     .bind(facility_id)
     .bind(appointment_id)
     .bind(codec::encode(AppointmentStatus::Cancelled)?)
-    .fetch_optional(pool)
+    .bind(&reason)
+    .bind(actor_user_id)
+    .fetch_optional(&mut *transaction)
     .await?;
 
-    let _ = actor_user_id;
+    if row.is_some() {
+        insert_appointment_history(
+            &mut transaction,
+            facility_id,
+            appointment_id,
+            "cancelled",
+            actor_user_id,
+            Some(&reason),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
+    }
+
+    transaction.commit().await?;
     row.map(appointment_from_row).transpose()
 }
 
@@ -597,6 +1238,101 @@ pub async fn list_visits(
 
     let rows = query.build_query_as::<VisitRow>().fetch_all(pool).await?;
     rows.into_iter().map(visit_from_row).collect()
+}
+
+pub async fn appointment_history(
+    pool: &PgPool,
+    facility_id: Uuid,
+    appointment_id: Uuid,
+) -> anyhow::Result<Vec<AppointmentHistoryItem>> {
+    let rows = sqlx::query_as::<_, AppointmentHistoryRow>(
+        r#"
+        SELECT id,
+               appointment_id,
+               event_type,
+               reason,
+               previous_starts_at,
+               previous_ends_at,
+               new_starts_at,
+               new_ends_at,
+               created_at
+        FROM appointment_history
+        WHERE facility_id = $1
+          AND appointment_id = $2
+        ORDER BY created_at ASC, id ASC
+        "#,
+    )
+    .bind(facility_id)
+    .bind(appointment_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(appointment_history_from_row).collect())
+}
+
+pub async fn create_appointment_series(
+    pool: &PgPool,
+    series: NewAppointmentSeries,
+) -> anyhow::Result<AppointmentSeriesCreated> {
+    if series.starts_at.is_empty() {
+        anyhow::bail!("appointment series requires at least one date");
+    }
+    if series.duration_minutes <= 0 {
+        anyhow::bail!("appointment series duration must be positive");
+    }
+
+    let mut transaction = pool.begin().await?;
+    sqlx::query(
+        r#"
+        INSERT INTO appointment_series (
+            id,
+            facility_id,
+            patient_id,
+            repeat_rule,
+            selected_dates,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(series.id)
+    .bind(series.facility_id)
+    .bind(series.patient_id)
+    .bind(series.repeat_rule.clone())
+    .bind(sqlx::types::Json(json!(series.starts_at)))
+    .bind(series.created_by_user_id)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    let mut appointments = Vec::with_capacity(series.starts_at.len());
+    for starts_at in &series.starts_at {
+        let ends_at = *starts_at + chrono::Duration::minutes(series.duration_minutes);
+        let appointment = create_booked_appointment(
+            pool,
+            NewBookedAppointment {
+                id: Uuid::new_v4(),
+                facility_id: series.facility_id,
+                patient_id: series.patient_id,
+                clinic_id: series.clinic_id,
+                clinic_session_id: series.clinic_session_id,
+                appointment_type_id: series.appointment_type_id,
+                practitioner_user_id: series.practitioner_user_id,
+                starts_at: *starts_at,
+                ends_at,
+                overbook_reason: None,
+                series_id: Some(series.id),
+                created_by_user_id: series.created_by_user_id,
+            },
+        )
+        .await?;
+        appointments.push(appointment);
+    }
+
+    Ok(AppointmentSeriesCreated {
+        series_id: series.id,
+        appointments,
+    })
 }
 
 pub async fn get_visit(
@@ -1397,6 +2133,219 @@ pub async fn create_care_team_assignment(
     care_team_assignment_from_row(row)
 }
 
+async fn load_clinic_session_for_update(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    clinic_session_id: Uuid,
+) -> anyhow::Result<ClinicSessionListItem> {
+    let row = sqlx::query_as::<_, ClinicSessionRow>(
+        r#"
+        SELECT id,
+               clinic_id,
+               service_code,
+               practitioner_user_id,
+               owner_type,
+               owner_id,
+               name,
+               mode,
+               starts_at,
+               ends_at,
+               slot_minutes,
+               capacity,
+               allow_overbooking,
+               overbook_limit,
+               is_active,
+               created_at
+        FROM clinic_sessions
+        WHERE facility_id = $1
+          AND id = $2
+          AND is_active = true
+        FOR UPDATE
+        "#,
+    )
+    .bind(facility_id)
+    .bind(clinic_session_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("clinic session is not active in facility"))?;
+
+    clinic_session_from_row(row)
+}
+
+async fn validate_session_booking(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    session: &ClinicSessionListItem,
+    appointment: &NewBookedAppointment,
+) -> anyhow::Result<()> {
+    validate_session_booking_excluding(transaction, session, appointment, None).await
+}
+
+async fn validate_session_booking_excluding(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    session: &ClinicSessionListItem,
+    appointment: &NewBookedAppointment,
+    excluding_appointment_id: Option<Uuid>,
+) -> anyhow::Result<()> {
+    if appointment.starts_at < session.starts_at || appointment.ends_at > session.ends_at {
+        anyhow::bail!("appointment must be inside clinic session time");
+    }
+    if let Some(session_practitioner_id) = session.practitioner_user_id {
+        if let Some(appointment_practitioner_id) = appointment.practitioner_user_id {
+            if appointment_practitioner_id != session_practitioner_id {
+                anyhow::bail!("appointment practitioner does not match session practitioner");
+            }
+        }
+    }
+    if let Some(appointment_type_id) = appointment.appointment_type_id {
+        let constrained_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM clinic_session_appointment_types
+            WHERE facility_id = $1
+              AND clinic_session_id = $2
+            "#,
+        )
+        .bind(appointment.facility_id)
+        .bind(session.id)
+        .fetch_one(&mut **transaction)
+        .await?;
+        if constrained_count > 0 {
+            let allowed: Option<Uuid> = sqlx::query_scalar(
+                r#"
+                SELECT appointment_type_id
+                FROM clinic_session_appointment_types
+                WHERE facility_id = $1
+                  AND clinic_session_id = $2
+                  AND appointment_type_id = $3
+                "#,
+            )
+            .bind(appointment.facility_id)
+            .bind(session.id)
+            .bind(appointment_type_id)
+            .fetch_optional(&mut **transaction)
+            .await?;
+            if allowed.is_none() {
+                anyhow::bail!("appointment type is not allowed in this session");
+            }
+        }
+    }
+
+    let blocked_exists: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM appointment_blocked_times
+        WHERE facility_id = $1
+          AND starts_at < $3
+          AND ends_at > $2
+          AND (
+              clinic_session_id = $4
+              OR (
+                  $5::uuid IS NOT NULL
+                  AND practitioner_user_id = $5
+              )
+          )
+        LIMIT 1
+        "#,
+    )
+    .bind(appointment.facility_id)
+    .bind(appointment.starts_at)
+    .bind(appointment.ends_at)
+    .bind(session.id)
+    .bind(appointment.practitioner_user_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    if blocked_exists.is_some() {
+        anyhow::bail!("appointment overlaps blocked time");
+    }
+
+    let active_overlap_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM appointments
+        WHERE facility_id = $1
+          AND clinic_session_id = $2
+          AND status IN ('scheduled', 'checked_in')
+          AND starts_at < $4
+          AND ends_at > $3
+          AND ($5::uuid IS NULL OR id <> $5)
+        "#,
+    )
+    .bind(appointment.facility_id)
+    .bind(session.id)
+    .bind(appointment.starts_at)
+    .bind(appointment.ends_at)
+    .bind(excluding_appointment_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+
+    if active_overlap_count < i64::from(session.capacity) {
+        return Ok(());
+    }
+
+    if !session.allow_overbooking {
+        anyhow::bail!("clinic session capacity is full");
+    }
+    let reason = appointment
+        .overbook_reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if reason.is_none() {
+        anyhow::bail!("overbooking reason is required");
+    }
+    let allowed_total = i64::from(session.capacity + session.overbook_limit);
+    if active_overlap_count >= allowed_total {
+        anyhow::bail!("clinic session overbook limit is full");
+    }
+
+    Ok(())
+}
+
+async fn insert_appointment_history(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    appointment_id: Uuid,
+    event_type: &str,
+    actor_user_id: Uuid,
+    reason: Option<&str>,
+    previous_starts_at: Option<DateTime<Utc>>,
+    previous_ends_at: Option<DateTime<Utc>>,
+    new_starts_at: Option<DateTime<Utc>>,
+    new_ends_at: Option<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO appointment_history (
+            id,
+            facility_id,
+            appointment_id,
+            event_type,
+            actor_user_id,
+            reason,
+            previous_starts_at,
+            previous_ends_at,
+            new_starts_at,
+            new_ends_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(facility_id)
+    .bind(appointment_id)
+    .bind(event_type)
+    .bind(actor_user_id)
+    .bind(reason)
+    .bind(previous_starts_at)
+    .bind(previous_ends_at)
+    .bind(new_starts_at)
+    .bind(new_ends_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    Ok(())
+}
+
 async fn default_clinic_id(pool: &PgPool, facility_id: Uuid) -> anyhow::Result<Option<Uuid>> {
     Ok(sqlx::query_scalar(
         r#"
@@ -1445,9 +2394,17 @@ fn appointment_from_row(row: AppointmentRow) -> anyhow::Result<AppointmentListIt
         patient_id: row.patient_id,
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
+        clinic_id: row.clinic_id,
+        clinic_session_id: row.clinic_session_id,
+        appointment_type_id: row.appointment_type_id,
+        appointment_type_name: row.appointment_type_name,
+        practitioner_user_id: row.practitioner_user_id,
         starts_at: row.starts_at,
         ends_at: row.ends_at,
         status: codec::decode(&row.status)?,
+        cancellation_reason: row.cancellation_reason,
+        overbook_reason: row.overbook_reason,
+        series_id: row.series_id,
         created_at: row.created_at,
     })
 }
@@ -1458,6 +2415,52 @@ fn clinic_from_row(row: ClinicRow) -> ClinicListItem {
         code: row.code,
         name: row.name,
         is_active: row.is_active,
+        created_at: row.created_at,
+    }
+}
+
+fn clinic_session_from_row(row: ClinicSessionRow) -> anyhow::Result<ClinicSessionListItem> {
+    Ok(ClinicSessionListItem {
+        id: row.id,
+        clinic_id: row.clinic_id,
+        service_code: row.service_code,
+        practitioner_user_id: row.practitioner_user_id,
+        owner_type: codec::decode(&row.owner_type)?,
+        owner_id: row.owner_id,
+        name: row.name,
+        mode: codec::decode(&row.mode)?,
+        starts_at: row.starts_at,
+        ends_at: row.ends_at,
+        slot_minutes: row.slot_minutes,
+        capacity: row.capacity,
+        allow_overbooking: row.allow_overbooking,
+        overbook_limit: row.overbook_limit,
+        is_active: row.is_active,
+        created_at: row.created_at,
+    })
+}
+
+fn appointment_type_from_row(row: AppointmentTypeRow) -> AppointmentTypeListItem {
+    AppointmentTypeListItem {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        default_duration_minutes: row.default_duration_minutes,
+        is_active: row.is_active,
+        created_at: row.created_at,
+    }
+}
+
+fn appointment_history_from_row(row: AppointmentHistoryRow) -> AppointmentHistoryItem {
+    AppointmentHistoryItem {
+        id: row.id,
+        appointment_id: row.appointment_id,
+        event_type: row.event_type,
+        reason: row.reason,
+        previous_starts_at: row.previous_starts_at,
+        previous_ends_at: row.previous_ends_at,
+        new_starts_at: row.new_starts_at,
+        new_ends_at: row.new_ends_at,
         created_at: row.created_at,
     }
 }

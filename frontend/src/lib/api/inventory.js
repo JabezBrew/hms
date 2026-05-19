@@ -378,6 +378,8 @@ function buildV2ControlledCountPayload(data = {}) {
   return {
     actual_count: nonNegativeInteger(data.actual_count ?? data.count, 'actual_count'),
     witness_user_id: uuidOrNull(data.witness_user_id ?? data.witness ?? data.witness_id),
+    category: data.category || data.discrepancy_category || 'other',
+    reason: String(data.reason || data.notes || '').trim(),
     notes: data.notes || null,
   };
 }

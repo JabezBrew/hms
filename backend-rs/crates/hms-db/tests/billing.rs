@@ -1,9 +1,12 @@
 use hms_db::billing::{
-    BillingRuleFilters, CashSessionFilters, NewCashSession, NewClaim, NewInvoice, NewPayment,
+    BillingRuleFilters, CashSessionFilters, NewCashSession, NewClaim, NewInvoice,
+    NewNhisArAdjustment, NewNhisServiceMapping, NewPayment, NewPaymentReversal,
     ServiceCatalogFilters,
 };
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
-use hms_domain::billing::{BillingRuleType, CashSessionStatus, PaymentMethod};
+use hms_domain::billing::{
+    BillingRuleType, CashSessionStatus, NhisArAdjustmentKind, PaymentMethod, ReversalKind,
+};
 use hms_domain::deployment::DeploymentProfile;
 
 #[tokio::test]
@@ -498,4 +501,442 @@ async fn cash_session_repository_filters_open_sessions_and_loads_details() {
             .expect("cross-facility cash session detail lookup succeeds")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn invoice_locks_after_payment_claim_export_and_finalization() {
+    let fixture = BillingFixture::create().await;
+    let invoice = fixture.create_invoice("INV-LOCK-1", 1).await;
+
+    assert!(
+        hms_db::billing::invoice_lock_state(&fixture.pool, fixture.facility_id, invoice.id)
+            .await
+            .expect("lock state query succeeds")
+            .is_none()
+    );
+
+    hms_db::billing::create_payment(
+        &fixture.pool,
+        NewPayment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            invoice_id: invoice.id,
+            receipt_id: uuid::Uuid::new_v4(),
+            receipt_number: "RCT-LOCK-1".to_owned(),
+            amount_minor: invoice.gross_amount_minor / 2,
+            method: PaymentMethod::MobileMoney,
+            cash_session_id: None,
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("payment creates and locks invoice");
+    let payment_lock =
+        hms_db::billing::invoice_lock_state(&fixture.pool, fixture.facility_id, invoice.id)
+            .await
+            .expect("payment lock state query succeeds")
+            .expect("invoice is locked after payment");
+    assert_eq!(
+        payment_lock.locked_reason.as_deref(),
+        Some("payment_recorded")
+    );
+
+    let claim_invoice = fixture.create_invoice("INV-LOCK-2", 1).await;
+    let claim = hms_db::billing::create_claim(
+        &fixture.pool,
+        NewClaim {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            invoice_id: claim_invoice.id,
+            claim_number: "CLM-LOCK-1".to_owned(),
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("claim creates and locks invoice");
+    let claim_lock =
+        hms_db::billing::invoice_lock_state(&fixture.pool, fixture.facility_id, claim_invoice.id)
+            .await
+            .expect("claim lock state query succeeds")
+            .expect("invoice is locked after claim");
+    assert_eq!(claim_lock.locked_reason.as_deref(), Some("claim_created"));
+
+    let batch = hms_db::billing::create_nhis_batch(
+        &fixture.pool,
+        hms_db::billing::NewNhisBatch {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            batch_number: "NHB-LOCK-1".to_owned(),
+            claim_ids: vec![claim.id],
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("batch creates");
+    hms_db::billing::export_nhis_batch(&fixture.pool, fixture.facility_id, batch.id)
+        .await
+        .expect("batch exports")
+        .expect("batch exists");
+    let export_lock =
+        hms_db::billing::invoice_lock_state(&fixture.pool, fixture.facility_id, claim_invoice.id)
+            .await
+            .expect("export lock state query succeeds")
+            .expect("invoice remains locked");
+    assert_eq!(
+        export_lock.locked_reason.as_deref(),
+        Some("nhis_batch_exported")
+    );
+
+    let final_invoice = fixture.create_invoice("INV-LOCK-3", 1).await;
+    hms_db::billing::finalize_invoice(
+        &fixture.pool,
+        fixture.facility_id,
+        final_invoice.id,
+        fixture.owner_id,
+        fixture.supervisor_id,
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("finalization succeeds")
+    .expect("invoice exists");
+    let final_lock =
+        hms_db::billing::invoice_lock_state(&fixture.pool, fixture.facility_id, final_invoice.id)
+            .await
+            .expect("finalization lock state query succeeds")
+            .expect("invoice is locked after finalization");
+    assert_eq!(final_lock.locked_reason.as_deref(), Some("finalized"));
+    assert!(final_lock.finalized_at.is_some());
+}
+
+#[tokio::test]
+async fn void_and_refund_are_append_only_reversals_with_supervisor_approval() {
+    let fixture = BillingFixture::create().await;
+    let invoice = fixture.create_invoice("INV-REV-1", 1).await;
+    let payment = hms_db::billing::create_payment(
+        &fixture.pool,
+        NewPayment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            invoice_id: invoice.id,
+            receipt_id: uuid::Uuid::new_v4(),
+            receipt_number: "RCT-REV-1".to_owned(),
+            amount_minor: invoice.gross_amount_minor,
+            method: PaymentMethod::MobileMoney,
+            cash_session_id: None,
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("payment creates");
+
+    let self_approved = hms_db::billing::record_payment_reversal(
+        &fixture.pool,
+        NewPaymentReversal {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            payment_id: payment.id,
+            reversal_kind: ReversalKind::Refund,
+            amount_minor: 100,
+            reason: "duplicate charge".to_owned(),
+            approved_by_user_id: fixture.owner_id,
+            recorded_by_user_id: fixture.owner_id,
+            reauthorized_at: chrono::Utc::now(),
+        },
+    )
+    .await;
+    assert!(self_approved.is_err(), "self-approval must be rejected");
+
+    let refund = hms_db::billing::record_payment_reversal(
+        &fixture.pool,
+        NewPaymentReversal {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            payment_id: payment.id,
+            reversal_kind: ReversalKind::Refund,
+            amount_minor: 100,
+            reason: "partial refund".to_owned(),
+            approved_by_user_id: fixture.supervisor_id,
+            recorded_by_user_id: fixture.owner_id,
+            reauthorized_at: chrono::Utc::now(),
+        },
+    )
+    .await
+    .expect("refund reversal records");
+    assert_eq!(refund.reversal_kind, ReversalKind::Refund);
+
+    let void = hms_db::billing::record_payment_reversal(
+        &fixture.pool,
+        NewPaymentReversal {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            payment_id: payment.id,
+            reversal_kind: ReversalKind::Void,
+            amount_minor: payment.amount_minor - 100,
+            reason: "void remaining payment".to_owned(),
+            approved_by_user_id: fixture.supervisor_id,
+            recorded_by_user_id: fixture.owner_id,
+            reauthorized_at: chrono::Utc::now(),
+        },
+    )
+    .await
+    .expect("void reversal records");
+    assert_eq!(void.reversal_kind, ReversalKind::Void);
+
+    let ledger =
+        hms_db::billing::payment_reversal_ledger(&fixture.pool, fixture.facility_id, payment.id)
+            .await
+            .expect("ledger lists");
+    assert_eq!(ledger.len(), 2);
+    assert!(ledger.iter().any(|entry| entry.id == refund.id));
+    assert!(ledger.iter().any(|entry| entry.id == void.id));
+}
+
+#[tokio::test]
+async fn nhis_claim_captures_effective_mapping_version_and_ar_adjustments() {
+    let fixture = BillingFixture::create().await;
+    let service_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT service_id FROM service_prices WHERE facility_id = $1 AND id = $2",
+    )
+    .bind(fixture.facility_id)
+    .bind(fixture.service_price_id)
+    .fetch_one(&fixture.pool)
+    .await
+    .expect("service id exists");
+    let old_mapping = hms_db::billing::create_nhis_service_mapping(
+        &fixture.pool,
+        NewNhisServiceMapping {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            service_id,
+            nhis_code: "OLD-CODE".to_owned(),
+            effective_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            effective_until: Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("old mapping creates");
+    let current_mapping = hms_db::billing::create_nhis_service_mapping(
+        &fixture.pool,
+        NewNhisServiceMapping {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            service_id,
+            nhis_code: "NHIS-CURRENT".to_owned(),
+            effective_from: chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            effective_until: None,
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("current mapping creates");
+    assert_eq!(old_mapping.version_number, 1);
+    assert_eq!(current_mapping.version_number, 2);
+
+    let invoice = fixture.create_invoice("INV-NHIS-AR-1", 1).await;
+    let claim = hms_db::billing::create_claim(
+        &fixture.pool,
+        NewClaim {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            invoice_id: invoice.id,
+            claim_number: "CLM-NHIS-AR-1".to_owned(),
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("claim creates");
+    assert_eq!(claim.nhis_service_mapping_id, Some(current_mapping.id));
+    assert_eq!(
+        claim.nhis_service_mapping_version,
+        Some(current_mapping.version_number)
+    );
+    assert_eq!(claim.nhis_service_code.as_deref(), Some("NHIS-CURRENT"));
+    assert_eq!(claim.payer_receivable_minor, invoice.gross_amount_minor);
+    assert_eq!(claim.patient_liability_minor, 0);
+
+    hms_db::billing::record_nhis_ar_adjustment(
+        &fixture.pool,
+        NewNhisArAdjustment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            claim_id: claim.id,
+            adjustment_kind: NhisArAdjustmentKind::WriteOff,
+            amount_minor: 200,
+            reason: "NHIS short payment accepted".to_owned(),
+            recorded_by_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("write off records");
+    let ar = hms_db::billing::nhis_claim_ar_state(&fixture.pool, fixture.facility_id, claim.id)
+        .await
+        .expect("ar state loads")
+        .expect("claim exists");
+    assert_eq!(ar.payer_receivable_minor, invoice.gross_amount_minor - 200);
+    assert_eq!(ar.written_off_minor, 200);
+    assert_eq!(ar.patient_liability_minor, 0);
+
+    hms_db::billing::record_nhis_ar_adjustment(
+        &fixture.pool,
+        NewNhisArAdjustment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            claim_id: claim.id,
+            adjustment_kind: NhisArAdjustmentKind::Reconciliation,
+            amount_minor: invoice.gross_amount_minor - 200,
+            reason: "NHIS remittance matched".to_owned(),
+            recorded_by_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("reconciliation records");
+    let reconciled =
+        hms_db::billing::nhis_claim_ar_state(&fixture.pool, fixture.facility_id, claim.id)
+            .await
+            .expect("reconciled ar state loads")
+            .expect("claim exists");
+    assert_eq!(reconciled.payer_receivable_minor, 0);
+    assert_eq!(reconciled.patient_liability_minor, 0);
+    assert!(reconciled.reconciled_at.is_some());
+}
+
+#[tokio::test]
+async fn discharge_billing_clearance_requires_no_patient_liability() {
+    let fixture = BillingFixture::create().await;
+    let invoice = fixture.create_invoice("INV-CLEAR-1", 1).await;
+
+    let blocked = hms_db::billing::record_discharge_billing_clearance(
+        &fixture.pool,
+        fixture.facility_id,
+        fixture.patient_id,
+        fixture.owner_id,
+    )
+    .await
+    .expect("blocked clearance records");
+    assert!(!blocked.cleared);
+    assert_eq!(blocked.outstanding_invoice_count, 1);
+    assert_eq!(blocked.outstanding_amount_minor, invoice.gross_amount_minor);
+
+    hms_db::billing::create_payment(
+        &fixture.pool,
+        NewPayment {
+            id: uuid::Uuid::new_v4(),
+            facility_id: fixture.facility_id,
+            invoice_id: invoice.id,
+            receipt_id: uuid::Uuid::new_v4(),
+            receipt_number: "RCT-CLEAR-1".to_owned(),
+            amount_minor: invoice.gross_amount_minor,
+            method: PaymentMethod::MobileMoney,
+            cash_session_id: None,
+            actor_user_id: fixture.owner_id,
+        },
+    )
+    .await
+    .expect("payment creates");
+
+    let cleared = hms_db::billing::record_discharge_billing_clearance(
+        &fixture.pool,
+        fixture.facility_id,
+        fixture.patient_id,
+        fixture.owner_id,
+    )
+    .await
+    .expect("clearance records");
+    assert!(cleared.cleared);
+    assert_eq!(cleared.outstanding_invoice_count, 0);
+    assert_eq!(cleared.outstanding_amount_minor, 0);
+}
+
+struct BillingFixture {
+    _database: hms_db::test_support::TestDatabase,
+    pool: hms_db::PgPool,
+    facility_id: uuid::Uuid,
+    owner_id: uuid::Uuid,
+    supervisor_id: uuid::Uuid,
+    patient_id: uuid::Uuid,
+    service_price_id: uuid::Uuid,
+}
+
+impl BillingFixture {
+    async fn create() -> Self {
+        let database =
+            hms_db::test_support::TestDatabase::create().expect("test database is available");
+        let pool = hms_db::connect(database.database_url())
+            .await
+            .expect("database connects");
+
+        hms_db::migrate::run(&pool).await.expect("migrations apply");
+        provision_baseline(
+            &pool,
+            &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+        )
+        .await
+        .expect("baseline provisions");
+
+        let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+            .await
+            .expect("facility query succeeds")
+            .expect("facility exists");
+        let owner_id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+        )
+        .bind(facility_id)
+        .fetch_one(&pool)
+        .await
+        .expect("owner exists");
+        let supervisor_id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT id FROM users WHERE facility_id = $1 AND id <> $2 ORDER BY created_at, id LIMIT 1",
+        )
+        .bind(facility_id)
+        .bind(owner_id)
+        .fetch_one(&pool)
+        .await
+        .expect("supervisor exists");
+        let patient_id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT id FROM patients WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+        )
+        .bind(facility_id)
+        .fetch_one(&pool)
+        .await
+        .expect("patient exists");
+        let service_price_id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT id FROM service_prices WHERE facility_id = $1 ORDER BY created_at, id LIMIT 1",
+        )
+        .bind(facility_id)
+        .fetch_one(&pool)
+        .await
+        .expect("service price exists");
+
+        Self {
+            _database: database,
+            pool,
+            facility_id,
+            owner_id,
+            supervisor_id,
+            patient_id,
+            service_price_id,
+        }
+    }
+
+    async fn create_invoice(
+        &self,
+        invoice_number: &str,
+        quantity: i64,
+    ) -> hms_domain::billing::InvoiceListItem {
+        hms_db::billing::create_invoice(
+            &self.pool,
+            NewInvoice {
+                id: uuid::Uuid::new_v4(),
+                facility_id: self.facility_id,
+                patient_id: self.patient_id,
+                service_price_id: self.service_price_id,
+                quantity,
+                invoice_number: invoice_number.to_owned(),
+                actor_user_id: self.owner_id,
+            },
+        )
+        .await
+        .expect("invoice creates")
+    }
 }

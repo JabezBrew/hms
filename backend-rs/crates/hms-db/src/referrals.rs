@@ -3,9 +3,11 @@ use hms_domain::referrals::{
     ClinicWaitlistEntryListItem, ClinicWaitlistStatus, ReferralListItem, ReferralPriority,
     ReferralSlaDashboard, ReferralSlaRiskSummary, ReferralSlaState, ReferralStatus,
 };
+use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
+use crate::admin::{insert_audit_event, NewAuditEvent};
 use crate::codec;
 use crate::PgPool;
 
@@ -51,9 +53,11 @@ struct ReferralRow {
     decline_reason: Option<String>,
     specialist_notes: Option<String>,
     recommendations: Option<String>,
+    scheduled_appointment_id: Option<Uuid>,
     sla_due_at: DateTime<Utc>,
     created_at: DateTime<Utc>,
     accepted_at: Option<DateTime<Utc>>,
+    scheduled_at: Option<DateTime<Utc>>,
     completed_at: Option<DateTime<Utc>>,
     updated_at: DateTime<Utc>,
 }
@@ -78,6 +82,9 @@ struct ClinicWaitlistEntryRow {
     created_at: DateTime<Utc>,
     offered_at: Option<DateTime<Utc>>,
     promoted_at: Option<DateTime<Utc>>,
+    cancelled_at: Option<DateTime<Utc>>,
+    scheduled_appointment_id: Option<Uuid>,
+    cancellation_reason: Option<String>,
 }
 
 pub async fn list_referrals(
@@ -239,6 +246,64 @@ pub async fn complete_referral(
     optional_referral_by_id(pool, facility_id, referral_id).await
 }
 
+pub async fn schedule_referral_appointment(
+    pool: &PgPool,
+    facility_id: Uuid,
+    referral_id: Uuid,
+    appointment_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<ReferralListItem>> {
+    let updated_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        UPDATE referrals
+        SET status = $1,
+            scheduled_appointment_id = $2,
+            scheduled_by_user_id = $3,
+            scheduled_at = COALESCE(scheduled_at, now()),
+            updated_at = now()
+        WHERE facility_id = $4
+          AND id = $5
+          AND status IN ($6, $7)
+          AND EXISTS (
+              SELECT 1
+              FROM appointments
+              WHERE appointments.facility_id = referrals.facility_id
+                AND appointments.id = $2
+                AND appointments.patient_id = referrals.patient_id
+          )
+        RETURNING id
+        "#,
+    )
+    .bind(codec::encode(ReferralStatus::Scheduled)?)
+    .bind(appointment_id)
+    .bind(actor_user_id)
+    .bind(facility_id)
+    .bind(referral_id)
+    .bind(codec::encode(ReferralStatus::Sent)?)
+    .bind(codec::encode(ReferralStatus::Accepted)?)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(id) = updated_id {
+        insert_audit_event(
+            pool,
+            NewAuditEvent {
+                facility_id,
+                actor_user_id: Some(actor_user_id),
+                request_id,
+                event_type: "referral.scheduled".to_owned(),
+                resource_type: "referral".to_owned(),
+                resource_id: Some(id),
+                metadata: json!({ "appointment_id": appointment_id }),
+            },
+        )
+        .await?;
+    }
+
+    optional_referral_by_id(pool, facility_id, referral_id).await
+}
+
 pub async fn get_referral(
     pool: &PgPool,
     facility_id: Uuid,
@@ -320,6 +385,14 @@ pub async fn list_clinic_waitlist_entries(
         .fetch_all(pool)
         .await?;
     rows.into_iter().map(waitlist_from_row).collect()
+}
+
+pub async fn get_clinic_waitlist_entry(
+    pool: &PgPool,
+    facility_id: Uuid,
+    entry_id: Uuid,
+) -> anyhow::Result<Option<ClinicWaitlistEntryListItem>> {
+    optional_waitlist_by_id(pool, facility_id, entry_id).await
 }
 
 pub async fn create_clinic_waitlist_entry(
@@ -407,6 +480,115 @@ pub async fn offer_next_clinic_waitlist_entry(
     }
 }
 
+pub async fn promote_clinic_waitlist_entry(
+    pool: &PgPool,
+    facility_id: Uuid,
+    entry_id: Uuid,
+    appointment_id: Uuid,
+    actor_user_id: Uuid,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<ClinicWaitlistEntryListItem>> {
+    let updated_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        UPDATE clinic_waitlist_entries
+        SET status = $1,
+            scheduled_appointment_id = $2,
+            promoted_by_user_id = $3,
+            promoted_at = COALESCE(promoted_at, now()),
+            updated_at = now()
+        WHERE facility_id = $4
+          AND id = $5
+          AND status IN ($6, $7)
+          AND EXISTS (
+              SELECT 1
+              FROM appointments
+              WHERE appointments.facility_id = clinic_waitlist_entries.facility_id
+                AND appointments.id = $2
+                AND appointments.patient_id = clinic_waitlist_entries.patient_id
+          )
+        RETURNING id
+        "#,
+    )
+    .bind(codec::encode(ClinicWaitlistStatus::Promoted)?)
+    .bind(appointment_id)
+    .bind(actor_user_id)
+    .bind(facility_id)
+    .bind(entry_id)
+    .bind(codec::encode(ClinicWaitlistStatus::Waiting)?)
+    .bind(codec::encode(ClinicWaitlistStatus::Offered)?)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(id) = updated_id {
+        insert_audit_event(
+            pool,
+            NewAuditEvent {
+                facility_id,
+                actor_user_id: Some(actor_user_id),
+                request_id,
+                event_type: "clinic_waitlist.promoted".to_owned(),
+                resource_type: "clinic_waitlist_entry".to_owned(),
+                resource_id: Some(id),
+                metadata: json!({ "appointment_id": appointment_id }),
+            },
+        )
+        .await?;
+    }
+
+    optional_waitlist_by_id(pool, facility_id, entry_id).await
+}
+
+pub async fn cancel_clinic_waitlist_entry(
+    pool: &PgPool,
+    facility_id: Uuid,
+    entry_id: Uuid,
+    actor_user_id: Uuid,
+    reason: String,
+    request_id: Option<String>,
+) -> anyhow::Result<Option<ClinicWaitlistEntryListItem>> {
+    let updated_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        UPDATE clinic_waitlist_entries
+        SET status = $1,
+            cancelled_by_user_id = $2,
+            cancelled_at = COALESCE(cancelled_at, now()),
+            cancellation_reason = $3,
+            updated_at = now()
+        WHERE facility_id = $4
+          AND id = $5
+          AND status IN ($6, $7)
+        RETURNING id
+        "#,
+    )
+    .bind(codec::encode(ClinicWaitlistStatus::Cancelled)?)
+    .bind(actor_user_id)
+    .bind(&reason)
+    .bind(facility_id)
+    .bind(entry_id)
+    .bind(codec::encode(ClinicWaitlistStatus::Waiting)?)
+    .bind(codec::encode(ClinicWaitlistStatus::Offered)?)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(id) = updated_id {
+        insert_audit_event(
+            pool,
+            NewAuditEvent {
+                facility_id,
+                actor_user_id: Some(actor_user_id),
+                request_id,
+                event_type: "clinic_waitlist.cancelled".to_owned(),
+                resource_type: "clinic_waitlist_entry".to_owned(),
+                resource_id: Some(id),
+                metadata: json!({ "reason_recorded": true }),
+            },
+        )
+        .await?;
+    }
+
+    optional_waitlist_by_id(pool, facility_id, entry_id).await
+}
+
 fn referral_query() -> QueryBuilder<'static, Postgres> {
     QueryBuilder::<Postgres>::new(
         r#"
@@ -422,9 +604,11 @@ fn referral_query() -> QueryBuilder<'static, Postgres> {
                referrals.decline_reason,
                referrals.specialist_notes,
                referrals.recommendations,
+               referrals.scheduled_appointment_id,
                referrals.sla_due_at,
                referrals.created_at,
                referrals.accepted_at,
+               referrals.scheduled_at,
                referrals.completed_at,
                referrals.updated_at
         FROM referrals
@@ -447,7 +631,10 @@ fn clinic_waitlist_query() -> QueryBuilder<'static, Postgres> {
                clinic_waitlist_entries.status,
                clinic_waitlist_entries.created_at,
                clinic_waitlist_entries.offered_at,
-               clinic_waitlist_entries.promoted_at
+               clinic_waitlist_entries.promoted_at,
+               clinic_waitlist_entries.cancelled_at,
+               clinic_waitlist_entries.scheduled_appointment_id,
+               clinic_waitlist_entries.cancellation_reason
         FROM clinic_waitlist_entries
         JOIN patients
           ON patients.id = clinic_waitlist_entries.patient_id
@@ -543,9 +730,11 @@ fn referral_from_row(row: ReferralRow) -> anyhow::Result<ReferralListItem> {
         decline_reason: row.decline_reason,
         specialist_notes: row.specialist_notes,
         recommendations: row.recommendations,
+        scheduled_appointment_id: row.scheduled_appointment_id,
         sla_due_at: row.sla_due_at,
         created_at: row.created_at,
         accepted_at: row.accepted_at,
+        scheduled_at: row.scheduled_at,
         completed_at: row.completed_at,
         updated_at: row.updated_at,
     })
@@ -590,5 +779,8 @@ fn waitlist_from_row(row: ClinicWaitlistEntryRow) -> anyhow::Result<ClinicWaitli
         created_at: row.created_at,
         offered_at: row.offered_at,
         promoted_at: row.promoted_at,
+        cancelled_at: row.cancelled_at,
+        scheduled_appointment_id: row.scheduled_appointment_id,
+        cancellation_reason: row.cancellation_reason,
     })
 }
