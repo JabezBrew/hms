@@ -213,6 +213,13 @@ struct FeatureEntitlementRow {
 }
 
 #[derive(FromRow)]
+struct EffectiveFeatureFlagRow {
+    deployment_profile: String,
+    feature_key: Option<String>,
+    enabled: Option<bool>,
+}
+
+#[derive(FromRow)]
 struct StaffRow {
     id: Uuid,
     user_id: Uuid,
@@ -717,8 +724,10 @@ pub async fn active_authorities_for_user(
     facility_id: Uuid,
     user_id: Uuid,
 ) -> anyhow::Result<Vec<ActiveAuthority>> {
-    let rows = sqlx::query_as::<_, ActiveAuthorityRow>(
-        r#"
+    let rows = hms_observability::observe_db_query(
+        "admin.active_authorities_for_user",
+        sqlx::query_as::<_, ActiveAuthorityRow>(
+            r#"
         SELECT 'position_appointment' AS source,
                authority_appointments.id AS source_id,
                authority_appointments.facility_id,
@@ -774,10 +783,11 @@ pub async fn active_authorities_for_user(
           AND (delegations.ends_at IS NULL OR delegations.ends_at > now())
         ORDER BY starts_at ASC, source_id ASC, permission_code ASC NULLS LAST
         "#,
+        )
+        .bind(facility_id)
+        .bind(user_id)
+        .fetch_all(pool),
     )
-    .bind(facility_id)
-    .bind(user_id)
-    .fetch_all(pool)
     .await?;
 
     rows.into_iter().map(active_authority_from_row).collect()
@@ -864,12 +874,34 @@ pub async fn effective_feature_flags(
     facility_id: Uuid,
     fallback_profile: DeploymentProfile,
 ) -> anyhow::Result<HashMap<FeatureKey, bool>> {
-    let profile = facility_profile(pool, facility_id)
-        .await?
+    let rows = hms_observability::observe_db_query(
+        "admin.effective_feature_flags",
+        sqlx::query_as::<_, EffectiveFeatureFlagRow>(
+            r#"
+            SELECT facilities.deployment_profile,
+                   facility_feature_entitlements.feature_key,
+                   facility_feature_entitlements.enabled
+            FROM facilities
+            LEFT JOIN facility_feature_entitlements
+              ON facility_feature_entitlements.facility_id = facilities.id
+            WHERE facilities.id = $1
+              AND facilities.is_active = TRUE
+            "#,
+        )
+        .bind(facility_id)
+        .fetch_all(pool),
+    )
+    .await?;
+    let profile = rows
+        .first()
+        .map(|row| codec::decode(&row.deployment_profile))
+        .transpose()?
         .unwrap_or(fallback_profile);
     let mut flags = feature_flags_for_profile(profile);
-    for (feature, row) in feature_entitlement_overrides(pool, facility_id).await? {
-        flags.insert(feature, row.enabled);
+    for row in rows {
+        if let (Some(feature), Some(enabled)) = (row.feature_key, row.enabled) {
+            flags.insert(codec::decode(&feature)?, enabled);
+        }
     }
     Ok(flags)
 }

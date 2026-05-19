@@ -994,6 +994,7 @@ function buildOptions() {
   return {
     scenarios,
     thresholds,
+    noCookiesReset: true,
     tags: {
       hms_suite: 'rust-v2-realistic',
       hms_profile: PROFILE,

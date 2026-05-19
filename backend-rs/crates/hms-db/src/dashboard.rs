@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use crate::{codec, PgPool};
 
+const DASHBOARD_SNAPSHOT_MAX_AGE_SECONDS: i64 = 30;
+
 pub struct NotificationCursor {
     pub occurred_at: DateTime<Utc>,
     pub id: Uuid,
@@ -68,11 +70,24 @@ pub async fn dashboard_snapshot(
     profile: DeploymentProfile,
     navigation: NavigationManifest,
 ) -> anyhow::Result<DashboardSnapshot> {
+    if let Some(snapshot) = cached_dashboard_snapshot(pool, facility_id, navigation.clone()).await?
+    {
+        if Utc::now()
+            .signed_duration_since(snapshot.generated_at)
+            .num_seconds()
+            < DASHBOARD_SNAPSHOT_MAX_AGE_SECONDS
+        {
+            return Ok(snapshot);
+        }
+    }
+
     let metrics = dashboard_metrics(pool, facility_id).await?;
     let metrics_json = serde_json::to_value(&metrics)?;
     let id = Uuid::new_v4();
-    let row = sqlx::query_as::<_, SnapshotRow>(
-        "INSERT INTO dashboard_snapshots (
+    let row = hms_observability::observe_db_query(
+        "dashboard.refresh_snapshot",
+        sqlx::query_as::<_, SnapshotRow>(
+            "INSERT INTO dashboard_snapshots (
             id, facility_id, snapshot_key, deployment_profile, metrics, generated_at
          )
          VALUES ($1, $2, 'operations', $3, $4, now())
@@ -82,12 +97,13 @@ pub async fn dashboard_snapshot(
              generated_at = EXCLUDED.generated_at,
              updated_at = now()
          RETURNING id, deployment_profile, metrics, generated_at",
+        )
+        .bind(id)
+        .bind(facility_id)
+        .bind(codec::encode(profile)?)
+        .bind(metrics_json)
+        .fetch_one(pool),
     )
-    .bind(id)
-    .bind(facility_id)
-    .bind(codec::encode(profile)?)
-    .bind(metrics_json)
-    .fetch_one(pool)
     .await?;
 
     Ok(DashboardSnapshot {
@@ -97,6 +113,41 @@ pub async fn dashboard_snapshot(
         metrics: serde_json::from_value(row.metrics)?,
         navigation,
     })
+}
+
+async fn cached_dashboard_snapshot(
+    pool: &PgPool,
+    facility_id: Uuid,
+    navigation: NavigationManifest,
+) -> anyhow::Result<Option<DashboardSnapshot>> {
+    let row = hms_observability::observe_db_query(
+        "dashboard.cached_snapshot",
+        sqlx::query_as::<_, SnapshotRow>(
+            r#"
+            SELECT id,
+                   deployment_profile,
+                   metrics,
+                   generated_at
+            FROM dashboard_snapshots
+            WHERE facility_id = $1
+              AND snapshot_key = 'operations'
+            "#,
+        )
+        .bind(facility_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    row.map(|row| {
+        Ok(DashboardSnapshot {
+            id: row.id,
+            deployment_profile: codec::decode(&row.deployment_profile)?,
+            generated_at: row.generated_at,
+            metrics: serde_json::from_value(row.metrics)?,
+            navigation,
+        })
+    })
+    .transpose()
 }
 
 pub async fn admin_capacity_summary(
@@ -312,23 +363,33 @@ async fn dashboard_metrics(
     pool: &PgPool,
     facility_id: Uuid,
 ) -> anyhow::Result<Vec<DashboardMetric>> {
-    let active_patients = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM patients WHERE facility_id = $1 AND status = 'active'",
+    let (active_patients, waiting_visits, open_invoices) = hms_observability::observe_db_query(
+        "dashboard.metrics",
+        sqlx::query_as::<_, (i64, i64, i64)>(
+            r#"
+            SELECT (
+                       SELECT count(*)::bigint
+                       FROM patients
+                       WHERE facility_id = $1
+                         AND status = 'active'
+                   ) AS active_patients,
+                   (
+                       SELECT count(*)::bigint
+                       FROM visits
+                       WHERE facility_id = $1
+                         AND status IN ('waiting', 'called')
+                   ) AS waiting_visits,
+                   (
+                       SELECT count(*)::bigint
+                       FROM invoices
+                       WHERE facility_id = $1
+                         AND status IN ('issued', 'partially_paid')
+                   ) AS open_invoices
+            "#,
+        )
+        .bind(facility_id)
+        .fetch_one(pool),
     )
-    .bind(facility_id)
-    .fetch_one(pool)
-    .await?;
-    let waiting_visits = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM visits WHERE facility_id = $1 AND status IN ('waiting', 'called')",
-    )
-    .bind(facility_id)
-    .fetch_one(pool)
-    .await?;
-    let open_invoices = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM invoices WHERE facility_id = $1 AND status IN ('issued', 'partially_paid')",
-    )
-    .bind(facility_id)
-    .fetch_one(pool)
     .await?;
 
     Ok(vec![

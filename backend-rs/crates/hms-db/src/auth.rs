@@ -42,6 +42,11 @@ struct UserRow {
     permission_version: i64,
     password_change_required: bool,
     password_hash: String,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    visibility_codes: Vec<String>,
+    passkey_enrolled: bool,
+    recovery_codes_remaining: i64,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -210,7 +215,9 @@ impl UserAccount {
 }
 
 pub async fn user_by_id(pool: &PgPool, user_id: Uuid) -> anyhow::Result<Option<UserAccount>> {
-    let row = sqlx::query_as::<_, UserRow>(
+    let row = hms_observability::observe_db_query(
+        "auth.user_by_id",
+        sqlx::query_as::<_, UserRow>(
         r#"
         SELECT users.id,
                users.email,
@@ -221,17 +228,52 @@ pub async fn user_by_id(pool: &PgPool, user_id: Uuid) -> anyhow::Result<Option<U
                users.session_version,
                users.permission_version,
                users.password_change_required,
-               users.password_hash
+               users.password_hash,
+               COALESCE(user_permissions.permission_codes, ARRAY[]::text[]) AS permission_codes,
+               COALESCE(user_features.feature_keys, ARRAY[]::text[]) AS feature_keys,
+               COALESCE(user_patient_visibility.visibility_codes, ARRAY[]::text[]) AS visibility_codes,
+               EXISTS (
+                   SELECT 1
+                   FROM auth_webauthn_credentials
+                   WHERE auth_webauthn_credentials.facility_id = users.facility_id
+                     AND auth_webauthn_credentials.user_id = users.id
+                     AND auth_webauthn_credentials.disabled_at IS NULL
+               ) AS passkey_enrolled,
+               COALESCE(auth_recovery_codes.remaining, 0)::bigint AS recovery_codes_remaining
         FROM users
         JOIN facilities ON facilities.id = users.facility_id
+        LEFT JOIN LATERAL (
+            SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
+            FROM user_permissions
+            WHERE user_id = users.id
+        ) user_permissions ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(feature_key ORDER BY feature_key) AS feature_keys
+            FROM user_features
+            WHERE user_id = users.id
+        ) user_features ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(visibility ORDER BY visibility) AS visibility_codes
+            FROM user_patient_visibility
+            WHERE user_id = users.id
+        ) user_patient_visibility ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::bigint AS remaining
+            FROM auth_recovery_codes
+            WHERE facility_id = users.facility_id
+              AND user_id = users.id
+              AND used_at IS NULL
+              AND invalidated_at IS NULL
+        ) auth_recovery_codes ON TRUE
         WHERE users.id = $1 AND users.is_active = TRUE
         "#,
     )
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_optional(pool),
+    )
     .await?;
 
-    hydrate_user(pool, row).await
+    hydrate_user(row)
 }
 
 pub async fn user_by_email_and_facility(
@@ -239,7 +281,9 @@ pub async fn user_by_email_and_facility(
     email: &str,
     facility_code: &str,
 ) -> anyhow::Result<Option<UserAccount>> {
-    let row = sqlx::query_as::<_, UserRow>(
+    let row = hms_observability::observe_db_query(
+        "auth.user_by_email_and_facility",
+        sqlx::query_as::<_, UserRow>(
         r#"
         SELECT users.id,
                users.email,
@@ -250,9 +294,43 @@ pub async fn user_by_email_and_facility(
                users.session_version,
                users.permission_version,
                users.password_change_required,
-               users.password_hash
+               users.password_hash,
+               COALESCE(user_permissions.permission_codes, ARRAY[]::text[]) AS permission_codes,
+               COALESCE(user_features.feature_keys, ARRAY[]::text[]) AS feature_keys,
+               COALESCE(user_patient_visibility.visibility_codes, ARRAY[]::text[]) AS visibility_codes,
+               EXISTS (
+                   SELECT 1
+                   FROM auth_webauthn_credentials
+                   WHERE auth_webauthn_credentials.facility_id = users.facility_id
+                     AND auth_webauthn_credentials.user_id = users.id
+                     AND auth_webauthn_credentials.disabled_at IS NULL
+               ) AS passkey_enrolled,
+               COALESCE(auth_recovery_codes.remaining, 0)::bigint AS recovery_codes_remaining
         FROM users
         JOIN facilities ON facilities.id = users.facility_id
+        LEFT JOIN LATERAL (
+            SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
+            FROM user_permissions
+            WHERE user_id = users.id
+        ) user_permissions ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(feature_key ORDER BY feature_key) AS feature_keys
+            FROM user_features
+            WHERE user_id = users.id
+        ) user_features ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_agg(visibility ORDER BY visibility) AS visibility_codes
+            FROM user_patient_visibility
+            WHERE user_id = users.id
+        ) user_patient_visibility ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::bigint AS remaining
+            FROM auth_recovery_codes
+            WHERE facility_id = users.facility_id
+              AND user_id = users.id
+              AND used_at IS NULL
+              AND invalidated_at IS NULL
+        ) auth_recovery_codes ON TRUE
         WHERE lower(users.email) = lower($1)
           AND lower(facilities.code) = lower($2)
           AND users.is_active = TRUE
@@ -261,10 +339,11 @@ pub async fn user_by_email_and_facility(
     )
     .bind(email.trim())
     .bind(facility_code.trim())
-    .fetch_optional(pool)
+    .fetch_optional(pool),
+    )
     .await?;
 
-    hydrate_user(pool, row).await
+    hydrate_user(row)
 }
 
 pub async fn update_user_profile(
@@ -1333,50 +1412,16 @@ async fn insert_break_glass_audit_event(
     Ok(())
 }
 
-async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Option<UserAccount>> {
+fn hydrate_user(row: Option<UserRow>) -> anyhow::Result<Option<UserAccount>> {
     let Some(row) = row else {
         return Ok(None);
     };
 
-    let permission_codes = sqlx::query_scalar::<_, String>(
-        "SELECT permission_code FROM user_permissions WHERE user_id = $1 ORDER BY permission_code",
-    )
-    .bind(row.id)
-    .fetch_all(pool)
-    .await?;
-    let feature_keys = sqlx::query_scalar::<_, String>(
-        "SELECT feature_key FROM user_features WHERE user_id = $1 ORDER BY feature_key",
-    )
-    .bind(row.id)
-    .fetch_all(pool)
-    .await?;
-    let visibility_codes = sqlx::query_scalar::<_, String>(
-        "SELECT visibility FROM user_patient_visibility WHERE user_id = $1 ORDER BY visibility",
-    )
-    .bind(row.id)
-    .fetch_all(pool)
-    .await?;
-
-    let permissions = permission_codes
+    let permissions = row
+        .permission_codes
         .iter()
         .map(|value| codec::decode(value))
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let passkey_enrolled = sqlx::query_scalar::<_, bool>(
-        r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM auth_webauthn_credentials
-            WHERE facility_id = $1
-              AND user_id = $2
-              AND disabled_at IS NULL
-        )
-        "#,
-    )
-    .bind(row.facility_id)
-    .bind(row.id)
-    .fetch_one(pool)
-    .await?;
-    let recovery_codes_remaining = recovery_codes_remaining(pool, row.facility_id, row.id).await?;
 
     Ok(Some(UserAccount {
         id: row.id,
@@ -1386,11 +1431,13 @@ async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Opt
         facility_code: row.facility_code,
         active_profile: codec::decode(&row.active_profile)?,
         permissions: permissions.clone(),
-        features: feature_keys
+        features: row
+            .feature_keys
             .iter()
             .map(|value| codec::decode(value))
             .collect::<anyhow::Result<_>>()?,
-        patient_visibility: visibility_codes
+        patient_visibility: row
+            .visibility_codes
             .iter()
             .map(|value| codec::decode(value))
             .collect::<anyhow::Result<_>>()?,
@@ -1399,8 +1446,8 @@ async fn hydrate_user(pool: &PgPool, row: Option<UserRow>) -> anyhow::Result<Opt
         password_change_required: row.password_change_required,
         auth_security: AuthSecurityState::from_permissions(
             &permissions,
-            passkey_enrolled,
-            recovery_codes_remaining,
+            row.passkey_enrolled,
+            row.recovery_codes_remaining,
         ),
         password_hash: row.password_hash,
     }))

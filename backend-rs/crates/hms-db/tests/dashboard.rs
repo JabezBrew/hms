@@ -1,7 +1,71 @@
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_domain::capabilities::deployment_capabilities;
 use hms_domain::deployment::DeploymentProfile;
 use hms_domain::ward::BedStatus;
+use std::time::Duration;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn dashboard_snapshot_reuses_fresh_cache_without_write() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let navigation =
+        deployment_capabilities(DeploymentProfile::Hospital, facility_id, "HMS").navigation;
+
+    let first = hms_db::dashboard::dashboard_snapshot(
+        &pool,
+        facility_id,
+        DeploymentProfile::Hospital,
+        navigation.clone(),
+    )
+    .await
+    .expect("first dashboard snapshot is generated");
+    let first_updated_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "SELECT updated_at FROM dashboard_snapshots WHERE facility_id = $1 AND snapshot_key = 'operations'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("snapshot updated_at can be read");
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    let second = hms_db::dashboard::dashboard_snapshot(
+        &pool,
+        facility_id,
+        DeploymentProfile::Hospital,
+        navigation,
+    )
+    .await
+    .expect("fresh dashboard snapshot is reused");
+    let second_updated_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "SELECT updated_at FROM dashboard_snapshots WHERE facility_id = $1 AND snapshot_key = 'operations'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("snapshot updated_at can be read again");
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.generated_at, second.generated_at);
+    assert_eq!(first_updated_at, second_updated_at);
+}
 
 #[tokio::test]
 async fn admin_capacity_summary_uses_facility_scoped_aggregates() {
