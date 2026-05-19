@@ -69,23 +69,32 @@ async fn omni_search_index_backfills_and_filters_before_ranking() {
             && status.indexed_count > 0
     }));
 
-    let patient_results = hms_db::search::omni_search(
-        &pool,
-        OmniSearchFilters {
-            facility_id,
-            user_id: owner_id,
-            query: Some("Ama Mensah".to_owned()),
-            types: vec![SearchResourceType::Patients],
-            limit_per_group: 5,
-            permission_codes: vec![PermissionCode::PatientDemographicsView],
-            feature_keys: vec![FeatureKey::Patients],
-            patient_visibility: vec![PatientDataVisibility::Demographics],
-        },
-    )
-    .await
-    .expect("patient search succeeds");
+    let (patient_results, observed_queries) =
+        hms_observability::with_request_query_counter(async {
+            hms_db::search::omni_search(
+                &pool,
+                OmniSearchFilters {
+                    facility_id,
+                    user_id: owner_id,
+                    query: Some("Ama Mensah".to_owned()),
+                    types: vec![SearchResourceType::Patients],
+                    limit_per_group: 5,
+                    permission_codes: vec![PermissionCode::PatientDemographicsView],
+                    feature_keys: vec![FeatureKey::Patients],
+                    patient_visibility: vec![PatientDataVisibility::Demographics],
+                },
+            )
+            .await
+        })
+        .await;
+    let patient_results = patient_results.expect("patient search succeeds");
 
+    assert_eq!(observed_queries, 1);
     assert_eq!(patient_results.groups.patients.len(), 1);
+    assert!(patient_results.index_status.iter().any(|status| {
+        status.resource_type == SearchResourceType::Patients
+            && status.status == SearchIndexState::Ready
+    }));
     assert_eq!(
         patient_results.groups.patients[0].patient_code.as_deref(),
         Some("P-0000000001")

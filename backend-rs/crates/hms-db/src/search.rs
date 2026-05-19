@@ -4,6 +4,9 @@ use hms_domain::deployment::{FeatureKey, PermissionCode};
 use hms_domain::search::{
     OmniSearchGroups, OmniSearchItem, SearchIndexState, SearchIndexStatus, SearchResourceType,
 };
+use hms_observability::observe_db_query;
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{FromRow, Postgres};
 use uuid::Uuid;
@@ -43,7 +46,7 @@ pub struct OmniSearchResult {
     pub index_status: Vec<SearchIndexStatus>,
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, Debug, Deserialize, FromRow)]
 struct SearchDocumentRow {
     id: Uuid,
     resource_type: String,
@@ -60,7 +63,7 @@ struct SearchDocumentRow {
     score: f64,
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, Debug, Deserialize, FromRow)]
 struct SearchIndexStatusRow {
     resource_type: String,
     status: String,
@@ -68,6 +71,12 @@ struct SearchIndexStatusRow {
     last_backfilled_at: Option<DateTime<Utc>>,
     last_error: Option<String>,
     updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct SearchResultSetRow {
+    documents: Value,
+    index_status: Value,
 }
 
 pub async fn omni_search(
@@ -92,9 +101,9 @@ pub async fn omni_search(
             .contains(&PermissionCode::PatientDemographicsView);
     let limit_per_group = filters.limit_per_group.clamp(1, 25);
 
-    let rows = match query.as_deref() {
+    let (rows, index_status) = match query.as_deref() {
         Some(query) => {
-            search_documents(
+            search_documents_with_status(
                 pool,
                 filters.facility_id,
                 query,
@@ -107,7 +116,7 @@ pub async fn omni_search(
             .await?
         }
         None => {
-            recent_patient_documents(
+            recent_patient_documents_with_status(
                 pool,
                 filters.facility_id,
                 filters.user_id,
@@ -130,14 +139,13 @@ pub async fn omni_search(
         }
     }
 
-    let index_status = search_index_status(pool, filters.facility_id).await?;
     Ok(OmniSearchResult {
         groups,
         index_status,
     })
 }
 
-async fn search_documents(
+async fn search_documents_with_status(
     pool: &PgPool,
     facility_id: Uuid,
     query_text: &str,
@@ -146,9 +154,11 @@ async fn search_documents(
     feature_keys: &[String],
     can_view_patient_demographics: bool,
     limit_per_group: i64,
-) -> anyhow::Result<Vec<SearchDocumentRow>> {
-    let rows = sqlx::query_as::<_, SearchDocumentRow>(
-        r#"
+) -> anyhow::Result<(Vec<SearchDocumentRow>, Vec<SearchIndexStatus>)> {
+    let row = observe_db_query(
+        "search.documents_with_status",
+        sqlx::query_as::<_, SearchResultSetRow>(
+            r#"
         WITH candidates AS (
             SELECT id,
                    resource_type,
@@ -195,41 +205,65 @@ async fn search_documents(
                        ORDER BY score DESC, source_updated_at DESC NULLS LAST, id
                    ) AS resource_rank
             FROM candidates
+        ),
+        result_rows AS (
+            SELECT id,
+                   resource_type,
+                   title,
+                   subtitle,
+                   route_path,
+                   patient_id,
+                   patient_code,
+                   patient_name,
+                   patient_date_of_birth,
+                   status_label,
+                   occurred_at,
+                   metadata,
+                   score
+            FROM ranked
+            WHERE resource_rank <= $7
+            ORDER BY score DESC, occurred_at DESC NULLS LAST, id
+            LIMIT $8
+        ),
+        status_rows AS (
+            SELECT resource_type,
+                   status,
+                   indexed_count,
+                   last_backfilled_at,
+                   last_error,
+                   updated_at
+            FROM search_index_status
+            WHERE facility_id = $1
         )
-        SELECT id,
-               resource_type,
-               title,
-               subtitle,
-               route_path,
-               patient_id,
-               patient_code,
-               patient_name,
-               patient_date_of_birth,
-               status_label,
-               occurred_at,
-               metadata,
-               score
-        FROM ranked
-        WHERE resource_rank <= $7
-        ORDER BY score DESC, occurred_at DESC NULLS LAST, id
-        LIMIT $8
+        SELECT COALESCE((
+                   SELECT jsonb_agg(to_jsonb(result_rows) ORDER BY result_rows.score DESC, result_rows.occurred_at DESC NULLS LAST, result_rows.id)
+                   FROM result_rows
+               ), '[]'::jsonb) AS documents,
+               COALESCE((
+                   SELECT jsonb_agg(to_jsonb(status_rows) ORDER BY status_rows.resource_type ASC)
+                   FROM status_rows
+               ), '[]'::jsonb) AS index_status
         "#,
+        )
+        .bind(facility_id)
+        .bind(query_text)
+        .bind(type_codes)
+        .bind(permission_codes)
+        .bind(feature_keys)
+        .bind(can_view_patient_demographics)
+        .bind(limit_per_group)
+        .bind(limit_per_group * type_codes.len() as i64)
+        .fetch_one(pool),
     )
-    .bind(facility_id)
-    .bind(query_text)
-    .bind(type_codes)
-    .bind(permission_codes)
-    .bind(feature_keys)
-    .bind(can_view_patient_demographics)
-    .bind(limit_per_group)
-    .bind(limit_per_group * type_codes.len() as i64)
-    .fetch_all(pool)
     .await?;
 
-    Ok(rows)
+    Ok((
+        decode_search_json(row.documents, "documents")?,
+        search_statuses_from_rows(decode_search_json(row.index_status, "index_status")?)?,
+    ))
 }
 
-async fn recent_patient_documents(
+async fn recent_patient_documents_with_status(
     pool: &PgPool,
     facility_id: Uuid,
     user_id: Uuid,
@@ -237,13 +271,16 @@ async fn recent_patient_documents(
     feature_keys: &[String],
     can_view_patient_demographics: bool,
     limit: i64,
-) -> anyhow::Result<Vec<SearchDocumentRow>> {
+) -> anyhow::Result<(Vec<SearchDocumentRow>, Vec<SearchIndexStatus>)> {
     if !can_view_patient_demographics {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), search_index_status(pool, facility_id).await?));
     }
 
-    let rows = sqlx::query_as::<_, SearchDocumentRow>(
-        r#"
+    let row = observe_db_query(
+        "search.recent_patients_with_status",
+        sqlx::query_as::<_, SearchResultSetRow>(
+            r#"
+        WITH result_rows AS (
         SELECT search_documents.id,
                search_documents.resource_type,
                search_documents.title,
@@ -269,25 +306,50 @@ async fn recent_patient_documents(
           AND (search_documents.feature_key IS NULL OR search_documents.feature_key = ANY($4))
         ORDER BY patient_contexts.updated_at DESC, patient_contexts.patient_id DESC
         LIMIT $5
+        ),
+        status_rows AS (
+            SELECT resource_type,
+                   status,
+                   indexed_count,
+                   last_backfilled_at,
+                   last_error,
+                   updated_at
+            FROM search_index_status
+            WHERE facility_id = $1
+        )
+        SELECT COALESCE((
+                   SELECT jsonb_agg(to_jsonb(result_rows) ORDER BY result_rows.occurred_at DESC NULLS LAST, result_rows.patient_id DESC)
+                   FROM result_rows
+               ), '[]'::jsonb) AS documents,
+               COALESCE((
+                   SELECT jsonb_agg(to_jsonb(status_rows) ORDER BY status_rows.resource_type ASC)
+                   FROM status_rows
+               ), '[]'::jsonb) AS index_status
         "#,
+        )
+        .bind(facility_id)
+        .bind(user_id)
+        .bind(permission_codes)
+        .bind(feature_keys)
+        .bind(limit)
+        .fetch_one(pool),
     )
-    .bind(facility_id)
-    .bind(user_id)
-    .bind(permission_codes)
-    .bind(feature_keys)
-    .bind(limit)
-    .fetch_all(pool)
     .await?;
 
-    Ok(rows)
+    Ok((
+        decode_search_json(row.documents, "documents")?,
+        search_statuses_from_rows(decode_search_json(row.index_status, "index_status")?)?,
+    ))
 }
 
 pub async fn search_index_status(
     pool: &PgPool,
     facility_id: Uuid,
 ) -> anyhow::Result<Vec<SearchIndexStatus>> {
-    let rows = sqlx::query_as::<_, SearchIndexStatusRow>(
-        r#"
+    let rows = observe_db_query(
+        "search.index_status",
+        sqlx::query_as::<_, SearchIndexStatusRow>(
+            r#"
         SELECT resource_type,
                status,
                indexed_count,
@@ -298,11 +360,18 @@ pub async fn search_index_status(
         WHERE facility_id = $1
         ORDER BY resource_type ASC
         "#,
+        )
+        .bind(facility_id)
+        .fetch_all(pool),
     )
-    .bind(facility_id)
-    .fetch_all(pool)
     .await?;
 
+    search_statuses_from_rows(rows)
+}
+
+fn search_statuses_from_rows(
+    rows: Vec<SearchIndexStatusRow>,
+) -> anyhow::Result<Vec<SearchIndexStatus>> {
     if rows.is_empty() {
         return SEARCH_RESOURCE_TYPES
             .into_iter()
@@ -320,6 +389,14 @@ pub async fn search_index_status(
     }
 
     rows.into_iter().map(search_status_from_row).collect()
+}
+
+fn decode_search_json<T>(value: Value, section: &'static str) -> anyhow::Result<Vec<T>>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_value(value)
+        .map_err(|error| anyhow::anyhow!("search {section} could not be decoded: {error}"))
 }
 
 pub async fn rebuild_search_index_for_all_facilities(pool: &PgPool) -> anyhow::Result<()> {
