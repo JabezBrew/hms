@@ -175,7 +175,7 @@ struct AuthorityAppointmentRow {
 }
 
 #[derive(Deserialize, FromRow)]
-struct ActiveAuthorityRow {
+pub(crate) struct ActiveAuthorityRow {
     source: String,
     source_id: Uuid,
     facility_id: Uuid,
@@ -214,7 +214,7 @@ struct FeatureEntitlementRow {
 }
 
 #[derive(Deserialize, FromRow)]
-struct EffectiveFeatureFlagRow {
+pub(crate) struct EffectiveFeatureFlagRow {
     deployment_profile: String,
     feature_key: Option<String>,
     enabled: Option<bool>,
@@ -1007,7 +1007,7 @@ pub async fn effective_feature_flags(
     effective_feature_flags_from_rows(rows, fallback_profile)
 }
 
-fn effective_feature_flags_from_rows(
+pub(crate) fn effective_feature_flags_from_rows(
     rows: Vec<EffectiveFeatureFlagRow>,
     fallback_profile: DeploymentProfile,
 ) -> anyhow::Result<HashMap<FeatureKey, bool>> {
@@ -2393,7 +2393,7 @@ fn active_authority_from_row(row: ActiveAuthorityRow) -> anyhow::Result<ActiveAu
     })
 }
 
-fn active_authorities_from_rows(
+pub(crate) fn active_authorities_from_rows(
     rows: Vec<ActiveAuthorityRow>,
 ) -> anyhow::Result<Vec<ActiveAuthority>> {
     rows.into_iter().map(active_authority_from_row).collect()

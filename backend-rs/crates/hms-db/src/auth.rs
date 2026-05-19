@@ -1,11 +1,15 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Duration, Utc};
 use hms_domain::auth::{
-    AuthSecurityState, AuthUser, BreakGlassCategory, BreakGlassGrant, BreakGlassGrantDenialReason,
-    BreakGlassGrantOutcome, ClinicalPatientAccessEvidence, ClinicalPatientAccessReason,
-    PatientDataVisibility, UpdateAuthProfileRequest, BREAK_GLASS_GRANT_TTL_HOURS,
-    BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER, BREAK_GLASS_PERMISSION_CODE,
+    ActiveAuthority, AuthSecurityState, AuthUser, BreakGlassCategory, BreakGlassGrant,
+    BreakGlassGrantDenialReason, BreakGlassGrantOutcome, ClinicalPatientAccessEvidence,
+    ClinicalPatientAccessReason, PatientDataVisibility, UpdateAuthProfileRequest,
+    BREAK_GLASS_GRANT_TTL_HOURS, BREAK_GLASS_MAX_ACTIVE_GRANTS_PER_USER,
+    BREAK_GLASS_PERMISSION_CODE,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
+use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -47,6 +51,33 @@ struct UserRow {
     visibility_codes: Vec<String>,
     passkey_enrolled: bool,
     recovery_codes_remaining: i64,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct RequestContextFactsRow {
+    id: Uuid,
+    email: String,
+    display_name: String,
+    facility_id: Uuid,
+    facility_code: String,
+    active_profile: String,
+    session_version: i64,
+    permission_version: i64,
+    password_change_required: bool,
+    permission_codes: Vec<String>,
+    feature_keys: Vec<String>,
+    visibility_codes: Vec<String>,
+    passkey_enrolled: bool,
+    recovery_codes_remaining: i64,
+    feature_flags: Value,
+    active_authorities: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestContextAuthFacts {
+    pub user: AuthUser,
+    pub feature_flags: HashMap<FeatureKey, bool>,
+    pub active_authorities: Vec<ActiveAuthority>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -274,6 +305,147 @@ pub async fn user_by_id(pool: &PgPool, user_id: Uuid) -> anyhow::Result<Option<U
     .await?;
 
     hydrate_user(row)
+}
+
+pub async fn request_context_facts(
+    pool: &PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+    fallback_profile: DeploymentProfile,
+) -> anyhow::Result<Option<RequestContextAuthFacts>> {
+    let row = hms_observability::observe_db_query(
+        "auth.request_context_facts",
+        sqlx::query_as::<_, RequestContextFactsRow>(
+            r#"
+            SELECT users.id,
+                   users.email,
+                   users.display_name,
+                   users.facility_id,
+                   facilities.code AS facility_code,
+                   facilities.deployment_profile AS active_profile,
+                   users.session_version,
+                   users.permission_version,
+                   users.password_change_required,
+                   COALESCE(user_permissions.permission_codes, ARRAY[]::text[]) AS permission_codes,
+                   COALESCE(user_features.feature_keys, ARRAY[]::text[]) AS feature_keys,
+                   COALESCE(user_patient_visibility.visibility_codes, ARRAY[]::text[]) AS visibility_codes,
+                   EXISTS (
+                       SELECT 1
+                       FROM auth_webauthn_credentials
+                       WHERE auth_webauthn_credentials.facility_id = users.facility_id
+                         AND auth_webauthn_credentials.user_id = users.id
+                         AND auth_webauthn_credentials.disabled_at IS NULL
+                   ) AS passkey_enrolled,
+                   COALESCE(auth_recovery_codes.remaining, 0)::bigint AS recovery_codes_remaining,
+                   COALESCE((
+                     SELECT jsonb_agg(to_jsonb(feature_rows) ORDER BY feature_rows.feature_key NULLS FIRST)
+                     FROM (
+                       SELECT feature_facility.deployment_profile,
+                              facility_feature_entitlements.feature_key,
+                              facility_feature_entitlements.enabled
+                       FROM facilities AS feature_facility
+                       LEFT JOIN facility_feature_entitlements
+                         ON facility_feature_entitlements.facility_id = feature_facility.id
+                       WHERE feature_facility.id = $2
+                         AND feature_facility.is_active = TRUE
+                     ) feature_rows
+                   ), '[]'::jsonb) AS feature_flags,
+                   COALESCE((
+                     SELECT jsonb_agg(to_jsonb(active_authorities) ORDER BY active_authorities.starts_at ASC, active_authorities.source_id ASC, active_authorities.permission_code ASC NULLS LAST)
+                     FROM (
+                       SELECT 'position_appointment' AS source,
+                              authority_appointments.id AS source_id,
+                              authority_appointments.facility_id,
+                              authority_permissions.permission_code,
+                              'organization_unit' AS scope_type,
+                              positions.org_unit_id AS scope_id,
+                              authority_appointments.starts_at,
+                              authority_appointments.ends_at
+                       FROM authority_appointments
+                       JOIN positions ON positions.id = authority_appointments.position_id
+                       LEFT JOIN position_templates ON position_templates.id = positions.template_id
+                       LEFT JOIN LATERAL unnest(COALESCE(position_templates.permission_codes, '{}'::text[]))
+                           AS authority_permissions(permission_code) ON TRUE
+                       WHERE authority_appointments.facility_id = $2
+                         AND authority_appointments.user_id = $1
+                         AND authority_appointments.status = 'active'
+                         AND positions.status = 'active'
+                         AND authority_appointments.starts_at <= now()
+                         AND (authority_appointments.ends_at IS NULL OR authority_appointments.ends_at > now())
+
+                       UNION ALL
+
+                       SELECT 'permission_assignment' AS source,
+                              permission_assignments.id AS source_id,
+                              permission_assignments.facility_id,
+                              permission_assignments.permission_code,
+                              permission_assignments.scope_type,
+                              permission_assignments.scope_id,
+                              permission_assignments.starts_at,
+                              permission_assignments.ends_at
+                       FROM permission_assignments
+                       WHERE permission_assignments.facility_id = $2
+                         AND permission_assignments.grantee_user_id = $1
+                         AND permission_assignments.status = 'active'
+                         AND permission_assignments.starts_at <= now()
+                         AND (permission_assignments.ends_at IS NULL OR permission_assignments.ends_at > now())
+
+                       UNION ALL
+
+                       SELECT 'delegation' AS source,
+                              delegations.id AS source_id,
+                              delegations.facility_id,
+                              delegations.permission_code,
+                              'facility' AS scope_type,
+                              NULL::uuid AS scope_id,
+                              delegations.starts_at,
+                              delegations.ends_at
+                       FROM delegations
+                       WHERE delegations.facility_id = $2
+                         AND delegations.delegate_user_id = $1
+                         AND delegations.status = 'active'
+                         AND delegations.starts_at <= now()
+                         AND (delegations.ends_at IS NULL OR delegations.ends_at > now())
+                     ) active_authorities
+                   ), '[]'::jsonb) AS active_authorities
+            FROM users
+            JOIN facilities ON facilities.id = users.facility_id
+            LEFT JOIN LATERAL (
+                SELECT array_agg(permission_code ORDER BY permission_code) AS permission_codes
+                FROM user_permissions
+                WHERE user_id = users.id
+            ) user_permissions ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT array_agg(feature_key ORDER BY feature_key) AS feature_keys
+                FROM user_features
+                WHERE user_id = users.id
+            ) user_features ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT array_agg(visibility ORDER BY visibility) AS visibility_codes
+                FROM user_patient_visibility
+                WHERE user_id = users.id
+            ) user_patient_visibility ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*)::bigint AS remaining
+                FROM auth_recovery_codes
+                WHERE facility_id = users.facility_id
+                  AND user_id = users.id
+                  AND used_at IS NULL
+                  AND invalidated_at IS NULL
+            ) auth_recovery_codes ON TRUE
+            WHERE users.id = $1
+              AND users.facility_id = $2
+              AND users.is_active = TRUE
+              AND facilities.is_active = TRUE
+            "#,
+        )
+        .bind(user_id)
+        .bind(facility_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    hydrate_request_context_facts(row, fallback_profile)
 }
 
 pub async fn user_by_email_and_facility(
@@ -1450,6 +1622,60 @@ fn hydrate_user(row: Option<UserRow>) -> anyhow::Result<Option<UserAccount>> {
             row.recovery_codes_remaining,
         ),
         password_hash: row.password_hash,
+    }))
+}
+
+fn hydrate_request_context_facts(
+    row: Option<RequestContextFactsRow>,
+    fallback_profile: DeploymentProfile,
+) -> anyhow::Result<Option<RequestContextAuthFacts>> {
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let permissions = row
+        .permission_codes
+        .iter()
+        .map(|value| codec::decode(value))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let feature_rows: Vec<crate::admin::EffectiveFeatureFlagRow> =
+        serde_json::from_value(row.feature_flags)?;
+    let authority_rows: Vec<crate::admin::ActiveAuthorityRow> =
+        serde_json::from_value(row.active_authorities)?;
+
+    Ok(Some(RequestContextAuthFacts {
+        user: AuthUser {
+            id: row.id,
+            email: row.email,
+            display_name: row.display_name,
+            facility_id: row.facility_id,
+            facility_code: row.facility_code,
+            active_profile: codec::decode(&row.active_profile)?,
+            permissions: permissions.clone(),
+            features: row
+                .feature_keys
+                .iter()
+                .map(|value| codec::decode(value))
+                .collect::<anyhow::Result<_>>()?,
+            patient_visibility: row
+                .visibility_codes
+                .iter()
+                .map(|value| codec::decode(value))
+                .collect::<anyhow::Result<_>>()?,
+            session_version: row.session_version,
+            permission_version: row.permission_version,
+            password_change_required: row.password_change_required,
+            auth_security: AuthSecurityState::from_permissions(
+                &permissions,
+                row.passkey_enrolled,
+                row.recovery_codes_remaining,
+            ),
+        },
+        feature_flags: crate::admin::effective_feature_flags_from_rows(
+            feature_rows,
+            fallback_profile,
+        )?,
+        active_authorities: crate::admin::active_authorities_from_rows(authority_rows)?,
     }))
 }
 

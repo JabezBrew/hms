@@ -57,19 +57,16 @@ async fn resolve_request_context(
     state: &AppState,
 ) -> Result<hms_access::RequestContext, ApiError> {
     let claims = access_claims(parts, state)?;
-    let user = state
-        .auth_user(claims.sub)
+    let context_facts = state
+        .request_context_facts(claims.sub, state.facility_id())
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;
+    let user = context_facts.user;
 
     reject_stale_claims(&user, &claims)?;
 
-    let admin_facts = state
-        .request_context_admin_facts(user.id)
-        .await
-        .map_err(|_| ApiError::unauthorized())?;
-    let enabled_features = enabled_features(&admin_facts.feature_flags, &user);
+    let enabled_features = enabled_features(&context_facts.feature_flags, &user);
     let request_id = parts
         .extensions
         .get::<RequestId>()
@@ -91,7 +88,7 @@ async fn resolve_request_context(
         offsite,
         reauth,
     )
-    .with_active_authorities(admin_facts.active_authorities))
+    .with_active_authorities(context_facts.active_authorities))
 }
 
 fn access_claims(parts: &Parts, state: &AppState) -> Result<AccessClaims, ApiError> {

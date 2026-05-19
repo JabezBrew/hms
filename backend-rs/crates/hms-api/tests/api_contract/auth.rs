@@ -99,8 +99,8 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
     let app = app_with_request_context_probe().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
 
-    let response = app
-        .oneshot(
+    let (response, observed_queries) = hms_observability::with_request_query_counter(async {
+        app.oneshot(
             Request::builder()
                 .method(Method::GET)
                 .uri("/__test/request-context")
@@ -111,9 +111,12 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
                 .expect("request builds"),
         )
         .await
-        .expect("request context probe succeeds");
+    })
+    .await;
+    let response = response.expect("request context probe succeeds");
 
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(observed_queries, 1);
     let body = json_body(response).await;
     assert_eq!(body["request_id"], "request-context-test");
     assert_eq!(body["facility_code"], "HMS");

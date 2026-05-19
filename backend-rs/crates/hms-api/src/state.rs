@@ -208,6 +208,20 @@ impl AppState {
             .map(|user| user.to_auth_user()))
     }
 
+    pub async fn request_context_facts(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+    ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
+        hms_db::auth::request_context_facts(
+            &self.inner.pool,
+            user_id,
+            facility_id,
+            self.inner.config.deployment_profile,
+        )
+        .await
+    }
+
     pub async fn active_authorities_for_user(&self, user_id: Uuid) -> Result<Vec<ActiveAuthority>> {
         hms_db::admin::active_authorities_for_user(&self.inner.pool, self.facility_id(), user_id)
             .await
