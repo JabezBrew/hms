@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{SubsecRound, Utc};
 use hms_db::consent::NewConsentGrant;
 use hms_db::provision::BaselineProvisioning;
 use hms_domain::consent::{ConsentGrantStatus, ConsentScope};
@@ -39,7 +39,7 @@ async fn consent_grants_are_patient_and_facility_scoped() {
     .await
     .expect("patient exists");
 
-    let expires_at = Utc::now() + chrono::Duration::days(30);
+    let expires_at = (Utc::now() + chrono::Duration::days(30)).trunc_subsecs(6);
     let grant = hms_db::consent::create_consent_grant(
         &pool,
         NewConsentGrant {
