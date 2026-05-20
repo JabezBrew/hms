@@ -87,7 +87,7 @@ async fn resolve_request_context(
 
     let facts_started_at = Instant::now();
     let context_facts = state
-        .request_context_facts(claims.sub, state.facility_id())
+        .request_context_facts_for_claims(&claims)
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;
@@ -135,7 +135,7 @@ async fn resolve_request_context(
 async fn resolve_authenticated_user(parts: &Parts, state: &AppState) -> Result<AuthUser, ApiError> {
     let claims = access_claims(parts, state)?;
     let user = state
-        .auth_user_for_facility(claims.sub, state.facility_id())
+        .auth_user_for_claims(&claims)
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;

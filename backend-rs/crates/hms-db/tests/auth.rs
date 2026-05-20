@@ -130,6 +130,55 @@ async fn auth_user_for_facility_is_single_query_and_scoped() {
 }
 
 #[tokio::test]
+async fn auth_versions_for_facility_are_single_query_and_scoped() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE facility_id = $1 AND email = 'owner@hms.local'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("owner exists");
+
+    let (versions, observed_queries) = hms_observability::with_request_query_counter(async {
+        hms_db::auth::user_auth_versions_for_facility(&pool, owner_id, facility_id).await
+    })
+    .await;
+    let versions = versions
+        .expect("auth versions query succeeds")
+        .expect("owner versions exist");
+
+    assert_eq!(observed_queries, 1);
+    assert_eq!(versions.session_version, 1);
+    assert_eq!(versions.permission_version, 1);
+    assert_eq!(versions.active_profile, DeploymentProfile::Hospital);
+
+    assert!(
+        hms_db::auth::user_auth_versions_for_facility(&pool, owner_id, Uuid::new_v4())
+            .await
+            .expect("cross-facility auth versions query succeeds")
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn auth_profile_updates_are_user_and_facility_scoped() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");

@@ -1,5 +1,6 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
@@ -9,6 +10,7 @@ use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvi
 use hms_db::search::{OmniSearchFilters, OmniSearchResult};
 use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
 use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
+use hms_domain::deployment::DeploymentProfile;
 use hms_domain::search::SearchResourceType;
 use hms_events::DomainEventKind;
 use tokio::net::TcpStream;
@@ -30,6 +32,127 @@ struct AppStateInner {
     started_at: DateTime<Utc>,
     facility_id: Uuid,
     pool: hms_db::PgPool,
+    auth_cache: AuthCache,
+}
+
+const AUTH_FACT_CACHE_TTL: Duration = Duration::from_secs(5);
+const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct AuthCacheKey {
+    user_id: Uuid,
+    facility_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: String,
+}
+
+impl AuthCacheKey {
+    fn from_claims(claims: &AccessClaims, facility_id: Uuid) -> Self {
+        Self {
+            user_id: claims.sub,
+            facility_id,
+            session_version: claims.session_version,
+            permission_version: claims.permission_version,
+            active_profile: claims.active_profile.clone(),
+        }
+    }
+
+    fn from_auth_user(user: &AuthUser) -> Option<Self> {
+        Some(Self {
+            user_id: user.id,
+            facility_id: user.facility_id,
+            session_version: user.session_version,
+            permission_version: user.permission_version,
+            active_profile: deployment_profile_claim_value(user.active_profile)?,
+        })
+    }
+
+    fn from_user_account(user: &UserAccount) -> Option<Self> {
+        Some(Self {
+            user_id: user.id,
+            facility_id: user.facility_id,
+            session_version: user.session_version,
+            permission_version: user.permission_version,
+            active_profile: deployment_profile_claim_value(user.active_profile)?,
+        })
+    }
+}
+
+#[derive(Default)]
+struct AuthCache {
+    users: RwLock<HashMap<AuthCacheKey, CachedAuthValue<AuthUser>>>,
+    request_contexts:
+        RwLock<HashMap<AuthCacheKey, CachedAuthValue<hms_db::auth::RequestContextAuthFacts>>>,
+}
+
+struct CachedAuthValue<T> {
+    value: T,
+    expires_at: Instant,
+}
+
+impl AuthCache {
+    fn get_user(&self, key: &AuthCacheKey) -> Option<AuthUser> {
+        cache_get(&self.users, key)
+    }
+
+    fn put_user(&self, key: AuthCacheKey, user: AuthUser) {
+        cache_put(&self.users, key, user);
+    }
+
+    fn get_request_context(
+        &self,
+        key: &AuthCacheKey,
+    ) -> Option<hms_db::auth::RequestContextAuthFacts> {
+        cache_get(&self.request_contexts, key)
+    }
+
+    fn put_request_context(&self, key: AuthCacheKey, facts: hms_db::auth::RequestContextAuthFacts) {
+        cache_put(&self.request_contexts, key, facts);
+    }
+
+    fn remove(&self, key: &AuthCacheKey) {
+        if let Ok(mut users) = self.users.write() {
+            users.remove(key);
+        }
+        if let Ok(mut contexts) = self.request_contexts.write() {
+            contexts.remove(key);
+        }
+    }
+}
+
+fn cache_get<T: Clone>(
+    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
+    key: &AuthCacheKey,
+) -> Option<T> {
+    let now = Instant::now();
+    let cache = cache.read().ok()?;
+    let cached = cache.get(key)?;
+    (cached.expires_at > now).then(|| cached.value.clone())
+}
+
+fn cache_put<T>(
+    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
+    key: AuthCacheKey,
+    value: T,
+) {
+    let Ok(mut cache) = cache.write() else {
+        return;
+    };
+    let now = Instant::now();
+    if cache.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+        cache.retain(|_, cached| cached.expires_at > now);
+        if cache.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+            cache.clear();
+        }
+    }
+    cache.insert(
+        key,
+        CachedAuthValue {
+            value,
+            expires_at: now + AUTH_FACT_CACHE_TTL,
+        },
+    );
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +235,7 @@ impl AppState {
                 started_at,
                 facility_id,
                 pool,
+                auth_cache: AuthCache::default(),
             }),
         })
     }
@@ -220,6 +344,27 @@ impl AppState {
         )
     }
 
+    pub async fn auth_user_for_claims(&self, claims: &AccessClaims) -> Result<Option<AuthUser>> {
+        let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
+        if let Some(user) = self.inner.auth_cache.get_user(&cache_key) {
+            if self.auth_claims_current(claims).await? {
+                return Ok(Some(user));
+            }
+            self.inner.auth_cache.remove(&cache_key);
+            return Ok(None);
+        }
+
+        let user = self
+            .auth_user_for_facility(claims.sub, self.facility_id())
+            .await?;
+        if let Some(user) = &user {
+            if auth_user_matches_claims(user, claims) {
+                self.inner.auth_cache.put_user(cache_key, user.clone());
+            }
+        }
+        Ok(user)
+    }
+
     pub async fn request_context_facts(
         &self,
         user_id: Uuid,
@@ -232,6 +377,66 @@ impl AppState {
             self.inner.config.deployment_profile,
         )
         .await
+    }
+
+    pub async fn request_context_facts_for_claims(
+        &self,
+        claims: &AccessClaims,
+    ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
+        let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
+        if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
+            let Some(versions) = self.current_auth_versions(claims).await? else {
+                self.inner.auth_cache.remove(&cache_key);
+                return Ok(None);
+            };
+            if !auth_versions_match_claims(&versions, claims) {
+                self.inner.auth_cache.remove(&cache_key);
+                return Ok(None);
+            }
+            if versions.feature_entitlements_updated_at == facts.feature_entitlements_updated_at {
+                return Ok(Some(facts));
+            }
+            self.inner.auth_cache.remove(&cache_key);
+        }
+
+        let facts = self
+            .request_context_facts(claims.sub, self.facility_id())
+            .await?;
+        if let Some(facts) = &facts {
+            if auth_user_matches_claims(&facts.user, claims) {
+                self.inner
+                    .auth_cache
+                    .put_request_context(cache_key.clone(), facts.clone());
+                self.inner
+                    .auth_cache
+                    .put_user(cache_key, facts.user.clone());
+            }
+        }
+        Ok(facts)
+    }
+
+    async fn auth_claims_current(&self, claims: &AccessClaims) -> Result<bool> {
+        Ok(self
+            .current_auth_versions(claims)
+            .await?
+            .is_some_and(|versions| auth_versions_match_claims(&versions, claims)))
+    }
+
+    async fn current_auth_versions(
+        &self,
+        claims: &AccessClaims,
+    ) -> Result<Option<hms_db::auth::UserAuthVersions>> {
+        if claims.facility_id != self.facility_id() {
+            return Ok(None);
+        }
+
+        let versions = hms_db::auth::user_auth_versions_for_facility(
+            &self.inner.pool,
+            claims.sub,
+            self.facility_id(),
+        )
+        .await?;
+        Ok(versions)
     }
 
     pub async fn active_authorities_for_user(&self, user_id: Uuid) -> Result<Vec<ActiveAuthority>> {
@@ -258,11 +463,16 @@ impl AppState {
         facility_id: Uuid,
         payload: UpdateAuthProfileRequest,
     ) -> Result<Option<AuthUser>> {
-        Ok(
+        let user =
             hms_db::auth::update_user_profile(&self.inner.pool, facility_id, user_id, payload)
                 .await?
-                .map(|user| user.to_auth_user()),
-        )
+                .map(|user| user.to_auth_user());
+        if let Some(user) = &user {
+            if let Some(cache_key) = AuthCacheKey::from_auth_user(user) {
+                self.inner.auth_cache.put_user(cache_key, user.clone());
+            }
+        }
+        Ok(user)
     }
 
     pub async fn login(
@@ -664,12 +874,17 @@ impl AppState {
         )
         .context("failed to issue access token")?;
 
+        let auth_user = user.to_auth_user();
+        if let Some(cache_key) = AuthCacheKey::from_user_account(user) {
+            self.inner.auth_cache.put_user(cache_key, auth_user.clone());
+        }
+
         Ok(Some(LoginOutcome {
             access_token,
             refresh_token,
             csrf_token,
             session_id,
-            user: user.to_auth_user(),
+            user: auth_user,
         }))
     }
 }
@@ -682,6 +897,31 @@ fn verify_password(hash: &str, password: &str) -> bool {
     Argon2::default()
         .verify_password(password.as_bytes(), &hash)
         .is_ok()
+}
+
+fn auth_user_matches_claims(user: &AuthUser, claims: &AccessClaims) -> bool {
+    user.id == claims.sub
+        && user.facility_id == claims.facility_id
+        && user.session_version == claims.session_version
+        && user.permission_version == claims.permission_version
+        && deployment_profile_claim_value(user.active_profile).as_deref()
+            == Some(claims.active_profile.as_str())
+}
+
+fn auth_versions_match_claims(
+    versions: &hms_db::auth::UserAuthVersions,
+    claims: &AccessClaims,
+) -> bool {
+    versions.session_version == claims.session_version
+        && versions.permission_version == claims.permission_version
+        && deployment_profile_claim_value(versions.active_profile).as_deref()
+            == Some(claims.active_profile.as_str())
+}
+
+fn deployment_profile_claim_value(profile: DeploymentProfile) -> Option<String> {
+    serde_json::to_value(profile)
+        .ok()
+        .and_then(|value| value.as_str().map(ToOwned::to_owned))
 }
 
 async fn redis_ready(redis_addr: &str) -> bool {
