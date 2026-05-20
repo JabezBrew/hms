@@ -10,6 +10,38 @@ role-weighted workflows, realistic think time, bounded V2 list endpoints, shared
 operational objects, optional synthetic writes, and p99 thresholds from the Rust
 V2 performance budget.
 
+## Current Performance Baseline
+
+The named Rust V2 baseline is:
+
+`tests/load/baselines/rust-v2-vps-edge-https-stress-after-auth-invalidation-cache.json`
+
+It preserves the successful staging stress run from `2026-05-20T02:41:52Z`
+as a PHI-safe aggregate artifact. The raw k6 export was:
+
+`/tmp/hms-load-results/vps-edge-https-stress-after-auth-invalidation-cache.json`
+
+Do not commit the raw export. k6 summary exports include `setup_data.fixture`
+IDs from the target environment. The committed baseline stores only aggregate
+latency, check/error, route counter, and query-counter budgets.
+
+Baseline result:
+
+| Surface | Baseline p99 |
+| --- | ---: |
+| Auth/me | 44.96ms |
+| Patient Chronicle | 62.07ms |
+| Omni Search | 91.1ms |
+| Patient list | 87.51ms |
+| Ward board | 44.87ms |
+| Laboratory group | 52.63ms |
+| Inventory group | 70.1ms |
+| Billing group | 55.18ms |
+
+The baseline also recorded `100,077` checks, `0` failed checks, `0` HTTP
+failures, and server metrics showing `/api/v2/auth/me` handled `6,046`
+requests with `0` DB queries.
+
 ## Safety Rules
 
 - Prefer staging, a temporary clone, or a synthetic-data environment.
@@ -123,6 +155,7 @@ Override soak duration with `HMS_LOAD_SOAK_HOLD_DURATION=2h`.
 | `HMS_LOAD_WORKFLOWS` | all | Comma-separated subset: `reception,doctor,nurse,lab,pharmacy,billing,admin`. |
 | `HMS_LOAD_ENABLE_WRITES` | false | Enables synthetic patient, visit, triage, note, vitals, lab, pharmacy, and billing writes. |
 | `HMS_LOAD_INCLUDE_OPD_RUSH` | false | Adds an arrival-rate OPD rush scenario. |
+| `HMS_LOAD_DATA_SCALE` | `current-seed` | Labels the dataset scale in k6 tags and logs. Use `small`, `medium`, or `large` only after the environment has actually been seeded to that scale. |
 | `HMS_LOAD_THINK_TIME_SCALE` | `1` | Lower for faster tests, higher for slower human pacing. |
 | `HMS_LOAD_BUDGET_MULTIPLIER` | `1` | Multiplies p99 thresholds when measuring over higher-latency public links. |
 | `HMS_LOAD_DEBUG_FAILURES` | false | Logs method, route template, role, and status for failed requests. Never logs bodies. |
@@ -145,9 +178,13 @@ The script uses Rust V2 p99 budgets by default:
 | --- | --- |
 | `auth/me` | `<75ms` |
 | hot patient lists | `<200ms` |
+| dashboard snapshot | `<250ms` |
 | patient chronicle | `<300ms` |
 | ward board | `<250ms` |
 | omni search | `<250ms` |
+| laboratory route group | `<300ms` |
+| inventory/pharmacy route group | `<300ms` |
+| billing route group | `<500ms` |
 | clinical/operational writes | `<500ms` |
 | error rate | `<1%` |
 
@@ -177,17 +214,87 @@ Then visit `http://127.0.0.1:3001` and watch:
 The Rust API exposes PHI-safe Prometheus text at `/api/v2/metrics` on the
 container network. Do not expose that endpoint publicly.
 
-## Result Handling
+## Regression Workflow
 
-Write a machine-readable result when comparing runs:
+For a full internal app-stack regression run, run k6 from the VPS or another
+machine on the same private network path. Use the same credentials and profile
+shape as the baseline unless the change being tested explicitly requires a
+different profile.
+
+If you have a private metrics URL available from the runner, capture before and
+after metrics so the report can compare counter deltas instead of cumulative API
+process counters:
 
 ```bash
-mkdir -p results/load
-k6 run \
-  --summary-export results/load/rust-v2-baseline-summary.json \
-  -e HMS_LOAD_PROFILE=baseline \
-  tests/load/k6-rust-v2-realistic.js
+export HMS_LOAD_BASE_URL=https://staging.thehms.systems
+export HMS_LOAD_FACILITY_CODE=HMS
+export HMS_LOAD_PROFILE=stress
+export HMS_LOAD_DATA_SCALE=current-seed
+export HMS_LOAD_METRICS_URL=http://hms-api:8080/api/v2/metrics
+
+tests/load/scripts/run-rust-v2-regression.sh
 ```
 
-For regression comparisons, keep the k6 summary plus Grafana screenshots of
-aggregate panels only. Do not share raw response bodies or patient-level data.
+If you already have a k6 summary export, generate the report directly:
+
+```bash
+node tests/load/scripts/report-rust-v2-performance.mjs \
+  --summary /tmp/hms-load-results/vps-edge-https-stress-after-auth-invalidation-cache.json \
+  --metrics-after /tmp/hms-load-results/api-metrics-after.prom
+```
+
+The report decides pass/fail from:
+
+- k6 `checks` failure rate,
+- `http_req_failed` and HMS application error rates,
+- custom hot-route p99 trends,
+- route-level DB queries/request from `hms_api_http_db_query_count_sum`,
+- pool snapshot pressure from SQLx pool gauges when metrics are supplied,
+- guard query counters such as `auth.user_auth_versions_for_facility`.
+
+For regression comparisons, keep the k6 summary, the report JSON, and Grafana
+screenshots of aggregate panels only. Do not share raw response bodies or
+patient-level data. Do not commit raw k6 exports that include `setup_data`.
+
+## Internal Versus User Latency
+
+This harness is for internal app-stack speed: k6 running close to the API, over
+the VPS edge or private Docker network, with server metrics from the API
+container. It is the right tool for catching Rust API, SQL, cache, pool, and
+route-regression problems.
+
+Laptop-to-VPS and real-user latency are different measurements. They include
+local ISP routing, TLS connection setup, browser scheduling, frontend render
+work, device speed, and geographic distance. Use browser RUM, synthetic browser
+checks, and regional probes for that class of latency. Do not claim production
+user latency from this k6 baseline alone.
+
+## Data-Scale Profiles
+
+The current committed baseline is only for the current staging seed. Larger
+Chronicle and search datasets are still unproven. Once staging has explicit
+seed profiles, label runs like this:
+
+```bash
+HMS_LOAD_DATA_SCALE=small tests/load/scripts/run-rust-v2-regression.sh
+HMS_LOAD_DATA_SCALE=medium tests/load/scripts/run-rust-v2-regression.sh
+HMS_LOAD_DATA_SCALE=large tests/load/scripts/run-rust-v2-regression.sh
+```
+
+The `HMS_LOAD_DATA_SCALE` value is a label only. It does not seed data and must
+not be used to claim small/medium/large performance until the environment has
+actually been provisioned to that scale.
+
+## Guardrails
+
+- `GET /api/v2/auth/me` must stay at `0` DB queries on a warm cache.
+- `auth.user_auth_versions_for_facility` must stay at `0` during warm-cache
+  auth regression runs.
+- Dashboard reads must not regress into per-request write amplification. The
+  historical baseline tolerates bounded cache refresh only as an interim guard;
+  lower the `dashboard.refresh_snapshot` guard to zero once dashboard refreshes
+  are fully moved out of the read path.
+- Hot list endpoints must remain bounded and cursor-paginated.
+- Chronicle and omni search must be rerun after larger seeded datasets exist.
+- Pool gauges in the report are snapshots. Use Grafana/Prometheus range panels
+  to prove peak pool pressure during a stress run.

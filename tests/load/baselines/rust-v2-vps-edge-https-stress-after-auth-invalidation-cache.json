@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "name": "rust-v2-vps-edge-https-stress-after-auth-invalidation-cache",
+  "description": "PHI-safe baseline for the successful HMS Rust V2 staging stress run executed from inside the VPS Docker edge network against staging public HTTPS after auth invalidation caching.",
+  "captured_at": "2026-05-20T02:41:52Z",
+  "source_artifact": "/tmp/hms-load-results/vps-edge-https-stress-after-auth-invalidation-cache.json",
+  "source_artifact_bytes": 40392,
+  "environment": {
+    "kind": "internal-app-stack",
+    "target": "staging public HTTPS from VPS Docker edge network",
+    "base_url": "https://staging.thehms.systems",
+    "profile": "stress",
+    "writes": "disabled",
+    "notes": [
+      "This baseline measures app-stack and local edge-network behavior, not laptop-to-VPS or real-user latency.",
+      "The raw k6 summary includes setup fixture identifiers and must not be committed or shared as the baseline artifact."
+    ]
+  },
+  "budgets": {
+    "checks_failure_rate_max": 0,
+    "http_failure_rate_max": 0,
+    "hms_error_rate_max": 0,
+    "pool": {
+      "postgres_used_ratio_max": 0.9,
+      "auth_postgres_used_ratio_max": 0.9,
+      "min_idle_connections": 1
+    }
+  },
+  "observed_summary": {
+    "checks_passed": 100077,
+    "checks_failed": 0,
+    "http_failure_rate": 0,
+    "hms_error_rate": 0,
+    "http_failures": 0
+  },
+  "surfaces": [
+    {
+      "id": "auth_me",
+      "label": "Auth/me",
+      "k6_metric": "hms_auth_me",
+      "method": "GET",
+      "route": "/api/v2/auth/me",
+      "status": "200",
+      "p99_ms_budget": 75,
+      "observed_p99_ms": 44.969201250000054,
+      "db_queries_per_request_max": 0,
+      "observed_server_requests": 6046,
+      "observed_server_db_queries": 0,
+      "notes": "Warm auth/me must remain a zero-DB-query route."
+    },
+    {
+      "id": "patient_list",
+      "label": "Patient list",
+      "k6_metric": "hms_patient_list",
+      "method": "GET",
+      "route": "/api/v2/patients",
+      "status": "200",
+      "p99_ms_budget": 200,
+      "observed_p99_ms": 87.51319561999989,
+      "db_queries_per_request_max": 2
+    },
+    {
+      "id": "patient_chronicle",
+      "label": "Patient chronicle",
+      "k6_metric": "hms_patient_chronicle",
+      "method": "GET",
+      "route": "/api/v2/patients/:id/chronicle",
+      "status": "200",
+      "p99_ms_budget": 300,
+      "observed_p99_ms": 62.07690775000001,
+      "db_queries_per_request_max": 3,
+      "notes": "Retest with larger seeded Chronicle data before treating this as a data-scale conclusion."
+    },
+    {
+      "id": "omni_search",
+      "label": "Omni search",
+      "k6_metric": "hms_search",
+      "method": "POST",
+      "route": "/api/v2/search/omni",
+      "status": "200",
+      "p99_ms_budget": 250,
+      "observed_p99_ms": 91.10639380000033,
+      "db_queries_per_request_max": 2,
+      "notes": "Retest with larger seeded search data before treating this as a data-scale conclusion."
+    },
+    {
+      "id": "ward_board",
+      "label": "Ward board",
+      "k6_metric": "hms_ward_board",
+      "method": "GET",
+      "route": "/api/v2/wards/board",
+      "status": "200",
+      "p99_ms_budget": 250,
+      "observed_p99_ms": 44.874755079999765,
+      "db_queries_per_request_max": 2
+    },
+    {
+      "id": "dashboard_snapshot",
+      "label": "Dashboard snapshot",
+      "k6_metric": "hms_dashboard_snapshot",
+      "method": "GET",
+      "route": "/api/v2/dashboards/snapshot",
+      "status": "200",
+      "p99_ms_budget": 250,
+      "observed_p99_ms": null,
+      "db_queries_per_request_max": 3,
+      "missing_k6_metric": "warn",
+      "notes": "The preserved historical k6 artifact predates the dedicated dashboard trend; new runs must report hms_dashboard_snapshot."
+    },
+    {
+      "id": "laboratory",
+      "label": "Laboratory routes",
+      "k6_metric": "hms_laboratory",
+      "method": "GET",
+      "routes": [
+        "/api/v2/laboratory/orders",
+        "/api/v2/laboratory/test-catalog",
+        "/api/v2/laboratory/specimens",
+        "/api/v2/laboratory/results"
+      ],
+      "status": "200",
+      "p99_ms_budget": 300,
+      "observed_p99_ms": 52.631584040000064,
+      "db_queries_per_request_max": 2
+    },
+    {
+      "id": "inventory",
+      "label": "Inventory/pharmacy routes",
+      "k6_metric": "hms_inventory",
+      "method": "GET",
+      "routes": [
+        "/api/v2/inventory/dashboard-summary",
+        "/api/v2/inventory/items",
+        "/api/v2/inventory/storage-locations",
+        "/api/v2/pharmacy/dispenses"
+      ],
+      "status": "200",
+      "p99_ms_budget": 300,
+      "observed_p99_ms": 70.10218857999999,
+      "db_queries_per_request_max": 2
+    },
+    {
+      "id": "billing",
+      "label": "Billing routes",
+      "k6_metric": "hms_billing",
+      "method": "GET",
+      "routes": [
+        "/api/v2/billing/dashboard-summary",
+        "/api/v2/billing/invoices",
+        "/api/v2/billing/payments",
+        "/api/v2/billing/service-prices",
+        "/api/v2/nhis/claims"
+      ],
+      "status": "200",
+      "p99_ms_budget": 500,
+      "observed_p99_ms": 55.18153020000005,
+      "db_queries_per_request_max": 2
+    }
+  ],
+  "db_query_guards": [
+    {
+      "id": "auth_invalidation_versions",
+      "query": "auth.user_auth_versions_for_facility",
+      "max_delta": 0,
+      "severity": "fail",
+      "notes": "Auth/me warm-cache validation must not reintroduce per-request user-version lookups."
+    },
+    {
+      "id": "dashboard_refresh_write_amplification",
+      "query": "dashboard.refresh_snapshot",
+      "route": "/api/v2/dashboards/snapshot",
+      "max_per_route_request": 0.02,
+      "severity": "warn",
+      "notes": "Current dashboard cache refresh is tolerated only as bounded refresh behavior. Product work should move dashboard reads to no-write reads and then lower this guard to zero."
+    }
+  ],
+  "data_scale": {
+    "label": "current-staging-seed",
+    "conclusion": "The baseline proves the current staging seed and warm-cache route shape only. Chronicle and search still need larger seeded data profiles."
+  }
+}

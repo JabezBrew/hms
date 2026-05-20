@@ -22,6 +22,7 @@ const PROFILE = (__ENV.HMS_LOAD_PROFILE || 'smoke').toLowerCase();
 const ENABLE_WRITES = truthy(__ENV.HMS_LOAD_ENABLE_WRITES);
 const INCLUDE_OPD_RUSH = truthy(__ENV.HMS_LOAD_INCLUDE_OPD_RUSH);
 const DEBUG_FAILURES = truthy(__ENV.HMS_LOAD_DEBUG_FAILURES);
+const DATA_SCALE = (__ENV.HMS_LOAD_DATA_SCALE || 'current-seed').toLowerCase();
 const BUDGET_MULTIPLIER = positiveFloat(__ENV.HMS_LOAD_BUDGET_MULTIPLIER, 1);
 const THINK_TIME_SCALE = positiveFloat(__ENV.HMS_LOAD_THINK_TIME_SCALE, 1);
 const TOKEN_REFRESH_SECONDS = positiveInt(__ENV.HMS_LOAD_TOKEN_REFRESH_SECONDS, 8 * 60);
@@ -51,6 +52,7 @@ const patientListTrend = new Trend('hms_patient_list', true);
 const patientChronicleTrend = new Trend('hms_patient_chronicle', true);
 const searchTrend = new Trend('hms_search', true);
 const wardBoardTrend = new Trend('hms_ward_board', true);
+const dashboardSnapshotTrend = new Trend('hms_dashboard_snapshot', true);
 const clinicalWriteTrend = new Trend('hms_clinical_write', true);
 const operationalWriteTrend = new Trend('hms_operational_write', true);
 const labTrend = new Trend('hms_laboratory', true);
@@ -99,6 +101,7 @@ export function setup() {
       `HMS Rust V2 load profile=${PROFILE}`,
       `base=${BASE_URL}`,
       `facility=${FACILITY_CODE}`,
+      `data_scale=${DATA_SCALE}`,
       `roles=${activeRoles.map((item) => item.role).join(',')}`,
       `writes=${ENABLE_WRITES ? 'enabled' : 'disabled'}`,
       `patients=${fixture.patientIds.length}`,
@@ -206,6 +209,7 @@ function nurseWardWorkflow(session, data) {
   getJson(session, '/api/v2/dashboards/snapshot', {
     role: 'nurse',
     route: '/api/v2/dashboards/snapshot',
+    metric: dashboardSnapshotTrend,
   });
   getJson(session, '/api/v2/wards/board?limit=25', {
     role: 'nurse',
@@ -979,6 +983,7 @@ function buildOptions() {
   }
   if (workflowEnabled('nurse')) {
     thresholds.hms_ward_board = [p99(250)];
+    thresholds.hms_dashboard_snapshot = [p99(250)];
   }
   if (workflowEnabled('lab')) {
     thresholds.hms_laboratory = [p99(300)];
@@ -1003,6 +1008,7 @@ function buildOptions() {
       hms_profile: PROFILE,
       hms_facility: FACILITY_CODE,
       hms_writes: ENABLE_WRITES ? 'enabled' : 'disabled',
+      hms_data_scale: DATA_SCALE,
     },
     summaryTrendStats: ['min', 'avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
     systemTags: ['status', 'method', 'name', 'group', 'check', 'scenario', 'error', 'expected_response'],
