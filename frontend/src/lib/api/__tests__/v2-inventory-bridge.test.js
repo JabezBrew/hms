@@ -961,6 +961,9 @@ describe('Rust V2 inventory bridge', () => {
       register: 'entry-2',
       actual_count: 8,
       witness: '00000000-0000-4000-8000-000000000002',
+      category: 'missing',
+      reason: 'non-PHI controlled count test',
+      notes: 'non-PHI controlled count test',
     }, {
       signal: controller.signal,
     })).resolves.toMatchObject({
@@ -1003,7 +1006,9 @@ describe('Rust V2 inventory bridge', () => {
         JSON.stringify({
           actual_count: 8,
           witness_user_id: '00000000-0000-4000-8000-000000000002',
-          notes: null,
+          category: 'missing',
+          reason: 'non-PHI controlled count test',
+          notes: 'non-PHI controlled count test',
         }),
       ],
       [

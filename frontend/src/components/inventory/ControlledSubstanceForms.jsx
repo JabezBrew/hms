@@ -503,12 +503,30 @@ export function ControlledCountForm({
       return;
     }
 
+    const expectedBalance = register?.current_balance || 0;
+    const discrepancy = data.actual_count - expectedBalance;
+    const countReason = String(data.notes || '').trim();
+
+    if (rustV2Mode && discrepancy !== 0 && !countReason) {
+      form.setError('notes', {
+        type: 'manual',
+        message: 'Reason is required when the count does not match the register balance.',
+      });
+      return;
+    }
+
     try {
       await countMutation.mutateAsync({
         register: register.id,
         ...data,
+        ...(rustV2Mode
+          ? {
+              category: discrepancy < 0 ? 'missing' : discrepancy > 0 ? 'surplus' : 'other',
+              reason: countReason || 'Physical count verified',
+              notes: countReason || null,
+            }
+          : {}),
       });
-      const discrepancy = data.actual_count - (register?.current_balance || 0);
       if (discrepancy !== 0) {
         toast.warning(`Count recorded with discrepancy of ${discrepancy > 0 ? '+' : ''}${discrepancy}`);
       } else {
@@ -609,10 +627,19 @@ export function ControlledCountForm({
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Notes</FormLabel>
+                  <FormLabel>{rustV2Mode ? 'Reason / notes' : 'Notes'}</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="Additional notes..." rows={2} {...field} />
+                    <Textarea
+                      placeholder={rustV2Mode && discrepancy !== 0 ? 'Reason for the count discrepancy...' : 'Additional notes...'}
+                      rows={2}
+                      {...field}
+                    />
                   </FormControl>
+                  {rustV2Mode && discrepancy !== 0 && (
+                    <FormDescription>
+                      Required when the physical count differs from the register balance.
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

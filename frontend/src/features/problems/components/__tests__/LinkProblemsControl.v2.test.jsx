@@ -34,16 +34,17 @@ describe('LinkProblemsControl Rust V2 guards', () => {
     delete window.__HMS_RUNTIME_CONFIG__;
   });
 
-  it('hides unsupported artifact link controls in Rust V2 mode', () => {
+  it('keeps artifact link controls available in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' };
 
     render(<LinkProblemsControl patientId="patient-1" noteEntryId="note-1" />);
 
-    expect(screen.queryByRole('button', { name: /link problem/i })).not.toBeInTheDocument();
-    expect(screen.queryByTitle(/unlink/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Hypertension')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /link problem/i })).toBeInTheDocument();
+    expect(screen.getByTitle(/unlink/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/problem artifact linking is not available in rust v2/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/problem artifact linking is not available in rust v2/i),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps artifact link controls available outside Rust V2 mode', () => {

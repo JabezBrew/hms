@@ -375,11 +375,16 @@ function buildV2ControlledMovementPayload(data = {}, movementType, direction) {
 }
 
 function buildV2ControlledCountPayload(data = {}) {
+  const reason = String(data.reason || data.notes || '').trim();
+  if (!reason) {
+    throw new Error('Reason is required for controlled count.');
+  }
+
   return {
     actual_count: nonNegativeInteger(data.actual_count ?? data.count, 'actual_count'),
     witness_user_id: uuidOrNull(data.witness_user_id ?? data.witness ?? data.witness_id),
     category: data.category || data.discrepancy_category || 'other',
-    reason: String(data.reason || data.notes || '').trim(),
+    reason,
     notes: data.notes || null,
   };
 }
