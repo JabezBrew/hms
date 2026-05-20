@@ -67,6 +67,7 @@ backend-rs/target/
 .claude/
 .codex/
 .opencode/
+results/
 
 # Lighthouse CI (local artifacts)
 .lighthouseci/
