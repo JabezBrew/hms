@@ -112,12 +112,21 @@ impl AuthCache {
         cache_put(&self.request_contexts, key, facts);
     }
 
-    fn remove(&self, key: &AuthCacheKey) {
+    fn remove_user(&self, facility_id: Uuid, user_id: Uuid) {
         if let Ok(mut users) = self.users.write() {
-            users.remove(key);
+            users.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
         }
         if let Ok(mut contexts) = self.request_contexts.write() {
-            contexts.remove(key);
+            contexts.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
+        }
+    }
+
+    fn remove_facility(&self, facility_id: Uuid) {
+        if let Ok(mut users) = self.users.write() {
+            users.retain(|key, _| key.facility_id != facility_id);
+        }
+        if let Ok(mut contexts) = self.request_contexts.write() {
+            contexts.retain(|key, _| key.facility_id != facility_id);
         }
     }
 }
@@ -312,6 +321,14 @@ impl AppState {
         self.inner.config.cookie_secure
     }
 
+    pub fn invalidate_auth_cache_for_user(&self, facility_id: Uuid, user_id: Uuid) {
+        self.inner.auth_cache.remove_user(facility_id, user_id);
+    }
+
+    pub fn invalidate_auth_cache_for_facility(&self, facility_id: Uuid) {
+        self.inner.auth_cache.remove_facility(facility_id);
+    }
+
     pub async fn omni_search(
         &self,
         user: &AuthUser,
@@ -363,11 +380,7 @@ impl AppState {
     pub async fn auth_user_for_claims(&self, claims: &AccessClaims) -> Result<Option<AuthUser>> {
         let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
         if let Some(user) = self.inner.auth_cache.get_user(&cache_key) {
-            if self.auth_claims_current(claims).await? {
-                return Ok(Some(user));
-            }
-            self.inner.auth_cache.remove(&cache_key);
-            return Ok(None);
+            return Ok(Some(user));
         }
 
         let user = self
@@ -401,18 +414,7 @@ impl AppState {
     ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
         let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
         if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
-            let Some(versions) = self.current_auth_versions(claims).await? else {
-                self.inner.auth_cache.remove(&cache_key);
-                return Ok(None);
-            };
-            if !auth_versions_match_claims(&versions, claims) {
-                self.inner.auth_cache.remove(&cache_key);
-                return Ok(None);
-            }
-            if versions.feature_entitlements_updated_at == facts.feature_entitlements_updated_at {
-                return Ok(Some(facts));
-            }
-            self.inner.auth_cache.remove(&cache_key);
+            return Ok(Some(facts));
         }
 
         let facts = self
@@ -429,30 +431,6 @@ impl AppState {
             }
         }
         Ok(facts)
-    }
-
-    async fn auth_claims_current(&self, claims: &AccessClaims) -> Result<bool> {
-        Ok(self
-            .current_auth_versions(claims)
-            .await?
-            .is_some_and(|versions| auth_versions_match_claims(&versions, claims)))
-    }
-
-    async fn current_auth_versions(
-        &self,
-        claims: &AccessClaims,
-    ) -> Result<Option<hms_db::auth::UserAuthVersions>> {
-        if claims.facility_id != self.facility_id() {
-            return Ok(None);
-        }
-
-        let versions = hms_db::auth::user_auth_versions_for_facility(
-            &self.inner.auth_pool,
-            claims.sub,
-            self.facility_id(),
-        )
-        .await?;
-        Ok(versions)
     }
 
     pub async fn active_authorities_for_user(&self, user_id: Uuid) -> Result<Vec<ActiveAuthority>> {
@@ -479,6 +457,7 @@ impl AppState {
         facility_id: Uuid,
         payload: UpdateAuthProfileRequest,
     ) -> Result<Option<AuthUser>> {
+        self.invalidate_auth_cache_for_user(facility_id, user_id);
         let user =
             hms_db::auth::update_user_profile(&self.inner.pool, facility_id, user_id, payload)
                 .await?
@@ -694,6 +673,7 @@ impl AppState {
         }
 
         let new_password_hash = hash_password(new_password)?;
+        self.invalidate_auth_cache_for_user(reset_token.facility_id, reset_token.user_id);
         let completed = hms_db::auth::complete_password_reset(
             &self.inner.pool,
             &token_hash,
@@ -703,6 +683,7 @@ impl AppState {
         .await?;
 
         if completed {
+            self.invalidate_auth_cache_for_user(reset_token.facility_id, reset_token.user_id);
             hms_db::events::insert_domain_event(
                 &self.inner.pool,
                 &hms_db::events::NewDomainEvent {
@@ -754,6 +735,7 @@ impl AppState {
         }
 
         let new_password_hash = hash_password(new_password)?;
+        self.invalidate_auth_cache_for_user(facility_id, user_id);
         let changed = hms_db::auth::change_user_password(
             &self.inner.pool,
             facility_id,
@@ -763,6 +745,7 @@ impl AppState {
         .await?;
 
         Ok(if changed.is_some() {
+            self.invalidate_auth_cache_for_user(facility_id, user_id);
             ChangePasswordOutcome::Changed
         } else {
             ChangePasswordOutcome::UserNotFound
@@ -921,16 +904,6 @@ fn auth_user_matches_claims(user: &AuthUser, claims: &AccessClaims) -> bool {
         && user.session_version == claims.session_version
         && user.permission_version == claims.permission_version
         && deployment_profile_claim_value(user.active_profile).as_deref()
-            == Some(claims.active_profile.as_str())
-}
-
-fn auth_versions_match_claims(
-    versions: &hms_db::auth::UserAuthVersions,
-    claims: &AccessClaims,
-) -> bool {
-    versions.session_version == claims.session_version
-        && versions.permission_version == claims.permission_version
-        && deployment_profile_claim_value(versions.active_profile).as_deref()
             == Some(claims.active_profile.as_str())
 }
 

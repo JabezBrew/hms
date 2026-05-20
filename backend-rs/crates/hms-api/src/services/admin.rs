@@ -365,12 +365,16 @@ impl AdminService {
         )?;
         validate_text(&payload.appointment_type, MAX_CODE_LEN, "appointment_type")?;
         validate_time_window(payload.starts_at, payload.ends_at)?;
+        let facility_id = self.facility_id();
+        let target_user_id = payload.user_id;
+        self.state
+            .invalidate_auth_cache_for_user(facility_id, target_user_id);
         let appointment = hms_db::admin::create_authority_appointment(
             self.pool(),
             NewAuthorityAppointment {
-                facility_id: self.facility_id(),
+                facility_id,
                 position_id: payload.position_id,
-                user_id: payload.user_id,
+                user_id: target_user_id,
                 appointed_by_user_id: ctx.user_id,
                 appointment_type: payload.appointment_type,
                 starts_at: payload.starts_at.unwrap_or_else(Utc::now),
@@ -385,6 +389,8 @@ impl AdminService {
                 "Authority appointment could not be saved.",
             )
         })?;
+        self.state
+            .invalidate_auth_cache_for_user(facility_id, target_user_id);
         Ok(object(appointment))
     }
 
@@ -428,11 +434,15 @@ impl AdminService {
         validate_text(&payload.reason_code, MAX_CODE_LEN, "reason_code")?;
         validate_time_window(payload.starts_at, payload.ends_at)?;
         ensure_supported_permissions(&self.state, &[payload.permission_code]).await?;
+        let facility_id = self.facility_id();
+        let grantee_user_id = payload.grantee_user_id;
+        self.state
+            .invalidate_auth_cache_for_user(facility_id, grantee_user_id);
         let assignment = hms_db::admin::create_permission_assignment(
             self.pool(),
             NewPermissionAssignment {
-                facility_id: self.facility_id(),
-                grantee_user_id: payload.grantee_user_id,
+                facility_id,
+                grantee_user_id,
                 permission_code: payload.permission_code,
                 scope_type: payload.scope_type,
                 scope_id: payload.scope_id,
@@ -450,6 +460,8 @@ impl AdminService {
                 "Permission assignment could not be saved.",
             )
         })?;
+        self.state
+            .invalidate_auth_cache_for_user(facility_id, grantee_user_id);
         Ok(object(assignment))
     }
 
@@ -487,9 +499,11 @@ impl AdminService {
             self.facility_id(),
             PermissionCode::AdminFeatureEntitlementsManage,
         )?;
+        let facility_id = self.facility_id();
+        self.state.invalidate_auth_cache_for_facility(facility_id);
         let entitlement = hms_db::admin::update_feature_entitlement(
             self.pool(),
-            self.facility_id(),
+            facility_id,
             key,
             payload.enabled,
             ctx.user_id,
@@ -503,6 +517,7 @@ impl AdminService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
+        self.state.invalidate_auth_cache_for_facility(facility_id);
         Ok(object(entitlement))
     }
 
@@ -516,9 +531,11 @@ impl AdminService {
             self.facility_id(),
             PermissionCode::AdminFeatureEntitlementsManage,
         )?;
+        let facility_id = self.facility_id();
+        self.state.invalidate_auth_cache_for_facility(facility_id);
         let entitlement = hms_db::admin::delete_feature_entitlement(
             self.pool(),
-            self.facility_id(),
+            facility_id,
             key,
             ctx.user_id,
             Some(ctx.request_id.clone()),
@@ -531,6 +548,7 @@ impl AdminService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("feature_not_found", "Feature was not found."))?;
+        self.state.invalidate_auth_cache_for_facility(facility_id);
         Ok(object(entitlement))
     }
 
@@ -661,6 +679,8 @@ impl AdminService {
             ApiError::conflict("staff_update_failed", "Staff account could not be updated.")
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
+        self.state
+            .invalidate_auth_cache_for_user(self.facility_id(), staff.user_id);
         Ok(object(staff))
     }
 
@@ -685,6 +705,8 @@ impl AdminService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
+        self.state
+            .invalidate_auth_cache_for_user(self.facility_id(), staff.user_id);
         Ok(object(staff))
     }
 
@@ -709,6 +731,8 @@ impl AdminService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
+        self.state
+            .invalidate_auth_cache_for_user(self.facility_id(), staff.user_id);
         Ok(object(staff))
     }
 
@@ -733,6 +757,8 @@ impl AdminService {
             )
         })?
         .ok_or_else(|| ApiError::not_found("staff_not_found", "Staff account was not found."))?;
+        self.state
+            .invalidate_auth_cache_for_user(self.facility_id(), staff.user_id);
         Ok(object(staff))
     }
 
@@ -900,12 +926,16 @@ impl AdminService {
         validate_text(&payload.reason, MAX_TEXT_LEN, "reason")?;
         validate_time_window(payload.starts_at, payload.ends_at)?;
         ensure_supported_permissions(&self.state, &[payload.permission_code]).await?;
+        let facility_id = self.facility_id();
+        let delegate_user_id = payload.delegate_user_id;
+        self.state
+            .invalidate_auth_cache_for_user(facility_id, delegate_user_id);
         let delegation = hms_db::admin::create_delegation(
             self.pool(),
             NewDelegation {
-                facility_id: self.facility_id(),
+                facility_id,
                 delegator_user_id: payload.delegator_user_id,
-                delegate_user_id: payload.delegate_user_id,
+                delegate_user_id,
                 permission_code: payload.permission_code,
                 starts_at: payload.starts_at.unwrap_or_else(Utc::now),
                 ends_at: payload.ends_at,
@@ -917,6 +947,8 @@ impl AdminService {
         .map_err(|_| {
             ApiError::conflict("delegation_create_failed", "Delegation could not be saved.")
         })?;
+        self.state
+            .invalidate_auth_cache_for_user(facility_id, delegate_user_id);
         Ok(object(delegation))
     }
 

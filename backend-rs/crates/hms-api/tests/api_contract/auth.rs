@@ -98,19 +98,21 @@ async fn auth_login_refresh_logout_and_me_follow_session_contract() {
 async fn request_context_extractor_resolves_policy_state_before_handler() {
     let app = app_with_request_context_probe().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
 
     let (response, observed_queries) = hms_observability::with_request_query_counter(async {
-        app.oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/__test/request-context")
-                .header(AUTHORIZATION, format!("Bearer {access_token}"))
-                .header("x-request-id", "request-context-test")
-                .header("x-hms-offsite", "true")
-                .body(Body::empty())
-                .expect("request builds"),
-        )
-        .await
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/__test/request-context")
+                    .header(AUTHORIZATION, auth_header.clone())
+                    .header("x-request-id", "request-context-test")
+                    .header("x-hms-offsite", "true")
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
     })
     .await;
     let response = response.expect("request context probe succeeds");
@@ -144,6 +146,24 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
         .iter()
         .any(|authority| authority["source"] == "position_appointment"
             && authority["permission_code"] == "admin.authority.manage"));
+
+    let (cached_response, cached_observed_queries) =
+        hms_observability::with_request_query_counter(async {
+            app.oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/__test/request-context")
+                    .header(AUTHORIZATION, auth_header)
+                    .header("x-request-id", "request-context-cache-test")
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+        })
+        .await;
+    let cached_response = cached_response.expect("cached request context probe succeeds");
+    assert_eq!(cached_response.status(), StatusCode::OK);
+    assert_eq!(cached_observed_queries, 0);
 }
 
 #[tokio::test]
@@ -153,6 +173,20 @@ async fn request_context_rejects_stale_permission_versions() {
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let (owner_token, _, _) = login(app.clone(), "owner@hms.local").await;
     let limited_id = Uuid::from_u128(hms_db::provision::LIMITED_USER_ID);
+
+    let warmed_limited_user = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("limited cache warm request succeeds");
+    assert_eq!(warmed_limited_user.status(), StatusCode::OK);
 
     let assignment = app
         .clone()
@@ -241,6 +275,20 @@ async fn active_permission_assignments_are_resolved_into_request_context_policy(
         .await
         .expect("permission assignment request succeeds");
     assert_eq!(assignment.status(), StatusCode::OK);
+
+    let stale_limited_context = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients/validation-rules")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("stale validation-rules request succeeds");
+    assert_eq!(stale_limited_context.status(), StatusCode::UNAUTHORIZED);
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let allowed = app
