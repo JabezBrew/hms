@@ -28,6 +28,7 @@ if (!args.summary) {
     : null;
   const metricsBeforePath = args.metricsBefore ? path.resolve(args.metricsBefore) : null;
   const jsonOutPath = args.jsonOut ? path.resolve(args.jsonOut) : null;
+  const allowMissingMetrics = Boolean(args.allowMissingMetrics);
 
   const baseline = readJson(baselinePath);
   const summary = readJson(summaryPath);
@@ -42,6 +43,7 @@ if (!args.summary) {
     metricsBeforePath,
     metricsAfter,
     metricsAfterPath,
+    allowMissingMetrics,
   });
 
   printReport(report);
@@ -50,23 +52,33 @@ if (!args.summary) {
     fs.writeFileSync(jsonOutPath, `${JSON.stringify(report, null, 2)}\n`);
   }
 
-  process.exitCode = report.status === 'fail' ? 1 : 0;
+  process.exitCode = report.status === 'fail' ? 1 : report.status === 'incomplete' ? 2 : 0;
 }
 
 function buildReport(input) {
   const failures = [];
   const warnings = [];
+  const incompletes = [];
   const budgets = input.baseline.budgets || {};
-  const summaryChecks = summarizeChecks(input.summary, budgets, failures);
-  const summaryFailures = summarizeFailures(input.summary, budgets, failures);
-  const latency = summarizeLatency(input.baseline, input.summary, failures, warnings);
-  const server = summarizeServerMetrics(input.baseline, input.metricsBefore, input.metricsAfter, failures, warnings);
-  const pool = summarizePool(input.baseline, input.metricsAfter, failures, warnings);
-  const guards = summarizeQueryGuards(input.baseline, input.metricsBefore, input.metricsAfter, failures, warnings);
+  const summaryChecks = summarizeChecks(input.summary, budgets, failures, incompletes);
+  const summaryFailures = summarizeFailures(input.summary, budgets, failures, incompletes);
+  const latency = summarizeLatency(input.baseline, input.summary, failures, warnings, incompletes);
+  const server = summarizeServerMetrics(
+    input.baseline,
+    input.metricsBefore,
+    input.metricsAfter,
+    failures,
+    warnings,
+    incompletes,
+    input.allowMissingMetrics
+  );
+  const pool = summarizePool(input.baseline, input.metricsAfter, failures, warnings, incompletes);
+  const guards = summarizeQueryGuards(input.baseline, input.metricsBefore, input.metricsAfter, failures, warnings, incompletes);
+  const status = reportStatus({ failures, warnings, incompletes, latency, server, pool, guards });
 
   return {
     schema_version: 1,
-    status: failures.length > 0 ? 'fail' : 'pass',
+    status,
     baseline: {
       name: input.baseline.name,
       path: input.baselinePath,
@@ -92,18 +104,44 @@ function buildReport(input) {
     pool,
     guards,
     warnings,
+    incomplete: incompletes,
     failures,
   };
 }
 
-function summarizeChecks(summary, budgets, failures) {
-  const checks = summary.metrics?.checks || {};
+function reportStatus({ failures, warnings, incompletes, latency, server, pool, guards }) {
+  if (failures.length > 0) return 'fail';
+  if (incompletes.length > 0) return 'incomplete';
+  if (
+    warnings.length > 0
+    || latency.some((row) => row.status === 'warn')
+    || server.surfaces?.some((row) => row.status === 'warn')
+    || pool.checks?.some((row) => row.status === 'warn')
+    || guards.checks?.some((row) => row.status === 'warn')
+  ) {
+    return 'warn';
+  }
+  return 'pass';
+}
+
+function summarizeChecks(summary, budgets, failures, incompletes) {
+  const checks = summary.metrics?.checks;
+  if (!checks) {
+    incompletes.push('k6 checks metric was missing from the summary.');
+    return { passes: 0, failed: 0, total: 0, failure_rate: null, budget_max: numberOrZero(budgets.checks_failure_rate_max), status: 'incomplete' };
+  }
+
   const passes = numberOrZero(checks.passes);
   const failed = numberOrZero(checks.fails);
   const total = passes + failed;
   const failureRate = total > 0 ? failed / total : 0;
   const max = numberOrZero(budgets.checks_failure_rate_max);
-  const status = failureRate <= max ? 'pass' : 'fail';
+  let status = failureRate <= max ? 'pass' : 'fail';
+
+  if (total === 0) {
+    status = 'incomplete';
+    incompletes.push('k6 checks metric had zero samples.');
+  }
 
   if (status === 'fail') {
     failures.push(`checks failure rate ${formatPercent(failureRate)} exceeded budget ${formatPercent(max)}`);
@@ -112,13 +150,24 @@ function summarizeChecks(summary, budgets, failures) {
   return { passes, failed, total, failure_rate: failureRate, budget_max: max, status };
 }
 
-function summarizeFailures(summary, budgets, failures) {
+function summarizeFailures(summary, budgets, failures, incompletes) {
+  const hasHttpMetric = Boolean(summary.metrics?.http_req_failed);
+  const hasHmsMetric = Boolean(summary.metrics?.hms_errors);
   const httpRate = rateValue(summary.metrics?.http_req_failed);
   const hmsRate = rateValue(summary.metrics?.hms_errors);
   const httpMax = numberOrZero(budgets.http_failure_rate_max);
   const hmsMax = numberOrZero(budgets.hms_error_rate_max);
-  const httpStatus = httpRate <= httpMax ? 'pass' : 'fail';
-  const hmsStatus = hmsRate <= hmsMax ? 'pass' : 'fail';
+  let httpStatus = httpRate <= httpMax ? 'pass' : 'fail';
+  let hmsStatus = hmsRate <= hmsMax ? 'pass' : 'fail';
+
+  if (!hasHttpMetric) {
+    httpStatus = 'incomplete';
+    incompletes.push('k6 http_req_failed metric was missing from the summary.');
+  }
+  if (!hasHmsMetric) {
+    hmsStatus = 'incomplete';
+    incompletes.push('k6 hms_errors metric was missing from the summary.');
+  }
 
   if (httpStatus === 'fail') {
     failures.push(`http_req_failed ${formatPercent(httpRate)} exceeded budget ${formatPercent(httpMax)}`);
@@ -133,25 +182,39 @@ function summarizeFailures(summary, budgets, failures) {
   };
 }
 
-function summarizeLatency(baseline, summary, failures, warnings) {
+function summarizeLatency(baseline, summary, failures, warnings, incompletes) {
+  const budgets = baseline.budgets || {};
+  const defaultWarnRatio = numeric(budgets.p99_regression_warn_ratio) ?? 1.2;
+  const defaultFailRatio = numeric(budgets.p99_regression_fail_ratio) ?? 1.5;
+
   return (baseline.surfaces || []).map((surface) => {
     const metric = summary.metrics?.[surface.k6_metric];
     const p99 = metric ? numeric(metric['p(99)']) : null;
     const budget = numeric(surface.p99_ms_budget);
+    const baselineP99 = numeric(surface.observed_p99_ms);
+    const warnRatio = numeric(surface.p99_regression_warn_ratio) ?? defaultWarnRatio;
+    const failRatio = numeric(surface.p99_regression_fail_ratio) ?? defaultFailRatio;
+    const regressionRatio = p99 !== null && baselineP99 !== null && baselineP99 > 0 ? p99 / baselineP99 : null;
     let status = 'pass';
     let note = '';
 
     if (p99 === null) {
-      status = surface.missing_k6_metric === 'warn' ? 'warn' : 'fail';
+      status = surface.missing_k6_metric === 'warn' ? 'warn' : 'incomplete';
       note = `missing k6 metric ${surface.k6_metric}`;
-      if (status === 'fail') {
-        failures.push(`${surface.label} is missing required k6 metric ${surface.k6_metric}`);
-      } else {
+      if (status === 'warn') {
         warnings.push(`${surface.label}: ${note}`);
+      } else {
+        incompletes.push(`${surface.label} is missing required k6 metric ${surface.k6_metric}`);
       }
     } else if (budget !== null && p99 > budget) {
       status = 'fail';
       failures.push(`${surface.label} p99 ${formatMs(p99)} exceeded budget ${formatMs(budget)}`);
+    } else if (regressionRatio !== null && regressionRatio > failRatio) {
+      status = 'fail';
+      failures.push(`${surface.label} p99 ${formatMs(p99)} regressed ${formatNumber(regressionRatio)}x from baseline ${formatMs(baselineP99)}`);
+    } else if (regressionRatio !== null && regressionRatio > warnRatio) {
+      status = 'warn';
+      warnings.push(`${surface.label} p99 ${formatMs(p99)} regressed ${formatNumber(regressionRatio)}x from baseline ${formatMs(baselineP99)}`);
     }
 
     return {
@@ -160,16 +223,24 @@ function summarizeLatency(baseline, summary, failures, warnings) {
       metric: surface.k6_metric,
       p99_ms: p99,
       budget_ms: budget,
-      observed_baseline_p99_ms: surface.observed_p99_ms ?? null,
+      observed_baseline_p99_ms: baselineP99,
+      regression_ratio: regressionRatio,
+      regression_warn_ratio: warnRatio,
+      regression_fail_ratio: failRatio,
       status,
       note,
     };
   });
 }
 
-function summarizeServerMetrics(baseline, before, after, failures, warnings) {
+function summarizeServerMetrics(baseline, before, after, failures, warnings, incompletes, allowMissingMetrics) {
   if (!after) {
-    warnings.push('Prometheus metrics were not provided; route DB-query budgets and pool pressure were not evaluated.');
+    const message = 'Prometheus metrics were not provided; route DB-query budgets and pool pressure were not evaluated.';
+    if (allowMissingMetrics) {
+      warnings.push(message);
+    } else {
+      incompletes.push(`${message} Pass --allow-missing-metrics only for k6-only smoke reporting.`);
+    }
     return { available: false, mode: 'not_provided', surfaces: [] };
   }
 
@@ -190,9 +261,9 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings) {
     let note = '';
 
     if (requestCount === 0) {
-      status = 'warn';
+      status = 'incomplete';
       note = 'no matching server route requests found';
-      warnings.push(`${surface.label}: ${note}`);
+      incompletes.push(`${surface.label}: ${note}`);
     } else if (budget !== null && perRequest !== null && perRequest > budget) {
       status = 'fail';
       failures.push(`${surface.label} DB queries/request ${formatNumber(perRequest)} exceeded budget ${formatNumber(budget)}`);
@@ -216,7 +287,7 @@ function summarizeServerMetrics(baseline, before, after, failures, warnings) {
   return { available: true, mode, surfaces };
 }
 
-function summarizePool(baseline, metrics, failures, warnings) {
+function summarizePool(baseline, metrics, failures, warnings, incompletes) {
   if (!metrics) {
     return { available: false, status: 'warn', note: 'Prometheus metrics were not provided.' };
   }
@@ -233,11 +304,11 @@ function summarizePool(baseline, metrics, failures, warnings) {
   const authUsedRatio = usedRatio(authSize, authIdle);
   const checks = [];
 
-  addPoolCheck(checks, failures, 'postgres', postgresSize, postgresIdle, postgresUsedRatio, minIdle, maxPostgresUsed);
-  addPoolCheck(checks, failures, 'auth_postgres', authSize, authIdle, authUsedRatio, minIdle, maxAuthUsed);
+  addPoolCheck(checks, failures, incompletes, 'postgres', postgresSize, postgresIdle, postgresUsedRatio, minIdle, maxPostgresUsed);
+  addPoolCheck(checks, failures, incompletes, 'auth_postgres', authSize, authIdle, authUsedRatio, minIdle, maxAuthUsed);
 
   if (checks.some((check) => check.status === 'missing')) {
-    warnings.push('Pool gauges were incomplete in the Prometheus metrics snapshot.');
+    incompletes.push('Pool gauges were incomplete in the Prometheus metrics snapshot.');
   }
 
   return {
@@ -248,7 +319,7 @@ function summarizePool(baseline, metrics, failures, warnings) {
   };
 }
 
-function summarizeQueryGuards(baseline, before, after, failures, warnings) {
+function summarizeQueryGuards(baseline, before, after, failures, warnings, incompletes) {
   if (!after) {
     return { available: false, checks: [] };
   }
@@ -269,8 +340,8 @@ function summarizeQueryGuards(baseline, before, after, failures, warnings) {
 
       let status = 'pass';
       if (value === null) {
-        status = 'warn';
-        warnings.push(`${guard.id}: route denominator was zero; guard could not be evaluated.`);
+        status = 'incomplete';
+        incompletes.push(`${guard.id}: route denominator was zero; guard could not be evaluated.`);
       } else if (budget !== null && value > budget) {
         status = guard.severity === 'warn' ? 'warn' : 'fail';
         const message = guard.route
@@ -298,9 +369,10 @@ function summarizeQueryGuards(baseline, before, after, failures, warnings) {
   };
 }
 
-function addPoolCheck(checks, failures, label, size, idle, used, minIdle, maxUsed) {
+function addPoolCheck(checks, failures, incompletes, label, size, idle, used, minIdle, maxUsed) {
   if (size === null || idle === null || used === null) {
     checks.push({ pool: label, status: 'missing', size, idle, used_ratio: used });
+    incompletes.push(`${label} pool gauges were missing or incomplete.`);
     return;
   }
 
@@ -440,13 +512,15 @@ function printReport(report) {
   lines.push(`- http_req_failed: ${formatPercent(report.k6.failures.http_req_failed.rate)}, budget <= ${formatPercent(report.k6.failures.http_req_failed.budget_max)} [${report.k6.failures.http_req_failed.status}]`);
   lines.push(`- hms_errors: ${formatPercent(report.k6.failures.hms_errors.rate)}, budget <= ${formatPercent(report.k6.failures.hms_errors.budget_max)} [${report.k6.failures.hms_errors.status}]`);
   lines.push('');
-  lines.push('Hot-route p99 budgets');
+  lines.push('Hot-route p99 budgets and baseline drift');
   lines.push(table(
-    ['Surface', 'Metric', 'p99', 'Budget', 'Status'],
+    ['Surface', 'Metric', 'p99', 'Baseline', 'Drift', 'Budget', 'Status'],
     report.k6.latency.map((row) => [
       row.label,
       row.metric,
       row.p99_ms === null ? 'n/a' : formatMs(row.p99_ms),
+      row.observed_baseline_p99_ms === null ? 'n/a' : formatMs(row.observed_baseline_p99_ms),
+      row.regression_ratio === null ? 'n/a' : `${formatNumber(row.regression_ratio)}x`,
       row.budget_ms === null ? 'n/a' : formatMs(row.budget_ms),
       row.status,
     ])
@@ -507,6 +581,12 @@ function printReport(report) {
     for (const warning of report.warnings) lines.push(`- ${warning}`);
   }
 
+  if (report.incomplete.length > 0) {
+    lines.push('');
+    lines.push('Incomplete Evidence');
+    for (const incomplete of report.incomplete) lines.push(`- ${incomplete}`);
+  }
+
   if (report.failures.length > 0) {
     lines.push('');
     lines.push('Failures');
@@ -551,7 +631,7 @@ function parseArgs(argv) {
       throw new Error(`Unexpected argument: ${arg}`);
     }
     const name = toCamel(arg.slice(2));
-    if (name === 'help' || name === 'h') {
+    if (name === 'help' || name === 'h' || name === 'allowMissingMetrics') {
       parsed[name] = true;
       continue;
     }
@@ -582,6 +662,7 @@ function formatMs(value) {
 }
 
 function formatPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'n/a';
   return `${formatNumber(value * 100)}%`;
 }
 
@@ -613,6 +694,7 @@ Options:
   --metrics-after FILE    Optional Prometheus text scraped after the k6 run.
   --metrics FILE          Alias for --metrics-after for one-snapshot reports.
   --json-out FILE         Optional machine-readable report output.
+  --allow-missing-metrics Allow k6-only reporting without Prometheus route/query/pool guardrails.
   --help                  Show this help.
 
 The report ignores k6 setup_data so fixture IDs and credentials are never printed.`);

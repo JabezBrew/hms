@@ -20,6 +20,8 @@
     "checks_failure_rate_max": 0,
     "http_failure_rate_max": 0,
     "hms_error_rate_max": 0,
+    "p99_regression_warn_ratio": 1.2,
+    "p99_regression_fail_ratio": 1.5,
     "pool": {
       "postgres_used_ratio_max": 0.9,
       "auth_postgres_used_ratio_max": 0.9,

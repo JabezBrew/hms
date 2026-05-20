@@ -235,6 +235,12 @@ export HMS_LOAD_METRICS_URL=http://hms-api:8080/api/v2/metrics
 tests/load/scripts/run-rust-v2-regression.sh
 ```
 
+`HMS_LOAD_METRICS_URL` is required for a full regression verdict. Without API
+metrics the report is `incomplete`, because DB-query budgets, auth guardrails,
+and pool pressure were not evaluated. For a k6-only smoke report, set
+`HMS_LOAD_ALLOW_MISSING_METRICS=true`; do not treat that mode as a full
+regression pass.
+
 If you already have a k6 summary export, generate the report directly:
 
 ```bash
@@ -247,10 +253,23 @@ The report decides pass/fail from:
 
 - k6 `checks` failure rate,
 - `http_req_failed` and HMS application error rates,
-- custom hot-route p99 trends,
+- custom hot-route p99 absolute budgets and drift from the committed baseline,
 - route-level DB queries/request from `hms_api_http_db_query_count_sum`,
 - pool snapshot pressure from SQLx pool gauges when metrics are supplied,
 - guard query counters such as `auth.user_auth_versions_for_facility`.
+
+Report status meanings:
+
+- `pass`: all budgets and baseline-drift tolerances passed.
+- `warn`: route p99 has drifted meaningfully from the committed baseline but has
+  not crossed the fail threshold or absolute budget.
+- `fail`: checks, errors, p99, query budgets, or guardrails crossed a hard
+  failure threshold.
+- `incomplete`: required evidence was missing, such as API metrics or matching
+  route counters.
+
+The default p99 drift tolerance warns at `>1.2x` the committed baseline and
+fails at `>1.5x` the committed baseline. Absolute route p99 budgets always fail.
 
 For regression comparisons, keep the k6 summary, the report JSON, and Grafana
 screenshots of aggregate panels only. Do not share raw response bodies or
