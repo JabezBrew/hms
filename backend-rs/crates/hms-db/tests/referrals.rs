@@ -57,7 +57,10 @@ async fn referrals_sla_and_waitlist_are_facility_scoped() {
     .expect("referral create succeeds");
     assert_eq!(referral.status, ReferralStatus::Sent);
     assert_eq!(referral.reason.as_deref(), Some("Medical review"));
-    assert_eq!(referral.sla_due_at, sla_due_at);
+    assert_eq!(
+        referral.sla_due_at.timestamp_micros(),
+        sla_due_at.timestamp_micros()
+    );
 
     let accepted = hms_db::referrals::accept_referral(
         &pool,
