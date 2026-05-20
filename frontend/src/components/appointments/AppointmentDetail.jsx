@@ -11,7 +11,7 @@ import CheckCircle from 'lucide-react/dist/esm/icons/circle-check-big.js';
 import XCircle from 'lucide-react/dist/esm/icons/circle-x.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -45,8 +47,10 @@ import {toast} from 'sonner';
 import {
   useAppointment,
   useUpdateAppointmentStatus,
+  useCancelAppointment,
   useDeleteAppointment
 } from '@/features/appointments/hooks/useAppointmentQueries';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 // Chronicle Design System status colors
 // Using amber for pending/proposed, emerald for confirmed, rose for cancelled, sky for info
@@ -90,6 +94,7 @@ const statusConfig = {
 
 const AppointmentDetail = ({ appointmentId, onBack }) => {
   const navigate = useNavigate();
+  const [cancellationReason, setCancellationReason] = useState('');
 
   // Use React Query hooks for data fetching
   const { 
@@ -239,6 +244,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
   // Use the update appointment status mutation
   const updateStatusMutation = useUpdateAppointmentStatus();
+  const cancelAppointmentMutation = useCancelAppointment();
 
   // Handle status update
   const handleStatusUpdate = (newStatus) => {
@@ -251,6 +257,30 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
         onError: (error) => {
           console.error('Error updating appointment status:', error);
           toast.error(error.message || 'Failed to update appointment status');
+        }
+      }
+    );
+  };
+
+  const handleCancelAppointment = (event) => {
+    const reason = cancellationReason.trim();
+    if (!reason) {
+      event?.preventDefault();
+      toast.error('Enter a cancellation reason');
+      return;
+    }
+
+    cancelAppointmentMutation.mutate(
+      { id: appointmentId, reason },
+      {
+        onSuccess: () => {
+          setCancellationReason('');
+          toast.success('Appointment cancelled');
+        },
+        onError: (error) => {
+          event?.preventDefault();
+          console.error('Error cancelling appointment:', error);
+          toast.error(error.message || 'Failed to cancel appointment');
         }
       }
     );
@@ -340,6 +370,14 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
   const patient = getPatientDetails();
   const practitioner = getPractitionerDetails();
   const status = statusConfig[appointment.status] || statusConfig.pending;
+  const rustV2Mode = isRustV2ApiMode();
+  const canCheckInInRustV2 = rustV2Mode
+    && !['arrived', 'fulfilled', 'cancelled', 'noshow'].includes(appointment.status);
+  const canCancelInRustV2 = rustV2Mode
+    && (appointment.v2_status === 'scheduled' || appointment.status === 'booked');
+  const canEditInRustV2 = !rustV2Mode
+    || appointment.v2_status === 'scheduled'
+    || appointment.status === 'booked';
 
   return (
     <div className="space-y-6 animate-chronicle-enter">
@@ -407,85 +445,150 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 
             {/* Right: Quick Actions */}
             <div className="flex flex-wrap items-center gap-2">
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="font-mono text-xs"
-                    disabled={updateStatusMutation.isPending}
-                  >
-                    Change Status
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="font-display text-xl">Update Appointment Status</DialogTitle>
-                    <DialogDescription className="font-mono text-xs">
-                      Select a new status for this appointment.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid grid-cols-2 gap-3 py-4">
-                    {Object.entries(statusConfig).map(([key, config]) => (
-                      <Button
-                        key={key}
-                        variant="outline"
-                        className={cn(
-                          "justify-start font-mono text-xs",
-                          appointment.status === key && "ring-2 ring-primary"
-                        )}
-                        onClick={() => handleStatusUpdate(key)}
-                        disabled={appointment.status === key || updateStatusMutation.isPending}
+              {!rustV2Mode ? (
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs"
+                      disabled={updateStatusMutation.isPending}
+                    >
+                      Change Status
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle className="font-display text-xl">Update Appointment Status</DialogTitle>
+                      <DialogDescription className="font-mono text-xs">
+                        Select a new status for this appointment.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-3 py-4">
+                      {Object.entries(statusConfig).map(([key, config]) => (
+                        <Button
+                          key={key}
+                          variant="outline"
+                          className={cn(
+                            "justify-start font-mono text-xs",
+                            appointment.status === key && "ring-2 ring-primary"
+                          )}
+                          onClick={() => handleStatusUpdate(key)}
+                          disabled={appointment.status === key || updateStatusMutation.isPending}
+                        >
+                          <span className={cn("w-2 h-2 rounded-full mr-2", config.dot)} />
+                          {config.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              ) : null}
+
+              {canCheckInInRustV2 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs"
+                  onClick={() => handleStatusUpdate('arrived')}
+                  disabled={updateStatusMutation.isPending}
+                >
+                  <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                  Check In
+                </Button>
+              ) : null}
+
+              {canCancelInRustV2 ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={updateStatusMutation.isPending || cancelAppointmentMutation.isPending}
+                    >
+                      <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                      Cancel Appointment
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="font-display text-xl">Cancel Appointment</AlertDialogTitle>
+                      <AlertDialogDescription className="font-mono text-sm">
+                        This will cancel the appointment without deleting its schedule record.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="space-y-2">
+                      <Label htmlFor="appointment-cancellation-reason" className="font-mono text-xs">
+                        Cancellation reason
+                      </Label>
+                      <Textarea
+                        id="appointment-cancellation-reason"
+                        value={cancellationReason}
+                        onChange={(event) => setCancellationReason(event.target.value)}
+                        placeholder="Document why this appointment is being cancelled."
+                        className="min-h-24 font-mono text-sm"
+                      />
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="font-mono text-xs">Keep Appointment</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleCancelAppointment}
+                        className="font-mono text-xs bg-destructive hover:bg-destructive/90"
+                        disabled={cancelAppointmentMutation.isPending || !cancellationReason.trim()}
                       >
-                        <span className={cn("w-2 h-2 rounded-full mr-2", config.dot)} />
-                        {config.label}
-                      </Button>
-                    ))}
-                  </div>
-                </DialogContent>
-              </Dialog>
+                        Confirm Cancellation
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="font-mono text-xs"
-                onClick={handleEdit}
-              >
-                <Edit className="h-3.5 w-3.5 mr-1.5" />
-                Edit
-              </Button>
+              {canEditInRustV2 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs"
+                  onClick={handleEdit}
+                >
+                  <Edit className="h-3.5 w-3.5 mr-1.5" />
+                  Edit
+                </Button>
+              ) : null}
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="font-display text-xl">Delete Appointment</AlertDialogTitle>
-                    <AlertDialogDescription className="font-mono text-sm">
+              {!rustV2Mode ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="font-mono text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="font-display text-xl">Delete Appointment</AlertDialogTitle>
+                      <AlertDialogDescription className="font-mono text-sm">
 	                      This action cannot be undone. This will permanently delete the appointment
 	                      for {patient.name} on {startDate ? format(startDate, 'MMMM d, yyyy') : 'N/A'}.
 	                    </AlertDialogDescription>
 	                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="font-mono text-xs bg-destructive hover:bg-destructive/90"
-                    >
-                      {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        className="font-mono text-xs bg-destructive hover:bg-destructive/90"
+                      >
+                        {deleteMutation.isPending ? 'Deleting...' : 'Delete Appointment'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
             </div>
           </div>
         </div>

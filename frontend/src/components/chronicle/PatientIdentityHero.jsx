@@ -59,6 +59,7 @@ const PatientIdentityHero = ({
   insurance = [],
   activeAdmission,
   activeVisit,
+  allergies: clinicalAllergies = [],
   className
 }) => {
   // ============================================
@@ -234,7 +235,8 @@ const PatientIdentityHero = ({
   const phone = getPatientPhone(patient);
   const ward = getPatientWard(patient);
   const bed = getPatientBed(patient);
-  const allergies = getAllergies(patient);
+  const suppliedAllergies = Array.isArray(clinicalAllergies) ? clinicalAllergies : [];
+  const allergies = suppliedAllergies.length > 0 ? suppliedAllergies : getAllergies(patient);
   const status = getPatientStatus(patient);
 
   // Build location string
@@ -367,7 +369,9 @@ const PatientIdentityHero = ({
                     key={i}
                     className="px-2 py-0.5 rounded bg-destructive/10 text-destructive font-mono text-xs border border-destructive/30"
                   >
-                    {typeof allergy === 'string' ? allergy : allergy.name}
+                    {typeof allergy === 'string'
+                      ? allergy
+                      : allergy.name || allergy.allergen_name || allergy.substance || allergy.allergen}
                   </span>
                 ))}
               </div>

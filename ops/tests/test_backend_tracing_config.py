@@ -5,6 +5,7 @@ import importlib.util
 from pathlib import Path
 
 
+# Legacy Django ops test. Active Rust V2 runtime lives under backend-rs/.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACING_PATH = REPO_ROOT / 'backend' / 'hms_backend' / 'tracing.py'
 

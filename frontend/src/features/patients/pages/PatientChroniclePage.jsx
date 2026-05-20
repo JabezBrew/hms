@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
+import { usePatientDetail as useNursingPatientDetail } from "@/features/nursing/hooks";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
@@ -65,6 +66,7 @@ import { emitOnboardingEvent } from "@/features/onboarding";
 import { usePageMeta } from "@/shared/hooks/usePageMeta";
 import { resolvePatientDisplayName } from "@/features/patients/utils/resolvePatientDisplayName";
 import { useSystemCapabilities } from "@/hooks/useSystemQueries";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 import { useDebounce } from "@/hooks/use-debounce";
 const DISCHARGE_CASE_ROLES = new Set([
@@ -175,6 +177,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const [editNoteData, setEditNoteData] = useState(null);
   const [requestedDischargeAdmissionId, setRequestedDischargeAdmissionId] = useState(null);
   const [requestedTreatmentSheetAdmissionId, setRequestedTreatmentSheetAdmissionId] = useState(null);
+  const rustV2Mode = isRustV2ApiMode();
+  const canUseStandaloneClinicalWorkflows = !rustV2Mode;
+  const canUseAiAssistant = !rustV2Mode;
 
   const [isBreakGlassOpen, setBreakGlassOpen] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
@@ -208,10 +213,47 @@ const PatientChroniclePage = ({ defaultAction }) => {
     ],
   });
 
-  // Check if user has clinical access (from patient endpoint response)
-  const hasClinicalAccess = patient?.access?.clinical === true;
+  // Check if user has clinical access (from patient endpoint response).
+  // Rust V2 enforces patient access server-side and does not expose the legacy
+  // access envelope yet, so only an explicit false blocks clinical reads.
+  const hasClinicalAccess = rustV2Mode
+    ? patient?.access?.clinical !== false
+    : patient?.access?.clinical === true;
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
+  const { data: nursingPatientDetail } = useNursingPatientDetail(patientLocalId, {
+    enabled: rustV2Mode && hasClinicalAccess && !!patientLocalId,
+  });
+  const rustV2ActiveAdmissionId = rustV2Mode
+    ? nursingPatientDetail?.admission_id || nursingPatientDetail?.admission?.id || null
+    : null;
+  const patientForChronicle = useMemo(() => {
+    if (!patient || !rustV2ActiveAdmissionId) {
+      return patient;
+    }
+
+    const localData = patient.local_data || {};
+    return {
+      ...patient,
+      current_admission_id: patient.current_admission_id || rustV2ActiveAdmissionId,
+      current_ward_id: patient.current_ward_id || nursingPatientDetail?.ward_id || null,
+      current_ward: patient.current_ward || nursingPatientDetail?.ward_name || null,
+      current_bed: patient.current_bed || nursingPatientDetail?.bed_number || null,
+      local_data: {
+        ...localData,
+        current_admission_id: localData.current_admission_id || rustV2ActiveAdmissionId,
+        current_ward_id: localData.current_ward_id || nursingPatientDetail?.ward_id || null,
+        current_ward: localData.current_ward || nursingPatientDetail?.ward_name || null,
+        current_bed: localData.current_bed || nursingPatientDetail?.bed_number || null,
+      },
+    };
+  }, [
+    nursingPatientDetail?.bed_number,
+    nursingPatientDetail?.ward_id,
+    nursingPatientDetail?.ward_name,
+    patient,
+    rustV2ActiveAdmissionId,
+  ]);
   const prefetchWorkspaceForOpen = useCallback((workspaceId) => {
     prefetchChronicleWorkspaceResources(workspaceId, { patientLocalId, queryClient });
   }, [patientLocalId, queryClient]);
@@ -231,6 +273,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
       // Clear the query params after opening
       if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
+      if (!canUseStandaloneClinicalWorkflows) {
+        toast.error('Ward-round workflow is not available in Rust V2 mode yet.');
+        if (actionParam || wardRoundParam) clearQueryParams();
+        return;
+      }
       openChronicleWorkspace('wardRound');
       // Clear the query params after opening
       if (actionParam || wardRoundParam) clearQueryParams();
@@ -253,6 +300,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
       }
 
       setRequestedDischargeAdmissionId(String(admissionId));
+      if (!canUseStandaloneClinicalWorkflows) {
+        if (actionParam || admissionParam) clearQueryParams();
+        return;
+      }
       openChronicleWorkspace('discharge');
       if (actionParam || admissionParam) clearQueryParams();
     } else if (action === 'add_prescription') {
@@ -283,6 +334,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     consultationParam,
     admissionParam,
     patient,
+    canUseStandaloneClinicalWorkflows,
     openChronicleWorkspace,
     clearQueryParams,
   ]);
@@ -360,6 +412,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const hasWardBoardContext = Boolean(
     patient?.local_data?.current_admission_id
     || patient?.current_admission_id
+    || rustV2ActiveAdmissionId
     || (
       activeEncounter
       && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(activeEncounter))
@@ -408,6 +461,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [activeEncounter, isAllVisitsScope, selectedEncounter]);
   const chartContextAdmissionId = chartContextEncounter?.admission_id
     || chartContextEncounter?.admission?.id
+    || rustV2ActiveAdmissionId
     || null;
   const visitScopeOptions = useMemo(() => {
     const options = [{
@@ -693,6 +747,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     requestedDischargeAdmissionId
     || patient?.local_data?.current_admission_id
     || patient?.current_admission_id
+    || rustV2ActiveAdmissionId
     || activeEncounter?.admission_id
     || null
   ), [
@@ -700,6 +755,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     patient?.current_admission_id,
     patient?.local_data?.current_admission_id,
     requestedDischargeAdmissionId,
+    rustV2ActiveAdmissionId,
   ]);
 
   // Group entries by encounter
@@ -904,8 +960,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Slide-over handlers - using the centralized hook
   const handleAskChronicle = useCallback(() => {
+    if (!canUseAiAssistant) {
+      toast.error('Chronicle copilot is not available in Rust V2 mode yet.');
+      return;
+    }
     openChronicleWorkspace('copilot');
-  }, [openChronicleWorkspace]);
+  }, [canUseAiAssistant, openChronicleWorkspace]);
   const handleAddNote = useCallback(() => {
     openChronicleWorkspace('note');
   }, [openChronicleWorkspace]);
@@ -931,11 +991,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('fluids');
   }, [openChronicleWorkspace]);
   const handleStartWardRound = useCallback(() => {
+    if (!canUseStandaloneClinicalWorkflows) {
+      toast.error('Ward-round workflow is not available in Rust V2 mode yet.');
+      return;
+    }
     openChronicleWorkspace('wardRound');
-  }, [openChronicleWorkspace]);
+  }, [canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
   const handleStartDischarge = useCallback(() => {
     const admissionId = patient?.local_data?.current_admission_id
       || patient?.current_admission_id
+      || rustV2ActiveAdmissionId
       || activeEncounter?.admission_id;
 
     if (!admissionId) {
@@ -944,8 +1009,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
 
     setRequestedDischargeAdmissionId(String(admissionId));
+    if (!canUseStandaloneClinicalWorkflows) {
+      return;
+    }
     openChronicleWorkspace('discharge');
-  }, [patient, activeEncounter, openChronicleWorkspace]);
+  }, [patient, activeEncounter, rustV2ActiveAdmissionId, canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
 
   // Close handler with data refresh
   const handleSlideOverClose = useCallback(() => {
@@ -1100,7 +1168,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   const workspaceContext = useMemo(() => ({
     patientId: id,
-    patient,
+    patient: patientForChronicle,
     activeEncounter,
     selectedEncounter: chartContextEncounter,
     selectedEncounterId: chartContextEncounter?.id || null,
@@ -1126,7 +1194,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     onDischargeCompleted: handleDischargeCompleted,
   }), [
     id,
-    patient,
+    patientForChronicle,
     activeEncounter,
     chartContextEncounter,
     chartContextAdmissionId,
@@ -1162,7 +1230,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     const admissionId = activeEncounter?.admission_id ||
                         activeEncounter?.id || // Use encounter ID as fallback
                         patient?.local_data?.current_admission_id ||
-                        patient?.current_admission_id;
+                        patient?.current_admission_id ||
+                        rustV2ActiveAdmissionId;
 
     if (admissionId) {
       setRequestedTreatmentSheetAdmissionId(String(admissionId));
@@ -1170,10 +1239,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
     } else {
       toast.error('No active admission found for this patient');
     }
-  }, [activeEncounter, patient, openChronicleWorkspace]);
+  }, [activeEncounter, patient, rustV2ActiveAdmissionId, openChronicleWorkspace]);
 
   const userRole = user?.role || user?.user_type;
-  const canRequestBreakGlass = ['admin', 'doctor', 'nurse'].includes(userRole);
+  const canRequestBreakGlass = !rustV2Mode && ['admin', 'doctor', 'nurse'].includes(userRole);
   // Access denied if patient loaded but user lacks clinical access
   const accessDenied = patient && !isLoading && patient?.access?.clinical === false;
   const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
@@ -1208,6 +1277,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
   });
 
   const handleBreakGlassSubmit = useCallback(() => {
+    if (rustV2Mode) {
+      toast.error('Break-glass access is not available in Rust V2 mode.');
+      return;
+    }
+
     if (!breakGlassReason.trim()) {
       return;
     }
@@ -1215,7 +1289,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       reason: breakGlassReason.trim(),
       scope: 'clinical',
     });
-  }, [breakGlassReason, breakGlassMutation]);
+  }, [breakGlassReason, breakGlassMutation, rustV2Mode]);
 
   // ============================================
   // Loading state
@@ -1277,6 +1351,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       Provide a reason to unlock this record for a limited time.
                     </span>
                   </div>
+                ) : rustV2Mode ? (
+                  <p className="text-xs text-muted-foreground">
+                    Break-glass access is not available in Rust V2 mode.
+                  </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     Break-glass access is available to clinical staff only.
@@ -1286,17 +1364,19 @@ const PatientChroniclePage = ({ defaultAction }) => {
             </div>
           </div>
 
-          <BreakGlassDialog
-            open={isBreakGlassOpen}
-            onOpenChange={setBreakGlassOpen}
-            patientName={patientName}
-            patientMrn={patientMrn}
-            reason={breakGlassReason}
-            onReasonChange={setBreakGlassReason}
-            onSubmit={handleBreakGlassSubmit}
-            isSubmitting={breakGlassMutation.isPending}
-            ttlMinutes={30}
-          />
+          {canRequestBreakGlass && (
+            <BreakGlassDialog
+              open={isBreakGlassOpen}
+              onOpenChange={setBreakGlassOpen}
+              patientName={patientName}
+              patientMrn={patientMrn}
+              reason={breakGlassReason}
+              onReasonChange={setBreakGlassReason}
+              onSubmit={handleBreakGlassSubmit}
+              isSubmitting={breakGlassMutation.isPending}
+              ttlMinutes={30}
+            />
+          )}
         </div>
       </>
     );
@@ -1371,9 +1451,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
       <div className="min-h-screen bg-background">
         {/* Patient Identity Hero */}
         <PatientIdentityHero
-          patient={patient}
+          patient={patientForChronicle}
+          allergies={allergies}
           onActionIntent={prefetchActionResources}
-          onAskChronicle={handleAskChronicle}
+          onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
           onAddNote={handleAddNote}
           onRecordVitals={handleRecordVitals}
           onPrescribe={handlePrescribe}
@@ -1385,8 +1466,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
           onViewTreatmentSheet={handleViewTreatmentSheet}
           onViewMedicationHistory={handleViewMedicationHistory}
           onRecordFluids={handleRecordFluids}
-          onStartWardRound={handleStartWardRound}
-          onStartDischarge={handleStartDischarge}
+          onStartWardRound={canUseStandaloneClinicalWorkflows ? handleStartWardRound : undefined}
+          onStartDischarge={canUseStandaloneClinicalWorkflows ? handleStartDischarge : undefined}
           onManageInsurance={handleManageInsurance}
           onPrintSummary={handlePrintSummary}
           insurance={patientInsurance}
@@ -1436,7 +1517,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               <ProblemListSidebar patientId={id} />
             </div>
             <ClinicalSummarySidebar
-              patient={patient}
+              patient={patientForChronicle}
               problems={[]}
               medications={medications}
               allergies={allergies}

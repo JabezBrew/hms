@@ -88,7 +88,7 @@ export function invalidateEncounterMutationQueries(queryClient, { encounterId, p
 export function useEncounters(filters = {}) {
   return useQuery({
     queryKey: encounterKeys.list(filters),
-    queryFn: () => encountersApi.getEncounters(filters),
+    queryFn: ({ signal }) => encountersApi.getEncounters(filters, { signal }),
     staleTime: 60 * 1000, // 60 seconds - matches backend cache timeout
   });
 }
@@ -101,7 +101,7 @@ export function useEncounters(filters = {}) {
 export function useEncounter(id) {
   return useQuery({
     queryKey: encounterKeys.detail(id),
-    queryFn: () => encountersApi.getEncounter(id),
+    queryFn: ({ signal }) => encountersApi.getEncounter(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
     staleTime: 60 * 1000, // 60 seconds
   });
@@ -270,7 +270,7 @@ export function useCancelEncounter() {
 export function useSearchPatientsForEncounter(options = {}) {
   return useSearchQuery(
     [...encounterKeys.patients(), 'search'],
-    (query) => encountersApi.searchPatients(query),
+    (query, requestOptions) => encountersApi.searchPatients(query, requestOptions),
     {
       staleTime: 1 * 60 * 1000, // Search results stale after 1 minute
       ...options,
@@ -287,7 +287,7 @@ export function useSearchPatientsForEncounter(options = {}) {
 export function useSearchPractitioners(doctorsOnly = false, options = {}) {
   return useSearchQuery(
     [...encounterKeys.practitioners(), 'search', { doctorsOnly }],
-    (query) => encountersApi.searchPractitioners(query, doctorsOnly),
+    (query, requestOptions) => encountersApi.searchPractitioners(query, doctorsOnly, requestOptions),
     {
       staleTime: 5 * 60 * 1000, // Practitioners list changes less frequently
       ...options,

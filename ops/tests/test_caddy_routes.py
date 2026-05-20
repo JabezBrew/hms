@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 
+# Legacy Django Hetzner route test. Active Rust V2 deployment lives under
+# ops/hetzner-v2/.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CADDYFILE = REPO_ROOT / 'ops' / 'hetzner-client-vps' / 'Caddyfile'
 URLS_FILE = REPO_ROOT / 'backend' / 'hms_backend' / 'urls.py'

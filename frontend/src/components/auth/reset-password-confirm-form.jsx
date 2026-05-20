@@ -11,6 +11,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Alert, AlertDescription } from '../ui/alert'
 import { notifications } from '../../lib/notifications'
+import { passwordMeetsPolicy, passwordPolicyErrorMessage } from '../../lib/password-policy'
 
 export function ResetPasswordConfirmForm() {
   const [searchParams] = useSearchParams()
@@ -62,8 +63,8 @@ export function ResetPasswordConfirmForm() {
       return
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    if (!passwordMeetsPolicy(password)) {
+      setError(passwordPolicyErrorMessage())
       return
     }
 
@@ -121,7 +122,9 @@ export function ResetPasswordConfirmForm() {
     <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[400px]">
       <div className="flex flex-col space-y-2 text-center">
         <h1 className="text-2xl font-semibold">Create New Password</h1>
-        <p className="text-sm text-muted-foreground">Enter a new password for {userEmail}</p>
+        <p className="text-sm text-muted-foreground">
+          {userEmail ? `Enter a new password for ${userEmail}` : 'Enter a new password to complete the reset.'}
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="grid gap-4">

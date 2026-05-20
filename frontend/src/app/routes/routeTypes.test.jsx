@@ -127,6 +127,9 @@ describe('featureRoutes', () => {
     expect(routesByPath.get('/encounters/new')?.features).toEqual(
       expect.arrayContaining(['outpatient_encounters'])
     )
+    expect(routesByPath.get('/appointments/new')?.features).toEqual(
+      expect.arrayContaining(['appointments'])
+    )
     expect(routesByPath.get('/encounters/:id/clinical-notes')?.features).toEqual(
       expect.arrayContaining(['clinical_notes', 'outpatient_encounters'])
     )
@@ -174,6 +177,9 @@ describe('featureRoutes', () => {
         ])
       )
     }
+    expect(routesByPath.get('/workflows/ward-round')?.rustV2Supported).toBe(false)
+    expect(routesByPath.get('/workflows/discharge')?.rustV2Supported).toBe(false)
+    expect(routesByPath.get('/patients/:id/ward-round')?.rustV2Supported).toBe(false)
   })
 
   it('validates capabilities metadata when present', () => {

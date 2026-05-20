@@ -1,4 +1,7 @@
-# Docker Compose for HMS Production
+# Legacy Django Docker Compose for HMS Production
+#
+# Active Rust V2 production deploys use ops/hetzner-v2/compose.yml. Keep this
+# file only for explicit legacy Django maintenance/reference work.
 #
 # Production configuration with:
 # - External database (managed PostgreSQL like AWS RDS)

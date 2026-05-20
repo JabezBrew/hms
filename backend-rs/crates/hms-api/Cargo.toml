@@ -1,0 +1,52 @@
+[package]
+name = "hms-api"
+version = "0.1.0"
+default-run = "hms-api"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "hms-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "hms-openapi"
+path = "src/bin/openapi.rs"
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+cookie.workspace = true
+hms-access = { path = "../hms-access" }
+hms-auth = { path = "../hms-auth" }
+hms-db = { path = "../hms-db" }
+hms-domain = { path = "../hms-domain" }
+hms-events = { path = "../hms-events" }
+hms-observability = { path = "../hms-observability" }
+jsonwebtoken.workspace = true
+password-hash.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+utoipa.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tower.workspace = true

@@ -28,6 +28,7 @@ import {
   useItemExpiryTrackers,
   useItemStockByLocation,
 } from '@/features/inventory/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import Edit from 'lucide-react/dist/esm/icons/pencil.js';
@@ -381,7 +382,7 @@ function BatchesTab({ itemId }) {
         <tbody className="divide-y divide-border">
           {sortedBatches.map((batch, index) => (
             <tr
-              key={batch.id || index}
+              key={batch.batch_id || batch.id || index}
               className={cn(
                 'hover:bg-muted/30 transition-colors',
                 index === 0 && 'bg-emerald-500/5' // Highlight first (FEFO recommended)
@@ -485,6 +486,7 @@ export default function ItemDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const itemMutationAvailable = !isRustV2ApiMode();
 
   const activeTab = searchParams.get('tab') || 'overview';
 
@@ -606,10 +608,12 @@ export default function ItemDetailPage() {
               showQuantity={true}
               size="lg"
             />
-            <Button variant="outline" onClick={handleEdit}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
+            {itemMutationAvailable && (
+              <Button variant="outline" onClick={handleEdit}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
@@ -643,6 +647,13 @@ export default function ItemDetailPage() {
       </PageHeader>
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!itemMutationAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Inventory item editing is not available in Rust V2 mode yet. Item details, stock
+          history, and requisition creation remain available through generated /api/v2
+          contracts.
+        </div>
+      )}
 
       {/* Stock Summary Bar */}
       <div className="bg-card/30 border border-border rounded-lg p-4">

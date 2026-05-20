@@ -37,6 +37,7 @@ import subDays from "date-fns/subDays";
 import isToday from "date-fns/isToday";
 import startOfDay from "date-fns/startOfDay";
 import { toast } from "sonner";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 import {
   useFluidBalance,
   useFluidBalanceSummary,
@@ -69,6 +70,8 @@ const AddFluidBalanceSlideOver = ({
   // History date navigation state
   const [historyDate, setHistoryDate] = useState(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const rustV2Mode = isRustV2ApiMode();
+  const fluidBalanceDeletionAvailable = !rustV2Mode;
 
   // Form state (includes colour for outputs)
   const [formData, setFormData] = useState({
@@ -261,6 +264,11 @@ const AddFluidBalanceSlideOver = ({
 
   // Handle delete entry
   const handleDelete = async (entryId) => {
+    if (!fluidBalanceDeletionAvailable) {
+      toast.error('Fluid balance deletion is not available in Rust V2 mode yet.');
+      return;
+    }
+
     try {
       await deleteMutation.mutateAsync(entryId);
       toast.success('Entry deleted');
@@ -360,10 +368,11 @@ const AddFluidBalanceSlideOver = ({
           </div>
         </div>
       </div>
-      {allowDelete && (
+      {allowDelete && fluidBalanceDeletionAvailable && (
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Delete fluid balance entry"
           className="h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0"
           onClick={() => handleDelete(record.id)}
           disabled={deleteMutation.isPending}
@@ -477,6 +486,12 @@ const AddFluidBalanceSlideOver = ({
           <div className="flex-1 overflow-y-auto p-6 chronicle-scrollbar">
             {/* Today's Summary */}
             {renderBalanceSummary(todayIntake, todayOutput, todayBalance, "Today's Balance")}
+
+            {rustV2Mode ? (
+              <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-xs text-amber-900 dark:text-amber-100">
+                Fluid balance deletion is not available in Rust V2 mode yet.
+              </div>
+            ) : null}
 
             {/* Entry Form */}
             <div className="mt-6 space-y-5">
@@ -766,6 +781,12 @@ const AddFluidBalanceSlideOver = ({
               historyBalance,
               isHistoryToday ? "Today's Balance" : `${format(historyDate, 'MMM d')} Balance`
             )}
+
+            {rustV2Mode ? (
+              <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-xs text-amber-900 dark:text-amber-100">
+                Fluid balance deletion is not available in Rust V2 mode yet.
+              </div>
+            ) : null}
 
             {/* Entries List */}
             <div className="mt-6">

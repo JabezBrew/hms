@@ -54,7 +54,7 @@ export function useLabTests(filters = {}) {
 export function useLabTest(id) {
   return useQuery({
     queryKey: labKeys.test(id),
-    queryFn: () => laboratoryApi.getLabTest(id),
+    queryFn: ({ signal }) => laboratoryApi.getLabTest(id, { signal }),
     enabled: !!id,
   });
 }
@@ -138,7 +138,7 @@ export function useLabPanels(filters = {}) {
 export function useLabPanel(id) {
   return useQuery({
     queryKey: labKeys.panel(id),
-    queryFn: () => laboratoryApi.getLabPanel(id),
+    queryFn: ({ signal }) => laboratoryApi.getLabPanel(id, { signal }),
     enabled: !!id,
   });
 }
@@ -220,7 +220,7 @@ export function usePaginatedLabOrders(filters = {}) {
 export function useLabOrder(id) {
   return useQuery({
     queryKey: labKeys.order(id),
-    queryFn: () => laboratoryApi.getLabOrder(id),
+    queryFn: ({ signal }) => laboratoryApi.getLabOrder(id, { signal }),
     enabled: !!id,
   });
 }
@@ -333,7 +333,7 @@ export function useLabSpecimens(filters = {}) {
 export function useLabSpecimen(id) {
   return useQuery({
     queryKey: labKeys.specimen(id),
-    queryFn: () => laboratoryApi.getLabSpecimen(id),
+    queryFn: ({ signal }) => laboratoryApi.getLabSpecimen(id, { signal }),
     enabled: !!id,
   });
 }
@@ -390,7 +390,7 @@ export function usePaginatedLabResults(filters = {}) {
 export function useLabResult(id) {
   return useQuery({
     queryKey: labKeys.result(id),
-    queryFn: () => laboratoryApi.getLabResult(id),
+    queryFn: ({ signal }) => laboratoryApi.getLabResult(id, { signal }),
     enabled: !!id,
   });
 }

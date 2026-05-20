@@ -1,4 +1,8 @@
-# HMS Client VPS Deployment Runbook
+# Legacy HMS Django Client VPS Deployment Runbook
+
+> Legacy note: the active deployment kit is `ops/hetzner-v2/` for the Rust V2
+> backend. Use this directory only for explicit legacy Django deployment
+> maintenance or historical reference.
 
 This kit deploys one HMS client per Hetzner VPS with Docker Compose, Caddy,
 Postgres, PgBouncer, Redis, the Django ASGI API, Celery worker/beat, and the

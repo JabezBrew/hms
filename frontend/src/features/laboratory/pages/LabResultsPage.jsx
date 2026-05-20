@@ -71,6 +71,7 @@ import {
   useBulkVerifyLabResults,
 } from "@/features/laboratory/hooks";
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { toast } from "sonner";
 
 const RESULTS_PAGE_SIZE = 100;
@@ -88,6 +89,7 @@ const RESULTS_PAGE_SIZE = 100;
 export default function LabResultsPage() {
   const { user } = useAuth();
   const userRole = user?.role || "";
+  const aiInterpretationAvailable = !isRustV2ApiMode();
 
   // Can verify results
   const canVerify = ["admin", "lab_technician", "doctor", "physician"].includes(
@@ -158,14 +160,14 @@ export default function LabResultsPage() {
     resultId: interpretationResultId,
     orderId: interpretationOrderId,
     audience: "clinician",
-    enabled: interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "clinician",
+    enabled: aiInterpretationAvailable && interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "clinician",
   });
 
   const patientInterpretation = useLabInterpretation({
     resultId: interpretationResultId,
     orderId: interpretationOrderId,
     audience: "patient",
-    enabled: interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "patient",
+    enabled: aiInterpretationAvailable && interpretDialogOpen && Boolean(interpretContext) && interpretAudience === "patient",
   });
 
   // Process results data
@@ -466,18 +468,20 @@ export default function LabResultsPage() {
         const unverifiedCount = group.results.filter((result) => !result.is_verified).length;
         return (
           <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-xs"
-              onClick={(event) => {
-                event.stopPropagation();
-                openOrderInterpretation(group);
-              }}
-            >
-              <Sparkles className="mr-1 h-3 w-3" />
-              Interpret
-            </Button>
+            {aiInterpretationAvailable && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openOrderInterpretation(group);
+                }}
+              >
+                <Sparkles className="mr-1 h-3 w-3" />
+                Interpret
+              </Button>
+            )}
             {canVerify && unverifiedCount > 0 && (
               <Button
                 variant="ghost"
@@ -506,7 +510,7 @@ export default function LabResultsPage() {
         );
       },
     },
-  ]), [canVerify, expandedOrders]);
+  ]), [aiInterpretationAvailable, canVerify, expandedOrders]);
 
   const openResultInterpretation = (result, group) => {
     setInterpretAudience("clinician");
@@ -816,16 +820,18 @@ export default function LabResultsPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openOrderInterpretation(group)}
-                          disabled={!group.order_id}
-                          className="text-xs"
-                        >
-                          <Sparkles className="mr-1 h-3 w-3" />
-                          Interpret Order
-                        </Button>
+                        {aiInterpretationAvailable && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openOrderInterpretation(group)}
+                            disabled={!group.order_id}
+                            className="text-xs"
+                          >
+                            <Sparkles className="mr-1 h-3 w-3" />
+                            Interpret Order
+                          </Button>
+                        )}
                         {canVerify && unverifiedCount > 0 && (
                           <Button
                             size="sm"
@@ -915,15 +921,17 @@ export default function LabResultsPage() {
                                 </td>
                                 <td className="px-4 py-2.5 text-right">
                                   <div className="flex items-center justify-end gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => openResultInterpretation(result, group)}
-                                      className="h-7 text-xs"
-                                    >
-                                      <Sparkles className="mr-1 h-3 w-3" />
-                                      Interpret
-                                    </Button>
+                                    {aiInterpretationAvailable && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openResultInterpretation(result, group)}
+                                        className="h-7 text-xs"
+                                      >
+                                        <Sparkles className="mr-1 h-3 w-3" />
+                                        Interpret
+                                      </Button>
+                                    )}
                                     {canVerify && !result.is_verified && (
                                       <Button
                                         variant="ghost"

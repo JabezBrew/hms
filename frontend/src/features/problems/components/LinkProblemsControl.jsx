@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Link2, Plus, X } from 'lucide-react';
+import Link2 from 'lucide-react/dist/esm/icons/link-2.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';

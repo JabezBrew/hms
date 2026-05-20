@@ -1,0 +1,72 @@
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::handlers::laboratory;
+use crate::state::AppState;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v2/laboratory/test-catalog",
+            get(laboratory::list_test_catalog),
+        )
+        .route(
+            "/api/v2/laboratory/test-catalog/:id",
+            get(laboratory::get_test_catalog_item),
+        )
+        .route("/api/v2/laboratory/panels", get(laboratory::list_panels))
+        .route("/api/v2/laboratory/panels/:id", get(laboratory::get_panel))
+        .route(
+            "/api/v2/laboratory/orders",
+            get(laboratory::list_orders).post(laboratory::create_order),
+        )
+        .route("/api/v2/laboratory/orders/:id", get(laboratory::get_order))
+        .route(
+            "/api/v2/laboratory/orders/:id/submit",
+            post(laboratory::submit_order),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:id/collect",
+            post(laboratory::collect_order),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:id/start-processing",
+            post(laboratory::start_order_processing),
+        )
+        .route(
+            "/api/v2/laboratory/orders/:id/cancel",
+            post(laboratory::cancel_order),
+        )
+        .route(
+            "/api/v2/laboratory/specimens",
+            get(laboratory::list_specimens).post(laboratory::create_specimen),
+        )
+        .route(
+            "/api/v2/laboratory/specimens/:id",
+            get(laboratory::get_specimen),
+        )
+        .route(
+            "/api/v2/laboratory/specimens/:id/receive",
+            post(laboratory::receive_specimen),
+        )
+        .route(
+            "/api/v2/laboratory/results",
+            get(laboratory::list_results).post(laboratory::create_result),
+        )
+        .route(
+            "/api/v2/laboratory/results/bulk",
+            post(laboratory::bulk_create_results),
+        )
+        .route(
+            "/api/v2/laboratory/results/bulk-verify",
+            post(laboratory::bulk_verify_results),
+        )
+        .route(
+            "/api/v2/laboratory/results/:id",
+            get(laboratory::get_result),
+        )
+        .route(
+            "/api/v2/laboratory/results/:id/verify",
+            post(laboratory::verify_result),
+        )
+}

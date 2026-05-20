@@ -1,5 +1,6 @@
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
+import Check from 'lucide-react/dist/esm/icons/check.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
@@ -15,7 +16,7 @@ import { PageShell } from '@/shared/components/page/PageShell';
 import format from 'date-fns/format';
 import isToday from 'date-fns/isToday';
 import isYesterday from 'date-fns/isYesterday';
-import { useInboxCounts, useInboxItems } from '@/features/inbox/hooks';
+import { useInboxCounts, useInboxItems, useMarkInboxRead } from '@/features/inbox/hooks';
 
 /**
  * Notification type configurations - Chronicle color palette
@@ -106,6 +107,7 @@ const InboxPage = () => {
 
   const { data: inboxData, isLoading, refetch: refetchInbox } = useInboxItems(inboxParams);
   const { data: inboxCountData, refetch: refetchCounts } = useInboxCounts();
+  const markInboxRead = useMarkInboxRead();
 
   const inboxItems = inboxData?.results || [];
 
@@ -114,6 +116,13 @@ const InboxPage = () => {
       navigate(item.action_url);
     }
   }, [navigate]);
+
+  const handleMarkRead = useCallback((event, item) => {
+    event.stopPropagation();
+    if (item.id) {
+      markInboxRead.mutate(item.id);
+    }
+  }, [markInboxRead]);
 
   const allItems = useMemo(() => inboxItems.map((item) => ({
     id: item.id,
@@ -357,20 +366,35 @@ const InboxPage = () => {
                                 </p>
 
                                 {/* Badges */}
-                                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                  {item.urgency && (
-                                    <span className={cn(
-                                      badgeClass,
-                                      "text-[10px] px-2 py-0.5 rounded-full uppercase"
-                                    )}>
-                                      {item.urgency.replace('_', ' ')}
-                                    </span>
-                                  )}
-                                  {item.category === 'action' && (
-                                    <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
-                                      <AlertCircle className="h-3 w-3" />
-                                      ACTION REQUIRED
-                                    </span>
+                                <div className="flex items-center justify-between gap-3 mt-3 flex-wrap">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {item.urgency && (
+                                      <span className={cn(
+                                        badgeClass,
+                                        "text-[10px] px-2 py-0.5 rounded-full uppercase"
+                                      )}>
+                                        {item.urgency.replace('_', ' ')}
+                                      </span>
+                                    )}
+                                    {item.category === 'action' && (
+                                      <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-mono">
+                                        <AlertCircle className="h-3 w-3" />
+                                        ACTION REQUIRED
+                                      </span>
+                                    )}
+                                  </div>
+                                  {!item.isRead && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 font-mono text-[10px]"
+                                      disabled={markInboxRead.isPending}
+                                      onClick={(event) => handleMarkRead(event, item)}
+                                    >
+                                      <Check className="h-3.5 w-3.5 mr-1" />
+                                      Mark read
+                                    </Button>
                                   )}
                                 </div>
                               </div>

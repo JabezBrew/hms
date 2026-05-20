@@ -1,0 +1,958 @@
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use chrono::{DateTime, Utc};
+use hms_db::auth::{NewRefreshSession, UserAccount, UserSessionRow};
+use hms_db::provision::{generate_secret_token, hash_refresh_token, BaselineProvisioning};
+use hms_db::search::{OmniSearchFilters, OmniSearchResult};
+use hms_domain::auth::{ActiveAuthority, AuthUser, UpdateAuthProfileRequest};
+use hms_domain::capabilities::{deployment_capabilities_from_features, DeploymentCapabilities};
+use hms_domain::deployment::DeploymentProfile;
+use hms_domain::search::SearchResourceType;
+use hms_events::DomainEventKind;
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+use tracing::warn;
+use uuid::Uuid;
+
+use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
+use crate::config::Config;
+use crate::passwords::hash_password;
+
+#[derive(Clone)]
+pub struct AppState {
+    inner: Arc<AppStateInner>,
+}
+
+struct AppStateInner {
+    config: Config,
+    started_at: DateTime<Utc>,
+    facility_id: Uuid,
+    pool: hms_db::PgPool,
+    auth_pool: hms_db::PgPool,
+    auth_cache: AuthCache,
+}
+
+const AUTH_FACT_CACHE_TTL: Duration = Duration::from_secs(5);
+const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct AuthCacheKey {
+    user_id: Uuid,
+    facility_id: Uuid,
+    session_version: i64,
+    permission_version: i64,
+    active_profile: String,
+}
+
+impl AuthCacheKey {
+    fn from_claims(claims: &AccessClaims, facility_id: Uuid) -> Self {
+        Self {
+            user_id: claims.sub,
+            facility_id,
+            session_version: claims.session_version,
+            permission_version: claims.permission_version,
+            active_profile: claims.active_profile.clone(),
+        }
+    }
+
+    fn from_auth_user(user: &AuthUser) -> Option<Self> {
+        Some(Self {
+            user_id: user.id,
+            facility_id: user.facility_id,
+            session_version: user.session_version,
+            permission_version: user.permission_version,
+            active_profile: deployment_profile_claim_value(user.active_profile)?,
+        })
+    }
+
+    fn from_user_account(user: &UserAccount) -> Option<Self> {
+        Some(Self {
+            user_id: user.id,
+            facility_id: user.facility_id,
+            session_version: user.session_version,
+            permission_version: user.permission_version,
+            active_profile: deployment_profile_claim_value(user.active_profile)?,
+        })
+    }
+}
+
+#[derive(Default)]
+struct AuthCache {
+    users: RwLock<HashMap<AuthCacheKey, CachedAuthValue<AuthUser>>>,
+    request_contexts:
+        RwLock<HashMap<AuthCacheKey, CachedAuthValue<hms_db::auth::RequestContextAuthFacts>>>,
+}
+
+struct CachedAuthValue<T> {
+    value: T,
+    expires_at: Instant,
+}
+
+impl AuthCache {
+    fn get_user(&self, key: &AuthCacheKey) -> Option<AuthUser> {
+        cache_get(&self.users, key)
+    }
+
+    fn put_user(&self, key: AuthCacheKey, user: AuthUser) {
+        cache_put(&self.users, key, user);
+    }
+
+    fn get_request_context(
+        &self,
+        key: &AuthCacheKey,
+    ) -> Option<hms_db::auth::RequestContextAuthFacts> {
+        cache_get(&self.request_contexts, key)
+    }
+
+    fn put_request_context(&self, key: AuthCacheKey, facts: hms_db::auth::RequestContextAuthFacts) {
+        cache_put(&self.request_contexts, key, facts);
+    }
+
+    fn remove_user(&self, facility_id: Uuid, user_id: Uuid) {
+        if let Ok(mut users) = self.users.write() {
+            users.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
+        }
+        if let Ok(mut contexts) = self.request_contexts.write() {
+            contexts.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
+        }
+    }
+
+    fn remove_facility(&self, facility_id: Uuid) {
+        if let Ok(mut users) = self.users.write() {
+            users.retain(|key, _| key.facility_id != facility_id);
+        }
+        if let Ok(mut contexts) = self.request_contexts.write() {
+            contexts.retain(|key, _| key.facility_id != facility_id);
+        }
+    }
+}
+
+fn cache_get<T: Clone>(
+    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
+    key: &AuthCacheKey,
+) -> Option<T> {
+    let now = Instant::now();
+    let cache = cache.read().ok()?;
+    let cached = cache.get(key)?;
+    (cached.expires_at > now).then(|| cached.value.clone())
+}
+
+fn cache_put<T>(
+    cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
+    key: AuthCacheKey,
+    value: T,
+) {
+    let Ok(mut cache) = cache.write() else {
+        return;
+    };
+    let now = Instant::now();
+    if cache.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+        cache.retain(|_, cached| cached.expires_at > now);
+        if cache.len() >= AUTH_FACT_CACHE_MAX_ENTRIES {
+            cache.clear();
+        }
+    }
+    cache.insert(
+        key,
+        CachedAuthValue {
+            value,
+            expires_at: now + AUTH_FACT_CACHE_TTL,
+        },
+    );
+}
+
+#[derive(Clone, Debug)]
+pub struct LoginOutcome {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub csrf_token: String,
+    pub session_id: Uuid,
+    pub user: AuthUser,
+}
+
+#[derive(Clone, Debug)]
+pub struct PasswordResetRequestOutcome {
+    pub accepted: bool,
+    pub debug_token: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChangePasswordOutcome {
+    Changed,
+    UserNotFound,
+    InvalidCurrentPassword,
+    WeakPassword,
+    PasswordReused,
+}
+
+#[derive(Clone, Debug)]
+pub struct DependencyReadiness {
+    pub name: String,
+    pub ready: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReadinessSnapshot {
+    pub ready: bool,
+    pub dependencies: Vec<DependencyReadiness>,
+}
+
+impl AppState {
+    pub async fn new(config: Config) -> Result<Self> {
+        let started_at = Utc::now();
+        let pool = hms_db::pool::connect_with_max_connections(
+            &config.database_url,
+            config.database_max_connections,
+        )
+        .await
+        .context("failed to connect to Postgres")?;
+        let auth_pool = hms_db::pool::connect_with_max_connections(
+            &config.database_url,
+            auth_pool_max_connections(config.database_max_connections),
+        )
+        .await
+        .context("failed to connect to Postgres for auth")?;
+
+        if config.auto_migrate {
+            hms_db::migrate::run(&pool)
+                .await
+                .context("failed to run database migrations")?;
+        }
+
+        if config.provision_baseline {
+            hms_db::provision::provision_baseline(
+                &pool,
+                &BaselineProvisioning::hms_local_with_facility_code(
+                    config.deployment_profile,
+                    config.facility_code.clone(),
+                ),
+            )
+            .await
+            .context("failed to provision baseline HMS data")?;
+        }
+
+        let facility_id = hms_db::facilities::facility_id_by_code(&pool, &config.facility_code)
+            .await?
+            .with_context(|| format!("facility {} is not provisioned", config.facility_code))?;
+
+        if config.search_index_rebuild_on_start {
+            hms_db::search::rebuild_search_index_for_facility(&pool, facility_id)
+                .await
+                .context("failed to rebuild OmniSearch index")?;
+        }
+
+        Ok(Self {
+            inner: Arc::new(AppStateInner {
+                config,
+                started_at,
+                facility_id,
+                pool,
+                auth_pool,
+                auth_cache: AuthCache::default(),
+            }),
+        })
+    }
+
+    pub fn started_at(&self) -> DateTime<Utc> {
+        self.inner.started_at
+    }
+
+    pub fn postgres_pool_size(&self) -> u32 {
+        self.inner.pool.size()
+    }
+
+    pub fn postgres_pool_idle(&self) -> usize {
+        self.inner.pool.num_idle()
+    }
+
+    pub fn auth_postgres_pool_size(&self) -> u32 {
+        self.inner.auth_pool.size()
+    }
+
+    pub fn auth_postgres_pool_idle(&self) -> usize {
+        self.inner.auth_pool.num_idle()
+    }
+
+    pub fn rum_enabled(&self) -> bool {
+        self.inner.config.rum_enabled
+    }
+
+    pub async fn readiness_snapshot(&self) -> ReadinessSnapshot {
+        let mut dependencies = Vec::new();
+
+        let postgres_ready = sqlx::query("SELECT 1")
+            .fetch_one(&self.inner.pool)
+            .await
+            .is_ok();
+        dependencies.push(DependencyReadiness {
+            name: "postgres".to_owned(),
+            ready: postgres_ready,
+        });
+
+        if let Some(redis_addr) = &self.inner.config.redis_addr {
+            dependencies.push(DependencyReadiness {
+                name: "redis".to_owned(),
+                ready: redis_ready(redis_addr).await,
+            });
+        }
+
+        let ready = dependencies.iter().all(|dependency| dependency.ready);
+        record_readiness_metrics(ready, &dependencies);
+
+        ReadinessSnapshot {
+            ready,
+            dependencies,
+        }
+    }
+
+    pub(crate) fn db_pool(&self) -> &hms_db::PgPool {
+        &self.inner.pool
+    }
+
+    pub fn facility_id(&self) -> Uuid {
+        self.inner.facility_id
+    }
+
+    pub fn cookie_secure(&self) -> bool {
+        self.inner.config.cookie_secure
+    }
+
+    pub fn invalidate_auth_cache_for_user(&self, facility_id: Uuid, user_id: Uuid) {
+        self.inner.auth_cache.remove_user(facility_id, user_id);
+    }
+
+    pub fn invalidate_auth_cache_for_facility(&self, facility_id: Uuid) {
+        self.inner.auth_cache.remove_facility(facility_id);
+    }
+
+    pub async fn omni_search(
+        &self,
+        user: &AuthUser,
+        query: Option<String>,
+        types: Vec<SearchResourceType>,
+        limit_per_group: i64,
+    ) -> Result<OmniSearchResult> {
+        hms_db::search::omni_search(
+            &self.inner.pool,
+            OmniSearchFilters {
+                facility_id: self.inner.facility_id,
+                user_id: user.id,
+                query,
+                types,
+                limit_per_group,
+                permission_codes: user.permissions.clone(),
+                feature_keys: user.features.clone(),
+                patient_visibility: user.patient_visibility.clone(),
+            },
+        )
+        .await
+    }
+
+    pub fn verify_access_token(
+        &self,
+        token: &str,
+    ) -> Result<AccessClaims, jsonwebtoken::errors::Error> {
+        verify_access_token(&self.inner.config.jwt_secret, token)
+    }
+
+    pub async fn auth_user(&self, user_id: Uuid) -> Result<Option<AuthUser>> {
+        Ok(hms_db::auth::user_by_id(&self.inner.auth_pool, user_id)
+            .await?
+            .map(|user| user.to_auth_user()))
+    }
+
+    pub async fn auth_user_for_facility(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+    ) -> Result<Option<AuthUser>> {
+        Ok(
+            hms_db::auth::user_by_id_for_facility(&self.inner.auth_pool, user_id, facility_id)
+                .await?
+                .map(|user| user.to_auth_user()),
+        )
+    }
+
+    pub async fn auth_user_for_claims(&self, claims: &AccessClaims) -> Result<Option<AuthUser>> {
+        let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
+        if let Some(user) = self.inner.auth_cache.get_user(&cache_key) {
+            return Ok(Some(user));
+        }
+
+        let user = self
+            .auth_user_for_facility(claims.sub, self.facility_id())
+            .await?;
+        if let Some(user) = &user {
+            if auth_user_matches_claims(user, claims) {
+                self.inner.auth_cache.put_user(cache_key, user.clone());
+            }
+        }
+        Ok(user)
+    }
+
+    pub async fn request_context_facts(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+    ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
+        hms_db::auth::request_context_facts(
+            &self.inner.auth_pool,
+            user_id,
+            facility_id,
+            self.inner.config.deployment_profile,
+        )
+        .await
+    }
+
+    pub async fn request_context_facts_for_claims(
+        &self,
+        claims: &AccessClaims,
+    ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
+        let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
+        if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
+            return Ok(Some(facts));
+        }
+
+        let facts = self
+            .request_context_facts(claims.sub, self.facility_id())
+            .await?;
+        if let Some(facts) = &facts {
+            if auth_user_matches_claims(&facts.user, claims) {
+                self.inner
+                    .auth_cache
+                    .put_request_context(cache_key.clone(), facts.clone());
+                self.inner
+                    .auth_cache
+                    .put_user(cache_key, facts.user.clone());
+            }
+        }
+        Ok(facts)
+    }
+
+    pub async fn active_authorities_for_user(&self, user_id: Uuid) -> Result<Vec<ActiveAuthority>> {
+        hms_db::admin::active_authorities_for_user(&self.inner.pool, self.facility_id(), user_id)
+            .await
+    }
+
+    pub async fn request_context_admin_facts(
+        &self,
+        user_id: Uuid,
+    ) -> Result<hms_db::admin::RequestContextAdminFacts> {
+        hms_db::admin::request_context_admin_facts(
+            &self.inner.pool,
+            self.facility_id(),
+            user_id,
+            self.inner.config.deployment_profile,
+        )
+        .await
+    }
+
+    pub async fn update_auth_profile(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        payload: UpdateAuthProfileRequest,
+    ) -> Result<Option<AuthUser>> {
+        self.invalidate_auth_cache_for_user(facility_id, user_id);
+        let user =
+            hms_db::auth::update_user_profile(&self.inner.pool, facility_id, user_id, payload)
+                .await?
+                .map(|user| user.to_auth_user());
+        if let Some(user) = &user {
+            if let Some(cache_key) = AuthCacheKey::from_auth_user(user) {
+                self.inner.auth_cache.put_user(cache_key, user.clone());
+            }
+        }
+        Ok(user)
+    }
+
+    pub async fn login(
+        &self,
+        email: &str,
+        password: &str,
+        facility_code: &str,
+        device_label: Option<&str>,
+    ) -> Result<Option<LoginOutcome>> {
+        if !self
+            .inner
+            .config
+            .facility_code
+            .eq_ignore_ascii_case(facility_code.trim())
+        {
+            return Ok(None);
+        }
+
+        let user = hms_db::auth::user_by_email_and_facility(
+            &self.inner.pool,
+            email.trim(),
+            facility_code.trim(),
+        )
+        .await?;
+        let Some(user) = user else {
+            return Ok(None);
+        };
+
+        if !verify_password(&user.password_hash, password) {
+            return Ok(None);
+        }
+
+        self.issue_session_for_user(&user, None, None, device_label)
+            .await
+    }
+
+    pub async fn refresh(
+        &self,
+        refresh_token: &str,
+        csrf_token: &str,
+    ) -> Result<Option<LoginOutcome>> {
+        let token_hash = hash_refresh_token(refresh_token);
+        let csrf_token_hash = hash_refresh_token(csrf_token);
+        let old_session =
+            hms_db::auth::refresh_session_by_token_hash(&self.inner.pool, &token_hash).await?;
+        let Some(old_session) = old_session else {
+            return Ok(None);
+        };
+
+        if old_session.revoked_at.is_some() {
+            let _ = hms_db::auth::revoke_refresh_session_family(
+                &self.inner.pool,
+                old_session.session_family_id,
+                "refresh_token_reuse_detected",
+            )
+            .await?;
+            warn!(
+                session_family_id = %old_session.session_family_id,
+                "revoked refresh-session family after refresh token reuse"
+            );
+            return Ok(None);
+        }
+        if old_session.expires_at <= Utc::now() {
+            return Ok(None);
+        }
+        if old_session.csrf_token_hash != csrf_token_hash {
+            return Ok(None);
+        }
+
+        let user = hms_db::auth::user_by_id(&self.inner.pool, old_session.user_id).await?;
+        let Some(user) = user else {
+            return Ok(None);
+        };
+
+        if user.facility_id != old_session.facility_id
+            || user.session_version != old_session.session_version
+            || user.permission_version != old_session.permission_version_at_issue
+        {
+            return Ok(None);
+        }
+
+        let revoked = hms_db::auth::revoke_refresh_session(
+            &self.inner.pool,
+            &token_hash,
+            &csrf_token_hash,
+            "rotated",
+        )
+        .await?;
+        if !revoked {
+            return Ok(None);
+        }
+
+        self.issue_session_for_user(
+            &user,
+            Some(old_session.session_family_id),
+            Some(old_session.session_id),
+            old_session.device_label.as_deref(),
+        )
+        .await
+    }
+
+    pub async fn logout(&self, refresh_token: &str, csrf_token: &str) -> Result<()> {
+        let token_hash = hash_refresh_token(refresh_token);
+        let csrf_token_hash = hash_refresh_token(csrf_token);
+        let _ = hms_db::auth::revoke_refresh_session(
+            &self.inner.pool,
+            &token_hash,
+            &csrf_token_hash,
+            "logout",
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn request_password_reset(
+        &self,
+        email: &str,
+        facility_code: &str,
+    ) -> Result<PasswordResetRequestOutcome> {
+        if !self
+            .inner
+            .config
+            .facility_code
+            .eq_ignore_ascii_case(facility_code.trim())
+        {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        }
+
+        let Some(user) = hms_db::auth::user_by_email_and_facility(
+            &self.inner.pool,
+            email.trim(),
+            facility_code.trim(),
+        )
+        .await?
+        else {
+            return Ok(PasswordResetRequestOutcome {
+                accepted: true,
+                debug_token: None,
+            });
+        };
+
+        let raw_token = generate_secret_token();
+        let expires_at = Utc::now() + chrono::Duration::minutes(30);
+        hms_db::auth::insert_password_reset_token(
+            &self.inner.pool,
+            &hms_db::auth::NewPasswordResetToken {
+                token_hash: hash_refresh_token(&raw_token),
+                user_id: user.id,
+                facility_id: user.facility_id,
+                expires_at,
+            },
+        )
+        .await?;
+        hms_db::events::insert_domain_event(
+            &self.inner.pool,
+            &hms_db::events::NewDomainEvent {
+                id: Uuid::new_v4(),
+                kind: DomainEventKind::PasswordResetRequested,
+                aggregate_type: "user".to_owned(),
+                aggregate_id: Some(user.id),
+                facility_id: Some(user.facility_id),
+                payload: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(PasswordResetRequestOutcome {
+            accepted: true,
+            debug_token: (self.inner.config.environment == "test").then_some(raw_token),
+        })
+    }
+
+    pub async fn complete_password_reset(&self, token: &str, new_password: &str) -> Result<bool> {
+        if !password_meets_policy(new_password) {
+            return Ok(false);
+        }
+
+        let token_hash = hash_refresh_token(token);
+        let Some(reset_token) =
+            hms_db::auth::password_reset_token_by_hash(&self.inner.pool, &token_hash).await?
+        else {
+            return Ok(false);
+        };
+
+        if reset_token.used_at.is_some()
+            || reset_token.expires_at <= Utc::now()
+            || reset_token.facility_id != self.facility_id()
+        {
+            return Ok(false);
+        }
+
+        let previous_hashes =
+            hms_db::auth::password_hashes_for_user(&self.inner.pool, reset_token.user_id, 5)
+                .await?;
+        if previous_hashes
+            .iter()
+            .any(|hash| verify_password(hash, new_password))
+        {
+            return Ok(false);
+        }
+
+        let new_password_hash = hash_password(new_password)?;
+        self.invalidate_auth_cache_for_user(reset_token.facility_id, reset_token.user_id);
+        let completed = hms_db::auth::complete_password_reset(
+            &self.inner.pool,
+            &token_hash,
+            reset_token.user_id,
+            &new_password_hash,
+        )
+        .await?;
+
+        if completed {
+            self.invalidate_auth_cache_for_user(reset_token.facility_id, reset_token.user_id);
+            hms_db::events::insert_domain_event(
+                &self.inner.pool,
+                &hms_db::events::NewDomainEvent {
+                    id: Uuid::new_v4(),
+                    kind: DomainEventKind::PasswordResetCompleted,
+                    aggregate_type: "user".to_owned(),
+                    aggregate_id: Some(reset_token.user_id),
+                    facility_id: Some(reset_token.facility_id),
+                    payload: serde_json::json!({}),
+                },
+            )
+            .await?;
+        }
+
+        Ok(completed)
+    }
+
+    pub async fn change_password(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<ChangePasswordOutcome> {
+        if facility_id != self.facility_id() {
+            return Ok(ChangePasswordOutcome::UserNotFound);
+        }
+        if !password_meets_policy(new_password) {
+            return Ok(ChangePasswordOutcome::WeakPassword);
+        }
+
+        let Some(user) = hms_db::auth::user_by_id(&self.inner.pool, user_id).await? else {
+            return Ok(ChangePasswordOutcome::UserNotFound);
+        };
+        if user.facility_id != facility_id {
+            return Ok(ChangePasswordOutcome::UserNotFound);
+        }
+        if !verify_password(&user.password_hash, current_password) {
+            return Ok(ChangePasswordOutcome::InvalidCurrentPassword);
+        }
+
+        let previous_hashes =
+            hms_db::auth::password_hashes_for_user(&self.inner.pool, user_id, 5).await?;
+        if previous_hashes
+            .iter()
+            .any(|hash| verify_password(hash, new_password))
+        {
+            return Ok(ChangePasswordOutcome::PasswordReused);
+        }
+
+        let new_password_hash = hash_password(new_password)?;
+        self.invalidate_auth_cache_for_user(facility_id, user_id);
+        let changed = hms_db::auth::change_user_password(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            &new_password_hash,
+        )
+        .await?;
+
+        Ok(if changed.is_some() {
+            self.invalidate_auth_cache_for_user(facility_id, user_id);
+            ChangePasswordOutcome::Changed
+        } else {
+            ChangePasswordOutcome::UserNotFound
+        })
+    }
+
+    pub async fn list_auth_sessions(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        current_session_id: Uuid,
+    ) -> Result<Vec<UserSessionRow>> {
+        if facility_id != self.facility_id() {
+            return Ok(Vec::new());
+        }
+        hms_db::auth::list_active_user_sessions(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            current_session_id,
+            20,
+        )
+        .await
+    }
+
+    pub async fn revoke_auth_session(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        session_id: Uuid,
+    ) -> Result<bool> {
+        if facility_id != self.facility_id() {
+            return Ok(false);
+        }
+        hms_db::auth::revoke_user_session(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            session_id,
+            "user_revoked",
+        )
+        .await
+    }
+
+    pub async fn revoke_other_auth_sessions(
+        &self,
+        user_id: Uuid,
+        facility_id: Uuid,
+        current_session_id: Uuid,
+    ) -> Result<u64> {
+        if facility_id != self.facility_id() {
+            return Ok(0);
+        }
+        hms_db::auth::revoke_other_user_sessions(
+            &self.inner.pool,
+            facility_id,
+            user_id,
+            current_session_id,
+            "user_revoked_others",
+        )
+        .await
+    }
+
+    pub async fn deployment_capabilities(&self) -> Result<DeploymentCapabilities> {
+        let features = hms_db::admin::effective_feature_flags(
+            &self.inner.pool,
+            self.facility_id(),
+            self.inner.config.deployment_profile,
+        )
+        .await?;
+        Ok(deployment_capabilities_from_features(
+            self.inner.config.deployment_profile,
+            self.facility_id(),
+            &self.inner.config.facility_code,
+            features,
+        ))
+    }
+
+    async fn issue_session_for_user(
+        &self,
+        user: &UserAccount,
+        session_family_id: Option<Uuid>,
+        rotated_from_session_id: Option<Uuid>,
+        device_label: Option<&str>,
+    ) -> Result<Option<LoginOutcome>> {
+        let session_id = Uuid::new_v4();
+        let session_family_id = session_family_id.unwrap_or(session_id);
+        let refresh_token = generate_secret_token();
+        let csrf_token = generate_secret_token();
+        let expires_at = Utc::now()
+            + chrono::Duration::from_std(self.inner.config.refresh_token_ttl)
+                .context("refresh token ttl converts to chrono duration")?;
+
+        hms_db::auth::insert_refresh_session(
+            &self.inner.pool,
+            &NewRefreshSession {
+                token_hash: hash_refresh_token(&refresh_token),
+                session_id,
+                session_family_id,
+                rotated_from_session_id,
+                user_id: user.id,
+                facility_id: user.facility_id,
+                session_version: user.session_version,
+                permission_version_at_issue: user.permission_version,
+                csrf_token_hash: hash_refresh_token(&csrf_token),
+                expires_at,
+                device_label: device_label.map(ToOwned::to_owned),
+            },
+        )
+        .await?;
+
+        let active_profile = serde_json::to_value(user.active_profile)?
+            .as_str()
+            .unwrap_or("hospital")
+            .to_owned();
+        let access_token = issue_access_token(
+            &self.inner.config.jwt_secret,
+            user.id,
+            session_id,
+            user.facility_id,
+            active_profile,
+            user.permission_version,
+            user.session_version,
+            self.inner.config.access_token_ttl,
+        )
+        .context("failed to issue access token")?;
+
+        let auth_user = user.to_auth_user();
+        if let Some(cache_key) = AuthCacheKey::from_user_account(user) {
+            self.inner.auth_cache.put_user(cache_key, auth_user.clone());
+        }
+
+        Ok(Some(LoginOutcome {
+            access_token,
+            refresh_token,
+            csrf_token,
+            session_id,
+            user: auth_user,
+        }))
+    }
+}
+
+fn verify_password(hash: &str, password: &str) -> bool {
+    let Ok(hash) = PasswordHash::new(hash) else {
+        return false;
+    };
+
+    Argon2::default()
+        .verify_password(password.as_bytes(), &hash)
+        .is_ok()
+}
+
+fn auth_user_matches_claims(user: &AuthUser, claims: &AccessClaims) -> bool {
+    user.id == claims.sub
+        && user.facility_id == claims.facility_id
+        && user.session_version == claims.session_version
+        && user.permission_version == claims.permission_version
+        && deployment_profile_claim_value(user.active_profile).as_deref()
+            == Some(claims.active_profile.as_str())
+}
+
+fn deployment_profile_claim_value(profile: DeploymentProfile) -> Option<String> {
+    serde_json::to_value(profile)
+        .ok()
+        .and_then(|value| value.as_str().map(ToOwned::to_owned))
+}
+
+fn auth_pool_max_connections(database_max_connections: u32) -> u32 {
+    (database_max_connections / 2)
+        .clamp(2, 8)
+        .min(database_max_connections.max(1))
+}
+
+async fn redis_ready(redis_addr: &str) -> bool {
+    timeout(Duration::from_millis(500), TcpStream::connect(redis_addr))
+        .await
+        .map(|result| result.is_ok())
+        .unwrap_or(false)
+}
+
+fn record_readiness_metrics(ready: bool, dependencies: &[DependencyReadiness]) {
+    hms_observability::set_gauge("hms_api_health_ready", bool_as_gauge(ready), &[]);
+    for dependency in dependencies {
+        hms_observability::set_gauge(
+            "hms_api_dependency_ready",
+            bool_as_gauge(dependency.ready),
+            &[("dependency", dependency.name.as_str())],
+        );
+    }
+}
+
+fn bool_as_gauge(value: bool) -> f64 {
+    if value {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+fn password_meets_policy(password: &str) -> bool {
+    password.len() >= 12
+        && password.chars().any(char::is_uppercase)
+        && password.chars().any(char::is_lowercase)
+        && password.chars().any(|value| value.is_ascii_digit())
+        && password.chars().any(|value| !value.is_ascii_alphanumeric())
+}
+
+pub(crate) fn csrf_compare_hash(token: &str) -> String {
+    hash_refresh_token(token)
+}

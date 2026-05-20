@@ -1,0 +1,21 @@
+[package]
+name = "hms-auth"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+chrono.workspace = true
+argon2.workspace = true
+jsonwebtoken.workspace = true
+password-hash.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation"] }

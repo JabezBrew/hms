@@ -1,4 +1,8 @@
-# Kubernetes Deployment for HMS Celery Workers
+# Legacy Kubernetes Deployment for old HMS Celery workers.
+#
+# Active Rust V2 deploys use hms-worker in ops/hetzner-v2/compose.yml. Keep
+# this manifest only for explicit legacy Kubernetes reference work.
+#
 # Background task processing
 #
 # Apply: kubectl apply -f k8s/celery-deployment.yaml

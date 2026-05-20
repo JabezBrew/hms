@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, Plus, RotateCcw } from 'lucide-react';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import RotateCcw from 'lucide-react/dist/esm/icons/rotate-ccw.js';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';

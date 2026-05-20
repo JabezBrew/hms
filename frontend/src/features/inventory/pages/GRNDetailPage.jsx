@@ -39,6 +39,7 @@ import {
   useInspectGRN,
   useAcceptGRN,
 } from '@/features/inventory/hooks';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
@@ -286,6 +287,7 @@ function GRNItemRow({
 export default function GRNDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const grnItemEditingAvailable = !isRustV2ApiMode();
 
   const [acceptDialogOpen, setAcceptDialogOpen] = useState(false);
 
@@ -390,7 +392,7 @@ export default function GRNDetailPage() {
   const hasQualityIssues = grn.has_quality_issues || items.some(i => i.item_status === 'rejected' || i.rejection_reason);
 
   const canInspect = grn.status === 'pending_inspection';
-  const canEdit = ['pending_inspection', 'inspecting'].includes(grn.status);
+  const canEdit = grnItemEditingAvailable && ['pending_inspection', 'inspecting'].includes(grn.status);
   const canAccept = grn.status === 'inspecting';
 
   return (
@@ -477,6 +479,13 @@ export default function GRNDetailPage() {
       </PageHeader>
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!grnItemEditingAvailable && ['pending_inspection', 'inspecting'].includes(grn.status) && items.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          GRN item editing is not available in Rust V2 mode yet. Inspection and acceptance remain
+          available through generated /api/v2 contracts.
+        </div>
+      )}
+
       {/* Acceptance Progress */}
       {grn.status === 'inspecting' && (
         <Card className="bg-card/30 border-border/50">

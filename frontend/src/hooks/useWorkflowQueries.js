@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api-client';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { dischargeKeys } from '@/features/discharge/hooks/useDischargeCaseQueries';
 import { toast } from 'sonner';
+import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 
 // Query keys
 const workflowKeyFactory = createKeyFactory('clinical-workflows');
@@ -23,6 +24,7 @@ export function useWardRoundWorkflow() {
   // Start ward round
   const startWardRound = useMutation({
     mutationFn: async ({ patientId, admissionId, initialData }) => {
+      ensureRustV2WorkflowSupported('Ward-round workflow start');
       return await apiClient.post('/workflows/ward-round/start/', {
         patient_id: patientId,
         admission_id: admissionId,
@@ -41,6 +43,7 @@ export function useWardRoundWorkflow() {
   // Update ward round step
   const updateWardRoundStep = useMutation({
     mutationFn: async ({ workflowId, stepData }) => {
+      ensureRustV2WorkflowSupported('Ward-round workflow step update');
       return await apiClient.patch(`/workflows/${workflowId}/ward-round/step/`, {
         step_data: stepData,
       });
@@ -57,6 +60,7 @@ export function useWardRoundWorkflow() {
   // Complete ward round
   const completeWardRound = useMutation({
     mutationFn: async ({ workflowId, finalData }) => {
+      ensureRustV2WorkflowSupported('Ward-round workflow completion');
       return await apiClient.post(`/workflows/${workflowId}/ward-round/complete/`, {
         final_data: finalData || {},
       });
@@ -86,6 +90,7 @@ export function useDischargeWorkflow() {
   // Start discharge
   const startDischarge = useMutation({
     mutationFn: async ({ patientId, admissionId, initialData }) => {
+      ensureRustV2WorkflowSupported('Discharge workflow start');
       return await apiClient.post('/workflows/discharge/start/', {
         patient_id: patientId,
         admission_id: admissionId,
@@ -104,6 +109,7 @@ export function useDischargeWorkflow() {
   // Update discharge step
   const updateDischargeStep = useMutation({
     mutationFn: async ({ workflowId, stepData }) => {
+      ensureRustV2WorkflowSupported('Discharge workflow step update');
       return await apiClient.patch(`/workflows/${workflowId}/discharge/step/`, {
         step_data: stepData,
       });
@@ -120,6 +126,7 @@ export function useDischargeWorkflow() {
   // Complete discharge
   const completeDischarge = useMutation({
     mutationFn: async ({ workflowId, finalData }) => {
+      ensureRustV2WorkflowSupported('Discharge workflow completion');
       return await apiClient.post(`/workflows/${workflowId}/discharge/complete/`, {
         final_data: finalData || {},
       });
@@ -147,7 +154,10 @@ export function useDischargeWorkflow() {
 export function useWorkflowDetail(workflowId) {
   return useQuery({
     queryKey: workflowKeys.detail(workflowId),
-    queryFn: () => apiClient.get(`/workflows/${workflowId}/`),
+    queryFn: ({ signal }) => {
+      ensureRustV2WorkflowSupported('Workflow detail');
+      return apiClient.get(`/workflows/${workflowId}/`, { signal });
+    },
     enabled: !!workflowId,
   });
 }

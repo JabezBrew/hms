@@ -29,7 +29,7 @@ export function useDischargeCases(filters = {}, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: dischargeKeys.list(filters),
-    queryFn: () => dischargeApi.getCases(filters),
+    queryFn: ({ signal }) => dischargeApi.getCases(filters, { signal }),
     enabled,
   })
 }
@@ -38,7 +38,7 @@ export function useDischargeCase(id, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: dischargeKeys.detail(id),
-    queryFn: () => dischargeApi.getCase(id),
+    queryFn: ({ signal }) => dischargeApi.getCase(id, { signal }),
     enabled: !!id && enabled,
   })
 }
@@ -47,7 +47,7 @@ export function useDischargeTasks(filters = {}, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: dischargeKeys.taskList(filters),
-    queryFn: () => dischargeApi.getTasks(filters),
+    queryFn: ({ signal }) => dischargeApi.getTasks(filters, { signal }),
     enabled,
   })
 }
@@ -149,4 +149,3 @@ export function useAcknowledgeDischargeTask() {
     },
   })
 }
-

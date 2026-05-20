@@ -190,7 +190,7 @@ export default function PurchaseOrderDetailPage() {
   const totalReceived = items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
   const receivedProgress = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
 
-  const canApprove = po.status === 'pending';
+  const canApprove = ['draft', 'pending', 'pending_approval'].includes(po.status);
   const canSend = po.status === 'approved';
   const canReceive = ['sent', 'acknowledged', 'receiving', 'partially_received'].includes(po.status);
 

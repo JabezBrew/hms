@@ -20,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   useWardRoundWorkflow,
   useDischargeWorkflow,
@@ -48,11 +49,16 @@ export default function WorkflowLauncher({
   trigger,
   className,
 }) {
+  const rustV2Mode = isRustV2ApiMode();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState(workflowType || '');
 
   const { startWardRound } = useWardRoundWorkflow();
   const { startDischarge } = useDischargeWorkflow();
+
+  if (rustV2Mode) {
+    return null;
+  }
 
   const workflows = [
     {

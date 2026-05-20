@@ -24,15 +24,18 @@ import {
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { useSafetyCheck, usePatientAllergies, useDrugForms } from "@/hooks/useDrugSafetyQueries";
 import { DrugSafetyDialog } from "@/components/drug-safety/DrugSafetyDialog";
 import { MedicationAutocomplete } from "@/components/drug-safety/MedicationAutocomplete";
 import { patientKeys } from "@/features/patients/hooks/usePatientQueries";
-import { invalidatePrescriptionMutationQueries } from "@/hooks/usePrescriptionMutations";
+import {
+  createPrescription as createPrescriptionRequest,
+  invalidatePrescriptionMutationQueries,
+} from "@/hooks/usePrescriptionMutations";
 import { nursingKeys } from "@/hooks/useNursingQueries";
 import { emitOnboardingEvent } from "@/features/onboarding";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 /**
  * AddPrescriptionSlideOver - Split-screen panel for prescribing medications
@@ -52,6 +55,9 @@ const AddPrescriptionSlideOver = ({
 }) => {
   // Get patient ID
   const patientId = patient?.local_data?.id || patient?.id;
+  const rustV2Mode = isRustV2ApiMode();
+  const marGenerationAvailable = !rustV2Mode;
+  const drugSafetyEnhancementsAvailable = !rustV2Mode;
 
   const queryClient = useQueryClient();
 
@@ -68,7 +74,7 @@ const AddPrescriptionSlideOver = ({
   });
 
   // MAR generation option - auto generates for inpatients
-  const [generateMAR, setGenerateMAR] = useState(true);
+  const [generateMAR, setGenerateMAR] = useState(marGenerationAvailable);
   const [marDays, setMarDays] = useState(7);
 
   // Check if patient is admitted (for MAR generation hint)
@@ -90,7 +96,9 @@ const AddPrescriptionSlideOver = ({
   const { data: allergiesData } = usePatientAllergies(patientId, { enabled: open });
 
   // Fetch drug forms when medication is selected and slide-over is open
-  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui, { enabled: open && !!selectedRxcui });
+  const { data: drugFormsData, isLoading: isLoadingForms } = useDrugForms(selectedRxcui, {
+    enabled: open && drugSafetyEnhancementsAvailable && !!selectedRxcui,
+  });
   const drugForms = drugFormsData?.forms || [];
 
   // Route options
@@ -130,7 +138,7 @@ const AddPrescriptionSlideOver = ({
   // API mutation
   const createPrescriptionMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await apiClient.post('/clinical-notes/prescriptions/', data);
+      const response = await createPrescriptionRequest(data);
       return response;
     },
     onSuccess: (data) => {
@@ -157,10 +165,10 @@ const AddPrescriptionSlideOver = ({
       });
       setSelectedRxcui(null);
       setErrors({});
-      setGenerateMAR(true);
+      setGenerateMAR(marGenerationAvailable);
       setMarDays(7);
     }
-  }, [open]);
+  }, [marGenerationAvailable, open]);
 
   // Handle medication selection from autocomplete
   const handleMedicationSelect = (medication) => {
@@ -169,7 +177,7 @@ const AddPrescriptionSlideOver = ({
       ...prev,
       medication_name: medication.name
     }));
-    setSelectedRxcui(medication.rxcui);
+    setSelectedRxcui(drugSafetyEnhancementsAvailable ? medication.rxcui : null);
 
     // Clear error
     if (errors.medication_name) {
@@ -246,6 +254,10 @@ const AddPrescriptionSlideOver = ({
   const performSafetyCheck = async () => {
     if (!validate()) return false;
 
+    if (!drugSafetyEnhancementsAvailable) {
+      return true;
+    }
+
     setSafetyCheckPending(true);
 
     try {
@@ -299,10 +311,12 @@ const AddPrescriptionSlideOver = ({
       route: formData.route,
       frequency: formData.frequency,
       start_date: formData.start_date,
-      // MAR generation options
-      generate_mar: generateMAR ? 'yes' : 'no',
-      mar_days: marDays,
     };
+
+    if (marGenerationAvailable) {
+      data.generate_mar = generateMAR ? 'yes' : 'no';
+      data.mar_days = marDays;
+    }
 
     if (formData.duration_days) {
       data.duration_days = parseInt(formData.duration_days);
@@ -444,19 +458,36 @@ const AddPrescriptionSlideOver = ({
           <div className="space-y-2">
             <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <Shield className="h-3.5 w-3.5 text-sky-600" />
-              Medication Name * (with drug safety check)
+              {drugSafetyEnhancementsAvailable
+                ? 'Medication Name * (with drug safety check)'
+                : 'Medication Name *'}
             </Label>
-            <MedicationAutocomplete
-              value={formData.medication_name}
-              onSelect={handleMedicationSelect}
-              placeholder="Search for medication..."
-              className={cn(
-                "font-mono",
-                errors.medication_name && "border-red-500"
-              )}
-            />
+            {drugSafetyEnhancementsAvailable ? (
+              <MedicationAutocomplete
+                value={formData.medication_name}
+                onSelect={handleMedicationSelect}
+                placeholder="Search for medication..."
+                className={cn(
+                  "font-mono",
+                  errors.medication_name && "border-red-500"
+                )}
+              />
+            ) : (
+              <Input
+                aria-label="Medication"
+                placeholder="Enter medication name..."
+                value={formData.medication_name}
+                onChange={(event) => handleChange('medication_name', event.target.value)}
+                className={cn(
+                  "font-mono",
+                  errors.medication_name && "border-red-500"
+                )}
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              Drug interactions and allergy checks will be performed automatically
+              {drugSafetyEnhancementsAvailable
+                ? 'Drug interactions and allergy checks will be performed automatically'
+                : 'Drug interaction checks are not exposed in Rust V2 yet; patient allergy warnings remain visible.'}
             </p>
             {errors.medication_name && (
               <p className="text-xs text-red-500">{errors.medication_name}</p>
@@ -464,7 +495,7 @@ const AddPrescriptionSlideOver = ({
           </div>
 
           {/* Drug Form Selector - Shows available strengths/forms from RxNorm */}
-          {selectedRxcui && (
+          {drugSafetyEnhancementsAvailable && selectedRxcui && (
             <div className="space-y-2">
               <Label className="font-mono text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Package className="h-3.5 w-3.5 text-sky-600" />
@@ -642,50 +673,58 @@ const AddPrescriptionSlideOver = ({
             />
           </div>
 
-          {/* MAR Generation (for nursing workflow) */}
-          <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="generate-mar"
-                checked={generateMAR}
-                onCheckedChange={setGenerateMAR}
-                className="mt-0.5"
-              />
-              <div className="flex-1 space-y-2">
-                <Label
-                  htmlFor="generate-mar"
-                  className="font-mono text-sm font-medium cursor-pointer flex items-center gap-2"
-                >
-                  <ClipboardList className="h-4 w-4 text-sky-600" />
-                  Generate Medication Administration Record (MAR)
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Creates scheduled doses for nursing to administer and pharmacy to dispense.
-                  {isPatientAdmitted && (
-                    <span className="text-sky-600 font-medium"> Patient is currently admitted.</span>
+          {marGenerationAvailable ? (
+            <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="generate-mar"
+                  checked={generateMAR}
+                  onCheckedChange={setGenerateMAR}
+                  className="mt-0.5"
+                />
+                <div className="flex-1 space-y-2">
+                  <Label
+                    htmlFor="generate-mar"
+                    className="font-mono text-sm font-medium cursor-pointer flex items-center gap-2"
+                  >
+                    <ClipboardList className="h-4 w-4 text-sky-600" />
+                    Generate Medication Administration Record (MAR)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Creates scheduled doses for nursing to administer and pharmacy to dispense.
+                    {isPatientAdmitted && (
+                      <span className="text-sky-600 font-medium"> Patient is currently admitted.</span>
+                    )}
+                  </p>
+                  {generateMAR && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <Label className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        Generate for
+                      </Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={marDays}
+                        onChange={(e) => setMarDays(parseInt(e.target.value) || 7)}
+                        className="font-mono w-16 h-8 text-center"
+                      />
+                      <Label className="font-mono text-xs text-muted-foreground">
+                        days
+                      </Label>
+                    </div>
                   )}
-                </p>
-                {generateMAR && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <Label className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-                      Generate for
-                    </Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="30"
-                      value={marDays}
-                      onChange={(e) => setMarDays(parseInt(e.target.value) || 7)}
-                      className="font-mono w-16 h-8 text-center"
-                    />
-                    <Label className="font-mono text-xs text-muted-foreground">
-                      days
-                    </Label>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <Alert>
+              <ClipboardList className="h-4 w-4" />
+              <AlertDescription>
+                MAR generation is not available in Rust V2 mode yet.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Prescription Summary */}
           {formData.medication_name && formData.dosage && (

@@ -1,4 +1,393 @@
 import { apiClient, handleApiError } from '../api-client';
+import { handleV2ApiError } from './v2/errors';
+import { isRustV2ApiMode } from './v2/runtime';
+import { v2Api } from './v2/client';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function unwrapV2List(response) {
+  return Array.isArray(response?.data) ? response.data : [];
+}
+
+function boundedLimit(value, fallback = 25) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(Math.floor(parsed), 100);
+}
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function minorToMajor(value) {
+  return toNumber(value) / 100;
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError';
+}
+
+function rustV2Unsupported(contractName) {
+  return Promise.reject(new Error(`${contractName} is unavailable in Rust V2 mode.`));
+}
+
+function splitSignalParams(params = {}) {
+  const { signal, ...queryParams } = params || {};
+  return { queryParams, signal };
+}
+
+function pickEntityId(value) {
+  if (value && typeof value === 'object') {
+    return value.id || value.value || null;
+  }
+  return value || null;
+}
+
+function uuidOrNull(value) {
+  const candidate = pickEntityId(value);
+  if (!candidate) {
+    return null;
+  }
+  const normalized = String(candidate).trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : null;
+}
+
+function positiveInteger(value, fieldName) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${fieldName} must be greater than zero.`);
+  }
+  return parsed;
+}
+
+function nonNegativeInteger(value, fieldName) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${fieldName} must be zero or greater.`);
+  }
+  return parsed;
+}
+
+function v2Object(response) {
+  return response?.data || {};
+}
+
+function daysUntilDate(dateValue) {
+  if (!dateValue) {
+    return null;
+  }
+  const [year, month, day] = String(dateValue).split('-').map(Number);
+  if (!year || !month || !day) {
+    return null;
+  }
+  const target = Date.UTC(year, month - 1, day);
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.ceil((target - today) / DAY_MS);
+}
+
+function isExpiringWithin(batch, days) {
+  const remainingDays = daysUntilDate(batch?.expires_on);
+  return remainingDays !== null && remainingDays >= 0 && remainingDays <= days;
+}
+
+function adaptV2StockBatch(batch) {
+  const quantity = toNumber(batch?.quantity_on_hand);
+  return {
+    id: batch?.item_id || batch?.id,
+    batch_id: batch?.id,
+    item_id: batch?.item_id,
+    name: batch?.item_name || 'Inventory item',
+    item_name: batch?.item_name || 'Inventory item',
+    sku: batch?.batch_number || '',
+    batch_number: batch?.batch_number || '',
+    location_id: batch?.location_id,
+    location_name: batch?.location_name,
+    stock_level: quantity,
+    total_stock: quantity,
+    current_stock: quantity,
+    quantity,
+    available_quantity: quantity,
+    quantity_on_hand: quantity,
+    reorder_level: 0,
+    shortfall: quantity <= 0 ? 1 : 0,
+    expiry_date: batch?.expires_on || null,
+    expires_on: batch?.expires_on || null,
+    days_until_expiry: daysUntilDate(batch?.expires_on),
+  };
+}
+
+function adaptV2LocationStock(row) {
+  const quantity = toNumber(row?.quantity_on_hand);
+  return {
+    id: row?.location_id,
+    item_id: row?.item_id,
+    location_id: row?.location_id,
+    location_name: row?.location_name || 'Storage location',
+    name: row?.location_name || 'Storage location',
+    quantity_on_hand: quantity,
+    quantity,
+    available_quantity: quantity,
+    reserved_quantity: 0,
+  };
+}
+
+function adaptV2StorageLocationStock(row) {
+  const quantity = toNumber(row?.quantity_on_hand);
+  return {
+    ...row,
+    id: row?.item_id,
+    item: row?.item_id,
+    item_id: row?.item_id,
+    item_name: row?.item_name || 'Inventory item',
+    name: row?.item_name || 'Inventory item',
+    location_id: row?.location_id,
+    location_name: row?.location_name || 'Storage location',
+    quantity_on_hand: quantity,
+    quantity,
+    available_quantity: quantity,
+    reserved_quantity: 0,
+    batch_count: toNumber(row?.batch_count),
+    earliest_expiry: row?.earliest_expiry || null,
+    expiry_date: row?.earliest_expiry || null,
+    last_received_at: row?.last_received_at || null,
+  };
+}
+
+function adaptV2ControlledEntry(entry) {
+  return {
+    ...entry,
+    entry_type: entry?.entry_type || entry?.movement_type,
+    type: entry?.entry_type || entry?.movement_type,
+    quantity: toNumber(entry?.quantity ?? entry?.quantity_delta),
+    balance_before: toNumber(entry?.balance_before),
+    balance_after: toNumber(entry?.balance_after),
+    witness: entry?.witness_user_id || null,
+  };
+}
+
+function adaptV2ControlledRegister(register) {
+  const currentBalance = toNumber(register?.current_balance ?? register?.balance_after ?? register?.balance_on_hand);
+  return {
+    ...register,
+    current_balance: currentBalance,
+    balance_on_hand: currentBalance,
+    location_name: register?.location_name || 'Storage location',
+    unit_of_measure: register?.unit_of_measure || register?.unit || 'units',
+    entry_count: toNumber(register?.entry_count),
+    total_dispensed: toNumber(register?.total_dispensed),
+    total_received: toNumber(register?.total_received),
+    total_wastage: toNumber(register?.total_wastage),
+    has_discrepancy: Boolean(register?.has_discrepancy),
+    discrepancy_count: toNumber(register?.discrepancy_count),
+  };
+}
+
+function adaptV2ControlledDiscrepancy(entry, registerId) {
+  const discrepancyAmount = toNumber(entry?.quantity ?? entry?.quantity_delta);
+  return {
+    id: entry?.id,
+    controlled_register: registerId,
+    register: registerId,
+    status: 'pending',
+    expected_balance: toNumber(entry?.balance_before),
+    actual_count: toNumber(entry?.balance_after),
+    discrepancy_amount: discrepancyAmount,
+    notes: entry?.notes || null,
+    created_at: entry?.created_at || null,
+  };
+}
+
+function adaptV2Requisition(requisition) {
+  const status = requisition?.status === 'requested' ? 'pending' : requisition?.status;
+  return {
+    ...requisition,
+    status,
+    requested_by_name: requisition?.requested_by_name || requisition?.created_by_name || 'HMS V2',
+    items_count: toNumber(requisition?.items_count),
+  };
+}
+
+function adaptV2InternalRequisition(requisition) {
+  const adapted = adaptV2Requisition(requisition);
+  return {
+    ...adapted,
+    status: ['requested', 'pending'].includes(requisition?.status)
+      ? 'pending_approval'
+      : adapted.status,
+  };
+}
+
+function adaptV2PurchaseOrder(order) {
+  return {
+    ...order,
+    supplier: order?.supplier_name || order?.supplier || null,
+    supplier_display: order?.supplier_name || order?.supplier || 'Supplier',
+    items_count: toNumber(order?.items_count),
+  };
+}
+
+function normalizeV2GrnStatus(status) {
+  if (status === 'received') {
+    return 'pending_inspection';
+  }
+  return status;
+}
+
+function adaptV2GoodsReceivedNote(grn) {
+  const status = normalizeV2GrnStatus(grn?.status);
+  const receivedAt = grn?.received_at || grn?.created_at || null;
+  return {
+    ...grn,
+    status,
+    purchase_order: grn?.purchase_order_id || grn?.purchase_order || null,
+    received_date: grn?.received_date || (receivedAt ? String(receivedAt).slice(0, 10) : null),
+    created_at: grn?.created_at || receivedAt,
+    items: Array.isArray(grn?.items) ? grn.items : [],
+    grn_items: Array.isArray(grn?.grn_items) ? grn.grn_items : [],
+  };
+}
+
+function adaptV2DashboardSummary(response) {
+  const summary = v2Object(response);
+  return {
+    total_items: toNumber(summary.total_items),
+    low_stock_count: toNumber(summary.low_stock_count),
+    expiring_soon_count: toNumber(summary.expiring_soon_count),
+    expiring_count: toNumber(summary.expiring_count),
+    total_stock_value: minorToMajor(summary.total_stock_value_minor),
+    total_value: minorToMajor(summary.total_value_minor),
+    pending_requisitions: toNumber(summary.pending_requisitions),
+    pending_grns: toNumber(summary.pending_grns),
+    discrepancies: toNumber(summary.discrepancies),
+  };
+}
+
+function adaptV2PaginatedList(response, params = {}, adapter = (item) => item) {
+  const results = Array.isArray(response?.data) ? response.data.map(adapter) : [];
+  const limit = Number(response?.page?.limit || params.page_size || params.limit || results.length || 25);
+  const currentPage = Number(params.page || 1);
+  const hasNext = Boolean(response?.page?.has_next && response?.page?.next_cursor);
+  const estimatedTotal = response?.page
+    ? ((currentPage - 1) * limit) + results.length + (hasNext ? 1 : 0)
+    : results.length;
+
+  return {
+    count: estimatedTotal,
+    total: estimatedTotal,
+    count_exact: !hasNext,
+    page: currentPage,
+    page_size: limit,
+    total_pages: hasNext ? currentPage + 1 : Math.max(1, currentPage),
+    next: hasNext ? response.page.next_cursor : null,
+    previous: currentPage > 1 ? String(currentPage - 1) : null,
+    next_cursor: response?.page?.next_cursor || null,
+    results,
+  };
+}
+
+function emptyPaginatedList(params = {}) {
+  return adaptV2PaginatedList({ data: [], meta: {} }, params);
+}
+
+function buildV2CursorQuery(params = {}, fallback = 25) {
+  const query = {};
+  const cursor = params.cursor || params.next_cursor;
+  if (cursor) {
+    query.cursor = cursor;
+  }
+  query.limit = boundedLimit(params.limit || params.page_size, fallback);
+  return query;
+}
+
+function buildV2InventoryItemsQuery(params = {}) {
+  const query = {};
+  if (params.search) {
+    query.search = params.search;
+  }
+  if (params.category) {
+    query.category = params.category;
+  }
+  if (params.location) {
+    query.location = params.location;
+  }
+  if (params.status || params.stock_status) {
+    query.status = params.status || params.stock_status;
+  }
+  Object.assign(query, buildV2CursorQuery(params, 24));
+  return query;
+}
+
+function buildV2SuppliersQuery(params = {}) {
+  const query = {};
+  if (params.search) {
+    query.search = String(params.search).trim();
+  }
+  if (params.is_active !== undefined) {
+    query.is_active = params.is_active;
+  }
+  Object.assign(query, buildV2CursorQuery(params, 25));
+  return query;
+}
+
+function buildV2StockRequisitionPayload(data = {}) {
+  return {
+    requesting_location_id: pickEntityId(data.requesting_location_id ?? data.requesting_location ?? data.location),
+  };
+}
+
+function buildV2PurchaseOrderPayload(data = {}) {
+  const supplierName = data.supplier_name || data.supplier?.name || data.supplier || data.vendor_name;
+  return {
+    supplier_name: String(supplierName || '').trim(),
+  };
+}
+
+function buildV2GoodsReceivedNotePayload(data = {}) {
+  return {
+    purchase_order_id: pickEntityId(data.purchase_order_id ?? data.purchase_order ?? data.po),
+  };
+}
+
+function buildV2StockTransferPayload(data = {}) {
+  return {
+    item_id: pickEntityId(data.item_id ?? data.item),
+    from_location_id: pickEntityId(data.from_location_id ?? data.from_location ?? data.source_location),
+    to_location_id: pickEntityId(data.to_location_id ?? data.to_location ?? data.destination_location),
+    quantity: positiveInteger(data.quantity, 'quantity'),
+  };
+}
+
+function buildV2ControlledMovementPayload(data = {}, movementType, direction) {
+  const quantity = positiveInteger(data.quantity ?? data.quantity_delta ?? data.actual_count, 'quantity');
+  return {
+    item_id: pickEntityId(data.item_id ?? data.item),
+    location_id: pickEntityId(data.location_id ?? data.location),
+    movement_type: movementType,
+    quantity_delta: direction * quantity,
+    witness_user_id: uuidOrNull(data.witness_user_id ?? data.witness ?? data.witness_id),
+  };
+}
+
+function buildV2ControlledCountPayload(data = {}) {
+  const reason = String(data.reason || data.notes || '').trim();
+  if (!reason) {
+    throw new Error('Reason is required for controlled count.');
+  }
+
+  return {
+    actual_count: nonNegativeInteger(data.actual_count ?? data.count, 'actual_count'),
+    witness_user_id: uuidOrNull(data.witness_user_id ?? data.witness ?? data.witness_id),
+    category: data.category || data.discrepancy_category || 'other',
+    reason,
+    notes: data.notes || null,
+  };
+}
 
 /**
  * Inventory API service
@@ -28,12 +417,26 @@ export const inventoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Dashboard metrics (total items, low stock, expiring, value)
    */
-  getDashboardMetrics: async (params = {}) => {
+  getDashboardMetrics: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryDashboardSummary({
+          query: { expiring_within_days: boundedLimit(params.days, 30) },
+          signal: options.signal,
+        });
+        return adaptV2DashboardSummary(response);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/analytics/dashboard/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch dashboard metrics'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch dashboard metrics'));
     }
   },
@@ -44,12 +447,30 @@ export const inventoryApi = {
    * @param {number} params.limit - Maximum results (default: 10)
    * @returns {Promise<Array>} Items with low stock
    */
-  getLowStockAlerts: async (params = {}) => {
+  getLowStockAlerts: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const limit = boundedLimit(params.limit, 10);
+        const response = await v2Api.getStockBatches({
+          query: { limit },
+          signal: options.signal,
+        });
+        return unwrapV2List(response)
+          .filter((batch) => toNumber(batch?.quantity_on_hand) <= 0)
+          .map(adaptV2StockBatch)
+          .slice(0, limit);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/low_stock/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch low stock alerts'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch low stock alerts'));
     }
   },
@@ -61,12 +482,31 @@ export const inventoryApi = {
    * @param {number} params.limit - Maximum results
    * @returns {Promise<Array>} Items expiring soon
    */
-  getExpiringItems: async (params = {}) => {
+  getExpiringItems: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const limit = boundedLimit(params.limit, 10);
+        const days = boundedLimit(params.days, 30);
+        const response = await v2Api.getStockBatches({
+          query: { limit },
+          signal: options.signal,
+        });
+        return unwrapV2List(response)
+          .filter((batch) => isExpiringWithin(batch, days))
+          .map(adaptV2StockBatch)
+          .slice(0, limit);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/expiring_soon/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch expiring items'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch expiring items'));
     }
   },
@@ -82,10 +522,23 @@ export const inventoryApi = {
    */
   getCategories: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryCategories({
+          signal: params.signal,
+        });
+        return unwrapV2List(response);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/categories/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.get(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch categories'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch categories'));
     }
   },
@@ -95,10 +548,17 @@ export const inventoryApi = {
    * @param {string} id - Category ID
    * @returns {Promise<Object>} Category data
    */
-  getCategory: async (id) => {
+  getCategory: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/inventory/categories/${id}/`);
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory category detail contract');
+      }
+
+      return await apiClient.get(`/inventory/categories/${id}/`, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch category'));
     }
   },
@@ -110,6 +570,10 @@ export const inventoryApi = {
    */
   createCategory: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory category mutation contract');
+      }
+
       return await apiClient.post('/inventory/categories/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create category'));
@@ -124,6 +588,10 @@ export const inventoryApi = {
    */
   updateCategory: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory category mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/categories/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update category'));
@@ -139,12 +607,26 @@ export const inventoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated suppliers
    */
-  getSuppliers: async (params = {}) => {
+  getSuppliers: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventorySuppliers({
+          query: buildV2SuppliersQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/suppliers/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch suppliers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch suppliers'));
     }
   },
@@ -154,10 +636,17 @@ export const inventoryApi = {
    * @param {string} id - Supplier ID
    * @returns {Promise<Object>} Supplier data
    */
-  getSupplier: async (id) => {
+  getSupplier: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/inventory/suppliers/${id}/`);
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 supplier contract');
+      }
+
+      return await apiClient.get(`/inventory/suppliers/${id}/`, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch supplier'));
     }
   },
@@ -169,6 +658,10 @@ export const inventoryApi = {
    */
   createSupplier: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 supplier contract');
+      }
+
       return await apiClient.post('/inventory/suppliers/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create supplier'));
@@ -183,6 +676,10 @@ export const inventoryApi = {
    */
   updateSupplier: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 supplier contract');
+      }
+
       return await apiClient.patch(`/inventory/suppliers/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update supplier'));
@@ -203,10 +700,24 @@ export const inventoryApi = {
    */
   getStorageLocations: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStorageLocations({
+          query: buildV2CursorQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/locations/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch storage locations'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch storage locations'));
     }
   },
@@ -216,10 +727,23 @@ export const inventoryApi = {
    * @param {string} id - Location ID
    * @returns {Promise<Object>} Location data
    */
-  getStorageLocation: async (id) => {
+  getStorageLocation: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStorageLocationById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
+      }
+
       return await apiClient.get(`/inventory/locations/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch storage location'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch storage location'));
     }
   },
@@ -229,10 +753,27 @@ export const inventoryApi = {
    * @param {string} id - Location ID
    * @returns {Promise<Array>} Stock items at location
    */
-  getLocationStock: async (id) => {
+  getLocationStock: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStorageLocationStock({ id }, {
+          query: {
+            limit: boundedLimit(options.page_size || options.limit || 25),
+            ...(options.cursor ? { cursor: options.cursor } : {}),
+          },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2StorageLocationStock);
+      }
+
       return await apiClient.get(`/inventory/locations/${id}/stock/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch location stock'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch location stock'));
     }
   },
@@ -242,10 +783,25 @@ export const inventoryApi = {
    * @param {string} type - Location type
    * @returns {Promise<Array>} Locations of specified type
    */
-  getLocationsByType: async (type) => {
+  getLocationsByType: async (type, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStorageLocations({
+          signal: options.signal,
+        });
+        return unwrapV2List(response).filter((location) => (
+          location.location_type === type || location.type === type
+        ));
+      }
+
       return await apiClient.get(`/inventory/locations/by_type/?type=${type}`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch locations by type'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch locations by type'));
     }
   },
@@ -257,6 +813,10 @@ export const inventoryApi = {
    */
   createStorageLocation: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 storage location mutation contract');
+      }
+
       return await apiClient.post('/inventory/locations/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create storage location'));
@@ -271,6 +831,10 @@ export const inventoryApi = {
    */
   updateStorageLocation: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 storage location mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/locations/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update storage location'));
@@ -284,6 +848,10 @@ export const inventoryApi = {
    */
   deleteStorageLocation: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 storage location mutation contract');
+      }
+
       return await apiClient.delete(`/inventory/locations/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to delete storage location'));
@@ -307,10 +875,24 @@ export const inventoryApi = {
    */
   getInventoryItems: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryItems({
+          query: buildV2InventoryItemsQuery(params),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch inventory items'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inventory items'));
     }
   },
@@ -320,10 +902,23 @@ export const inventoryApi = {
    * @param {string} id - Item ID
    * @returns {Promise<Object>} Item data with full details
    */
-  getInventoryItem: async (id) => {
+  getInventoryItem: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryItemById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
+      }
+
       return await apiClient.get(`/inventory/items/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch inventory item'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inventory item'));
     }
   },
@@ -336,10 +931,24 @@ export const inventoryApi = {
    */
   getItemMovements: async (id, params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryItemStockMovements({ id }, {
+          query: buildV2CursorQuery(params, 50),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/${id}/movements/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch item movements'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch item movements'));
     }
   },
@@ -349,10 +958,27 @@ export const inventoryApi = {
    * @param {string} id - Item ID
    * @returns {Promise<Array>} Expiry tracker entries (batches)
    */
-  getItemExpiryTrackers: async (id) => {
+  getItemExpiryTrackers: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryItemStockBatches({ id }, {
+          query: { limit: boundedLimit(options.limit || options.page_size, 25) },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map((batch) => ({
+          ...adaptV2StockBatch(batch),
+          id: batch?.id || batch?.item_id,
+        }));
+      }
+
       return await apiClient.get(`/inventory/items/${id}/expiry_trackers/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch item expiry trackers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch item expiry trackers'));
     }
   },
@@ -362,10 +988,23 @@ export const inventoryApi = {
    * @param {string} id - Item ID
    * @returns {Promise<Array>} Stock quantities by location
    */
-  getItemStockByLocation: async (id) => {
+  getItemStockByLocation: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getInventoryItemStockByLocation({ id }, {
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2LocationStock);
+      }
+
       return await apiClient.get(`/inventory/items/${id}/stock_by_location/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch item stock by location'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch item stock by location'));
     }
   },
@@ -377,6 +1016,10 @@ export const inventoryApi = {
    */
   createInventoryItem: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory item mutation contract');
+      }
+
       return await apiClient.post('/inventory/items/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create inventory item'));
@@ -391,6 +1034,10 @@ export const inventoryApi = {
    */
   updateInventoryItem: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory item mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/items/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update inventory item'));
@@ -404,6 +1051,10 @@ export const inventoryApi = {
    */
   deleteInventoryItem: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory item mutation contract');
+      }
+
       return await apiClient.delete(`/inventory/items/${id}/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to delete inventory item'));
@@ -426,10 +1077,24 @@ export const inventoryApi = {
    */
   getStockMovements: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockMovements({
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/movements/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch stock movements'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch stock movements'));
     }
   },
@@ -441,6 +1106,10 @@ export const inventoryApi = {
    */
   createStockMovement: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock movement mutation contract');
+      }
+
       return await apiClient.post('/inventory/movements/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create stock movement'));
@@ -454,6 +1123,10 @@ export const inventoryApi = {
    */
   bulkCreateStockMovements: async (movements) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock movement mutation contract');
+      }
+
       return await apiClient.post('/inventory/movements/bulk_create/', { movements });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create stock movements'));
@@ -474,10 +1147,18 @@ export const inventoryApi = {
    */
   getBatchRecommendations: async (itemId, params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 batch recommendation contract');
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
       const endpoint = `/inventory/batch-recommendations/item/${itemId}/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.get(endpoint);
+      return await apiClient.get(endpoint, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch batch recommendations'));
     }
   },
@@ -496,6 +1177,10 @@ export const inventoryApi = {
    */
   checkStockAvailability: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock availability contract');
+      }
+
       const queryString = new URLSearchParams(params).toString();
       return await apiClient.get(`/inventory/stock/check/?${queryString}`);
     } catch (error) {
@@ -514,10 +1199,25 @@ export const inventoryApi = {
    */
   getExpiryTrackers: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockBatches({
+          query: buildV2CursorQuery(queryParams, 20),
+          signal,
+        });
+        return adaptV2PaginatedList(response, queryParams, adaptV2StockBatch);
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
       const endpoint = `/inventory/expiry-trackers/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch expiry trackers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch expiry trackers'));
     }
   },
@@ -526,10 +1226,21 @@ export const inventoryApi = {
    * Get expired batches
    * @returns {Promise<Array>} Expired batches
    */
-  getExpiredBatches: async () => {
+  getExpiredBatches: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockBatches({
+          query: { expired: true, limit: boundedLimit(options.limit || options.page_size, 20) },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2StockBatch);
+      }
+
       return await apiClient.get('/inventory/expiry-trackers/expired/');
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch expired batches'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch expired batches'));
     }
   },
@@ -539,10 +1250,25 @@ export const inventoryApi = {
    * @param {number} days - Days threshold (default: 30)
    * @returns {Promise<Array>} Expiring batches
    */
-  getExpiringSoonBatches: async (days = 30) => {
+  getExpiringSoonBatches: async (days = 30, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const thresholdDays = boundedLimit(days, 30);
+        const response = await v2Api.getStockBatches({
+          query: {
+            expiring_within_days: thresholdDays,
+            limit: boundedLimit(options.limit || options.page_size, 20),
+          },
+          signal: options.signal,
+        });
+        return unwrapV2List(response).map(adaptV2StockBatch);
+      }
+
       return await apiClient.get(`/inventory/expiry-trackers/expiring_soon/?days=${days}`);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch expiring batches'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch expiring batches'));
     }
   },
@@ -554,6 +1280,10 @@ export const inventoryApi = {
    */
   markBatchAsConsumed: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 expiry tracker action contract');
+      }
+
       return await apiClient.post(`/inventory/expiry-trackers/${id}/mark_as_consumed/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to mark batch as consumed'));
@@ -568,6 +1298,10 @@ export const inventoryApi = {
    */
   markBatchAsDisposed: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 expiry tracker action contract');
+      }
+
       return await apiClient.post(`/inventory/expiry-trackers/${id}/mark_as_disposed/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to mark batch as disposed'));
@@ -588,10 +1322,24 @@ export const inventoryApi = {
    */
   getRequisitions: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockRequisitions({
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2Requisition);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/requisitions/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch requisitions'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch requisitions'));
     }
   },
@@ -601,10 +1349,23 @@ export const inventoryApi = {
    * @param {string} id - Requisition ID
    * @returns {Promise<Object>} Requisition data with items
    */
-  getRequisition: async (id) => {
+  getRequisition: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockRequisitionById({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2Requisition(v2Object(response));
+      }
+
       return await apiClient.get(`/inventory/requisitions/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch requisition'));
     }
   },
@@ -614,10 +1375,24 @@ export const inventoryApi = {
    * @param {Object} data - Requisition data with items
    * @returns {Promise<Object>} Created requisition
    */
-  createRequisition: async (data) => {
+  createRequisition: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitions(
+          buildV2StockRequisitionPayload(data),
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2Requisition(v2Object(response));
+      }
+
       return await apiClient.post('/inventory/requisitions/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to create requisition'));
     }
   },
@@ -630,6 +1405,10 @@ export const inventoryApi = {
    */
   updateRequisition: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock requisition mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/requisitions/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update requisition'));
@@ -641,10 +1420,23 @@ export const inventoryApi = {
    * @param {string} id - Requisition ID
    * @returns {Promise<Object>} Updated requisition
    */
-  submitRequisition: async (id) => {
+  submitRequisition: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionSubmit({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2Requisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/requisitions/${id}/submit/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to submit requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to submit requisition'));
     }
   },
@@ -654,10 +1446,23 @@ export const inventoryApi = {
    * @param {string} id - Requisition ID
    * @returns {Promise<Object>} Updated requisition
    */
-  approveRequisition: async (id) => {
+  approveRequisition: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionApprove({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2Requisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/requisitions/${id}/approve/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to approve requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to approve requisition'));
     }
   },
@@ -668,10 +1473,25 @@ export const inventoryApi = {
    * @param {Object} data - Rejection data with reason
    * @returns {Promise<Object>} Updated requisition
    */
-  rejectRequisition: async (id, data) => {
+  rejectRequisition: async (id, data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionReject(
+          { id },
+          { reason: data?.reason || data?.rejection_reason || '' },
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2Requisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/requisitions/${id}/reject/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to reject requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to reject requisition'));
     }
   },
@@ -684,6 +1504,10 @@ export const inventoryApi = {
    */
   convertRequisitionToPO: async (id, data = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock requisition action contract');
+      }
+
       return await apiClient.post(`/inventory/requisitions/${id}/convert-to-po/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to convert requisition to PO'));
@@ -703,10 +1527,24 @@ export const inventoryApi = {
    */
   getPurchaseOrders: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPurchaseOrders({
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2PurchaseOrder);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/purchase-orders/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch purchase orders'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch purchase orders'));
     }
   },
@@ -716,10 +1554,23 @@ export const inventoryApi = {
    * @param {string} id - Purchase order ID
    * @returns {Promise<Object>} Purchase order data with items
    */
-  getPurchaseOrder: async (id) => {
+  getPurchaseOrder: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getPurchaseOrderById({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2PurchaseOrder(v2Object(response));
+      }
+
       return await apiClient.get(`/inventory/purchase-orders/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch purchase order'));
     }
   },
@@ -729,10 +1580,24 @@ export const inventoryApi = {
    * @param {Object} data - Purchase order data with items
    * @returns {Promise<Object>} Created purchase order
    */
-  createPurchaseOrder: async (data) => {
+  createPurchaseOrder: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postPurchaseOrders(
+          buildV2PurchaseOrderPayload(data),
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2PurchaseOrder(v2Object(response));
+      }
+
       return await apiClient.post('/inventory/purchase-orders/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to create purchase order'));
     }
   },
@@ -745,6 +1610,10 @@ export const inventoryApi = {
    */
   updatePurchaseOrder: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 purchase order mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/purchase-orders/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update purchase order'));
@@ -756,10 +1625,23 @@ export const inventoryApi = {
    * @param {string} id - Purchase order ID
    * @returns {Promise<Object>} Updated purchase order
    */
-  approvePurchaseOrder: async (id) => {
+  approvePurchaseOrder: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postPurchaseOrderApprove({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2PurchaseOrder(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/purchase-orders/${id}/approve/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to approve purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to approve purchase order'));
     }
   },
@@ -769,10 +1651,23 @@ export const inventoryApi = {
    * @param {string} id - Purchase order ID
    * @returns {Promise<Object>} Updated purchase order
    */
-  sendPurchaseOrder: async (id) => {
+  sendPurchaseOrder: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postPurchaseOrderSend({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2PurchaseOrder(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/purchase-orders/${id}/send/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to send purchase order'));
+      }
       throw new Error(handleApiError(error, 'Failed to send purchase order'));
     }
   },
@@ -790,10 +1685,24 @@ export const inventoryApi = {
    */
   getGRNs: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getGoodsReceivedNotes({
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2GoodsReceivedNote);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/grns/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch GRNs'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch GRNs'));
     }
   },
@@ -803,10 +1712,23 @@ export const inventoryApi = {
    * @param {string} id - GRN ID
    * @returns {Promise<Object>} GRN data with items
    */
-  getGRN: async (id) => {
+  getGRN: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getGoodsReceivedNoteById({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2GoodsReceivedNote(v2Object(response));
+      }
+
       return await apiClient.get(`/inventory/grns/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch GRN'));
     }
   },
@@ -816,10 +1738,24 @@ export const inventoryApi = {
    * @param {Object} data - GRN data with items
    * @returns {Promise<Object>} Created GRN
    */
-  createGRN: async (data) => {
+  createGRN: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postGoodsReceivedNotes(
+          buildV2GoodsReceivedNotePayload(data),
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2GoodsReceivedNote(v2Object(response));
+      }
+
       return await apiClient.post('/inventory/grns/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to create GRN'));
     }
   },
@@ -832,6 +1768,10 @@ export const inventoryApi = {
    */
   updateGRN: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 goods received note mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/grns/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update GRN'));
@@ -847,6 +1787,10 @@ export const inventoryApi = {
    */
   updateGRNItem: async (grnId, itemId, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 goods received note item mutation contract');
+      }
+
       return await apiClient.patch(`/inventory/grns/${grnId}/items/${itemId}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update GRN item'));
@@ -858,10 +1802,23 @@ export const inventoryApi = {
    * @param {string} id - GRN ID
    * @returns {Promise<Object>} Updated GRN
    */
-  inspectGRN: async (id) => {
+  inspectGRN: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postGoodsReceivedNoteInspect({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2GoodsReceivedNote(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/grns/${id}/inspect/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to inspect GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to inspect GRN'));
     }
   },
@@ -871,10 +1828,23 @@ export const inventoryApi = {
    * @param {string} id - GRN ID
    * @returns {Promise<Object>} Updated GRN
    */
-  acceptGRN: async (id) => {
+  acceptGRN: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postGoodsReceivedNoteAccept({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2GoodsReceivedNote(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/grns/${id}/accept/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to accept GRN'));
+      }
       throw new Error(handleApiError(error, 'Failed to accept GRN'));
     }
   },
@@ -892,10 +1862,24 @@ export const inventoryApi = {
    */
   getInternalRequisitions: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockRequisitions({
+          query: buildV2CursorQuery(params, 20),
+          signal: options.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2InternalRequisition);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/internal-requisitions/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch internal requisitions'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch internal requisitions'));
     }
   },
@@ -907,8 +1891,21 @@ export const inventoryApi = {
    */
   getInternalRequisition: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockRequisitionById({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.get(`/inventory/internal-requisitions/${id}/`, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch internal requisition'));
     }
   },
@@ -918,10 +1915,24 @@ export const inventoryApi = {
    * @param {Object} data - Internal requisition data
    * @returns {Promise<Object>} Created internal requisition
    */
-  createInternalRequisition: async (data) => {
+  createInternalRequisition: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitions(
+          buildV2StockRequisitionPayload(data),
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.post('/inventory/internal-requisitions/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to create internal requisition'));
     }
   },
@@ -931,10 +1942,24 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  submitInternalRequisition: async (id) => {
+  submitInternalRequisition: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionSubmit(
+          { id },
+          { signal: options.signal },
+        );
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/internal-requisitions/${id}/submit/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to submit internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to submit internal requisition'));
     }
   },
@@ -944,10 +1969,24 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  approveInternalRequisition: async (id, data) => {
+  approveInternalRequisition: async (id, data = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionApprove(
+          { id },
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/internal-requisitions/${id}/approve/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to approve internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to approve internal requisition'));
     }
   },
@@ -958,10 +1997,25 @@ export const inventoryApi = {
    * @param {Object} data - Rejection data with reason
    * @returns {Promise<Object>} Updated internal requisition
    */
-  rejectInternalRequisition: async (id, data) => {
+  rejectInternalRequisition: async (id, data = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionReject(
+          { id },
+          { reason: data?.reason || data?.rejection_reason || '' },
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/internal-requisitions/${id}/reject/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to reject internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to reject internal requisition'));
     }
   },
@@ -971,10 +2025,24 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  fulfillInternalRequisition: async (id, data) => {
+  fulfillInternalRequisition: async (id, data = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionFulfill(
+          { id },
+          { signal: options.signal || data?.signal },
+        );
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/internal-requisitions/${id}/fulfill/`, data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fulfill internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to fulfill internal requisition'));
     }
   },
@@ -984,10 +2052,24 @@ export const inventoryApi = {
    * @param {string} id - Internal requisition ID
    * @returns {Promise<Object>} Updated internal requisition
    */
-  cancelInternalRequisition: async (id) => {
+  cancelInternalRequisition: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockRequisitionCancel(
+          { id },
+          { signal: options.signal },
+        );
+        return adaptV2InternalRequisition(v2Object(response));
+      }
+
       return await apiClient.post(`/inventory/internal-requisitions/${id}/cancel/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to cancel internal requisition'));
+      }
       throw new Error(handleApiError(error, 'Failed to cancel internal requisition'));
     }
   },
@@ -1004,10 +2086,18 @@ export const inventoryApi = {
    */
   getStandingOrders: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return emptyPaginatedList(queryParams);
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
       const endpoint = `/inventory/standing-orders/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch standing orders'));
     }
   },
@@ -1017,10 +2107,17 @@ export const inventoryApi = {
    * @param {string} id - Standing order ID
    * @returns {Promise<Object>} Standing order data
    */
-  getStandingOrder: async (id) => {
+  getStandingOrder: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/inventory/standing-orders/${id}/`);
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 standing order contract');
+      }
+
+      return await apiClient.get(`/inventory/standing-orders/${id}/`, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch standing order'));
     }
   },
@@ -1032,6 +2129,10 @@ export const inventoryApi = {
    */
   createStandingOrder: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 standing order contract');
+      }
+
       return await apiClient.post('/inventory/standing-orders/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create standing order'));
@@ -1046,6 +2147,10 @@ export const inventoryApi = {
    */
   updateStandingOrder: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 standing order contract');
+      }
+
       return await apiClient.patch(`/inventory/standing-orders/${id}/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to update standing order'));
@@ -1059,6 +2164,10 @@ export const inventoryApi = {
    */
   generateStandingOrder: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 standing order contract');
+      }
+
       return await apiClient.post(`/inventory/standing-orders/${id}/generate/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to generate from standing order'));
@@ -1069,10 +2178,17 @@ export const inventoryApi = {
    * Get standing orders due for generation
    * @returns {Promise<Array>} Due standing orders
    */
-  getDueStandingOrders: async () => {
+  getDueStandingOrders: async (options = {}) => {
     try {
-      return await apiClient.get('/inventory/standing-orders/due/');
+      if (isRustV2ApiMode()) {
+        return [];
+      }
+
+      return await apiClient.get('/inventory/standing-orders/due/', options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch due standing orders'));
     }
   },
@@ -1083,6 +2199,10 @@ export const inventoryApi = {
    */
   processDueStandingOrders: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 standing order contract');
+      }
+
       return await apiClient.post('/inventory/standing-orders/process-due/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to process due standing orders'));
@@ -1103,10 +2223,24 @@ export const inventoryApi = {
    */
   getTransferRequests: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockTransfers({
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/transfer-requests/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch transfer requests'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch transfer requests'));
     }
   },
@@ -1116,10 +2250,23 @@ export const inventoryApi = {
    * @param {string} id - Transfer request ID
    * @returns {Promise<Object>} Transfer request data
    */
-  getTransferRequest: async (id) => {
+  getTransferRequest: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getStockTransferById({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
+      }
+
       return await apiClient.get(`/inventory/transfer-requests/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch transfer request'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch transfer request'));
     }
   },
@@ -1129,10 +2276,24 @@ export const inventoryApi = {
    * @param {Object} data - Transfer request data
    * @returns {Promise<Object>} Created transfer request
    */
-  createTransferRequest: async (data) => {
+  createTransferRequest: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postStockTransfers(
+          buildV2StockTransferPayload(data),
+          { signal: options.signal || data?.signal },
+        );
+        return v2Object(response);
+      }
+
       return await apiClient.post('/inventory/transfer-requests/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create transfer request'));
+      }
       throw new Error(handleApiError(error, 'Failed to create transfer request'));
     }
   },
@@ -1144,6 +2305,10 @@ export const inventoryApi = {
    */
   approveTransferRequest: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock transfer action contract');
+      }
+
       return await apiClient.post(`/inventory/transfer-requests/${id}/approve/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to approve transfer request'));
@@ -1158,6 +2323,10 @@ export const inventoryApi = {
    */
   dispatchTransferRequest: async (id, data = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock transfer action contract');
+      }
+
       return await apiClient.post(`/inventory/transfer-requests/${id}/dispatch/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to dispatch transfer request'));
@@ -1172,6 +2341,10 @@ export const inventoryApi = {
    */
   receiveTransferRequest: async (id, data = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock transfer action contract');
+      }
+
       return await apiClient.post(`/inventory/transfer-requests/${id}/receive/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to receive transfer request'));
@@ -1185,6 +2358,10 @@ export const inventoryApi = {
    */
   cancelTransferRequest: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 stock transfer action contract');
+      }
+
       return await apiClient.post(`/inventory/transfer-requests/${id}/cancel/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to cancel transfer request'));
@@ -1204,10 +2381,24 @@ export const inventoryApi = {
    */
   getControlledRegisters: async (params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getControlledSubstanceRegister({
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2ControlledRegister);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-registers/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch controlled registers'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch controlled registers'));
     }
   },
@@ -1217,10 +2408,23 @@ export const inventoryApi = {
    * @param {string} id - Register ID
    * @returns {Promise<Object>} Register data
    */
-  getControlledRegister: async (id) => {
+  getControlledRegister: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getControlledSubstanceRegisterById({ id }, {
+          signal: options.signal,
+        });
+        return adaptV2ControlledRegister(v2Object(response));
+      }
+
       return await apiClient.get(`/inventory/controlled-registers/${id}/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch controlled register'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch controlled register'));
     }
   },
@@ -1233,10 +2437,24 @@ export const inventoryApi = {
    */
   getControlledRegisterEntries: async (id, params = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getControlledSubstanceRegisterEntries({ id }, {
+          query: buildV2CursorQuery(params, 20),
+          signal: params.signal,
+        });
+        return adaptV2PaginatedList(response, params, adaptV2ControlledEntry);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-registers/${id}/entries/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch register entries'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch register entries'));
     }
   },
@@ -1246,10 +2464,23 @@ export const inventoryApi = {
    * @param {string} id - Register ID
    * @returns {Promise<Object>} Validation result
    */
-  validateRegisterBalance: async (id) => {
+  validateRegisterBalance: async (id, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getControlledSubstanceRegisterBalanceValidation({ id }, {
+          signal: options.signal,
+        });
+        return v2Object(response);
+      }
+
       return await apiClient.get(`/inventory/controlled-registers/${id}/validate_balance/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to validate register balance'));
+      }
       throw new Error(handleApiError(error, 'Failed to validate register balance'));
     }
   },
@@ -1269,10 +2500,24 @@ export const inventoryApi = {
    * @param {string} data.witness - Witness user ID (required)
    * @returns {Promise<Object>} Created entry
    */
-  dispenseControlledSubstance: async (data) => {
+  dispenseControlledSubstance: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postControlledSubstanceRegister(
+          buildV2ControlledMovementPayload(data, 'dispense', -1),
+          { signal: options.signal || data?.signal },
+        );
+        return v2Object(response);
+      }
+
       return await apiClient.post('/inventory/controlled/dispense/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to dispense controlled substance'));
+      }
       throw new Error(handleApiError(error, 'Failed to dispense controlled substance'));
     }
   },
@@ -1289,8 +2534,18 @@ export const inventoryApi = {
    */
   recordControlledWastage: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postControlledSubstanceRegister(
+          buildV2ControlledMovementPayload(data, 'adjustment', -1),
+        );
+        return v2Object(response);
+      }
+
       return await apiClient.post('/inventory/controlled/wastage/', data);
     } catch (error) {
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to record wastage'));
+      }
       throw new Error(handleApiError(error, 'Failed to record wastage'));
     }
   },
@@ -1304,10 +2559,26 @@ export const inventoryApi = {
    * @param {string} data.notes - Notes
    * @returns {Promise<Object>} Count result with discrepancy info
    */
-  recordControlledCount: async (data) => {
+  recordControlledCount: async (data, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const id = pickEntityId(data.register_id ?? data.register);
+        const response = await v2Api.postControlledSubstanceRegisterCounts(
+          { id },
+          buildV2ControlledCountPayload(data),
+          { signal: options.signal || data.signal },
+        );
+        return v2Object(response);
+      }
+
       return await apiClient.post('/inventory/controlled/count/', data);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to record count'));
+      }
       throw new Error(handleApiError(error, 'Failed to record count'));
     }
   },
@@ -1321,8 +2592,25 @@ export const inventoryApi = {
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Paginated discrepancies
    */
-  getControlledDiscrepancies: async (params = {}) => {
+  getControlledDiscrepancies: async (params = {}, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        const registerId = pickEntityId(params.register_id ?? params.register);
+        if (!registerId) {
+          return emptyPaginatedList(params);
+        }
+        const response = await v2Api.getControlledSubstanceRegisterEntries({ id: registerId }, {
+          query: buildV2CursorQuery(params),
+          signal: options.signal || params.signal,
+        });
+        return adaptV2PaginatedList({
+          ...response,
+          data: unwrapV2List(response)
+            .filter((entry) => entry?.entry_type === 'count' && toNumber(entry?.quantity) !== 0)
+            .map((entry) => adaptV2ControlledDiscrepancy(entry, registerId)),
+        }, params);
+      }
+
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-discrepancies/${queryString ? `?${queryString}` : ''}`;
       return await apiClient.getWithPagination(endpoint);
@@ -1335,10 +2623,17 @@ export const inventoryApi = {
    * Get pending discrepancies
    * @returns {Promise<Array>} Pending discrepancies
    */
-  getPendingDiscrepancies: async () => {
+  getPendingDiscrepancies: async (options = {}) => {
     try {
-      return await apiClient.get('/inventory/controlled-discrepancies/pending/');
+      if (isRustV2ApiMode()) {
+        return [];
+      }
+
+      return await apiClient.get('/inventory/controlled-discrepancies/pending/', options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch pending discrepancies'));
     }
   },
@@ -1351,6 +2646,10 @@ export const inventoryApi = {
    */
   resolveDiscrepancy: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 controlled substance discrepancy action contract');
+      }
+
       return await apiClient.post(`/inventory/controlled-discrepancies/${id}/resolve/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to resolve discrepancy'));
@@ -1365,6 +2664,10 @@ export const inventoryApi = {
    */
   escalateDiscrepancy: async (id, data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 controlled substance discrepancy action contract');
+      }
+
       return await apiClient.post(`/inventory/controlled-discrepancies/${id}/escalate/`, data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to escalate discrepancy'));
@@ -1388,9 +2691,22 @@ export const inventoryApi = {
    */
   getConsumptionAnalytics: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      return await apiClient.get(`/inventory/analytics/consumption/?${queryString}`);
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return {
+          period: queryParams.period || '30d',
+          results: [],
+          total_consumption: 0,
+          total_value: 0,
+        };
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.get(`/inventory/analytics/consumption/?${queryString}`, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch consumption analytics'));
     }
   },
@@ -1403,9 +2719,17 @@ export const inventoryApi = {
    */
   getABCAnalysis: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      return await apiClient.get(`/inventory/analytics/abc-analysis/?${queryString}`);
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return { period_days: queryParams.period_days || 30, results: [] };
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.get(`/inventory/analytics/abc-analysis/?${queryString}`, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch ABC analysis'));
     }
   },
@@ -1420,9 +2744,17 @@ export const inventoryApi = {
    */
   getSupplierPerformance: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      return await apiClient.get(`/inventory/analytics/supplier-performance/?${queryString}`);
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return { suppliers: [], results: [] };
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.get(`/inventory/analytics/supplier-performance/?${queryString}`, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch supplier performance'));
     }
   },
@@ -1435,9 +2767,31 @@ export const inventoryApi = {
    */
   getExpiryForecast: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      return await apiClient.get(`/inventory/analytics/expiry-forecast/?${queryString}`);
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        const days = boundedLimit(queryParams.days, 30);
+        const response = await v2Api.getStockBatches({
+          query: {
+            expiring_within_days: days,
+            limit: boundedLimit(queryParams.limit || queryParams.page_size, 20),
+          },
+          signal,
+        });
+        return {
+          days,
+          results: unwrapV2List(response).map(adaptV2StockBatch),
+        };
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.get(`/inventory/analytics/expiry-forecast/?${queryString}`, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch expiry forecast'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch expiry forecast'));
     }
   },
@@ -1451,9 +2805,17 @@ export const inventoryApi = {
    */
   getStockValuation: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      return await apiClient.get(`/inventory/analytics/stock-valuation/?${queryString}`);
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return { total_value: 0, results: [] };
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.get(`/inventory/analytics/stock-valuation/?${queryString}`, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch stock valuation'));
     }
   },
@@ -1468,9 +2830,17 @@ export const inventoryApi = {
    */
   getControlledSubstanceReport: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
-      return await apiClient.get(`/inventory/analytics/controlled-substances/?${queryString}`);
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return { results: [], total_movements: 0 };
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
+      return await apiClient.get(`/inventory/analytics/controlled-substances/?${queryString}`, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch controlled substance report'));
     }
   },
@@ -1486,10 +2856,18 @@ export const inventoryApi = {
    */
   getInventoryAudits: async (params = {}) => {
     try {
-      const queryString = new URLSearchParams(params).toString();
+      const { queryParams, signal } = splitSignalParams(params);
+      if (isRustV2ApiMode()) {
+        return emptyPaginatedList(queryParams);
+      }
+
+      const queryString = new URLSearchParams(queryParams).toString();
       const endpoint = `/inventory/audits/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inventory audits'));
     }
   },
@@ -1499,10 +2877,17 @@ export const inventoryApi = {
    * @param {string} id - Audit ID
    * @returns {Promise<Object>} Audit data with items
    */
-  getInventoryAudit: async (id) => {
+  getInventoryAudit: async (id, options = {}) => {
     try {
-      return await apiClient.get(`/inventory/audits/${id}/`);
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory audit contract');
+      }
+
+      return await apiClient.get(`/inventory/audits/${id}/`, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       throw new Error(handleApiError(error, 'Failed to fetch inventory audit'));
     }
   },
@@ -1514,6 +2899,10 @@ export const inventoryApi = {
    */
   createInventoryAudit: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory audit contract');
+      }
+
       return await apiClient.post('/inventory/audits/', data);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to create inventory audit'));
@@ -1527,6 +2916,10 @@ export const inventoryApi = {
    */
   completeInventoryAudit: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory audit contract');
+      }
+
       return await apiClient.post(`/inventory/audits/${id}/complete_audit/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to complete audit'));
@@ -1540,6 +2933,10 @@ export const inventoryApi = {
    */
   cancelInventoryAudit: async (id) => {
     try {
+      if (isRustV2ApiMode()) {
+        return rustV2Unsupported('/api/v2 inventory audit contract');
+      }
+
       return await apiClient.post(`/inventory/audits/${id}/cancel_audit/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to cancel audit'));
@@ -1555,10 +2952,20 @@ export const inventoryApi = {
    * @param {string} itemId - Item ID
    * @returns {Promise<Array>} Stock by location
    */
-  getStockByItemLocation: async (itemId) => {
+  getStockByItemLocation: async (itemId, options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await inventoryApi.getItemStockByLocation(itemId, options);
+      }
+
       return await apiClient.get(`/inventory/location-stock/item/${itemId}/by-location/`);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to fetch stock by location'));
+      }
       throw new Error(handleApiError(error, 'Failed to fetch stock by location'));
     }
   },

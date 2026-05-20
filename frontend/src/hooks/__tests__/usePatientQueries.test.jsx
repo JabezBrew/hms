@@ -18,6 +18,7 @@ import {
   usePatient,
   useCreatePatient,
   useUpdatePatient,
+  useUpdatePatientWithFHIR,
   useDeletePatient,
   usePatientHistory,
   useRecentPatients,
@@ -402,6 +403,65 @@ describe('useUpdatePatient', () => {
   })
 })
 
+describe('useUpdatePatientWithFHIR', () => {
+  it('seeds the patient detail cache with the returned update response', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity,
+        },
+        mutations: {
+          retry: false,
+        },
+      },
+    })
+    const wrapper = ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    )
+
+    queryClient.setQueryData(patientKeys.detail(mockPatient.id), mockPatient)
+
+    server.use(
+      http.put('/api/patients/:id/update_patient/', async ({ params }) => {
+        return HttpResponse.json({
+          ...mockPatient,
+          id: params.id,
+          user: {
+            ...mockPatient.user,
+            last_name: 'Updated',
+          },
+        })
+      })
+    )
+
+    const { result } = renderHook(() => useUpdatePatientWithFHIR(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        id: mockPatient.id,
+        data: {
+          local_data: {
+            user_details: {
+              first_name: 'John',
+              last_name: 'Updated',
+            },
+          },
+        },
+      })
+    })
+
+    expect(queryClient.getQueryData(patientKeys.detail(mockPatient.id))).toMatchObject({
+      id: mockPatient.id,
+      user: expect.objectContaining({
+        last_name: 'Updated',
+      }),
+    })
+  })
+})
+
 describe('useDeletePatient', () => {
   it('deletes a patient successfully', async () => {
     server.use(
@@ -418,7 +478,9 @@ describe('useDeletePatient', () => {
       await result.current.mutateAsync(mockPatient.id)
     })
 
-    expect(result.current.isSuccess).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
   })
 })
 

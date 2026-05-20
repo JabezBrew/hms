@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { useDebounce } from '@/hooks/use-debounce';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
@@ -60,6 +61,7 @@ const TEMPLATE_HEADERS = [
 
 export default function NhisServiceMappingsPage() {
   const [search, setSearch] = useState('');
+  const mappingMutationsAvailable = !isRustV2ApiMode();
   const debouncedSearch = useDebounce(search, 250);
 
   const providersQuery = useInsuranceProviders({ page_size: 200 });
@@ -235,27 +237,29 @@ export default function NhisServiceMappingsPage() {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-mono text-xs"
-          onClick={() => {
-            setForm({
-              service: row.service || '',
-              external_code: row.external_code || '',
-              effective_from: row.effective_from || '',
-              effective_until: row.effective_until || '',
-              is_active: !!row.is_active,
-            });
-            setDialog({ open: true, mode: 'edit', row });
-          }}
-        >
-          <Pencil className="h-3 w-3 mr-2" />
-          Edit
-        </Button>
+        mappingMutationsAvailable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-xs"
+            onClick={() => {
+              setForm({
+                service: row.service || '',
+                external_code: row.external_code || '',
+                effective_from: row.effective_from || '',
+                effective_until: row.effective_until || '',
+                is_active: !!row.is_active,
+              });
+              setDialog({ open: true, mode: 'edit', row });
+            }}
+          >
+            <Pencil className="h-3 w-3 mr-2" />
+            Edit
+          </Button>
+        ) : null
       ),
     },
-  ]), []);
+  ]), [mappingMutationsAvailable]);
 
   if (isLoading && !providersQuery.data && !servicesQuery.data && !codesQuery.data) {
     return <PageState variant="loading" />;
@@ -304,149 +308,160 @@ export default function NhisServiceMappingsPage() {
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
-            <Button
-              size="sm"
-              className="font-mono text-xs"
-              disabled={!payerId}
-              onClick={() => {
-                setForm({
-                  service: '',
-                  external_code: '',
-                  effective_from: '',
-                  effective_until: '',
-                  is_active: true,
-                });
-                setDialog({ open: true, mode: 'create', row: null });
-              }}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Mapping
-            </Button>
+            {mappingMutationsAvailable && (
+              <Button
+                size="sm"
+                className="font-mono text-xs"
+                disabled={!payerId}
+                onClick={() => {
+                  setForm({
+                    service: '',
+                    external_code: '',
+                    effective_from: '',
+                    effective_until: '',
+                    is_active: true,
+                  });
+                  setDialog({ open: true, mode: 'create', row: null });
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Mapping
+              </Button>
+            )}
           </div>
         )}
       />
 
       <main className="p-4 sm:p-6 space-y-3">
-        <section className="rounded-xl border bg-card p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="font-heading text-sm text-foreground">Bulk Import (Preview then Apply)</p>
-              <p className="text-xs text-muted-foreground">
-                Upload a CSV or XLSX to upsert NHIS mappings by internal <span className="font-mono">service_code</span>.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                <Switch checked={seedServices} onCheckedChange={setSeedServices} />
-                <span className="font-mono text-xs text-muted-foreground">Seed missing services</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="font-mono text-xs"
-                onClick={() => {
-                  importJobQuery.refetch();
-                  codesQuery.refetch();
-                  servicesQuery.refetch();
-                }}
-                disabled={!activeImportJobId}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh Job
-              </Button>
-            </div>
-          </div>
+        {!mappingMutationsAvailable && (
+          <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            NHIS mapping editing and import are not available in Rust V2 mode yet. Existing
+            mapping views remain read-only until mapping mutation and import contracts are implemented.
+          </section>
+        )}
 
-          <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div className="lg:col-span-2 space-y-2">
-              <Label className="font-mono text-xs uppercase tracking-wider">File (CSV/XLSX)</Label>
-              <Input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="font-mono text-sm"
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-              />
-              <div className="flex flex-wrap items-center gap-2">
+        {mappingMutationsAvailable && (
+          <section className="rounded-xl border bg-card p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-heading text-sm text-foreground">Bulk Import (Preview then Apply)</p>
+                <p className="text-xs text-muted-foreground">
+                  Upload a CSV or XLSX to upsert NHIS mappings by internal <span className="font-mono">service_code</span>.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <Switch checked={seedServices} onCheckedChange={setSeedServices} />
+                  <span className="font-mono text-xs text-muted-foreground">Seed missing services</span>
+                </div>
                 <Button
-                  size="sm"
-                  className="font-mono text-xs"
-                  onClick={startImportPreview}
-                  disabled={createImportJobMutation.isPending}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Preview Import
-                </Button>
-                <Button
-                  size="sm"
                   variant="outline"
+                  size="sm"
                   className="font-mono text-xs"
-                  onClick={applyImport}
-                  disabled={
-                    !importJob ||
-                    importJob.status !== 'preview_ready' ||
-                    Number(importSummary.errors || 0) > 0 ||
-                    applyImportJobMutation.isPending
-                  }
+                  onClick={() => {
+                    importJobQuery.refetch();
+                    codesQuery.refetch();
+                    servicesQuery.refetch();
+                  }}
+                  disabled={!activeImportJobId}
                 >
-                  Apply Import
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Job
                 </Button>
-                {importJob?.status === 'preview_ready' && Number(importSummary.errors || 0) > 0 && (
-                  <span className="font-mono text-xs text-rose-600">
-                    Fix preview errors before applying.
-                  </span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="lg:col-span-2 space-y-2">
+                <Label className="font-mono text-xs uppercase tracking-wider">File (CSV/XLSX)</Label>
+                <Input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="font-mono text-sm"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="font-mono text-xs"
+                    onClick={startImportPreview}
+                    disabled={createImportJobMutation.isPending}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Preview Import
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="font-mono text-xs"
+                    onClick={applyImport}
+                    disabled={
+                      !importJob ||
+                      importJob.status !== 'preview_ready' ||
+                      Number(importSummary.errors || 0) > 0 ||
+                      applyImportJobMutation.isPending
+                    }
+                  >
+                    Apply Import
+                  </Button>
+                  {importJob?.status === 'preview_ready' && Number(importSummary.errors || 0) > 0 && (
+                    <span className="font-mono text-xs text-rose-600">
+                      Fix preview errors before applying.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Current Job</p>
+                {!importJob && (
+                  <p className="mt-2 text-sm text-muted-foreground">No import job started yet.</p>
+                )}
+                {importJob && (
+                  <div className="mt-2 space-y-1">
+                    <p className="font-mono text-xs text-foreground">Status: {importJob.status}</p>
+                    <p className="font-mono text-xs text-muted-foreground">File: {importJob.file_name || '—'}</p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Rows: {importSummary.rows_total ?? '—'} | Valid: {importSummary.rows_valid ?? '—'}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Would create: {importSummary.would_create_mappings ?? '—'} | Would update: {importSummary.would_update_mappings ?? '—'}
+                    </p>
+                    <p className={cn(
+                      'font-mono text-xs',
+                      Number(importSummary.errors || 0) > 0 ? 'text-rose-600' : 'text-muted-foreground'
+                    )}>
+                      Errors: {importSummary.errors ?? 0} | Warnings: {importSummary.warnings ?? 0}
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
 
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Current Job</p>
-              {!importJob && (
-                <p className="mt-2 text-sm text-muted-foreground">No import job started yet.</p>
-              )}
-              {importJob && (
+            {importJob && importIssues.length > 0 && (
+              <div className="mt-4 rounded-lg border bg-background p-3">
+                <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Preview Issues (first 20)</p>
                 <div className="mt-2 space-y-1">
-                  <p className="font-mono text-xs text-foreground">Status: {importJob.status}</p>
-                  <p className="font-mono text-xs text-muted-foreground">File: {importJob.file_name || '—'}</p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    Rows: {importSummary.rows_total ?? '—'} | Valid: {importSummary.rows_valid ?? '—'}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    Would create: {importSummary.would_create_mappings ?? '—'} | Would update: {importSummary.would_update_mappings ?? '—'}
-                  </p>
-                  <p className={cn(
-                    'font-mono text-xs',
-                    Number(importSummary.errors || 0) > 0 ? 'text-rose-600' : 'text-muted-foreground'
-                  )}>
-                    Errors: {importSummary.errors ?? 0} | Warnings: {importSummary.warnings ?? 0}
-                  </p>
+                  {importIssues.slice(0, 20).map((it, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className={cn(
+                        'mt-0.5 inline-flex rounded px-1.5 py-0.5 font-mono text-[10px]',
+                        it.severity === 'error' ? 'badge-chronicle-rose' : 'badge-chronicle-amber'
+                      )}>
+                        {it.severity}
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {it.row ? `Row ${it.row}: ` : ''}
+                        {it.field ? `${it.field}: ` : ''}
+                        {it.message}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-          </div>
-
-          {importJob && importIssues.length > 0 && (
-            <div className="mt-4 rounded-lg border bg-background p-3">
-              <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Preview Issues (first 20)</p>
-              <div className="mt-2 space-y-1">
-                {importIssues.slice(0, 20).map((it, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className={cn(
-                      'mt-0.5 inline-flex rounded px-1.5 py-0.5 font-mono text-[10px]',
-                      it.severity === 'error' ? 'badge-chronicle-rose' : 'badge-chronicle-amber'
-                    )}>
-                      {it.severity}
-                    </span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {it.row ? `Row ${it.row}: ` : ''}
-                      {it.field ? `${it.field}: ` : ''}
-                      {it.message}
-                    </span>
-                  </div>
-                ))}
               </div>
-            </div>
-          )}
-        </section>
+            )}
+          </section>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="space-y-2">

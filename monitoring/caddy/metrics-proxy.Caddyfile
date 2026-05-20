@@ -1,8 +1,14 @@
 :9188 {
 	handle /api/metrics/ {
-		reverse_proxy hms-api:8000 {
+		rewrite * /api/v2/metrics
+		reverse_proxy hms-api:8080 {
 			header_up Host {$CLIENT_DOMAIN}
 		}
+	}
+
+	handle /worker/metrics {
+		rewrite * /metrics
+		reverse_proxy hms-worker:8081
 	}
 
 	respond 404

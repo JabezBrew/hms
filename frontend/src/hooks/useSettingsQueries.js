@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, handleApiError } from '@/lib/api-client';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { authApi } from '@/shared/api/auth';
 
@@ -11,8 +12,11 @@ import { authApi } from '@/shared/api/auth';
  * - Sessions: /api/users/sessions/ with revoke and revoke_all actions
  */
 const settingsApi = {
-  getProfile: async () => {
+  getProfile: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await authApi.getProfile(options);
+      }
       return await apiClient.get('/users/users/me/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch profile'));
@@ -21,6 +25,9 @@ const settingsApi = {
 
   updateProfile: async (data) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await authApi.updateProfile(data);
+      }
       // First get the current user to get their ID
       const currentUser = await apiClient.get('/users/users/me/');
       // Then update using the user's ID
@@ -32,6 +39,9 @@ const settingsApi = {
 
   changePassword: async ({ oldPassword, newPassword }) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await authApi.changePassword({ oldPassword, newPassword });
+      }
       return await apiClient.post('/users/users/change_password/', {
         old_password: oldPassword,
         new_password: newPassword,
@@ -41,8 +51,11 @@ const settingsApi = {
     }
   },
 
-  getSessions: async () => {
+  getSessions: async (options = {}) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await authApi.listSessions(options);
+      }
       return await apiClient.get('/users/sessions/');
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch sessions'));
@@ -51,6 +64,9 @@ const settingsApi = {
 
   revokeSession: async (sessionId) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await authApi.revokeSession(sessionId);
+      }
       return await apiClient.post(`/users/sessions/${sessionId}/revoke/`);
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to revoke session'));
@@ -59,6 +75,9 @@ const settingsApi = {
 
   revokeAllSessions: async (excludeCurrent = true) => {
     try {
+      if (isRustV2ApiMode()) {
+        return await authApi.revokeAllSessions(excludeCurrent);
+      }
       return await apiClient.post('/users/sessions/revoke_all/', {
         exclude_current: excludeCurrent,
       });
@@ -69,6 +88,14 @@ const settingsApi = {
 
   getMfaStatus: async () => {
     try {
+      if (isRustV2ApiMode()) {
+        return {
+          totp_enrolled: false,
+          webauthn_enrolled: false,
+          recovery_codes_remaining: 0,
+          rust_v2_unsupported: true,
+        };
+      }
       return await authApi.mfaStatus();
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch MFA status'));
@@ -118,7 +145,7 @@ export const settingsKeys = {
 export function useProfile() {
   return useQuery({
     queryKey: settingsKeys.profile(),
-    queryFn: settingsApi.getProfile,
+    queryFn: ({ signal }) => settingsApi.getProfile({ signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -152,7 +179,7 @@ export function useChangePassword() {
 export function useUserSessions() {
   return useQuery({
     queryKey: settingsKeys.sessions(),
-    queryFn: settingsApi.getSessions,
+    queryFn: ({ signal }) => settingsApi.getSessions({ signal }),
     staleTime: 30 * 1000, // 30 seconds
   });
 }

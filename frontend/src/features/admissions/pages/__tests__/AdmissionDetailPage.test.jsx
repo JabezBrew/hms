@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { HelmetProvider } from 'react-helmet-async'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -16,8 +17,19 @@ vi.mock('@/features/admissions/api', () => ({
   },
 }))
 
+vi.mock('@/features/discharge/api', () => ({
+  dischargeApi: {
+    requestCase: vi.fn(),
+  },
+}))
+
+vi.mock('@/features/discharge/components/DischargeCasePanel', () => ({
+  DischargeCasePanel: () => null,
+}))
+
 import { useAuth } from '@/lib/auth'
 import { admissionsApi } from '@/features/admissions/api'
+import { dischargeApi } from '@/features/discharge/api'
 
 function renderPage(initialEntry = '/admissions/adm-1') {
   return render(
@@ -29,6 +41,7 @@ function renderPage(initialEntry = '/admissions/adm-1') {
             <Route path="/wards/:wardId" element={<div>Ward Detail</div>} />
             <Route path="/wards" element={<div>Ward List</div>} />
             <Route path="/patients/:patientId" element={<div>Patient Detail</div>} />
+            <Route path="/nursing/discharges" element={<div>Nursing Discharges</div>} />
           </Routes>
         </BreadcrumbProvider>
       </MemoryRouter>
@@ -42,6 +55,10 @@ describe('AdmissionDetailPage', () => {
     useAuth.mockReturnValue({
       user: { id: 'user-1', user_type: 'receptionist' },
     })
+  })
+
+  afterEach(() => {
+    delete window.__HMS_RUNTIME_CONFIG__
   })
 
   it('renders admission details from serializer response where bed is an ID and bed_details carries ward info', async () => {
@@ -116,5 +133,70 @@ describe('AdmissionDetailPage', () => {
     expect(screen.getByText('Not specified')).toBeInTheDocument()
     expect(screen.getAllByText('Not assigned').length).toBeGreaterThan(0)
     expect(screen.getAllByText('N/A').length).toBeGreaterThan(0)
+  })
+
+  it('requests a discharge case through Rust V2 mode and opens the nursing queue', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    useAuth.mockReturnValue({
+      user: { id: 'user-1', user_type: 'doctor' },
+    })
+    admissionsApi.getAdmission.mockResolvedValue({
+      id: 'adm-3',
+      patient: 'pat-3',
+      patient_name: 'Esi Boateng',
+      bed: null,
+      bed_details: null,
+      status: 'admitted',
+      admission_type: 'emergency',
+      admission_date: '2026-04-01T08:00:00Z',
+      expected_discharge_date: null,
+      actual_discharge_date: null,
+      daily_rate: '200.00',
+      length_of_stay: 1,
+      total_cost: '200.00',
+      admission_case_id: null,
+      is_billed: false,
+      admitting_doctor_details: null,
+    })
+    dischargeApi.requestCase.mockResolvedValue({
+      id: 'discharge-3',
+      admission: 'adm-3',
+      patient: 'pat-3',
+      status: 'ready_for_finalization',
+    })
+
+    renderPage('/admissions/adm-3')
+
+    expect(await screen.findByText('Esi Boateng')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /request discharge/i }))
+
+    expect(dischargeApi.requestCase).toHaveBeenCalledWith('adm-3')
+    expect(await screen.findByText('Nursing Discharges')).toBeInTheDocument()
+  })
+
+  it('keeps the medical discharge workflow available outside Rust V2 mode', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' }
+    admissionsApi.getAdmission.mockResolvedValue({
+      id: 'adm-4',
+      patient: 'pat-4',
+      patient_name: 'Kojo Mensah',
+      bed: null,
+      bed_details: null,
+      status: 'admitted',
+      admission_type: 'emergency',
+      admission_date: '2026-04-01T08:00:00Z',
+      expected_discharge_date: null,
+      actual_discharge_date: null,
+      daily_rate: '200.00',
+      length_of_stay: 1,
+      total_cost: '200.00',
+      admission_case_id: null,
+      is_billed: false,
+      admitting_doctor_details: null,
+    })
+
+    renderPage('/admissions/adm-4')
+
+    expect(await screen.findByRole('button', { name: /medical discharge/i })).toBeInTheDocument()
   })
 })

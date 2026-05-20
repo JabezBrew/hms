@@ -1,4 +1,8 @@
-# Backend Dockerfile for container deployment
+# Legacy Django backend Dockerfile.
+#
+# Active backend container builds use backend-rs/Dockerfile. Keep this file only
+# for explicit legacy Django maintenance/reference work.
+#
 # Multi-stage build: builds dependencies, then runs Django with ASGI server
 #
 # This Dockerfile is designed to be built from the backend/ directory

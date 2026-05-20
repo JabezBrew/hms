@@ -2,7 +2,7 @@ import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useStaffMember, usePractitioners } from '@/features/staff/hooks';
+import { usePractitioner, useStaffMember } from '@/features/staff/hooks';
 import StaffDetail from '@/components/staff/StaffDetail';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -22,17 +22,19 @@ const StaffDetailPage = () => {
     error: staffError
   } = useStaffMember(id);
 
-  // Get practitioners list to find the practitioner profile for this staff member
-  const {
-    data: practitioners,
-    isLoading: isPractitionersLoading
-  } = usePractitioners();
+  const staffUserType = staff?.user_details?.user_type || staff?.user_type || '';
+  const shouldLoadPractitioner = ['doctor', 'nurse', 'lab_technician', 'pharmacist'].includes(staffUserType);
 
-  // Find the practitioner profile for this staff member
-  const practitioner = practitioners?.find(p => p.staff === id);
+  const {
+    data: practitioner,
+    isLoading: isPractitionerLoading,
+  } = usePractitioner(id, {
+    enabled: Boolean(id && shouldLoadPractitioner),
+    retry: false,
+  });
 
   // Determine overall loading state
-  const loading = isStaffLoading || isPractitionersLoading;
+  const loading = isStaffLoading || (shouldLoadPractitioner && isPractitionerLoading);
 
   // Show error toast if staff query fails
   useEffect(() => {

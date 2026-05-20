@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useNoteEntriesForEncounter } from '@/features/clinical-notes/hooks';
 import { encountersApi } from '@/features/encounters/api';
 import { TimelineEntry } from '@/components/chronicle';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -253,9 +254,15 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
   const typeConfig = getTypeConfig(encounter.encounter_type);
   const StatusIcon = statusConfig.icon;
   const TypeIcon = typeConfig.icon;
+  const rustV2Mode = isRustV2ApiMode();
 
   const canEdit = encounter.status === 'planned' || encounter.status === 'in-progress';
-  const canDischarge = encounter.encounter_type === 'inpatient' &&
+  const canDischarge = !rustV2Mode &&
+                      encounter.encounter_type === 'inpatient' &&
+                      encounter.status === 'in-progress' &&
+                      !encounter.end_time;
+  const dischargeHandledByAdmissionWorkflow = rustV2Mode &&
+                      encounter.encounter_type === 'inpatient' &&
                       encounter.status === 'in-progress' &&
                       !encounter.end_time;
   const canCancel = encounter.status === 'planned' || encounter.status === 'in-progress';
@@ -313,6 +320,12 @@ export function EncounterDetail({ encounter: initialEncounter, loading: initialL
               )}
             </div>
           </div>
+
+          {dischargeHandledByAdmissionWorkflow && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Inpatient discharge is handled by admission discharge workflows in Rust V2.
+            </div>
+          )}
 
           {/* Encounter Identity */}
           <div className="flex flex-col sm:flex-row sm:items-start gap-4">

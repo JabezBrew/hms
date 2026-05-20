@@ -1,0 +1,134 @@
+# HMS V2 Hetzner Deployment Runbook
+
+This kit deploys the Rust HMS V2 API and the maintained React/Vite frontend in
+`rust-v2` mode for one client per Hetzner VPS. It runs Caddy, the React static
+frontend, `hms-api`, `hms-worker`, one-shot `hms-migrator`, Postgres,
+PgBouncer, and Redis.
+
+The stack serves only `/api/v2/*` from Rust. It does not include Django admin,
+Django sessions, old API shapes, old data migration, or AI shell modules.
+
+## Supported Profiles
+
+Set `HMS_DEPLOYMENT_PROFILE` to one of:
+
+| Profile | Default product surface |
+| --- | --- |
+| `chps_compound` | CHPS/outreach baseline. |
+| `health_center` | Health-center outpatient workflows. |
+| `clinic` | Clinic and waiting-room workflows. |
+| `hospital` | Single hospital workflows. |
+| `district_hospital` | District hospital workflows. |
+| `regional_hospital` | Regional referral workflows. |
+| `teaching_hospital` | Teaching hospital workflows. |
+| `hospital_network` | Multi-facility network workflows. |
+
+The backend seeds deployment-profile features and permissions from the Rust
+capability registry. The frontend consumes `/api/v2/system/deployment-capabilities`
+and hides routes/actions through typed route metadata and `AccessGate`.
+
+## First Deploy
+
+On the VPS:
+
+```bash
+sudo mkdir -p /opt/hms
+sudo chown deploy:deploy /opt/hms
+git clone git@github.com:JabezBrew/hms.git /opt/hms
+cd /opt/hms
+cp ops/hetzner-v2/env.example ops/hetzner-v2/.env
+chmod 600 ops/hetzner-v2/.env
+```
+
+Fill every `CHANGE_ME` value in `ops/hetzner-v2/.env`, then validate:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml config -q
+```
+
+Use URL-safe values for `DB_PASSWORD` because Rust services receive Postgres as
+`HMS_DATABASE_URL`; `openssl rand -hex 32` is the expected format.
+
+Deploy:
+
+```bash
+ops/hetzner-v2/deploy.sh
+```
+
+The deploy script validates Compose, starts Postgres/Redis/PgBouncer, runs the
+backup gate for production, builds images, runs `hms-migrator`, starts
+`hms-api`, `hms-worker`, frontend, and Caddy, then checks:
+
+```text
+https://<client-domain>/api/v2/health/ready
+```
+
+## Migrations and Provisioning
+
+`hms-migrator` runs sqlx migrations from `backend-rs/migrations`. When
+`HMS_PROVISION_BASELINE=true`, it also provisions:
+
+- facility row from `HMS_FACILITY_CODE` and `HMS_FACILITY_NAME`
+- all supported deployment profiles, features, and permissions
+- bootstrap admin from `HMS_BOOTSTRAP_ADMIN_EMAIL`,
+  `HMS_BOOTSTRAP_ADMIN_NAME`, and `HMS_BOOTSTRAP_ADMIN_PASSWORD`
+- minimum operational catalogs/read models required by the completed V2 slices
+
+Production provisioning does not seed demo patients unless
+`HMS_SEED_DEMO_DATA=true`.
+
+## Health and Metrics
+
+Public readiness:
+
+```bash
+curl -i https://<client-domain>/api/v2/health/ready
+```
+
+The Rust API exposes PHI-safe Prometheus text at `/api/v2/metrics` on the
+container network. Caddy returns `404` for that path publicly, so scrape it from
+inside the VPS network or through a private monitoring sidecar.
+
+## Backups and Restore
+
+Production deploys require encrypted off-server restic backups. Fill these
+values before treating the client as production-ready:
+
+```text
+RESTIC_REPOSITORY=
+RESTIC_PASSWORD=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+BACKUP_RETENTION_DAYS=30
+```
+
+Run a backup:
+
+```bash
+ops/hetzner-v2/backup-postgres.sh
+```
+
+Restore is destructive and requires explicit confirmation:
+
+```bash
+RESTORE_CONFIRM=restore-<client-slug> ops/hetzner-v2/restore-postgres.sh \
+  ops/hetzner-v2/backups/<client-slug>-YYYYMMDDTHHMMSSZ.dump
+```
+
+After restore, verify `/api/v2/health/ready`, login, patient registry, billing,
+and dashboard flows before returning users to the system.
+
+## Production Checks
+
+Before cutover:
+
+- `cargo fmt --all --check`
+- `cargo test --workspace`
+- migration fresh-db/provisioning test
+- `cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json`
+- `npm run api:v2:generate:check`
+- targeted V2 frontend tests
+- `npm run build`
+- `npm run perf:bundle-budget`
+- `docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml config -q`
+- a successful production backup and a tested restore drill

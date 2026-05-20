@@ -25,6 +25,16 @@ scrape_configs:
           environment: staging
           service: api
 
+  - job_name: hms-worker
+    metrics_path: /worker/metrics
+    static_configs:
+      - targets:
+          - metrics-proxy:9188
+        labels:
+          client: staging
+          environment: staging
+          service: worker
+
   - job_name: node
     static_configs:
       - targets:

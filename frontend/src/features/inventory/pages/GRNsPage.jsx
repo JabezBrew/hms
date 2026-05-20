@@ -31,6 +31,7 @@ import {
 import { getStatusConfig } from '@/components/inventory/GRNCard';
 import { useGRNs } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
@@ -59,6 +60,7 @@ const STATUS_TABS = [
 export default function GRNsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const grnRejectionAvailable = !isRustV2ApiMode();
 
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -280,7 +282,9 @@ export default function GRNsPage() {
       render: (grn) => {
         const canInspect = grn.status === 'pending_inspection';
         const canAccept = grn.status === 'inspecting' || grn.status === 'pending_inspection';
-        const canReject = grn.status === 'inspecting' || grn.status === 'pending_inspection';
+        const canReject = grnRejectionAvailable && (
+          grn.status === 'inspecting' || grn.status === 'pending_inspection'
+        );
 
         return (
           <DropdownMenu>
@@ -322,6 +326,7 @@ export default function GRNsPage() {
     handleGRNClick,
     handleInspect,
     handleReject,
+    grnRejectionAvailable,
   ]);
 
   const handleCloseSheet = () => {
@@ -394,6 +399,12 @@ export default function GRNsPage() {
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!grnRejectionAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          GRN rejection is not available in Rust V2 mode yet. GRN creation, inspection, and
+          acceptance remain available through generated /api/v2 contracts.
+        </div>
+      )}
 
       {/* Status Tabs */}
       <Tabs value={status} onValueChange={handleTabChange}>

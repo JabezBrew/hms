@@ -10,7 +10,7 @@
  * - Password visibility toggle
  * - Navigation links
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -42,6 +42,8 @@ vi.mock('react-router-dom', async () => {
 import { useAuth } from '@/lib/auth'
 import { notifications } from '@/lib/notifications'
 
+const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__
+
 // Helper to render with router
 function renderLoginForm() {
   return render(
@@ -56,10 +58,19 @@ describe('LoginForm', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('VITE_HMS_API_MODE', '')
+    vi.stubEnv('VITE_DEFAULT_FACILITY_CODE', '')
+    vi.stubEnv('VITE_MULTI_FACILITY_MODE', '')
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = undefined
     useAuth.mockReturnValue({
       login: mockLogin,
     })
     mockLogin.mockResolvedValue({ id: '1', email: 'test@test.com' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = originalRuntimeConfig
   })
 
   // =============================================================================
@@ -97,6 +108,20 @@ describe('LoginForm', () => {
       expect(passwordInput).toBeRequired()
     })
 
+    it('renders facility code input in Rust V2 mode', () => {
+      globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+        apiMode: 'rust-v2',
+        defaultFacilityCode: 'HMS',
+      }
+
+      renderLoginForm()
+
+      const facilityInput = screen.getByLabelText('Facility Code')
+      expect(facilityInput).toHaveValue('HMS')
+      expect(facilityInput).toHaveAttribute('autocomplete', 'organization')
+      expect(facilityInput).toBeRequired()
+    })
+
     it('renders forgot password link', () => {
       renderLoginForm()
 
@@ -122,6 +147,24 @@ describe('LoginForm', () => {
       await user.click(screen.getByRole('button', { name: /sign in/i }))
 
       expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
+    })
+
+    it('submits explicit facility code in Rust V2 mode', async () => {
+      globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+        apiMode: 'rust-v2',
+        defaultFacilityCode: 'CGH',
+      }
+      const user = userEvent.setup()
+
+      renderLoginForm()
+
+      await user.type(screen.getByLabelText('Email Address'), 'owner@hms.local')
+      await user.clear(screen.getByLabelText('Facility Code'))
+      await user.type(screen.getByLabelText('Facility Code'), 'hms')
+      await user.type(screen.getByLabelText('Password'), 'ChangeMe123!')
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+      expect(mockLogin).toHaveBeenCalledWith('owner@hms.local', 'ChangeMe123!', 'HMS')
     })
 
     it('shows success notification on successful login', async () => {
@@ -184,6 +227,24 @@ describe('LoginForm', () => {
 
       expect(screen.getByLabelText('Email Address')).toBeDisabled()
       expect(screen.getByLabelText('Password')).toBeDisabled()
+    })
+
+    it('disables facility code during Rust V2 submission', async () => {
+      globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+        apiMode: 'rust-v2',
+        defaultFacilityCode: 'HMS',
+      }
+      mockLogin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
+
+      const user = userEvent.setup()
+
+      renderLoginForm()
+
+      await user.type(screen.getByLabelText('Email Address'), 'owner@hms.local')
+      await user.type(screen.getByLabelText('Password'), 'ChangeMe123!')
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+      expect(screen.getByLabelText('Facility Code')).toBeDisabled()
     })
 
     it('disables submit button during submission', async () => {

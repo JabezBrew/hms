@@ -82,4 +82,25 @@ describe('browser RUM observability', () => {
       ],
     });
   });
+
+  it('uses the Rust V2 observability endpoint in Rust API mode', () => {
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+      apiBaseUrl: 'https://api.example.com/api',
+      apiMode: 'rust-v2',
+      v2ApiBaseUrl: 'https://api.example.com/api/v2',
+      rumEnabled: true,
+    };
+    globalThis.navigator.sendBeacon = vi.fn(() => false);
+
+    recordApiTiming({
+      endpoint: '/wards/123/board',
+      method: 'POST',
+      durationMs: 31,
+      status: 204,
+    });
+    expect(flushRum()).toBe(true);
+
+    const [url] = globalThis.fetch.mock.calls[0];
+    expect(url).toBe('https://api.example.com/api/v2/observability/rum');
+  });
 });

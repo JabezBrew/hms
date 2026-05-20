@@ -32,9 +32,11 @@ export const staffFieldToStep = {
   phone_number: 'identity',
   date_of_birth: 'identity',
   user_type: 'identity',
+  employee_id: 'employment',
   department: 'employment',
   position: 'employment',
   hire_date: 'employment',
+  temporary_password: 'credentials',
   license_number: 'credentials',
   specialization: 'credentials',
   qualification: 'credentials',
@@ -48,8 +50,8 @@ export const staffFieldToStep = {
 
 export const stepFieldsByKey = {
   identity: ['first_name', 'last_name', 'email', 'phone_number', 'date_of_birth', 'user_type'],
-  employment: ['department', 'position', 'hire_date'],
-  credentials: ['license_number', 'specialization', 'qualification'],
+  employment: ['employee_id', 'department', 'position', 'hire_date'],
+  credentials: ['temporary_password', 'license_number', 'specialization', 'qualification'],
   contact: ['address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country'],
   review: [],
 };
@@ -63,9 +65,16 @@ export const staffFormSchema = z.object({
   phone_number: z.string().trim().optional(),
   date_of_birth: z.date({ required_error: "Date of birth is required" }),
   user_type: z.enum(staffRoleValues, { required_error: "Please select a user type" }),
+  employee_id: z.string().trim().min(1, { message: "Employee ID is required" }),
   department: z.string().trim().min(1, { message: "Department is required" }),
   position: z.string().trim().min(1, { message: "Position is required" }),
   hire_date: z.date({ required_error: "Hire date is required" }),
+  temporary_password: z.string()
+    .min(12, { message: "Temporary password must be at least 12 characters" })
+    .regex(/[A-Z]/, { message: "Temporary password must include an uppercase letter" })
+    .regex(/[a-z]/, { message: "Temporary password must include a lowercase letter" })
+    .regex(/[0-9]/, { message: "Temporary password must include a number" })
+    .regex(/[^A-Za-z0-9]/, { message: "Temporary password must include a symbol" }),
   license_number: z.string().trim().optional(),
   specialization: z.string().trim().optional(),
   qualification: z.string().trim().optional(),
@@ -153,9 +162,11 @@ export const defaultValues = {
   phone_number: "",
   date_of_birth: undefined,
   user_type: undefined,
+  employee_id: "",
   department: "",
   position: "",
   hire_date: undefined,
+  temporary_password: "",
   license_number: "",
   specialization: "",
   qualification: "",
@@ -183,9 +194,11 @@ export const buildRegistrationPayload = (values, options = {}) => {
     phone_number: normalizeText(values.phone_number) || '',
     date_of_birth: format(values.date_of_birth, 'yyyy-MM-dd'),
     user_type: values.user_type,
+    employee_id: normalizeText(values.employee_id),
     department: normalizeText(resolvedDepartment),
     position: normalizeText(values.position),
     hire_date: format(values.hire_date, 'yyyy-MM-dd'),
+    temporary_password: values.temporary_password,
     address_line1: normalizeText(values.address_line1) || '',
     address_line2: normalizeText(values.address_line2) || '',
     city: normalizeText(values.city) || '',

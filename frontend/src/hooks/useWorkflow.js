@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { keyWith } from '@/shared/lib/queryKeys';
+import { ensureRustV2WorkflowSupported } from './workflowV2Guard';
 
 const workflowKeys = {
   detail: (workflowId) => keyWith('workflow', workflowId),
@@ -21,13 +22,17 @@ export function useWorkflow(workflowType) {
   // Fetch workflow by ID
   const { data: workflow, isLoading, error } = useQuery({
     queryKey: workflowKeys.detail(workflowId),
-    queryFn: () => apiClient.get(`/workflows/${workflowId}/`),
+    queryFn: ({ signal }) => {
+      ensureRustV2WorkflowSupported('Workflow detail');
+      return apiClient.get(`/workflows/${workflowId}/`, { signal });
+    },
     enabled: !!workflowId,
   });
 
   // Start workflow mutation
   const startMutation = useMutation({
     mutationFn: async (data) => {
+      ensureRustV2WorkflowSupported('Workflow start');
       const endpoint = `/workflows/${workflowType}/start/`;
       return apiClient.post(endpoint, data);
     },
@@ -44,6 +49,7 @@ export function useWorkflow(workflowType) {
   // Update step mutation
   const updateStepMutation = useMutation({
     mutationFn: async ({ stepData, nextStep, consultationFields }) => {
+      ensureRustV2WorkflowSupported('Workflow step update');
       const endpoint = `/workflows/${workflowId}/${workflowType}/step/`;
       return apiClient.patch(endpoint, {
         step_data: stepData,
@@ -63,6 +69,7 @@ export function useWorkflow(workflowType) {
   // Complete workflow mutation
   const completeMutation = useMutation({
     mutationFn: async (finalData) => {
+      ensureRustV2WorkflowSupported('Workflow completion');
       const endpoint = `/workflows/${workflowId}/${workflowType}/complete/`;
       return apiClient.post(endpoint, finalData);
     },
@@ -79,6 +86,7 @@ export function useWorkflow(workflowType) {
   // Save draft mutation (auto-save)
   const saveDraftMutation = useMutation({
     mutationFn: async (contextData) => {
+      ensureRustV2WorkflowSupported('Workflow draft save');
       return apiClient.post(`/workflows/${workflowId}/save-draft/`, {
         context_data: contextData,
       });
@@ -95,6 +103,7 @@ export function useWorkflow(workflowType) {
   // Cancel workflow mutation
   const cancelMutation = useMutation({
     mutationFn: async () => {
+      ensureRustV2WorkflowSupported('Workflow cancellation');
       return apiClient.post(`/workflows/${workflowId}/cancel/`);
     },
     onSuccess: () => {
@@ -161,9 +170,10 @@ export function useWorkflow(workflowType) {
 export function useDraftWorkflows(filters = {}) {
   return useQuery({
     queryKey: workflowKeys.drafts(filters),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
+      ensureRustV2WorkflowSupported('Draft workflows');
       const params = new URLSearchParams(filters);
-      return apiClient.get(`/workflows/resume/?${params.toString()}`);
+      return apiClient.get(`/workflows/resume/?${params.toString()}`, { signal });
     },
   });
 }

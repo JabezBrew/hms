@@ -150,8 +150,17 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
         admission_notes: formData.admission_notes || '',
       };
 
+      const selectedBedWardId = selectedBed?.ward_id
+        || selectedBed?.ward
+        || selectedBed?.ward_details?.id
+        || selectedBed?.wardDetails?.id
+        || wardId;
+
       if (selectedBed?.id) {
         formattedData.bed = selectedBed.id;
+        if (selectedBedWardId) {
+          formattedData.requested_ward = selectedBedWardId;
+        }
       } else if (wardId) {
         formattedData.requested_ward = wardId;
       }

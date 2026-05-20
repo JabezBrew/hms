@@ -79,10 +79,10 @@ def test_observability_alerts_cover_api_rum_and_tracing_signals():
         for annotation in REQUIRED_ALERT_ANNOTATIONS:
             assert annotations.get(annotation), f'{alert_name} is missing {annotation}'
 
-    assert 'hms_http_requests_total' in rules['HMSApiHigh5xxRate']['expr']
-    assert 'status_code=~"5.."' in rules['HMSApiHigh5xxRate']['expr']
+    assert 'hms_api_http_requests_total' in rules['HMSApiHigh5xxRate']['expr']
+    assert 'status=~"5.."' in rules['HMSApiHigh5xxRate']['expr']
     assert 'histogram_quantile' in rules['HMSApiHighP95Latency']['expr']
-    assert 'hms_http_request_duration_seconds_bucket' in rules['HMSApiHighP95Latency']['expr']
+    assert 'hms_api_http_request_duration_seconds_bucket' in rules['HMSApiHighP95Latency']['expr']
     assert 'hms_rum_enabled' in rules['HMSRumIngestionMissing']['expr']
     assert 'hms_browser_rum_events_total' in rules['HMSRumIngestionMissing']['expr']
     assert 'tempo' in rules['HMSTempoTargetDown']['expr']
@@ -134,7 +134,9 @@ def test_production_client_targets_are_private_and_file_discovered():
     metrics_proxy = (MONITORING_ROOT / 'caddy' / 'metrics-proxy.Caddyfile').read_text(encoding='utf-8')
 
     assert '/etc/prometheus/client-targets/hms-api*.targets.yml' in ops_config
+    assert '/etc/prometheus/client-targets/hms-worker*.targets.yml' in ops_config
     assert 'metrics-proxy:9188' in staging_config
+    assert 'job_name: hms-worker' in staging_config
     assert 'job_name: tempo' in staging_config
     assert 'tempo:3200' in staging_config
     assert 'job_name: tempo' in ops_config
@@ -145,7 +147,10 @@ def test_production_client_targets_are_private_and_file_discovered():
     assert '${CLIENT_WG_IP:?set CLIENT_WG_IP}:9187:9187' in client_compose
     assert '${CLIENT_WG_IP:?set CLIENT_WG_IP}:9121:9121' in client_compose
     assert 'handle /api/metrics/' in metrics_proxy
-    assert 'reverse_proxy hms-api:8000' in metrics_proxy
+    assert 'rewrite * /api/v2/metrics' in metrics_proxy
+    assert 'reverse_proxy hms-api:8080' in metrics_proxy
+    assert 'handle /worker/metrics' in metrics_proxy
+    assert 'reverse_proxy hms-worker:8081' in metrics_proxy
     assert 'header_up Host {$CLIENT_DOMAIN}' in metrics_proxy
     assert 'respond 404' in metrics_proxy
 

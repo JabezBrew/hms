@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createKeyFactory } from '@/shared/lib/queryKeys';
 import { wardBoardApi } from '@/features/ward-board/api';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { WardBoardWebSocket } from '@/lib/websocket';
 
 const baseKeys = createKeyFactory('ward-board');
@@ -85,7 +86,13 @@ export function useWardBoardLiveUpdates(options = {}) {
 
   const normalizedWardScope = normalizeWardScope(wardScope);
   const userRole = String(user?.role || user?.user_type || '').toLowerCase();
-  const shouldConnect = enabled && isAuthenticated && WARD_BOARD_ROLES.has(userRole) && Boolean(facilityCode);
+  const shouldConnect = (
+    enabled
+    && !isRustV2ApiMode()
+    && isAuthenticated
+    && WARD_BOARD_ROLES.has(userRole)
+    && Boolean(facilityCode)
+  );
 
   useEffect(() => {
     let isMounted = true;

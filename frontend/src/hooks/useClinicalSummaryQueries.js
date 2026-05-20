@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { fetchChronicleContext } from '@/hooks/useChronicleContext';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys for clinical summary data
@@ -16,8 +18,19 @@ export const clinicalSummaryKeys = {
 /**
  * Fetch combined clinical summary (medications + vitals) in a single request
  */
-async function fetchClinicalSummary(patientId, days = 7) {
-  const response = await apiClient.get(`/clinical-notes/patient-summary/${patientId}/?days=${days}`);
+export async function fetchClinicalSummary(patientId, days = 7, options = {}) {
+  if (isRustV2ApiMode()) {
+    const context = await fetchChronicleContext(patientId, { signal: options.signal });
+    return {
+      medications: normalizeV2Medications(context?.active_medications),
+      vitals: context?.latest_vitals ? [context.latest_vitals] : [],
+      problems: normalizeV2Problems(context?.active_problems),
+    };
+  }
+
+  const response = await apiClient.get(`/clinical-notes/patient-summary/${patientId}/?days=${days}`, {
+    signal: options.signal,
+  });
   return response || { medications: [], vitals: [] };
 }
 
@@ -25,8 +38,15 @@ async function fetchClinicalSummary(patientId, days = 7) {
  * Fetch active medications/prescriptions for a patient
  * @deprecated Use useClinicalSummary instead for better performance
  */
-async function fetchActiveMedications(patientId) {
-  const response = await apiClient.get(`/clinical-notes/prescriptions/patient_active/?patient=${patientId}`);
+export async function fetchActiveMedications(patientId, options = {}) {
+  if (isRustV2ApiMode()) {
+    const context = await fetchChronicleContext(patientId, { signal: options.signal });
+    return normalizeV2Medications(context?.active_medications);
+  }
+
+  const response = await apiClient.get(`/clinical-notes/prescriptions/patient_active/?patient=${patientId}`, {
+    signal: options.signal,
+  });
   return response || [];
 }
 
@@ -34,9 +54,37 @@ async function fetchActiveMedications(patientId) {
  * Fetch recent vital signs for a patient (used as proxy for lab results)
  * @deprecated Use useClinicalSummary instead for better performance
  */
-async function fetchRecentVitals(patientId, days = 7) {
-  const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?patient=${patientId}&days=${days}`);
+export async function fetchRecentVitals(patientId, days = 7, options = {}) {
+  if (isRustV2ApiMode()) {
+    const context = await fetchChronicleContext(patientId, { signal: options.signal });
+    return context?.latest_vitals ? [context.latest_vitals] : [];
+  }
+
+  const response = await apiClient.get(`/nursing/vital-signs/patient_trends/?patient=${patientId}&days=${days}`, {
+    signal: options.signal,
+  });
   return response || [];
+}
+
+function normalizeV2Medications(medications = []) {
+  return Array.isArray(medications)
+    ? medications.map((prescription) => ({
+        ...prescription,
+        dosage: prescription.dosage || prescription.dose,
+        start_date: prescription.start_date || prescription.prescribed_at,
+        prescribed_by_name: prescription.prescribed_by_name || prescription.prescribed_by,
+      }))
+    : [];
+}
+
+function normalizeV2Problems(problems = []) {
+  return Array.isArray(problems)
+    ? problems.map((problem) => ({
+        ...problem,
+        name: problem.name || problem.label,
+        source_date: problem.source_date || problem.created_at,
+      }))
+    : [];
 }
 
 /**
@@ -45,7 +93,7 @@ async function fetchRecentVitals(patientId, days = 7) {
 export function useActiveMedications(patientId, options = {}) {
   return useQuery({
     queryKey: clinicalSummaryKeys.medications(patientId),
-    queryFn: () => fetchActiveMedications(patientId),
+    queryFn: ({ signal }) => fetchActiveMedications(patientId, { signal }),
     enabled: !!patientId && options.enabled !== false,
     staleTime: 60000, // 1 minute
     select: (data) => {
@@ -74,7 +122,7 @@ export function useRecentVitals(patientId, options = {}) {
 
   return useQuery({
     queryKey: clinicalSummaryKeys.vitals(patientId),
-    queryFn: () => fetchRecentVitals(patientId, days),
+    queryFn: ({ signal }) => fetchRecentVitals(patientId, days, { signal }),
     enabled: !!patientId && options.enabled !== false,
     staleTime: 30000, // 30 seconds - vitals change frequently
     select: (data) => {
@@ -200,7 +248,7 @@ export function useClinicalSummary(patientId, patientData = null, options = {}) 
   // Single query for medications, vitals, and problems
   const summaryQuery = useQuery({
     queryKey: clinicalSummaryKeys.patient(patientId),
-    queryFn: () => fetchClinicalSummary(patientId, days),
+    queryFn: ({ signal }) => fetchClinicalSummary(patientId, days, { signal }),
     enabled: !!patientId && options.enabled !== false,
     staleTime: 60000, // 1 minute
     select: (data) => {

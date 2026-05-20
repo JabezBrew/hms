@@ -7,6 +7,30 @@
 **FROM:** Data-centric CRUD → **TO:** Workflow-centric clinical tool
 **Guiding Question:** "What are you trying to accomplish right now?"
 
+## Architecture Mode
+
+The active HMS backend is Rust V2 under `backend-rs/`. Use
+`docs/v2/rust-v2-backend-spec.md` as the implementation architecture for
+backend work.
+
+The Django/DRF/Celery backend under `backend/` is legacy reference code. Use it
+only when the task explicitly asks for legacy Django maintenance, parity
+research, or comparison against old behavior.
+
+When Django-specific guidance here conflicts with Rust V2 guidance, the Rust V2
+spec wins for active backend work.
+
+Shared principles remain mandatory in both architectures: workflow-first UX,
+PHI safety, least privilege, patient access enforcement, facility scoping,
+pagination, scoped cache keys, no PHI logs, query-count discipline, and no
+external I/O inside open DB transactions.
+
+During Rust V2 work, translate current concepts into Rust equivalents:
+DRF serializers become explicit DTOs, Django ORM guidance becomes SQL/query-plan
+guidance, `apps/core/security.py` becomes `hms-access`, Celery becomes
+`hms-worker`, and Django migrations become `hms-migrator` migrations plus
+seed/provisioning commands.
+
 | Data-Oriented (Bad) | Workflow-Oriented (Good) |
 |---------------------|--------------------------|
 | Navigation mimics DB structure | Navigation mirrors clinical processes |
@@ -62,52 +86,78 @@
 
 ### Structure
 ```
-frontend/src/                          backend/apps/
-├── workflows/      # Consult, rounds  ├── workflows/    # models, views, engines
-├── dashboards/     # Role dashboards  ├── dashboards/   # Role-based APIs
-├── components/                        ├── suggestions/  # Smart suggestions
-│   ├── workflow/   # Wizard, Progress └── templates/    # Clinical templates
-│   ├── clinical/   # Context, Alerts
-│   └── shared/     # SmartForm, ActionCard
-├── contexts/       # Workflow, Role, ViewMode
-└── hooks/          # useWorkflow, useSmartSuggestions
+frontend/src/                         backend-rs/crates/
+├── features/       # Product UI       ├── hms-api/            # axum HTTP API
+├── components/     # UI primitives    ├── hms-db/             # sqlx repositories
+├── hooks/          # React hooks      ├── hms-domain/         # domain types/policies
+├── lib/api/v2/     # Rust API bridge  ├── hms-access/         # access decisions
+└── app/routes/     # Route metadata   ├── hms-auth/           # auth/session logic
+                                      ├── hms-worker/         # async jobs
+                                      └── hms-migrator/       # migrations/provisioning
 ```
+
+### Rust V2 Module Rules
+
+Use deep modules for backend work. A useful module exposes a small Interface,
+hides implementation detail, and owns a product invariant. File splitting is
+secondary; split when the new module gives callers more Leverage and better
+Locality.
+
+Current request flow:
+
+```
+routes/* -> handlers/* -> services/* -> hms-access -> hms-db
+                                      -> hms-domain
+```
+
+- `routes/*` mounts URLs only.
+- `handlers/*` handles HTTP extractors, OpenAPI response mapping, and typed
+  service calls. No SQL, product-state transitions, or handler-local access
+  shortcuts.
+- `services/*` is the workflow Seam inside `hms-api`. Add new workflow modules
+  here before expanding handlers or `state.rs`.
+- `hms-access::RequestContext` owns facility, session, profile, permission,
+  feature, patient-visibility, offsite, and reauth facts.
+- `hms-api/src/cursor_list.rs` owns bounded cursor-list behavior.
+- `AppState` is a runtime Adapter/facade for pools, config, auth/session,
+  deployment capabilities, and service factories. It is not a workflow module.
 
 ### Key APIs
 ```
-POST /api/workflows/{type}/start/          GET  /api/dashboards/my-work/
-GET  /api/workflows/{type}/{id}/           GET  /api/dashboards/ward-rounds/
-PATCH /api/workflows/{type}/{id}/step/     GET  /api/dashboards/clinic/
-POST /api/workflows/{type}/{id}/complete/
-POST /api/workflows/{type}/{id}/save-draft/
+GET  /api/v2/health/ready
+POST /api/v2/auth/login
+GET  /api/v2/system/deployment-capabilities
+GET  /api/v2/patients
+GET  /api/v2/patients/{id}/chronicle
 ```
 
 ### API Payload Optimization (MANDATORY)
 
-1. **List Serializers**: ALL list endpoints use lightweight `*ListSerializer` (5-8 fields max, flattened)
-2. **Pagination**: ALL `ModelViewSet` MUST set `pagination_class = StandardResultsSetPagination`
-3. **Imports**: Use `apps.core.pagination.StandardResultsSetPagination`
+1. **List DTOs**: ALL list endpoints use lightweight DTOs (5-8 fields max unless justified, flattened)
+2. **Cursor Pagination**: Hot list endpoints must be bounded and cursor-paginated server-side
+3. **Generated Contracts**: OpenAPI comes from Rust source and frontend helpers are regenerated from it
 
-```python
-from apps.core.pagination import StandardResultsSetPagination
+```rust
+// GOOD: explicit lightweight DTO returned by a bounded repository query.
+pub struct PatientListItem {
+    pub id: Uuid,
+    pub patient_code: String,
+    pub display_name: String,
+    pub sex: Sex,
+    pub age_years: Option<i32>,
+}
 
-class MyViewSet(viewsets.ModelViewSet):
-    pagination_class = StandardResultsSetPagination  # MANDATORY
-    def get_serializer_class(self):
-        return MyListSerializer if self.action == 'list' else MySerializer
-
-# GOOD: patient_name = serializers.SerializerMethodField()
-# BAD:  patient = PatientSerializer()  # Never nest in lists
+// BAD: returning full patient rows or nested clinical records from a hot list.
 ```
 
-**Reference:** `apps/core/serializers.py`, `apps/core/mixins.py` for `ListDetailSerializerMixin`
+**Reference:** `backend-rs/TESTING.md`, `backend-rs/crates/hms-api/src/openapi.rs`, and `frontend/scripts/generate-v2-api-client.mjs`.
 
 ---
 
 ## Tech Stack
 
-**Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, shadcn/ui, React Hook Form, Zod, date-fns, lucide-react, sonner
-**Backend:** Django 4+, DRF, PostgreSQL, Celery, Redis, JWT
+**Frontend:** React 18+, React Router, TanStack Query, Tailwind CSS, React Hook Form, Zod, date-fns, lucide-react, sonner
+**Backend:** Rust, axum, tokio, sqlx, PostgreSQL, Redis, utoipa/OpenAPI, JWT + refresh-session cookie
 
 ## Frontend Performance Budget
 
@@ -205,29 +255,30 @@ import { PatientChronicleCard, TimelineEntry, ClinicalSummarySidebar, PatientIde
 
 ### Commands
 ```bash
-# Backend (from backend/, venv activated)
-docker compose up -d postgres redis                        # From repo root; starts local Postgres/Redis
-pytest path/to/test.py -v --tb=short                     # Specific file
-pytest path/to/test.py::TestClass -v --tb=short          # Specific class
-pytest apps/app_name/tests/ -v --tb=short                # App tests
-pytest -n auto                                           # Fast full suite
-pytest -n auto --create-db                               # Rebuild stale reused test DB once
-pytest --cov=apps --cov-report=term-missing --cov-report=html # Coverage run
+# Backend (from backend-rs/)
+docker compose up -d postgres redis                      # From repo root; starts local Postgres/Redis
+cargo fmt --all --check                                  # Formatting
+cargo test -p hms-access                                 # Access/policy tests
+cargo test -p hms-db --test ward --test patients         # Focused DB contracts
+cargo test -p hms-api --test patients_contract           # Focused API contracts
+cargo test --workspace                                   # Full active backend suite
+cargo run -p hms-api --bin hms-openapi -- openapi/hms-v2.openapi.json
 
-# Migrations
-python manage.py makemigrations && python manage.py migrate
+# Legacy Django only when explicitly requested
+cd backend && pytest -n auto
 
 # Frontend (from frontend/)
 npm run test                              # Unit tests
 npm run test -- path/to/test.test.jsx     # Specific file
 npm run test:coverage                     # Coverage run
+npm run api:v2:generate:check             # Generated Rust API client freshness
 ```
 
-**Markers:** `@pytest.mark.tier1` (critical), `@pytest.mark.integration`, `@pytest.mark.rbac`
+**Rust test seams:** `hms-access` for authorization decisions, `hms-db` for
+repository contracts, and `hms-api` for handler/DTO/middleware contracts.
 
-Backend pytest uses `hms_backend.settings_test` by default. That settings module keeps the suite fast by using locmem cache, in-memory email, eager Celery, and MD5 password hashing. Tests that need Redis, real async Celery behavior, or production-like password hashing must opt into those settings explicitly. Pure unit tests should stay DB-free; DB tests must request `db` or use `@pytest.mark.django_db`.
-
-CI runs fast backend tests on push/PR without coverage. Backend coverage runs on the scheduled/manual coverage job.
+Legacy Django pytest uses `hms_backend.settings_test`; that is not the active
+backend test architecture.
 
 ---
 
@@ -270,57 +321,54 @@ All patient clinical info (vitals, fluid balance, notes, meds, labs) MUST be acc
 
 ### Database Query Optimization (CRITICAL: Avoid N+1)
 
-```python
-# BAD - N+1 queries
-for p in Patient.objects.all():
-    print(p.user.name)  # Extra query per patient
+```rust
+// BAD: fetch a page, then query patient/ward data once per row.
+let rows = repo.list_admissions(ctx, page).await?;
+for row in rows {
+    let patient = repo.get_patient(row.patient_id).await?;
+    let ward = repo.get_ward(row.ward_id).await?;
+}
 
-# GOOD - 2 queries total
-patients = Patient.objects.select_related('user').prefetch_related(
-    Prefetch('admissions', queryset=Admission.objects.filter(status='admitted')
-             .select_related('bed__ward'), to_attr='active_admissions_list'))
+// GOOD: repository returns one bounded projection for the list DTO.
+let rows = repo
+    .list_admission_board(ctx, AdmissionBoardQuery { limit, cursor })
+    .await?;
 ```
 
-**Use DB aggregation over Python loops:**
-```python
-# BAD:  total = sum(o.amount for o in Order.objects.filter(date=today))
-# GOOD: total = Order.objects.filter(date=today).aggregate(total=Sum('amount'))['total']
+**Use SQL aggregation over application loops:**
+```sql
+-- GOOD: aggregate in the query used by the repository contract.
+SELECT invoice_id, sum(amount_minor) AS total_minor
+FROM invoice_items
+WHERE facility_id = $1
+GROUP BY invoice_id;
 ```
 
-**Verify query count in tests:**
-```python
-with CaptureQueriesContext(connection) as ctx:
-    response = client.get('/api/endpoint/')
-assert len(ctx) < 10, f"Too many queries: {len(ctx)}"
-```
+**Verify bounded behavior in tests:** use `hms-db` repository tests for SQL
+scope and bounded list contracts, and `hms-api` contract tests for DTO shape,
+cursor behavior, and authorization wiring.
 
 ### Caching Strategy
 
-```python
-@method_decorator(cache_page(60 * 5), name='list')  # 5 min for list views
-class WardViewSet(viewsets.ModelViewSet): pass
-
-# Invalidate on writes
-def perform_create(self, serializer):
-    serializer.save()
-    cache.delete_pattern('ward_list_*')
-```
+Use scoped cache keys that include facility, user/patient access scope, feature
+profile, and query parameters whenever access varies. Invalidate or refresh
+projections through explicit repository/service boundaries and `hms-worker`
+jobs.
 
 **Timeouts:** Static lookups: 5-15min | Analytics: 10-15min | Dashboards: 30-60s | Real-time: none/5-10s
 
 ### API Design for Scale
 
-- **Pagination mandatory** - Never unbounded querysets
+- **Pagination mandatory** - Never unbounded clinical lists
 - **Search over dropdowns** - For >50 items, use search endpoints with `[:20]` limit
-- **Lightweight list serializers** - 5-8 fields, flatten relationships
+- **Lightweight list DTOs** - 5-8 fields, flatten relationships
 
 ### Real-Time Features (WebSockets over Polling)
 
-```python
-# Backend broadcast
-channel_layer = get_channel_layer()
-async_to_sync(channel_layer.group_send)(f'ward_{alert.ward_id}', {'type': 'alert.new', 'data': data})
-```
+Rust realtime channels must use PHI-safe channel names, facility/patient/ward
+access checks before subscription, and event payloads that match generated V2
+contracts.
+
 ```javascript
 // Frontend - poll only as WebSocket fallback
 const { alerts } = useAlertWebSocket({ wardId, onAlert: (a) => toast.warning(a.message) });
@@ -340,12 +388,12 @@ const debouncedSearch = useDebouncedCallback((v) => searchPatients(v), 300);
 ```
 
 ### Feature Checklist
-- [ ] Queries optimized? (`select_related`/`prefetch_related`)
+- [ ] Repository query is bounded and facility scoped?
 - [ ] Query count <10 regardless of result size?
 - [ ] Pagination implemented?
 - [ ] Caching for read-heavy endpoints?
 - [ ] Search over dropdown for >50 items?
-- [ ] List serializer lightweight (5-8 fields, no nesting)?
+- [ ] List DTO lightweight (5-8 fields, no nesting)?
 - [ ] WebSocket for real-time (not polling)?
 - [ ] Frontend optimized (React Query, virtualization)?
 

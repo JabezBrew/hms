@@ -1,0 +1,11 @@
+pub mod admin;
+pub mod billing;
+pub mod care;
+pub mod clinical;
+pub mod consent;
+pub mod dashboard;
+pub mod inventory;
+pub mod laboratory;
+pub mod patients;
+pub mod referrals;
+pub mod ward;

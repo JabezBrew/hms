@@ -1,9 +1,13 @@
-import { ChevronRight, FileText, Pill, FlaskConical, CalendarDays } from 'lucide-react';
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
+import Pill from 'lucide-react/dist/esm/icons/pill.js';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { problemsApi } from '@/features/problems/api';
 import { cn } from '@/lib/utils';
 
 const KIND_META = {
@@ -16,11 +20,16 @@ const KIND_META = {
 function useGroupedView(patientId) {
   return useQuery({
     queryKey: ['problems', 'grouped', patientId],
-    queryFn: ({ signal }) =>
-      apiClient.get('/problems/grouped-by-problem/', {
-        signal,
-        params: { patient: patientId },
-      }),
+    queryFn: async ({ signal }) => {
+      const problems = await problemsApi.listForPatient(patientId, {}, { signal });
+      return {
+        groups: problems.map((problem) => ({
+          problem,
+          entry_count: 0,
+          entries: [],
+        })),
+      };
+    },
     enabled: !!patientId,
     staleTime: 30_000,
   });

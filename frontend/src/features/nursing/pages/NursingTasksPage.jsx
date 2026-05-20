@@ -48,6 +48,7 @@ import { toast } from 'sonner';
 import format from 'date-fns/format';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import { normalizeApiResults } from '@/lib/utils';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import {
   useNursingTasks,
   useTodayTasks,
@@ -62,7 +63,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { usePageMeta } from '@/shared/hooks/usePageMeta';
 
-const TASK_TYPES = [
+const LEGACY_TASK_TYPES = [
   { value: 'medication', label: 'Medication' },
   { value: 'assessment', label: 'Assessment' },
   { value: 'vitals', label: 'Vital Signs' },
@@ -73,6 +74,21 @@ const TASK_TYPES = [
   { value: 'documentation', label: 'Documentation' },
   { value: 'other', label: 'Other' },
 ];
+
+const RUST_V2_TASK_TYPES = [
+  { value: 'ward_round', label: 'Ward Round' },
+  { value: 'observation', label: 'Observation' },
+  { value: 'medication', label: 'Medication' },
+  { value: 'handoff', label: 'Handoff' },
+];
+
+const TASK_TYPE_LABELS = new Map(
+  [...LEGACY_TASK_TYPES, ...RUST_V2_TASK_TYPES].map((type) => [type.value, type.label])
+);
+
+export function getTaskTypeOptions(rustV2Mode) {
+  return rustV2Mode ? RUST_V2_TASK_TYPES : LEGACY_TASK_TYPES;
+}
 
 const PRIORITY_LEVELS = [
   { value: 'low', label: 'Low', color: 'bg-gray-100 text-gray-800' },
@@ -90,6 +106,9 @@ const STATUS_OPTIONS = [
 ];
 
 export default function NursingTasksPage() {
+  const rustV2Mode = isRustV2ApiMode();
+  const taskTypes = getTaskTypeOptions(rustV2Mode);
+  const defaultTaskType = rustV2Mode ? 'observation' : 'assessment';
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
@@ -101,13 +120,14 @@ export default function NursingTasksPage() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [newTask, setNewTask] = useState({
     patient: '',
-    task_type: 'assessment',
+    task_type: defaultTaskType,
     description: '',
     scheduled_time: '',
     assigned_to: '',
     priority: 'medium',
   });
   const [completionNotes, setCompletionNotes] = useState('');
+  const generalTaskEditsAvailable = !rustV2Mode;
 
   // Fetch tasks
   const { data: tasksData, isLoading, refetch } = useNursingTasks({
@@ -156,8 +176,10 @@ export default function NursingTasksPage() {
     }
 
     try {
+      const selectedPatient = patients.find((patient) => patient.patient_id === newTask.patient);
       await createMutation.mutateAsync({
         patient: newTask.patient,
+        admission_case_id: selectedPatient?.admission_id || selectedPatient?.admission?.id,
         task_type: newTask.task_type,
         description: newTask.description,
         scheduled_time: newTask.scheduled_time,
@@ -169,7 +191,7 @@ export default function NursingTasksPage() {
       setShowCreateDialog(false);
       setNewTask({
         patient: '',
-        task_type: 'assessment',
+        task_type: defaultTaskType,
         description: '',
         scheduled_time: '',
         assigned_to: '',
@@ -203,6 +225,11 @@ export default function NursingTasksPage() {
 
   // Handle status update
   const handleStatusUpdate = async (task, newStatus) => {
+    if (rustV2Mode && !['completed', 'cancelled'].includes(newStatus)) {
+      toast.error('General nursing task edits are not available for this deployment yet.');
+      return;
+    }
+
     try {
       await updateMutation.mutateAsync({
         taskId: task.id,
@@ -316,7 +343,7 @@ export default function NursingTasksPage() {
                             <SelectValue placeholder="Select type" />
                           </SelectTrigger>
                           <SelectContent>
-                            {TASK_TYPES.map((t) => (
+                            {taskTypes.map((t) => (
                               <SelectItem key={t.value} value={t.value}>
                                 {t.label}
                               </SelectItem>
@@ -456,6 +483,12 @@ export default function NursingTasksPage() {
         </div>
 
         {/* Filters */}
+        {rustV2Mode ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-100">
+            General nursing task edits are not available for this deployment yet. Complete and cancel actions remain available.
+          </div>
+        ) : null}
+
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-wrap gap-4 items-end">
@@ -524,7 +557,7 @@ export default function NursingTasksPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
-                    {TASK_TYPES.map((t) => (
+                    {taskTypes.map((t) => (
                       <SelectItem key={t.value} value={t.value}>
                         {t.label}
                       </SelectItem>
@@ -580,7 +613,7 @@ export default function NursingTasksPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {TASK_TYPES.find(t => t.value === task.task_type)?.label || task.task_type}
+                            {TASK_TYPE_LABELS.get(task.task_type) || task.task_type}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -603,7 +636,7 @@ export default function NursingTasksPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              {task.status === 'pending' && (
+                              {task.status === 'pending' && generalTaskEditsAvailable && (
                                 <DropdownMenuItem
                                   onClick={() => handleStatusUpdate(task, 'in_progress')}
                                 >

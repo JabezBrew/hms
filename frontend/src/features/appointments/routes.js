@@ -30,6 +30,17 @@ export const appointmentRoutes = [
     ],
   },
   {
+    path: '/appointments/new',
+    component: AppointmentCreatePage,
+    roles: ROLE_GROUPS.APPOINTMENTS,
+    layout: ROUTE_LAYOUTS.APP,
+    title: 'New Appointment | Hospital Management System',
+    breadcrumbs: [
+      { label: 'Schedule', path: '/appointments' },
+      { label: 'New Appointment', path: '/appointments/new' },
+    ],
+  },
+  {
     path: '/appointments/:id',
     component: AppointmentDetailPage,
     roles: ROLE_GROUPS.APPOINTMENTS,

@@ -80,8 +80,15 @@ export function PurchaseOrderForm({ onSuccess, onCancel, initialRequisitionId })
 
   const onSubmit = async (data) => {
     try {
+      const selectedSupplier = suppliers.find((supplier) => (
+        String(supplier.id) === String(data.supplier)
+      ));
       const payload = {
-        supplier: data.supplier,
+        supplier: selectedSupplier ? {
+          id: selectedSupplier.id,
+          name: selectedSupplier.name,
+        } : data.supplier,
+        supplier_name: selectedSupplier?.name || data.supplier,
         requisition: data.requisition && data.requisition !== 'none' ? data.requisition : null,
         expected_delivery_date: data.expected_delivery_date || null,
         shipping_address: data.shipping_address || '',

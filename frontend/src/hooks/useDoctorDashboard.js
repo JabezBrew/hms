@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { dashboardsApi } from '@/features/dashboards/api';
 import { useAuth } from '@/lib/auth';
 import { useDoctorDashboardLiveUpdates } from '@/features/dashboards/hooks/useDoctorDashboardLiveUpdates';
 import { keyWith } from '@/shared/lib/queryKeys';
@@ -18,7 +18,7 @@ export function useDoctorDashboard(options = {}) {
   const { refetchInterval = 30000, ...queryOptions } = options;
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: doctorDashboardKeys.dashboard(),
-    queryFn: () => apiClient.get('/dashboards/my-work/'),
+    queryFn: ({ signal }) => dashboardsApi.getMyWorkDashboard({ signal }),
     refetchInterval,
     enabled: Boolean(facilityCode) && (queryOptions.enabled ?? true),
     ...queryOptions,
@@ -52,11 +52,12 @@ export function useClinicSchedule(date, practitionerId, options = {}) {
   const { refetchInterval = 30000, ...queryOptions } = options;
   return useQuery({
     queryKey: doctorDashboardKeys.clinicSchedule(date, practitionerId),
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (date) params.append('date', date);
-      if (practitionerId) params.append('practitioner_id', practitionerId);
-      return apiClient.get(`/dashboards/clinic/?${params.toString()}`);
+    queryFn: ({ signal }) => {
+      return dashboardsApi.getClinicSchedule({
+        ...(date ? { date } : {}),
+        ...(practitionerId ? { practitioner_id: practitionerId } : {}),
+        signal,
+      });
     },
     refetchInterval: hasCustomRefetchInterval ? refetchInterval : (isLiveConnected ? false : refetchInterval),
     enabled: Boolean(facilityCode) && (!!date || !!practitionerId) && (queryOptions.enabled ?? true),

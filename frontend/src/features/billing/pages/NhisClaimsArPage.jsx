@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
 import { billingApi } from '@/features/billing/api';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -70,6 +71,10 @@ function formatDate(dateString) {
 
 export default function NhisClaimsArPage() {
   const [tab, setTab] = useState('batches');
+  const rustV2Mode = isRustV2ApiMode();
+  const periodBatchCreationAvailable = !rustV2Mode;
+  const exportDownloadsAvailable = !rustV2Mode;
+  const remittanceFileImportAvailable = !rustV2Mode;
 
   // Batches
   const [batchPage, setBatchPage] = useState(1);
@@ -310,34 +315,36 @@ export default function NhisClaimsArPage() {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (row) => (
-        <Button
-          size="sm"
-          className="font-mono text-xs"
-          disabled={row.status !== 'ready' && row.status !== 'delivered'}
-          onClick={async () => {
-            try {
-              const blob = await billingApi.downloadNhisExportJob(row.id);
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `nhis-claim-it-${row.batch}-${row.id}.zip`;
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-              URL.revokeObjectURL(url);
-              toast.success('Download started');
-              exportsQuery.refetch();
-            } catch (err) {
-              toast.error(err.message || 'Failed to download export');
-            }
-          }}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Download ZIP
-        </Button>
+        exportDownloadsAvailable ? (
+          <Button
+            size="sm"
+            className="font-mono text-xs"
+            disabled={row.status !== 'ready' && row.status !== 'delivered'}
+            onClick={async () => {
+              try {
+                const blob = await billingApi.downloadNhisExportJob(row.id);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `nhis-claim-it-${row.batch}-${row.id}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                toast.success('Download started');
+                exportsQuery.refetch();
+              } catch (err) {
+                toast.error(err.message || 'Failed to download export');
+              }
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download ZIP
+          </Button>
+        ) : null
       ),
     },
-  ]), [exportsQuery]);
+  ]), [exportDownloadsAvailable, exportsQuery]);
 
   const remittanceColumns = useMemo(() => ([
     {
@@ -466,66 +473,79 @@ export default function NhisClaimsArPage() {
           </TabsList>
 
           <TabsContent value="batches" className="mt-6 space-y-6">
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-lg text-foreground mb-4">Create Batch</h2>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Period Start</Label>
-                  <Input
-                    type="date"
-                    value={periodStart}
-                    onChange={(e) => setPeriodStart(e.target.value)}
-                    className="font-mono"
-                  />
+            {periodBatchCreationAvailable ? (
+              <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+                <h2 className="font-display text-lg text-foreground mb-4">Create Batch</h2>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">Period Start</Label>
+                    <Input
+                      type="date"
+                      value={periodStart}
+                      onChange={(e) => setPeriodStart(e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">Period End</Label>
+                    <Input
+                      type="date"
+                      value={periodEnd}
+                      onChange={(e) => setPeriodEnd(e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">Notes (Optional)</Label>
+                    <Input
+                      value={batchNotes}
+                      onChange={(e) => setBatchNotes(e.target.value)}
+                      placeholder="e.g., Ashanti OPD week 1"
+                      className="font-mono"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Period End</Label>
-                  <Input
-                    type="date"
-                    value={periodEnd}
-                    onChange={(e) => setPeriodEnd(e.target.value)}
-                    className="font-mono"
-                  />
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    Batches attach eligible NHIS invoices in the selected date range.
+                  </p>
+                  <Button
+                    className="font-mono text-xs"
+                    disabled={createBatchMutation.isPending}
+                    onClick={async () => {
+                      if (!periodStart || !periodEnd) {
+                        toast.error('Period start and end are required');
+                        return;
+                      }
+                      try {
+                        await createBatchMutation.mutateAsync({
+                          period_start: periodStart,
+                          period_end: periodEnd,
+                          notes: batchNotes || null,
+                        });
+                        toast.success('Batch created');
+                        setBatchNotes('');
+                      } catch (err) {
+                        toast.error(err.message || 'Failed to create batch');
+                      }
+                    }}
+                  >
+                    {createBatchMutation.isPending ? 'Creating...' : 'Create Batch'}
+                  </Button>
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Notes (Optional)</Label>
-                  <Input
-                    value={batchNotes}
-                    onChange={(e) => setBatchNotes(e.target.value)}
-                    placeholder="e.g., Ashanti OPD week 1"
-                    className="font-mono"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  Batches attach eligible NHIS invoices in the selected date range.
+              </section>
+            ) : (
+              <section className="rounded-2xl border border-border bg-muted/30 p-5 sm:p-6">
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  Rust V2 batch creation
                 </p>
-                <Button
-                  className="font-mono text-xs"
-                  disabled={createBatchMutation.isPending}
-                  onClick={async () => {
-                    if (!periodStart || !periodEnd) {
-                      toast.error('Period start and end are required');
-                      return;
-                    }
-                    try {
-                      await createBatchMutation.mutateAsync({
-                        period_start: periodStart,
-                        period_end: periodEnd,
-                        notes: batchNotes || null,
-                      });
-                      toast.success('Batch created');
-                      setBatchNotes('');
-                    } catch (err) {
-                      toast.error(err.message || 'Failed to create batch');
-                    }
-                  }}
-                >
-                  {createBatchMutation.isPending ? 'Creating…' : 'Create Batch'}
-                </Button>
-              </div>
-            </section>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Period-based NHIS batch creation is not available in Rust V2 mode yet. Existing
+                  batches can still be reviewed, linted, and exported through supported Rust V2
+                  contracts.
+                </p>
+              </section>
+            )}
 
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
@@ -570,6 +590,18 @@ export default function NhisClaimsArPage() {
           </TabsContent>
 
           <TabsContent value="exports" className="mt-6 space-y-6">
+            {!exportDownloadsAvailable && (
+              <section className="rounded-2xl border border-border bg-muted/30 p-5 sm:p-6">
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  Rust V2 export downloads
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  NHIS export ZIP downloads are not available in Rust V2 mode yet. Export job
+                  history remains visible when returned by the backend.
+                </p>
+              </section>
+            )}
+
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-display text-lg text-foreground">Export Jobs</h2>
@@ -613,69 +645,81 @@ export default function NhisClaimsArPage() {
           </TabsContent>
 
           <TabsContent value="remittances" className="mt-6 space-y-6">
-            <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-              <h2 className="font-display text-lg text-foreground mb-4">Import Remittance</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">Payer</Label>
-                  <Select value={selectedPayer} onValueChange={setSelectedPayer}>
-                    <SelectTrigger className="font-mono">
-                      <SelectValue placeholder="Select NHIS payer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {nhisProviders.map((p) => (
-                        <SelectItem key={p.id} value={p.id} className="font-mono text-sm">
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {nhisProviders.length === 0 && (
+            {remittanceFileImportAvailable ? (
+              <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+                <h2 className="font-display text-lg text-foreground mb-4">Import Remittance</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">Payer</Label>
+                    <Select value={selectedPayer} onValueChange={setSelectedPayer}>
+                      <SelectTrigger className="font-mono">
+                        <SelectValue placeholder="Select NHIS payer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {nhisProviders.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="font-mono text-sm">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {nhisProviders.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        No NHIS providers found. Configure an insurance provider with `payer_type=nhis`.
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label className="font-mono text-xs uppercase tracking-wider">File (CSV/XLSX)</Label>
+                    <Input
+                      type="file"
+                      accept=".csv,.xlsx"
+                      onChange={(e) => setRemittanceFile(e.target.files?.[0] || null)}
+                      className="font-mono"
+                    />
                     <p className="text-xs text-muted-foreground">
-                      No NHIS providers found. Configure an insurance provider with `payer_type=nhis`.
+                      Upload the remittance file; matched lines will auto-post insurance payments.
                     </p>
-                  )}
+                  </div>
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label className="font-mono text-xs uppercase tracking-wider">File (CSV/XLSX)</Label>
-                  <Input
-                    type="file"
-                    accept=".csv,.xlsx"
-                    onChange={(e) => setRemittanceFile(e.target.files?.[0] || null)}
-                    className="font-mono"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Upload the remittance file; matched lines will auto-post insurance payments.
-                  </p>
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    className="font-mono text-xs"
+                    disabled={importRemittanceMutation.isPending}
+                    onClick={async () => {
+                      if (!selectedPayer) {
+                        toast.error('Select a payer');
+                        return;
+                      }
+                      if (!remittanceFile) {
+                        toast.error('Select a file');
+                        return;
+                      }
+                      try {
+                        await importRemittanceMutation.mutateAsync({ payerId: selectedPayer, file: remittanceFile });
+                        toast.success('Remittance import started');
+                        setRemittanceFile(null);
+                      } catch (err) {
+                        toast.error(err.message || 'Failed to import remittance');
+                      }
+                    }}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import
+                  </Button>
                 </div>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button
-                  className="font-mono text-xs"
-                  disabled={importRemittanceMutation.isPending}
-                  onClick={async () => {
-                    if (!selectedPayer) {
-                      toast.error('Select a payer');
-                      return;
-                    }
-                    if (!remittanceFile) {
-                      toast.error('Select a file');
-                      return;
-                    }
-                    try {
-                      await importRemittanceMutation.mutateAsync({ payerId: selectedPayer, file: remittanceFile });
-                      toast.success('Remittance import started');
-                      setRemittanceFile(null);
-                    } catch (err) {
-                      toast.error(err.message || 'Failed to import remittance');
-                    }
-                  }}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import
-                </Button>
-              </div>
-            </section>
+              </section>
+            ) : (
+              <section className="rounded-2xl border border-border bg-muted/30 p-5 sm:p-6">
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  Rust V2 remittance import
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Remittance file import is not available in Rust V2 mode yet. Imported remittance
+                  history remains visible for reconciliation review.
+                </p>
+              </section>
+            )}
 
             <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">

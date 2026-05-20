@@ -23,7 +23,7 @@ export const patientKeys = {
 export function usePatients(filters = {}) {
   return useQuery({
     queryKey: patientKeys.list(filters),
-    queryFn: () => patientsApi.getPatients(filters),
+    queryFn: ({ signal }) => patientsApi.getPatients(filters, { signal }),
   });
 }
 
@@ -36,7 +36,7 @@ export function usePatient(id, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: patientKeys.detail(id),
-    queryFn: () => patientsApi.getPatient(id),
+    queryFn: ({ signal }) => patientsApi.getPatient(id, { signal }),
     enabled: !!id && enabled, // Only run the query if we have an ID
     staleTime: 5 * 60 * 1000, // 5 minutes - patient demographics don't change frequently
   });
@@ -51,7 +51,7 @@ export function usePatientDemographics(id, options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: [...patientKeys.detail(id), 'demographics'],
-    queryFn: () => patientsApi.getPatientDemographics(id),
+    queryFn: ({ signal }) => patientsApi.getPatientDemographics(id, { signal }),
     enabled: !!id && enabled,
     staleTime: 5 * 60 * 1000,
   });
@@ -186,7 +186,7 @@ export function useDeletePatient() {
 export function usePatientHistory(id) {
   return useQuery({
     queryKey: patientKeys.history(id),
-    queryFn: () => patientsApi.getPatientHistory(id),
+    queryFn: ({ signal }) => patientsApi.getPatientHistory(id, { signal }),
     enabled: !!id,
   });
 }
@@ -199,7 +199,7 @@ export function usePatientHistory(id) {
 export function useSearchPatients(options = {}) {
   return useSearchQuery(
     [...patientKeys.lists(), 'search'],
-    (query) => patientsApi.searchPatients(query),
+    (query, requestOptions) => patientsApi.searchPatients(query, requestOptions),
     {
       staleTime: 1 * 60 * 1000, // Search results stale after 1 minute
       ...options,
@@ -232,7 +232,7 @@ export function usePatientSearch(params = {}, options = {}) {
 export function useRecentPatients(limit = 10) {
   return useQuery({
     queryKey: [...patientKeys.recent(), { limit }],
-    queryFn: () => patientsApi.getRecentPatients({ limit }),
+    queryFn: ({ signal }) => patientsApi.getRecentPatients({ limit }, { signal }),
     staleTime: 30 * 1000, // 30 seconds - recent patients change frequently
   });
 }
@@ -246,7 +246,7 @@ export function useRecentPatients(limit = 10) {
 export function useContextPatients(params = {}) {
   return useQuery({
     queryKey: patientKeys.context(params),
-    queryFn: () => patientsApi.getContextPatients(params),
+    queryFn: ({ signal }) => patientsApi.getContextPatients(params, { signal }),
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -277,7 +277,10 @@ export function useUpdatePatientWithFHIR() {
   return useMutation({
     mutationFn: ({ id, data }) => patientsApi.updatePatientWithFHIR(id, data),
     onSuccess: (data, variables) => {
-      // Update the cache for this specific patient
+      if (data) {
+        queryClient.setQueryData(patientKeys.detail(variables.id), data);
+      }
+      // Refetch the specific patient after seeding returned data for immediate navigation.
       queryClient.invalidateQueries({ 
         queryKey: patientKeys.detail(variables.id) 
       });
@@ -296,7 +299,7 @@ export function useUpdatePatientWithFHIR() {
 export function usePatientValidationRules() {
   return useQuery({
     queryKey: patientKeys.validation(),
-    queryFn: () => patientsApi.getValidationRules(),
+    queryFn: ({ signal }) => patientsApi.getValidationRules({ signal }),
     ...immutableMetadataQueryOptions(),
   });
 }

@@ -26,6 +26,7 @@ import { PatientCareTeamCompact } from "@/components/chronicle/PatientCareTeamCa
  */
 const ClinicalSummarySidebar = ({
   patient,
+  allergies = [],
   problems = [],
   medications = [],
   labResults = [],
@@ -34,6 +35,7 @@ const ClinicalSummarySidebar = ({
   onViewFluidTrends,
   className
 }) => {
+  const normalizedAllergies = Array.isArray(allergies) ? allergies : [];
   // Check if patient is admitted (has active admission)
   // Check multiple fields for backward compatibility
   const isAdmitted = patient?.local_data?.current_admission_id ||
@@ -63,6 +65,12 @@ const ClinicalSummarySidebar = ({
 
       {/* Section: Recent Vitals */}
       <LabResultsSection results={labResults} onViewTrends={onViewVitalsTrends} />
+
+      {/* Divider */}
+      <div className="divider-gradient" />
+
+      {/* Section: Allergies */}
+      <AllergiesSection allergies={normalizedAllergies} />
 
       {/* Section: Fluid Balance - Only for admitted patients */}
       {isAdmitted && patientId && (
@@ -255,7 +263,9 @@ const AllergiesSection = ({ allergies }) => {
 
       <div className="flex flex-wrap gap-2">
         {allergies.map((allergy, i) => {
-          const allergyName = typeof allergy === 'string' ? allergy : allergy.name;
+          const allergyName = typeof allergy === 'string'
+            ? allergy
+            : allergy.name || allergy.allergen_name || allergy.substance || allergy.allergen;
           const severity = typeof allergy === 'object' ? allergy.severity : null;
 
           return (

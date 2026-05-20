@@ -32,7 +32,7 @@ export function useAdmissionCases(filters = {}, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: admissionCaseKeys.list(filters),
-    queryFn: () => admissionsApi.getCases(filters),
+    queryFn: ({ signal }) => admissionsApi.getCases(filters, { signal }),
     enabled,
   })
 }
@@ -41,7 +41,7 @@ export function useAdmissionCase(caseId, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: admissionCaseKeys.detail(caseId),
-    queryFn: () => admissionsApi.getCase(caseId),
+    queryFn: ({ signal }) => admissionsApi.getCase(caseId, { signal }),
     enabled: !!caseId && enabled,
   })
 }
@@ -50,7 +50,7 @@ export function useAdmissionTasks(filters = {}, options = {}) {
   const { enabled = true } = options
   return useQuery({
     queryKey: admissionCaseKeys.taskList(filters),
-    queryFn: () => admissionsApi.getTasks(filters),
+    queryFn: ({ signal }) => admissionsApi.getTasks(filters, { signal }),
     enabled,
   })
 }

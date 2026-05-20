@@ -25,7 +25,7 @@ export function usePatientProblems(patientId, { includeResolved = false } = {}) 
 export function useProblem(id) {
   return useQuery({
     queryKey: problemKeys.detail(id),
-    queryFn: () => problemsApi.detail(id),
+    queryFn: ({ signal }) => problemsApi.detail(id, { signal }),
     enabled: !!id,
   });
 }

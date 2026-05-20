@@ -1,4 +1,8 @@
-# Backend API Dockerfile
+# Legacy Django Backend API Dockerfile
+#
+# Active backend container builds use backend-rs/Dockerfile. Keep this file only
+# for explicit legacy Django maintenance/reference work.
+#
 # Runs Django with Gunicorn for HTTP requests
 #
 # Build: docker build -f docker/Dockerfile.backend -t hms-backend .

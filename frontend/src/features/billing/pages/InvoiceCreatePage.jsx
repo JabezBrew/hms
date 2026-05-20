@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCreateInvoice, useServices } from '@/features/billing/hooks';
-import { apiClient } from '@/lib/api-client';
+import { patientsApi } from '@/lib/api/patients';
 import { toast } from 'sonner';
 import PatientSelector from '@/components/patients/PatientSelector';
 
@@ -59,11 +59,11 @@ export default function InvoiceCreatePage() {
 
   const loadPatient = async (patientId) => {
     try {
-      const patient = await apiClient.get(`/patients/${patientId}/`);
+      const patient = await patientsApi.getPatient(patientId);
       // Format patient to match PatientSelector expected format
       setSelectedPatient({
         id: patient.id,
-        name: `${patient.first_name} ${patient.last_name}`,
+        name: patient.name || [patient.first_name, patient.last_name].filter(Boolean).join(' '),
         mrn: patient.mrn || patient.medical_record_number,
       });
     } catch (err) {

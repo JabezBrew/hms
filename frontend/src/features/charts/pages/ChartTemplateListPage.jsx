@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import VirtualizedTable from "@/components/ui/VirtualizedTable";
 import {
   Select,
@@ -57,9 +58,11 @@ import {
 } from "@/features/charts/hooks";
 import { PageHeader } from "@/shared/components/page/PageHeader";
 import { PageShell } from "@/shared/components/page/PageShell";
+import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 const ChartTemplateListPage = () => {
   const navigate = useNavigate();
+  const chartTemplateManagementAvailable = !isRustV2ApiMode();
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -72,8 +75,11 @@ const ChartTemplateListPage = () => {
     category: categoryFilter || undefined,
     visibility: visibilityFilter || undefined,
     is_active: activeFilter === "" ? undefined : activeFilter === "active",
+    enabled: chartTemplateManagementAvailable,
   });
-  const { data: categories = [] } = useChartCategories();
+  const { data: categories = [] } = useChartCategories({
+    enabled: chartTemplateManagementAvailable,
+  });
 
   // Mutations
   const deleteMutation = useDeleteChartTemplate();
@@ -97,14 +103,29 @@ const ChartTemplateListPage = () => {
 
   // Handle actions
   const handleCreate = () => {
+    if (!chartTemplateManagementAvailable) {
+      toast.error("Chart template management is not available in Rust V2 mode yet.");
+      return;
+    }
+
     navigate("/charts/builder");
   };
 
   const handleEdit = (template) => {
+    if (!chartTemplateManagementAvailable) {
+      toast.error("Chart template management is not available in Rust V2 mode yet.");
+      return;
+    }
+
     navigate(`/charts/builder/${template.id}`);
   };
 
   const handleClone = async (template) => {
+    if (!chartTemplateManagementAvailable) {
+      toast.error("Chart template management is not available in Rust V2 mode yet.");
+      return;
+    }
+
     try {
       const result = await cloneMutation.mutateAsync(template.id);
       toast.success(`Created copy: ${result.name}`);
@@ -115,6 +136,11 @@ const ChartTemplateListPage = () => {
   };
 
   const handleToggleActive = async (template) => {
+    if (!chartTemplateManagementAvailable) {
+      toast.error("Chart template management is not available in Rust V2 mode yet.");
+      return;
+    }
+
     try {
       await updateMutation.mutateAsync({
         templateId: template.id,
@@ -132,6 +158,12 @@ const ChartTemplateListPage = () => {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    if (!chartTemplateManagementAvailable) {
+      toast.error("Chart template management is not available in Rust V2 mode yet.");
+      setDeleteTarget(null);
+      return;
+    }
+
     try {
       await deleteMutation.mutateAsync(deleteTarget.id);
       toast.success("Template deleted");
@@ -246,7 +278,36 @@ const ChartTemplateListPage = () => {
         </DropdownMenu>
       ),
     },
-  ]), [categories]);
+  ]).filter((column) => chartTemplateManagementAvailable || column.key !== "actions"), [categories, chartTemplateManagementAvailable]);
+
+  if (!chartTemplateManagementAvailable) {
+    return (
+      <PageShell>
+        <PageHeader
+          title={(
+            <span className="flex items-center gap-3">
+              <span className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/30">
+                <ClipboardList className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </span>
+              Chart Templates
+            </span>
+          )}
+          description="Create and manage clinical monitoring charts"
+          descriptionClassName="font-mono text-xs text-muted-foreground"
+          contentClassName="max-w-7xl mx-auto w-full"
+        />
+
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <Alert>
+            <ClipboardList className="h-4 w-4" />
+            <AlertDescription>
+              Chart template management is not available in Rust V2 mode yet because no generated /api/v2 chart-builder contract exists.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>

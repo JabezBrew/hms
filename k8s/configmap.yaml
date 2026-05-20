@@ -1,4 +1,8 @@
-# Kubernetes ConfigMap for HMS
+# Legacy Kubernetes ConfigMap for the old Django HMS deployment.
+#
+# Active Rust V2 deploys use ops/hetzner-v2/.env and compose.yml. Keep this
+# manifest only for explicit legacy Kubernetes reference work.
+#
 # Non-sensitive configuration values
 #
 # Apply: kubectl apply -f k8s/configmap.yaml

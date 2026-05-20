@@ -11,6 +11,11 @@ import Stethoscope from 'lucide-react/dist/esm/icons/stethoscope.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
 import BedDouble from 'lucide-react/dist/esm/icons/bed-double.js'
 import IdCard from 'lucide-react/dist/esm/icons/id-card.js'
+import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js'
+import ReceiptText from 'lucide-react/dist/esm/icons/receipt-text.js'
+import Boxes from 'lucide-react/dist/esm/icons/boxes.js'
+import RouteIcon from 'lucide-react/dist/esm/icons/route.js'
+import GitPullRequestArrow from 'lucide-react/dist/esm/icons/git-pull-request-arrow.js'
 
 import {
   CommandDialog,
@@ -56,6 +61,12 @@ const EMPTY_GROUPS = Object.freeze({
   appointments: [],
   admissions: [],
   staff: [],
+  visits: [],
+  clinics: [],
+  laboratory: [],
+  billing: [],
+  inventory: [],
+  referrals: [],
 })
 
 const COMMAND_ITEM_CLASSNAME = cn(
@@ -672,6 +683,50 @@ export function OmniSearchDialog() {
     )
   }
 
+  const renderGenericItem = React.useCallback(
+    (item, { Icon = FileText, tone = 'sky', keyPrefix = 'search' } = {}) => {
+      const href = item?.href || item?.route_path
+      const label = item?.label || item?.title || 'Result'
+      const description = item?.description || item?.subtitle || item?.status_label || href
+      if (!href || !item?.id) return null
+
+      return (
+        <CommandItem
+          key={`${keyPrefix}:${item.id}`}
+          value={`${label} ${description || ''}`.trim()}
+          onSelect={() => onSelectAndClose(href)}
+          className={COMMAND_ITEM_CLASSNAME}
+        >
+          <div className="flex min-w-0 items-start gap-3">
+            <LeadingIcon Icon={Icon} tone={tone} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-heading text-sm font-semibold text-foreground">
+                {label}
+              </div>
+              <div className="truncate font-mono text-[10px] text-muted-foreground">
+                {description}
+              </div>
+            </div>
+          </div>
+        </CommandItem>
+      )
+    },
+    [onSelectAndClose]
+  )
+
+  const renderGenericGroup = ({ heading, items, Icon, tone, keyPrefix }) => {
+    if (!Array.isArray(items) || items.length === 0) return null
+
+    return (
+      <>
+        <CommandSeparator className={COMMAND_SEPARATOR_CLASSNAME} />
+        <CommandGroup heading={heading}>
+          {items.map((item) => renderGenericItem(item, { Icon, tone, keyPrefix }))}
+        </CommandGroup>
+      </>
+    )
+  }
+
   const hasQuery = rawQuery.trim().length > 0
   const serverQueryReady = effectiveQuery.length === 0 || effectiveQuery.length >= 2
   const isSearching = isLoading || isDebouncing
@@ -711,7 +766,13 @@ export function OmniSearchDialog() {
           (groups.encounters || []).length === 0 &&
           (groups.appointments || []).length === 0 &&
           (groups.admissions || []).length === 0 &&
-          (groups.staff || []).length === 0)
+          (groups.staff || []).length === 0 &&
+          (groups.visits || []).length === 0 &&
+          (groups.clinics || []).length === 0 &&
+          (groups.laboratory || []).length === 0 &&
+          (groups.billing || []).length === 0 &&
+          (groups.inventory || []).length === 0 &&
+          (groups.referrals || []).length === 0)
 
   return (
     <>
@@ -1108,6 +1169,48 @@ export function OmniSearchDialog() {
                 </CommandGroup>
               </>
             )}
+            {renderGenericGroup({
+              heading: 'Visits',
+              items: groups.visits,
+              Icon: RouteIcon,
+              tone: 'amber',
+              keyPrefix: 'visit',
+            })}
+            {renderGenericGroup({
+              heading: 'Clinics',
+              items: groups.clinics,
+              Icon: Building2,
+              tone: 'emerald',
+              keyPrefix: 'clinic',
+            })}
+            {renderGenericGroup({
+              heading: 'Laboratory',
+              items: groups.laboratory,
+              Icon: FlaskConical,
+              tone: 'sky',
+              keyPrefix: 'laboratory',
+            })}
+            {renderGenericGroup({
+              heading: 'Billing',
+              items: groups.billing,
+              Icon: ReceiptText,
+              tone: 'amber',
+              keyPrefix: 'billing',
+            })}
+            {renderGenericGroup({
+              heading: 'Inventory',
+              items: groups.inventory,
+              Icon: Boxes,
+              tone: 'emerald',
+              keyPrefix: 'inventory',
+            })}
+            {renderGenericGroup({
+              heading: 'Referrals',
+              items: groups.referrals,
+              Icon: GitPullRequestArrow,
+              tone: 'rose',
+              keyPrefix: 'referral',
+            })}
           </>
         )}
 

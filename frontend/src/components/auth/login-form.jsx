@@ -2,22 +2,27 @@ import Eye from 'lucide-react/dist/esm/icons/eye.js';
 import EyeOff from 'lucide-react/dist/esm/icons/eye-off.js';
 import LogIn from 'lucide-react/dist/esm/icons/log-in.js';
 import { useNavigate } from 'react-router-dom';
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useAuth } from "../../lib/auth.jsx"
+import { isRustV2ApiMode } from "../../lib/api/v2/runtime"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 import { notifications } from "../../lib/notifications"
+import { getDefaultFacilityCode, isMultiFacilityModeEnabled } from "../../lib/runtime-config"
 import { MFAChallenge } from "./MFAChallenge"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [facilityCode, setFacilityCode] = useState(() => getDefaultFacilityCode() || "")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const isSubmittingRef = useRef(false)
   const { login, mfaSession } = useAuth()
   const navigate = useNavigate();
+  const showFacilityCode = isRustV2ApiMode() || isMultiFacilityModeEnabled()
 
   if (mfaSession) {
     return <MFAChallenge />
@@ -25,10 +30,17 @@ export function LoginForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingRef.current) {
+      return;
+    }
+    isSubmittingRef.current = true;
     setIsLoading(true);
 
     try {
-      const response = await login(email.trim(), password);
+      const normalizedFacilityCode = facilityCode.trim().toUpperCase()
+      const response = showFacilityCode
+        ? await login(email.trim(), password, normalizedFacilityCode)
+        : await login(email.trim(), password);
       if (response?.mfaRequired) {
         return;
       }
@@ -37,6 +49,7 @@ export function LoginForm() {
     } catch {
       // Error is already handled in the auth provider
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   }
@@ -79,6 +92,27 @@ export function LoginForm() {
               className="h-11"
             />
           </div>
+
+          {showFacilityCode && (
+            <div className="space-y-2">
+              <Label htmlFor="facility-code" className="text-sm font-medium">
+                Facility Code
+              </Label>
+              <Input
+                id="facility-code"
+                placeholder="HMS"
+                type="text"
+                autoCapitalize="characters"
+                autoComplete="organization"
+                autoCorrect="off"
+                disabled={isLoading}
+                value={facilityCode}
+                onChange={(e) => setFacilityCode(e.target.value.toUpperCase())}
+                required
+                className="h-11 font-mono uppercase"
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">

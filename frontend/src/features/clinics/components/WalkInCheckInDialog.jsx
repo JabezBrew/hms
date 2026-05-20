@@ -61,7 +61,10 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
 
   const clinicsQuery = useQuery({
     queryKey: walkInKeys.clinicsByDepartment(selectedDepartment),
-    queryFn: () => clinicsApi.list({ is_active: true, department: selectedDepartment }),
+    queryFn: ({ signal }) => clinicsApi.list(
+      { is_active: true, department: selectedDepartment },
+      { signal },
+    ),
     enabled: Boolean(open) && Boolean(facilityCode) && Boolean(selectedDepartment),
     staleTime: 60 * 1000,
   });
@@ -273,4 +276,3 @@ export function WalkInCheckInDialog({ open, onOpenChange, patientId, onSuccess }
 }
 
 export default WalkInCheckInDialog;
-

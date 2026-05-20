@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { AdminDashboardWebSocket } from '@/lib/websocket';
 import { dashboardKeys } from '@/hooks/useDashboardQueries';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -22,7 +23,13 @@ export function useAdminDashboardLiveUpdates(options = {}) {
   const [connectionError, setConnectionError] = useState(null);
   const [wsToken, setWsToken] = useState(null);
 
-  const shouldConnect = enabled && isAuthenticated && resolveRole(user) === 'admin' && Boolean(facilityCode);
+  const shouldConnect = (
+    enabled
+    && !isRustV2ApiMode()
+    && isAuthenticated
+    && resolveRole(user) === 'admin'
+    && Boolean(facilityCode)
+  );
 
   useEffect(() => {
     let isMounted = true;

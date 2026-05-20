@@ -71,7 +71,7 @@ export function prefetchChronicleWorkspaceResources(
   if (workspaceId === 'prescription' && patientLocalId) {
     void queryClient.prefetchQuery({
       queryKey: drugSafetyKeys.patientAllergies(patientLocalId),
-      queryFn: () => drugSafetyApi.getPatientAllergies(patientLocalId),
+      queryFn: ({ signal }) => drugSafetyApi.getPatientAllergies(patientLocalId, { signal }),
       staleTime: 60 * 1000,
     });
     return;
@@ -80,12 +80,12 @@ export function prefetchChronicleWorkspaceResources(
   if (workspaceId === 'labs') {
     void queryClient.prefetchQuery({
       queryKey: labKeys.testsList({}),
-      queryFn: () => laboratoryApi.getLabTests({}),
+      queryFn: ({ signal }) => laboratoryApi.getLabTests({}, { signal }),
       ...immutableMetadataQueryOptions(),
     });
     void queryClient.prefetchQuery({
       queryKey: labKeys.panelsList({}),
-      queryFn: () => laboratoryApi.getLabPanels({}),
+      queryFn: ({ signal }) => laboratoryApi.getLabPanels({}, { signal }),
       ...immutableMetadataQueryOptions(),
     });
     return;

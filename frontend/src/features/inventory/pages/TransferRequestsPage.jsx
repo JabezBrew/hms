@@ -36,6 +36,7 @@ import {
 import { TransferRequestForm } from '@/components/inventory';
 import { useTransferRequests, useStorageLocations } from '@/features/inventory/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { format, parseISO } from 'date-fns';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
@@ -235,6 +236,7 @@ function TransferCard({
 export default function TransferRequestsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const transferActionsAvailable = !isRustV2ApiMode();
 
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const status = searchParams.get('status') || 'all';
@@ -327,9 +329,24 @@ export default function TransferRequestsPage() {
   const initialToLocation = searchParams.get('to') || '';
 
   const handleClick = (id) => navigate(`/inventory/transfers/${id}`);
-  const handleApprove = (id) => navigate(`/inventory/transfers/${id}?action=approve`);
-  const handleDispatch = (id) => navigate(`/inventory/transfers/${id}?action=dispatch`);
-  const handleReceive = (id) => navigate(`/inventory/transfers/${id}?action=receive`);
+  const handleApprove = (id) => {
+    if (!transferActionsAvailable) {
+      return;
+    }
+    navigate(`/inventory/transfers/${id}?action=approve`);
+  };
+  const handleDispatch = (id) => {
+    if (!transferActionsAvailable) {
+      return;
+    }
+    navigate(`/inventory/transfers/${id}?action=dispatch`);
+  };
+  const handleReceive = (id) => {
+    if (!transferActionsAvailable) {
+      return;
+    }
+    navigate(`/inventory/transfers/${id}?action=receive`);
+  };
 
   const handleCreate = () => {
     setSearchParams((prev) => {
@@ -376,24 +393,26 @@ export default function TransferRequestsPage() {
         </span>
       ),
     },
-    {
-      key: 'actions',
-      header: '',
-      width: '200px',
-      render: (transfer) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleApprove(transfer.id); }}>
-            Approve
-          </Button>
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleDispatch(transfer.id); }}>
-            Dispatch
-          </Button>
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleReceive(transfer.id); }}>
-            Receive
-          </Button>
-        </div>
-      ),
-    },
+    ...(transferActionsAvailable
+      ? [{
+          key: 'actions',
+          header: '',
+          width: '200px',
+          render: (transfer) => (
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleApprove(transfer.id); }}>
+                Approve
+              </Button>
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleDispatch(transfer.id); }}>
+                Dispatch
+              </Button>
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={(event) => { event.stopPropagation(); handleReceive(transfer.id); }}>
+                Receive
+              </Button>
+            </div>
+          ),
+        }]
+      : []),
   ];
 
   const handleCloseSheet = () => {
@@ -465,6 +484,12 @@ export default function TransferRequestsPage() {
       />
 
       <div className="p-4 sm:p-6 space-y-6">
+      {!transferActionsAvailable && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Transfer approval, dispatch, and receiving are not available in Rust V2 mode yet.
+          New transfer request creation and transfer review remain available.
+        </div>
+      )}
 
       <Tabs value={status} onValueChange={handleTabChange}>
         <TabsList className="w-full sm:w-auto overflow-x-auto">

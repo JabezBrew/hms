@@ -23,10 +23,11 @@ export const staffKeys = {
  * @param {Object} filters - Query parameters for filtering
  * @returns {Object} Query result
  */
-export function useStaff(filters = {}) {
+export function useStaff(filters = {}, options = {}) {
   return useQuery({
     queryKey: staffKeys.list(filters),
-    queryFn: () => staffApi.getStaff(filters),
+    queryFn: ({ signal }) => staffApi.getStaff(filters, { signal }),
+    ...options,
   });
 }
 
@@ -38,7 +39,7 @@ export function useStaff(filters = {}) {
 export function useStaffMember(id) {
   return useQuery({
     queryKey: staffKeys.detail(id),
-    queryFn: () => staffApi.getStaffMember(id),
+    queryFn: ({ signal }) => staffApi.getStaffMember(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
   });
 }
@@ -212,7 +213,7 @@ export function useResendStaffSetupLink() {
 export function usePractitioners(filters = {}) {
   return useQuery({
     queryKey: staffKeys.practitionersList(filters),
-    queryFn: () => staffApi.getPractitioners(filters),
+    queryFn: ({ signal }) => staffApi.getPractitioners(filters, { signal }),
   });
 }
 
@@ -221,11 +222,13 @@ export function usePractitioners(filters = {}) {
  * @param {string} id - Practitioner ID
  * @returns {Object} Query result
  */
-export function usePractitioner(id) {
+export function usePractitioner(id, options = {}) {
+  const { enabled = true, ...queryOptions } = options;
   return useQuery({
     queryKey: staffKeys.practitioner(id),
-    queryFn: () => staffApi.getPractitioner(id),
-    enabled: !!id,
+    queryFn: ({ signal }) => staffApi.getPractitioner(id, { signal }),
+    enabled: Boolean(id && enabled),
+    ...queryOptions,
   });
 }
 
@@ -238,7 +241,7 @@ export function usePractitioner(id) {
 export function useSearchPractitioners(doctorsOnly = false, options = {}) {
   return useSearchQuery(
     [...staffKeys.practitioners(), 'search', { doctorsOnly }],
-    (query) => staffApi.searchPractitioners(query, doctorsOnly),
+    (query, requestOptions) => staffApi.searchPractitioners(query, doctorsOnly, requestOptions),
     {
       staleTime: 5 * 60 * 1000, // 5 minutes - practitioners list changes less frequently
       ...options,
@@ -255,7 +258,10 @@ export function useSearchPractitioners(doctorsOnly = false, options = {}) {
 export function useSearchStaff(filters = {}, options = {}) {
   return useSearchQuery(
     [...staffKeys.search(), { filters }],
-    (query) => staffApi.searchStaff(query, filters),
+    (query, requestOptions) => staffApi.searchStaff(query, {
+      ...filters,
+      signal: requestOptions?.signal,
+    }),
     {
       staleTime: 60 * 1000,
       ...options,

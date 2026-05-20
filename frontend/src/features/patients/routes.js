@@ -36,7 +36,7 @@ export const patientRoutes = [
   {
     path: '/patients/my-patients',
     component: MyPatientsPage,
-    roles: ROLE_GROUPS.MY_PATIENTS,
+    roles: [ROLES.ADMIN, ...ROLE_GROUPS.MY_PATIENTS],
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.PATIENTS,
     title: 'My Patients | Hospital Management System',
@@ -74,6 +74,7 @@ export const patientRoutes = [
     component: PatientPage,
     roles: ROLE_GROUPS.CLINICAL,
     features: ['wards'],
+    rustV2Supported: false,
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.PATIENT_WORKSPACE,
     title: 'Ward Round | Hospital Management System',

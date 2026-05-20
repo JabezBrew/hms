@@ -270,7 +270,7 @@ function aggregateCountsByUnit(countsPayload, ancestorsById) {
 export function useUnitTypes(params = {}) {
   return useQuery({
     queryKey: organizationKeys.unitTypesList(params),
-    queryFn: () => unitTypesApi.list(params),
+    queryFn: ({ signal }) => unitTypesApi.list(params, { signal }),
     staleTime: 5 * 60 * 1000, // Config data is relatively stable
   });
 }
@@ -278,7 +278,7 @@ export function useUnitTypes(params = {}) {
 export function useUnitType(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitType(id),
-    queryFn: () => unitTypesApi.get(id),
+    queryFn: ({ signal }) => unitTypesApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -291,7 +291,7 @@ export function useUnitType(id, options = {}) {
 export function useLeadershipRoles(params = {}) {
   return useQuery({
     queryKey: organizationKeys.leadershipRolesList(params),
-    queryFn: () => leadershipRolesApi.list(params),
+    queryFn: ({ signal }) => leadershipRolesApi.list(params, { signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -299,7 +299,7 @@ export function useLeadershipRoles(params = {}) {
 export function useLeadershipRole(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.leadershipRole(id),
-    queryFn: () => leadershipRolesApi.get(id),
+    queryFn: ({ signal }) => leadershipRolesApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -312,7 +312,7 @@ export function useLeadershipRole(id, options = {}) {
 export function useAssignmentTypes(params = {}) {
   return useQuery({
     queryKey: organizationKeys.assignmentTypesList(params),
-    queryFn: () => assignmentTypesApi.list(params),
+    queryFn: ({ signal }) => assignmentTypesApi.list(params, { signal }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -324,7 +324,7 @@ export function useAssignmentTypes(params = {}) {
 export function useClinicalUnits(params = {}) {
   return useQuery({
     queryKey: organizationKeys.unitsList(params),
-    queryFn: () => clinicalUnitsApi.list(params),
+    queryFn: ({ signal }) => clinicalUnitsApi.list(params, { signal }),
     staleTime: 30 * 1000, // 30 seconds
   });
 }
@@ -332,7 +332,7 @@ export function useClinicalUnits(params = {}) {
 export function useClinicalUnitsTree(options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitsTree(),
-    queryFn: () => clinicalUnitsApi.tree(),
+    queryFn: ({ signal }) => clinicalUnitsApi.tree({ signal }),
     staleTime: 60 * 1000, // 1 minute - tree changes infrequently
     ...options,
   });
@@ -341,7 +341,7 @@ export function useClinicalUnitsTree(options = {}) {
 export function useClinicalUnit(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unit(id),
-    queryFn: () => clinicalUnitsApi.get(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -350,7 +350,7 @@ export function useClinicalUnit(id, options = {}) {
 export function useUnitChildren(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitChildren(id),
-    queryFn: () => clinicalUnitsApi.children(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.children(id, {}, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -359,7 +359,7 @@ export function useUnitChildren(id, options = {}) {
 export function useUnitAncestors(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitAncestors(id),
-    queryFn: () => clinicalUnitsApi.ancestors(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.ancestors(id, {}, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -368,7 +368,7 @@ export function useUnitAncestors(id, options = {}) {
 export function useUnitLeaders(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitLeaders(id),
-    queryFn: () => clinicalUnitsApi.leaders(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.leaders(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -427,7 +427,7 @@ function useUnitAssignmentList({
 
   const queryResult = usePaginatedQuery(
     queryKey,
-    (queryParams) => fetcher(sourceUnitId, queryParams),
+    (queryParams, requestOptions) => fetcher(sourceUnitId, queryParams, requestOptions),
     {
       enabled: !!sourceUnitId,
       params,
@@ -538,10 +538,10 @@ function useUnitAssignmentCounts({
 
   const queryResult = useQuery({
     queryKey,
-    queryFn: () => fetcher(sourceUnitId, {
+    queryFn: ({ signal }) => fetcher(sourceUnitId, {
       include_descendants: includeDescendants,
       q: queryValue,
-    }),
+    }, { signal }),
     enabled: !!sourceUnitId,
     staleTime: 3 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -629,7 +629,7 @@ export function useUnitMembersCounts(id, params = {}, options = {}) {
 export function useUnitWards(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.unitWards(id),
-    queryFn: () => clinicalUnitsApi.wards(id),
+    queryFn: ({ signal }) => clinicalUnitsApi.wards(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -681,7 +681,7 @@ export function useDeleteClinicalUnit() {
 export function useLeadershipAssignments(params = {}) {
   return useQuery({
     queryKey: organizationKeys.leadershipList(params),
-    queryFn: () => leadershipApi.list(params),
+    queryFn: ({ signal }) => leadershipApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -731,7 +731,7 @@ export function useDeleteLeadershipAssignment() {
 export function useStaffAssignments(params = {}) {
   return useQuery({
     queryKey: organizationKeys.staffAssignmentsList(params),
-    queryFn: () => staffAssignmentsApi.list(params),
+    queryFn: ({ signal }) => staffAssignmentsApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -781,7 +781,7 @@ export function useDeleteStaffAssignment() {
 export function useUnitMembersList(params = {}) {
   return useQuery({
     queryKey: organizationKeys.unitMembersList(params),
-    queryFn: () => unitMembersApi.list(params),
+    queryFn: ({ signal }) => unitMembersApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -831,7 +831,7 @@ export function useDeleteUnitMember() {
 export function useCrossCoverageSchedules(params = {}) {
   return useQuery({
     queryKey: organizationKeys.crossCoverageList(params),
-    queryFn: () => crossCoverageApi.list(params),
+    queryFn: ({ signal }) => crossCoverageApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -876,7 +876,7 @@ export function useDeleteCrossCoverage() {
 export function useWardAllocations(params = {}) {
   return useQuery({
     queryKey: organizationKeys.wardAllocationsList(params),
-    queryFn: () => wardAllocationsApi.list(params),
+    queryFn: ({ signal }) => wardAllocationsApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -926,7 +926,7 @@ export function useDeleteWardAllocation() {
 export function useShiftDefinitions(params = {}) {
   return useQuery({
     queryKey: organizationKeys.shiftDefinitionsList(params),
-    queryFn: () => shiftDefinitionsApi.list(params),
+    queryFn: ({ signal }) => shiftDefinitionsApi.list(params, { signal }),
     staleTime: 5 * 60 * 1000, // 5 minutes - shifts don't change often
   });
 }
@@ -934,7 +934,7 @@ export function useShiftDefinitions(params = {}) {
 export function useShiftDefinition(id) {
   return useQuery({
     queryKey: organizationKeys.shiftDefinition(id),
-    queryFn: () => shiftDefinitionsApi.get(id),
+    queryFn: ({ signal }) => shiftDefinitionsApi.get(id, { signal }),
     enabled: !!id,
   });
 }
@@ -980,7 +980,7 @@ export function useDeleteShiftDefinition() {
 export function useDutyRosterTemplates(params = {}) {
   return useQuery({
     queryKey: organizationKeys.dutyRosterTemplatesList(params),
-    queryFn: () => dutyRosterTemplatesApi.list(params),
+    queryFn: ({ signal }) => dutyRosterTemplatesApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -988,7 +988,7 @@ export function useDutyRosterTemplates(params = {}) {
 export function useDutyRosterTemplate(id) {
   return useQuery({
     queryKey: organizationKeys.dutyRosterTemplate(id),
-    queryFn: () => dutyRosterTemplatesApi.get(id),
+    queryFn: ({ signal }) => dutyRosterTemplatesApi.get(id, { signal }),
     enabled: !!id,
   });
 }
@@ -1034,7 +1034,7 @@ export function useDeleteDutyRosterTemplate() {
 export function useDepartmentDutyTypes(params = {}) {
   return useQuery({
     queryKey: organizationKeys.departmentDutyTypesList(params),
-    queryFn: () => departmentDutyTypesApi.list(params),
+    queryFn: ({ signal }) => departmentDutyTypesApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1076,7 +1076,7 @@ export function useDeleteDepartmentDutyType() {
 export function useDepartmentStations(params = {}) {
   return useQuery({
     queryKey: organizationKeys.departmentStationsList(params),
-    queryFn: () => departmentStationsApi.list(params),
+    queryFn: ({ signal }) => departmentStationsApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1118,7 +1118,7 @@ export function useDeleteDepartmentStation() {
 export function useDepartmentRosterPlans(params = {}) {
   return useQuery({
     queryKey: organizationKeys.departmentRosterPlansList(params),
-    queryFn: () => departmentRosterPlansApi.list(params),
+    queryFn: ({ signal }) => departmentRosterPlansApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1160,7 +1160,7 @@ export function useDeleteDepartmentRosterPlan() {
 export function useDepartmentRosterPatterns(params = {}) {
   return useQuery({
     queryKey: organizationKeys.departmentRosterPatternsList(params),
-    queryFn: () => departmentRosterPatternsApi.list(params),
+    queryFn: ({ signal }) => departmentRosterPatternsApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1202,7 +1202,7 @@ export function useDeleteDepartmentRosterPattern() {
 export function useRosterPatternSlots(params = {}) {
   return useQuery({
     queryKey: organizationKeys.rosterPatternSlotsList(params),
-    queryFn: () => rosterPatternSlotsApi.list(params),
+    queryFn: ({ signal }) => rosterPatternSlotsApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1244,7 +1244,7 @@ export function useDeleteRosterPatternSlot() {
 export function useRosterOverrides(params = {}) {
   return useQuery({
     queryKey: organizationKeys.rosterOverridesList(params),
-    queryFn: () => rosterOverridesApi.list(params),
+    queryFn: ({ signal }) => rosterOverridesApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1286,7 +1286,7 @@ export function useDeleteRosterOverride() {
 export function useTeamRosterPlans(params = {}) {
   return useQuery({
     queryKey: organizationKeys.teamRosterPlansList(params),
-    queryFn: () => teamRosterPlansApi.list(params),
+    queryFn: ({ signal }) => teamRosterPlansApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1328,7 +1328,7 @@ export function useDeleteTeamRosterPlan() {
 export function useTeamRosterEntries(params = {}) {
   return useQuery({
     queryKey: organizationKeys.teamRosterEntriesList(params),
-    queryFn: () => teamRosterEntriesApi.list(params),
+    queryFn: ({ signal }) => teamRosterEntriesApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1415,7 +1415,7 @@ export function useTeamRosterImportApply() {
 export function useDutyRoster(params = {}) {
   return useQuery({
     queryKey: organizationKeys.dutyRosterList(params),
-    queryFn: () => dutyRosterApi.list(params),
+    queryFn: ({ signal }) => dutyRosterApi.list(params, { signal }),
     staleTime: 30 * 1000,
   });
 }
@@ -1423,7 +1423,7 @@ export function useDutyRoster(params = {}) {
 export function useDutyRosterEntry(id) {
   return useQuery({
     queryKey: organizationKeys.dutyRosterEntry(id),
-    queryFn: () => dutyRosterApi.get(id),
+    queryFn: ({ signal }) => dutyRosterApi.get(id, { signal }),
     enabled: !!id,
   });
 }
@@ -1432,7 +1432,7 @@ export function useOnDuty(params) {
   const unitId = params?.unit_id;
   return useQuery({
     queryKey: organizationKeys.onDuty(params || {}),
-    queryFn: () => dutyRosterApi.onDuty(params),
+    queryFn: ({ signal }) => dutyRosterApi.onDuty(params, { signal }),
     enabled: !!unitId,
     staleTime: 60 * 1000, // 1 minute
   });
@@ -1501,7 +1501,7 @@ export function useDeleteDutyRosterEntry() {
 export function useClinics(params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.clinicsList(params),
-    queryFn: () => clinicsApi.list(params),
+    queryFn: ({ signal }) => clinicsApi.list(params, { signal }),
     staleTime: 30 * 1000,
     ...options,
   });
@@ -1510,7 +1510,7 @@ export function useClinics(params = {}, options = {}) {
 export function useClinic(id, options = {}) {
   return useQuery({
     queryKey: [...organizationKeys.clinics(), id],
-    queryFn: () => clinicsApi.get(id),
+    queryFn: ({ signal }) => clinicsApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -1552,7 +1552,7 @@ export function useDeleteClinic() {
 export function useClinicSchedules(params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.clinicSchedulesList(params),
-    queryFn: () => clinicSchedulesApi.list(params),
+    queryFn: ({ signal }) => clinicSchedulesApi.list(params, { signal }),
     staleTime: 30 * 1000,
     ...options,
   });
@@ -1565,7 +1565,7 @@ export function useClinicSchedules(params = {}, options = {}) {
 export function useRotationRules(departmentId, params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.rotationRulesList(departmentId, params),
-    queryFn: () => rotationRulesApi.list(departmentId, params),
+    queryFn: ({ signal }) => rotationRulesApi.list(departmentId, params, { signal }),
     enabled: !!departmentId,
     staleTime: 5 * 60 * 1000,
     ...options,
@@ -1575,7 +1575,7 @@ export function useRotationRules(departmentId, params = {}, options = {}) {
 export function useRotationRule(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.rotationRule(id),
-    queryFn: () => rotationRulesApi.get(id),
+    queryFn: ({ signal }) => rotationRulesApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -1621,7 +1621,7 @@ export function useDeleteRotationRule() {
 export function useRosterEntries(departmentId, params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.rosterEntriesList(departmentId, params),
-    queryFn: () => rosterEntriesApi.list(departmentId, params),
+    queryFn: ({ signal }) => rosterEntriesApi.list(departmentId, params, { signal }),
     enabled: !!departmentId,
     staleTime: 30 * 1000,
     ...options,
@@ -1631,7 +1631,7 @@ export function useRosterEntries(departmentId, params = {}, options = {}) {
 export function useRosterEntry(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.rosterEntry(id),
-    queryFn: () => rosterEntriesApi.get(id),
+    queryFn: ({ signal }) => rosterEntriesApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -1739,7 +1739,7 @@ export function useOverrideRosterEntry() {
 export function useRosterOnDutyDepartment(departmentId, params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.rosterOnDutyDepartment(departmentId, params),
-    queryFn: () => rosterEntriesApi.onDutyDepartment(departmentId, params),
+    queryFn: ({ signal }) => rosterEntriesApi.onDutyDepartment(departmentId, params, { signal }),
     enabled: !!departmentId,
     staleTime: 60 * 1000,
     ...options,
@@ -1749,7 +1749,7 @@ export function useRosterOnDutyDepartment(departmentId, params = {}, options = {
 export function useRosterOnDutyAll(params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.rosterOnDutyAll(params),
-    queryFn: () => rosterEntriesApi.onDutyAll(params),
+    queryFn: ({ signal }) => rosterEntriesApi.onDutyAll(params, { signal }),
     staleTime: 60 * 1000,
     ...options,
   });
@@ -1769,7 +1769,7 @@ export function useDepartments(options = {}) {
 export function useValidationRules(departmentId, params = {}, options = {}) {
   return useQuery({
     queryKey: organizationKeys.validationRulesList(departmentId, params),
-    queryFn: () => validationRulesApi.list(departmentId, params),
+    queryFn: ({ signal }) => validationRulesApi.list(departmentId, params, { signal }),
     enabled: !!departmentId,
     staleTime: 5 * 60 * 1000,
     ...options,
@@ -1779,7 +1779,7 @@ export function useValidationRules(departmentId, params = {}, options = {}) {
 export function useValidationRule(id, options = {}) {
   return useQuery({
     queryKey: organizationKeys.validationRule(id),
-    queryFn: () => validationRulesApi.get(id),
+    queryFn: ({ signal }) => validationRulesApi.get(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -1788,7 +1788,7 @@ export function useValidationRule(id, options = {}) {
 export function useValidationRuleTemplates(options = {}) {
   return useQuery({
     queryKey: organizationKeys.validationRuleTemplates(),
-    queryFn: () => validationRulesApi.templates(),
+    queryFn: ({ signal }) => validationRulesApi.templates({ signal }),
     staleTime: 60 * 60 * 1000, // Templates rarely change
     ...options,
   });

@@ -1,7 +1,16 @@
 # HMS Commercial Module Contract
 
-This document mirrors `backend/hms_backend/feature_manifest.py`. The Python
-manifest is the source of truth for runtime behavior.
+The active Rust V2 capability registry lives in
+`backend-rs/crates/hms-domain/src/capabilities.rs` and
+`backend-rs/crates/hms-domain/src/deployment.rs`.
+
+This document is commercial/module-planning reference. It was originally
+mirrored from the legacy Django feature manifest and still contains historical
+sellable-module keys that may not map one-to-one to Rust V2 `FeatureKey` values.
+Do not infer backend behavior from this file; update `hms-domain` first, then
+revise this planning contract. Treat the old
+`backend/hms_backend/feature_manifest.py` as reference only unless the task
+explicitly asks for legacy Django maintenance.
 
 ## Contract Categories
 

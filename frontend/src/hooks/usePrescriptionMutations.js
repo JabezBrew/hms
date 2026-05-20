@@ -1,5 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { handleV2ApiError } from '@/lib/api/v2/errors';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { v2Api } from '@/lib/api/v2/client';
 import { toast } from 'sonner';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 import { invalidateQueryKeys } from '@/shared/lib/queryInvalidation';
@@ -11,6 +14,7 @@ import { invalidatePatientTimelineQueries } from './useTimelineQueries';
 
 // Query keys for prescriptions
 const prescriptionKeyFactory = createKeyFactory('prescriptions');
+const ACTIVE_PRESCRIPTION_LIST_LIMIT = 50;
 
 export const prescriptionKeys = {
   all: prescriptionKeyFactory.all,
@@ -26,6 +30,113 @@ function normalizeIdentifier(value) {
     return value.id ?? value.uuid ?? null;
   }
   return null;
+}
+
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function normalizePrescriptionResponse(prescription = {}) {
+  return {
+    ...prescription,
+    patient: prescription.patient || prescription.patient_id,
+    dosage: prescription.dosage || prescription.dose,
+    start_date: prescription.start_date || prescription.prescribed_at,
+  };
+}
+
+function getPrescriptionPatientId(data = {}) {
+  return normalizeIdentifier(data.patient || data.patient_id || data.patientId || data.patient?.id);
+}
+
+function normalizeCreatePrescriptionPayload(data = {}) {
+  return {
+    medication_name: data.medication_name,
+    dose: data.dose || data.dosage,
+    frequency: data.frequency,
+  };
+}
+
+function normalizeUpdatePrescriptionPayload(data = {}) {
+  const payload = {};
+  if (data.medication_name !== undefined || data.name !== undefined) {
+    payload.medication_name = data.medication_name ?? data.name;
+  }
+  if (data.dose !== undefined || data.dosage !== undefined) {
+    payload.dose = data.dose ?? data.dosage;
+  }
+  if (data.frequency !== undefined) {
+    payload.frequency = data.frequency;
+  }
+  if (data.status !== undefined) {
+    payload.status = data.status;
+  }
+  return payload;
+}
+
+export async function createPrescription(data, options = {}) {
+  if (isRustV2ApiMode()) {
+    const patientId = getPrescriptionPatientId(data);
+    if (!patientId) {
+      throw new Error('Patient is required to create a prescription');
+    }
+    try {
+      const response = await v2Api.postPatientPrescriptions(
+        { patient_id: patientId },
+        normalizeCreatePrescriptionPayload(data),
+        { signal: options.signal },
+      );
+      return normalizePrescriptionResponse(response?.data);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to create prescription'));
+    }
+  }
+  return apiClient.post('/clinical-notes/prescriptions/', data, options);
+}
+
+export async function updatePrescription(prescriptionId, data, options = {}) {
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.patchClinicalPrescription(
+        { id: prescriptionId },
+        normalizeUpdatePrescriptionPayload(data),
+        { signal: options.signal },
+      );
+      return normalizePrescriptionResponse(response?.data);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to update prescription'));
+    }
+  }
+  return apiClient.patch(`/clinical-notes/prescriptions/${prescriptionId}/`, data, options);
+}
+
+export async function discontinuePrescription(prescriptionId, data = {}, options = {}) {
+  if (isRustV2ApiMode()) {
+    return updatePrescription(prescriptionId, { status: 'stopped' }, options);
+  }
+  return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/discontinue/`, {
+    reason: data.reason,
+  }, options);
+}
+
+export async function holdPrescription(prescriptionId, data = {}, options = {}) {
+  if (isRustV2ApiMode()) {
+    return updatePrescription(prescriptionId, { status: 'on_hold' }, options);
+  }
+  return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/hold/`, {
+    reason: data.reason,
+  }, options);
+}
+
+export async function resumePrescription(prescriptionId, _data = {}, options = {}) {
+  if (isRustV2ApiMode()) {
+    return updatePrescription(prescriptionId, { status: 'active' }, options);
+  }
+  return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/resume/`, {}, options);
 }
 
 function getCachedPrescription(queryClient, prescriptionId) {
@@ -102,7 +213,7 @@ export function useUpdatePrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, data }) => {
-      return apiClient.patch(`/clinical-notes/prescriptions/${prescriptionId}/`, data);
+      return updatePrescription(prescriptionId, data);
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
@@ -132,9 +243,7 @@ export function useDiscontinuePrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, reason }) => {
-      return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/discontinue/`, {
-        reason,
-      });
+      return discontinuePrescription(prescriptionId, { reason });
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
@@ -164,9 +273,7 @@ export function useHoldPrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId, reason }) => {
-      return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/hold/`, {
-        reason,
-      });
+      return holdPrescription(prescriptionId, { reason });
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
@@ -196,7 +303,7 @@ export function useResumePrescription() {
 
   return useMutation({
     mutationFn: async ({ prescriptionId }) => {
-      return apiClient.post(`/clinical-notes/prescriptions/${prescriptionId}/resume/`, {});
+      return resumePrescription(prescriptionId);
     },
     onSuccess: (data, variables) => {
       const prescriptionId = normalizeIdentifier(variables?.prescriptionId ?? data?.id);
@@ -254,13 +361,42 @@ export function useRenewPrescription() {
 /**
  * Fetch a single prescription by ID
  */
-export async function fetchPrescription(prescriptionId) {
+export async function fetchPrescription(prescriptionId, options = {}) {
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.getClinicalPrescriptionById(
+        { id: prescriptionId },
+        { signal: options.signal },
+      );
+      return normalizePrescriptionResponse(response?.data);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to fetch prescription'));
+    }
+  }
   return apiClient.get(`/clinical-notes/prescriptions/${prescriptionId}/`);
 }
 
 /**
  * Fetch active prescriptions for a patient
  */
-export async function fetchPatientActivePrescriptions(patientId) {
+export async function fetchPatientActivePrescriptions(patientId, options = {}) {
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.getPatientPrescriptions(
+        { patient_id: patientId },
+        {
+          query: { limit: ACTIVE_PRESCRIPTION_LIST_LIMIT },
+          signal: options.signal,
+        },
+      );
+      return (response?.data || [])
+        .filter((prescription) => prescription.status === 'active')
+        .map(normalizePrescriptionResponse);
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to fetch active prescriptions'));
+    }
+  }
   return apiClient.get(`/clinical-notes/prescriptions/patient_active/?patient=${patientId}`);
 }

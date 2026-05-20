@@ -1,0 +1,126 @@
+use super::*;
+
+#[tokio::test]
+async fn provisioned_baseline_uses_configured_facility_code_for_login() {
+    let database =
+        Arc::new(hms_db::test_support::TestDatabase::create().expect("test database is available"));
+    let mut config = Config::for_tests_with_database_url(database.database_url().to_owned());
+    config.facility_code = "MAIN".to_owned();
+    let app = app_with_config(config, database).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "email": "owner@hms.local",
+                        "password": "ChangeMe123!",
+                        "facility_code": "MAIN"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("login request succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["user"]["facility_code"], "MAIN");
+}
+
+#[tokio::test]
+async fn baseline_supports_main_ui_patient_registration_prerequisites() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let departments_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/admin/org-units?unit_type=department&is_active=true&limit=20")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("department list succeeds");
+    assert_eq!(departments_response.status(), StatusCode::OK);
+    let departments_body = json_body(departments_response).await;
+    let departments = departments_body["data"]
+        .as_array()
+        .expect("departments are an array");
+    assert!(
+        departments
+            .iter()
+            .any(|unit| unit["unit_type"].as_str() == Some("department")),
+        "baseline must provision at least one active clinical department"
+    );
+
+    let capabilities_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/system/deployment-capabilities")
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("deployment capabilities succeeds");
+    assert_eq!(capabilities_response.status(), StatusCode::OK);
+    let capabilities_body = json_body(capabilities_response).await;
+    assert_eq!(
+        capabilities_body["data"]["capabilities"]["outpatient_requires_active_clinic_schedule"],
+        false
+    );
+}
+
+#[tokio::test]
+async fn omni_search_posts_access_scoped_projection_results() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/search/omni")
+                .header(AUTHORIZATION, auth_header)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "q": "Ama Mensah",
+                        "types": ["patients"],
+                        "limit": 5
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("omni search request succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["query"], "Ama Mensah");
+    assert_eq!(
+        body["data"]["groups"]["patients"][0]["patient_code"],
+        "P-0000000001"
+    );
+    assert_eq!(
+        body["data"]["groups"]["patients"][0]["patient_date_of_birth"],
+        "1990-02-14"
+    );
+    assert!(body["data"]["index_status"]
+        .as_array()
+        .expect("index status is an array")
+        .iter()
+        .any(|status| status["resource_type"] == "patients" && status["status"] == "ready"));
+}

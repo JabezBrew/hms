@@ -45,6 +45,7 @@ import {
   useDeletePatientInsurance,
 } from '@/features/billing/hooks';
 import { useDebounce } from '@/hooks/use-debounce';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import format from 'date-fns/format';
 import parseISO from 'date-fns/parseISO';
 import { toast } from 'sonner';
@@ -59,6 +60,7 @@ const STATUS_OPTIONS = [
 
 export default function InsuranceManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const insuranceMutationsAvailable = !isRustV2ApiMode();
 
   // Filters from URL
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -163,30 +165,32 @@ export default function InsuranceManagementPage() {
       header: '',
       width: '160px',
       render: (insurance) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleEditInsurance(insurance);
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs text-destructive"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleDeleteClick(insurance);
-            }}
-          >
-            Delete
-          </Button>
-        </div>
+        insuranceMutationsAvailable ? (
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleEditInsurance(insurance);
+              }}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-destructive"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleDeleteClick(insurance);
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        ) : null
       ),
     },
   ];
@@ -297,15 +301,27 @@ export default function InsuranceManagementPage() {
           </span>
         )}
         description="Manage patient insurance records and coverage"
-        actions={(
+        actions={insuranceMutationsAvailable ? (
           <Button onClick={handleAddInsurance} className="font-mono text-xs">
             <Plus className="h-4 w-4 mr-2" />
             Add Insurance
           </Button>
-        )}
+        ) : null}
       />
 
       <main className="p-4 sm:p-6 space-y-6">
+        {!insuranceMutationsAvailable && (
+          <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
+              Rust V2 read-only mode
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Patient insurance editing is not available in Rust V2 mode yet. Existing coverage
+              records remain read-only until patient insurance mutation contracts are implemented.
+            </p>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
@@ -359,7 +375,7 @@ export default function InsuranceManagementPage() {
                 ? 'Try adjusting your filters'
                 : 'Get started by adding a patient insurance record'}
             </p>
-            {!hasActiveFilters && (
+            {!hasActiveFilters && insuranceMutationsAvailable && (
               <Button onClick={handleAddInsurance} className="font-mono text-xs">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Insurance
@@ -413,36 +429,40 @@ export default function InsuranceManagementPage() {
       </main>
 
       {/* Form Slide-Over */}
-      <PatientInsuranceFormSlideOver
-        open={showFormSlideOver}
-        onClose={() => {
-          setShowFormSlideOver(false);
-          setEditingInsurance(null);
-        }}
-        insurance={editingInsurance}
-      />
+      {insuranceMutationsAvailable && (
+        <PatientInsuranceFormSlideOver
+          open={showFormSlideOver}
+          onClose={() => {
+            setShowFormSlideOver(false);
+            setEditingInsurance(null);
+          }}
+          insurance={editingInsurance}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Insurance Record</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this insurance record for{' '}
-              <strong>{insuranceToDelete?.patient_name}</strong>? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {insuranceMutationsAvailable && (
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Insurance Record</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this insurance record for{' '}
+                <strong>{insuranceToDelete?.patient_name}</strong>? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </PageShell>
   );
 }

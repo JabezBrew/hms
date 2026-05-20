@@ -3,7 +3,7 @@ import format from 'date-fns/format'
 import Receipt from 'lucide-react/dist/esm/icons/receipt-text.js'
 import Wallet from 'lucide-react/dist/esm/icons/wallet.js'
 import Clock3 from 'lucide-react/dist/esm/icons/clock-3.js'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { PageShell } from '@/shared/components/page/PageShell'
 import { PageState } from '@/shared/components/page/PageState'
 import { usePageMeta } from '@/shared/hooks/usePageMeta'
 import { useClearBilling, useDischargeCase, useDischargeCases, useUpdateBillingCutoff } from '@/features/discharge/hooks/useDischargeCaseQueries'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 
 function getBillingBlocker(item) {
   return (item?.blockers || []).find((task) => task.task_type === 'billing_clearance') || null
@@ -41,6 +42,7 @@ function formatDateTime(value) {
 }
 
 export default function BillingDischargesPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedCaseId = searchParams.get('case')
   const [cutoffDrafts, setCutoffDrafts] = useState({})
@@ -56,6 +58,7 @@ export default function BillingDischargesPage() {
   const { data: selectedCase } = useDischargeCase(selectedCaseId, { enabled: !!selectedCaseId })
   const updateBillingCutoff = useUpdateBillingCutoff()
   const clearBilling = useClearBilling()
+  const billingClearanceMutationsAvailable = !isRustV2ApiMode()
 
   const cases = useMemo(() => {
     const results = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []
@@ -151,34 +154,45 @@ export default function BillingDischargesPage() {
                       </div>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <Input
-                        type="datetime-local"
-                        value={draftValue}
-                        onChange={(event) => {
-                          setCutoffDrafts((current) => ({
-                            ...current,
-                            [item.id]: event.target.value,
-                          }))
-                        }}
-                      />
-                      <Button
-                        variant="outline"
-                        disabled={updateBillingCutoff.isPending || !draftValue}
-                        onClick={() => updateBillingCutoff.mutate({
-                          caseId: item.id,
-                          billingCutoffAt: new Date(draftValue).toISOString(),
-                        })}
-                      >
-                        Save Cutoff
-                      </Button>
-                      <Button
-                        disabled={clearBilling.isPending}
-                        onClick={() => clearBilling.mutate({ caseId: item.id })}
-                      >
-                        Clear Billing
-                      </Button>
-                    </div>
+                    {billingClearanceMutationsAvailable ? (
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                        <Input
+                          type="datetime-local"
+                          value={draftValue}
+                          onChange={(event) => {
+                            setCutoffDrafts((current) => ({
+                              ...current,
+                              [item.id]: event.target.value,
+                            }))
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          disabled={updateBillingCutoff.isPending || !draftValue}
+                          onClick={() => updateBillingCutoff.mutate({
+                            caseId: item.id,
+                            billingCutoffAt: new Date(draftValue).toISOString(),
+                          })}
+                        >
+                          Save Cutoff
+                        </Button>
+                        <Button
+                          disabled={clearBilling.isPending}
+                          onClick={() => clearBilling.mutate({ caseId: item.id })}
+                        >
+                          Clear Billing
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                        <p className="font-mono text-xs uppercase tracking-wide">
+                          Discharge billing review
+                        </p>
+                        <p className="mt-1">
+                          Billing cutoff edits and billing clearance are not available for this deployment yet. Case detail review remains available.
+                        </p>
+                      </div>
+                    )}
 
                     <Button
                       variant="ghost"
@@ -219,8 +233,26 @@ export default function BillingDischargesPage() {
                       .map((task) => (
                       <div key={task.id || task.task_type} className="rounded-lg border p-3 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <span>{task.task_type.replace(/_/g, ' ')}</span>
-                          <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
+                          <div>
+                            <span>{task.task_type.replace(/_/g, ' ')}</span>
+                            {(task.hold_reason || task.override_reason) && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {task.override_reason || task.hold_reason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {task.workflow_path && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate(task.workflow_path)}
+                              >
+                                Open source
+                              </Button>
+                            )}
+                            <Badge variant="outline">{task.status.replace(/_/g, ' ')}</Badge>
+                          </div>
                         </div>
                       </div>
                       ))}
@@ -240,6 +272,15 @@ export default function BillingDischargesPage() {
                           </div>
                         ))}
                     </div>
+                  )}
+                  {activeCase.schedule_follow_up_action?.path && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => navigate(activeCase.schedule_follow_up_action.path)}
+                    >
+                      {activeCase.schedule_follow_up_action.label || 'Schedule follow-up'}
+                    </Button>
                   )}
                 </>
               )}

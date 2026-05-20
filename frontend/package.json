@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "preview:ci": "serve -s dist -l 4173",
+    "api:v2:generate": "node ./scripts/generate-v2-api-client.mjs",
+    "api:v2:generate:check": "node ./scripts/generate-v2-api-client.mjs --check",
     "e2e": "playwright test",
     "e2e:list": "playwright test --list",
     "perf:bundle-budget": "node ./scripts/check-bundle-budget.mjs",

@@ -1,4 +1,8 @@
-# Celery Integration for HMS Backend
+# Legacy Celery Integration for HMS Django Backend
+
+> Legacy note: the active HMS worker path is Rust V2 `hms-worker` under
+> `backend-rs/`. Use this document only for explicit legacy Django maintenance
+> or historical reference.
 
 This document explains how to use Celery for background task processing and scheduled tasks in the HMS Backend.
 

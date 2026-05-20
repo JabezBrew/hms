@@ -57,4 +57,17 @@ describe('PatientIdentityHero', () => {
 
     expect(onActionIntent).toHaveBeenCalledWith('copilot')
   })
+
+  it('renders Rust V2 allergy substances from Chronicle context ahead of patient-local allergies', () => {
+    renderHero({
+      allergies: [{
+        id: 'allergy-1',
+        substance: 'Latex',
+        severity: 'severe',
+      }],
+    })
+
+    expect(screen.getByText('Latex')).toBeInTheDocument()
+    expect(screen.queryByText('Penicillin')).not.toBeInTheDocument()
+  })
 })

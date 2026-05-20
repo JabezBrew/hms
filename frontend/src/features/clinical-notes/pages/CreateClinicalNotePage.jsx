@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEncounter } from '@/features/encounters/hooks/useEncounterQueries';
 import { useAuth } from '@/lib/auth';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 import { 
   useNoteEntriesForEncounter, 
   useActiveNoteTemplates,
@@ -28,6 +29,7 @@ export default function CreateClinicalNotePage() {
   const [activeTab, setActiveTab] = useState('new');
   const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
   const [isCreatingTemplates, setIsCreatingTemplates] = useState(false);
+  const rustV2Mode = isRustV2ApiMode();
 
   // Get the user's authentication information
   const { user } = useAuth();
@@ -44,12 +46,18 @@ export default function CreateClinicalNotePage() {
     error: encounterError
   } = useEncounter(encounterId);
 
+  const encounterPatientId = encounter?.patient_id || encounter?.patient?.id || encounter?.patient || null;
+
   // Fetch existing notes for this encounter
   const {
     data: existingNotes,
     isLoading: isLoadingNotes,
     isError: isErrorNotes
-  } = useNoteEntriesForEncounter(encounterId, { page_size: 200 });
+  } = useNoteEntriesForEncounter(encounterId, {
+    page_size: 200,
+    ...(encounterPatientId ? { patient_id: encounterPatientId } : {}),
+    enabled: rustV2Mode ? !!encounterPatientId : true,
+  });
 
   // Fetch all active templates
   const {
@@ -384,35 +392,41 @@ export default function CreateClinicalNotePage() {
             </TabsContent>
 
             <TabsContent value="history">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Note History</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {isLoadingNotes ? (
-                    <p>Loading notes...</p>
-                  ) : isErrorNotes ? (
-                    <p className="text-red-500">Failed to load notes. Please try again later.</p>
-                  ) : !existingNotes || existingNotes.length === 0 ? (
-                    <p>No notes have been created for this encounter yet.</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {existingNotes.map(note => (
-                        <Card key={note.id}>
-                          <CardHeader>
-                            <CardTitle>{note.template_title}</CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                              Created: {new Date(note.created_at).toLocaleString()}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              By: {note.practitioner_name}
-                            </p>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-2">
-                              {Object.entries(note.data).map(([section, data]) => (
-                                <div key={section}>
-                                  <h4 className="font-medium">{section}</h4>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{rustV2Mode ? 'Patient Note History' : 'Note History'}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {isLoadingNotes ? (
+                        <p>Loading notes...</p>
+                      ) : isErrorNotes ? (
+                        <p className="text-red-500">Failed to load notes. Please try again later.</p>
+                      ) : !existingNotes || existingNotes.length === 0 ? (
+                        <p>
+                          {rustV2Mode
+                            ? 'No clinical notes have been created for this patient yet.'
+                            : 'No notes have been created for this encounter yet.'}
+                        </p>
+                      ) : (
+                        <div className="space-y-4">
+                          {existingNotes.map(note => (
+                            <Card key={note.id}>
+                              <CardHeader>
+                                <CardTitle>{note.template_title || note.title || 'Clinical note'}</CardTitle>
+                                <p className="text-sm text-muted-foreground">
+                                  Created: {new Date(note.created_at).toLocaleString()}
+                                </p>
+                                {(note.practitioner_name || note.created_by_name) && (
+                                  <p className="text-sm text-muted-foreground">
+                                    By: {note.practitioner_name || note.created_by_name}
+                                  </p>
+                                )}
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-2">
+                                  {Object.entries(note.data || {}).map(([section, data]) => (
+                                    <div key={section}>
+                                      <h4 className="font-medium">{section}</h4>
                                   {typeof data === 'string' ? (
                                     <p>{data}</p>
                                   ) : (

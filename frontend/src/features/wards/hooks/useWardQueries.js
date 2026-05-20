@@ -46,7 +46,7 @@ export const wardKeys = {
 export function useWardsRoot() {
   return useQuery({
     queryKey: wardKeys.all,
-    queryFn: () => wardsApi.getWardsRoot(),
+    queryFn: ({ signal }) => wardsApi.getWardsRoot({ signal }),
   });
 }
 
@@ -58,7 +58,7 @@ export function useWardsRoot() {
 export function useWards(filters = {}) {
   return useQuery({
     queryKey: wardKeys.list(filters),
-    queryFn: () => wardsApi.getWards(filters),
+    queryFn: ({ signal }) => wardsApi.getWards({ ...filters, signal }),
   });
 }
 
@@ -71,7 +71,10 @@ export function useWards(filters = {}) {
 export function useWardSearch(filters = {}, options = {}) {
   return useSearchQuery(
     [...wardKeys.search(), { filters }],
-    (query) => wardsApi.searchWards(query, filters),
+    (query, requestOptions) => wardsApi.searchWards(query, {
+      ...filters,
+      signal: requestOptions?.signal,
+    }),
     {
       staleTime: 60 * 1000,
       ...options,
@@ -87,7 +90,7 @@ export function useWardSearch(filters = {}, options = {}) {
 export function useWard(id) {
   return useQuery({
     queryKey: wardKeys.detail(id),
-    queryFn: () => wardsApi.getWard(id),
+    queryFn: ({ signal }) => wardsApi.getWard(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
 
   });
@@ -189,7 +192,7 @@ export function useDeleteWard() {
 export function useBeds(filters = {}) {
   return useQuery({
     queryKey: wardKeys.bedsList(filters),
-    queryFn: () => wardsApi.getBeds(filters),
+    queryFn: ({ signal }) => wardsApi.getBeds({ ...filters, signal }),
   });
 }
 
@@ -202,7 +205,7 @@ export function useBeds(filters = {}) {
 export function useWardBeds(wardId, filters = {}) {
   return useQuery({
     queryKey: wardKeys.wardBeds(wardId, filters),
-    queryFn: () => wardsApi.getBeds({ ward: wardId, ...filters }),
+    queryFn: ({ signal }) => wardsApi.getBeds({ ward: wardId, ...filters, signal }),
     enabled: !!wardId,
   });
 }
@@ -215,7 +218,7 @@ export function useWardBeds(wardId, filters = {}) {
 export function useBed(id) {
   return useQuery({
     queryKey: wardKeys.bed(id),
-    queryFn: () => wardsApi.getBed(id),
+    queryFn: ({ signal }) => wardsApi.getBed(id, { signal }),
     enabled: !!id,
   });
 }
@@ -321,7 +324,7 @@ export function useDeleteBed() {
 export function useTransfers(filters = {}) {
   return useQuery({
     queryKey: wardKeys.transfersList(filters),
-    queryFn: () => wardsApi.getTransfers(filters),
+    queryFn: ({ signal }) => wardsApi.getTransfers({ ...filters, signal }),
   });
 }
 
@@ -384,7 +387,7 @@ export function useAdmissions(filters = {}, options = {}) {
 export function useAllocationLogs(filters = {}) {
   return useQuery({
     queryKey: wardKeys.allocationLogsList(filters),
-    queryFn: () => wardsApi.getAllocationLogs(filters),
+    queryFn: ({ signal }) => wardsApi.getAllocationLogs({ ...filters, signal }),
   });
 }
 
@@ -401,7 +404,7 @@ export function useAllocationLogs(filters = {}) {
 export function useSections(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.sectionsList(filters),
-    queryFn: () => wardsApi.getSections(filters),
+    queryFn: ({ signal }) => wardsApi.getSections({ ...filters, signal }),
     ...options,
   });
 }
@@ -415,7 +418,7 @@ export function useSections(filters = {}, options = {}) {
 export function useWardSections(wardId, options = {}) {
   return useQuery({
     queryKey: wardKeys.wardSections(wardId),
-    queryFn: () => wardsApi.getWardSections(wardId),
+    queryFn: ({ signal }) => wardsApi.getWardSections(wardId, { signal }),
     enabled: !!wardId,
     ...options,
   });
@@ -430,7 +433,7 @@ export function useWardSections(wardId, options = {}) {
 export function useSection(id, options = {}) {
   return useQuery({
     queryKey: wardKeys.section(id),
-    queryFn: () => wardsApi.getSection(id),
+    queryFn: ({ signal }) => wardsApi.getSection(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -445,7 +448,7 @@ export function useSection(id, options = {}) {
 export function useSectionBeds(sectionId, options = {}) {
   return useQuery({
     queryKey: wardKeys.sectionBeds(sectionId),
-    queryFn: () => wardsApi.getSectionBeds(sectionId),
+    queryFn: ({ signal }) => wardsApi.getSectionBeds(sectionId, {}, { signal }),
     enabled: !!sectionId,
     ...options,
   });
@@ -560,7 +563,7 @@ export function useDeleteSection() {
 export function useAmenities(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.amenitiesList(filters),
-    queryFn: () => wardsApi.getAmenities(filters),
+    queryFn: ({ signal }) => wardsApi.getAmenities({ ...filters, signal }),
     ...options,
   });
 }
@@ -574,7 +577,7 @@ export function useAmenities(filters = {}, options = {}) {
 export function useAmenity(id, options = {}) {
   return useQuery({
     queryKey: wardKeys.amenity(id),
-    queryFn: () => wardsApi.getAmenity(id),
+    queryFn: ({ signal }) => wardsApi.getAmenity(id, { signal }),
     enabled: !!id,
     ...options,
   });
@@ -661,7 +664,7 @@ export function useDeleteAmenity() {
 export function useAvailableBeds(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.availableBeds(filters),
-    queryFn: () => wardsApi.getAvailableBeds(filters),
+    queryFn: ({ signal }) => wardsApi.getAvailableBeds({ ...filters, signal }),
     ...options,
   });
 }
@@ -680,8 +683,8 @@ export function useAvailableBeds(filters = {}, options = {}) {
 export function useWardStaff(wardId, category = null, options = {}) {
   return useQuery({
     queryKey: wardKeys.wardStaff(wardId, category),
-    queryFn: () => {
-      const params = category ? { category } : {};
+    queryFn: ({ signal }) => {
+      const params = category ? { category, signal } : { signal };
       return wardsApi.getWardStaff(wardId, params);
     },
     enabled: !!wardId,
@@ -699,7 +702,7 @@ export function useWardStaff(wardId, category = null, options = {}) {
 export function useStaffAssignments(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.staffAssignmentsList(filters),
-    queryFn: () => wardsApi.getStaffAssignments(filters),
+    queryFn: ({ signal }) => wardsApi.getStaffAssignments({ ...filters, signal }),
     ...options,
   });
 }
@@ -713,7 +716,7 @@ export function useStaffAssignments(filters = {}, options = {}) {
 export function usePractitionerAssignments(practitionerId, options = {}) {
   return useQuery({
     queryKey: wardKeys.practitionerAssignments(practitionerId),
-    queryFn: () => wardsApi.getStaffAssignmentsByPractitioner(practitionerId),
+    queryFn: ({ signal }) => wardsApi.getStaffAssignmentsByPractitioner(practitionerId, { signal }),
     enabled: !!practitionerId,
     placeholderData: [],
     ...options,
@@ -729,7 +732,7 @@ export function usePractitionerAssignments(practitionerId, options = {}) {
 export function useStaffRoles(filters = {}, options = {}) {
   return useQuery({
     queryKey: wardKeys.staffRolesList(filters),
-    queryFn: () => wardsApi.getStaffRoles(filters),
+    queryFn: ({ signal }) => wardsApi.getStaffRoles({ ...filters, signal }),
     ...options,
   });
 }

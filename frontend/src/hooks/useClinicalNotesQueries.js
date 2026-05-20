@@ -169,7 +169,7 @@ export function useActiveNoteTemplates(options = {}) {
 export function useNoteTemplate(id) {
   return useQuery({
     queryKey: clinicalNotesKeys.template(id),
-    queryFn: () => clinicalNotesApi.getNoteTemplate(id),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteTemplate(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
   });
 }
@@ -314,7 +314,7 @@ export function useMyNoteTemplates() {
 export function useTemplateCategories() {
   return useQuery({
     queryKey: clinicalNotesKeys.templateCategories(),
-    queryFn: () => clinicalNotesApi.getTemplateCategories(),
+    queryFn: ({ signal }) => clinicalNotesApi.getTemplateCategories({ signal }),
     ...immutableMetadataQueryOptions(),
   });
 }
@@ -370,7 +370,7 @@ export function useNoteEntriesForEncounter(encounterId, options = {}) {
 export function useNoteEntry(id) {
   return useQuery({
     queryKey: clinicalNotesKeys.entry(id),
-    queryFn: () => clinicalNotesApi.getNoteEntry(id),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntry(id, { signal }),
     enabled: !!id, // Only run the query if we have an ID
   });
 }
@@ -424,7 +424,7 @@ export function useCreateNoteEntry() {
 export function useNoteEntrySections(id, options = {}) {
   return useQuery({
     queryKey: clinicalNotesKeys.entrySections(id),
-    queryFn: () => clinicalNotesApi.getNoteEntrySections(id),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntrySections(id, { signal }),
     enabled: !!id && options.enabled !== false,
     ...options,
   });
@@ -504,7 +504,7 @@ export function useUpdateNoteEntry() {
 export function useNoteEntryHistory(id, options = {}) {
   return useQuery({
     queryKey: clinicalNotesKeys.entryHistory(id),
-    queryFn: () => clinicalNotesApi.getNoteEntryHistory(id),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntryHistory(id, { signal }),
     enabled: !!id && options.enabled !== false,
     ...options,
   });
@@ -520,7 +520,7 @@ export function useNoteEntryHistory(id, options = {}) {
 export function useNoteEntryVersion(id, versionNumber, options = {}) {
   return useQuery({
     queryKey: clinicalNotesKeys.entryVersion(id, versionNumber),
-    queryFn: () => clinicalNotesApi.getNoteEntryVersion(id, versionNumber),
+    queryFn: ({ signal }) => clinicalNotesApi.getNoteEntryVersion(id, versionNumber, { signal }),
     enabled: !!id && !!versionNumber && options.enabled !== false,
     ...options,
   });
@@ -537,7 +537,7 @@ export function useNoteEntryVersion(id, versionNumber, options = {}) {
 export function useCompareNoteVersions(id, versionA, versionB, options = {}) {
   return useQuery({
     queryKey: [...clinicalNotesKeys.entry(id), 'compare', versionA, versionB],
-    queryFn: () => clinicalNotesApi.compareNoteVersions(id, versionA, versionB),
+    queryFn: ({ signal }) => clinicalNotesApi.compareNoteVersions(id, versionA, versionB, { signal }),
     enabled: !!id && versionA !== undefined && versionB !== undefined && options.enabled !== false,
     ...options,
   });

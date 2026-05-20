@@ -15,7 +15,6 @@ import {
   useMfaStatus,
   useMfaTotpStart,
   useMfaTotpConfirm,
-  useMfaRecoveryGenerate,
 } from '@/features/settings/hooks';
 import { authApi } from '@/shared/api/auth';
 import { useAuth } from '@/lib/auth';
@@ -34,7 +33,6 @@ export default function MFAStatus() {
   const { data: mfaStatus, isLoading, isError, refetch } = useMfaStatus();
   const totpStart = useMfaTotpStart();
   const totpConfirm = useMfaTotpConfirm();
-  const recoveryGenerate = useMfaRecoveryGenerate();
 
   const [totpSecret, setTotpSecret] = useState(null);
   const [totpOtpAuthUrl, setTotpOtpAuthUrl] = useState(null);
@@ -42,10 +40,12 @@ export default function MFAStatus() {
   const [copiedSecret, setCopiedSecret] = useState(false);
 
   const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
   const [showRecoveryCodes, setShowRecoveryCodes] = useState(true);
   const [copiedRecoveryCodes, setCopiedRecoveryCodes] = useState(false);
 
   const [isWebAuthnBusy, setIsWebAuthnBusy] = useState(false);
+  const [isRecoveryBusy, setIsRecoveryBusy] = useState(false);
 
   const webauthnAvailable = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -68,11 +68,29 @@ export default function MFAStatus() {
     );
   }
 
+  if (mfaStatus?.rust_v2_unsupported) {
+    return (
+      <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-muted/30">
+        <div className="p-2.5 rounded-lg shrink-0 bg-muted border border-border">
+          <ShieldOff className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="font-display text-sm font-medium text-foreground">
+            MFA Management Unavailable
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            This Rust V2 build has not exposed account MFA management yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const hasTotp = Boolean(mfaStatus?.totp_enrolled);
   const hasWebAuthn = Boolean(mfaStatus?.webauthn_enrolled);
   const hasMfa = hasTotp || hasWebAuthn;
   const recoveryCodesRemaining = mfaStatus?.recovery_codes_remaining || 0;
-  const isBusy = totpStart.isPending || totpConfirm.isPending || recoveryGenerate.isPending || isWebAuthnBusy;
+  const isBusy = totpStart.isPending || totpConfirm.isPending || isRecoveryBusy || isWebAuthnBusy;
 
   const handleCopySecret = async () => {
     if (!totpSecret) return;
@@ -167,14 +185,19 @@ export default function MFAStatus() {
       if (!confirmed) return;
     }
 
+    setIsRecoveryBusy(true);
     try {
-      const response = await recoveryGenerate.mutateAsync();
+      const response = await authApi.mfaRecoveryGenerate({ currentPassword: recoveryPassword });
       const codes = Array.isArray(response?.codes) ? response.codes : [];
       setRecoveryCodes(codes);
+      setRecoveryPassword('');
       setShowRecoveryCodes(true);
+      await refetch();
       notifications.success('Recovery codes generated');
     } catch (error) {
       notifications.error(error.message || 'Failed to generate recovery codes');
+    } finally {
+      setIsRecoveryBusy(false);
     }
   };
 
@@ -339,12 +362,29 @@ export default function MFAStatus() {
               size="sm"
               className="font-mono text-xs"
               onClick={handleRecoveryGenerate}
-              disabled={isBusy || !hasMfa}
+              disabled={isBusy || !hasMfa || !recoveryPassword}
             >
               {recoveryCodesRemaining > 0 ? 'Regenerate Codes' : 'Generate Codes'}
             </Button>
           )}
         />
+
+        {hasMfa && (
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <Label htmlFor="settings-recovery-password" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+              Current Password
+            </Label>
+            <Input
+              id="settings-recovery-password"
+              type="password"
+              autoComplete="current-password"
+              value={recoveryPassword}
+              onChange={(event) => setRecoveryPassword(event.target.value)}
+              disabled={isBusy}
+              className="mt-2"
+            />
+          </div>
+        )}
 
         {recoveryCodes.length > 0 && (
           <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 space-y-3">

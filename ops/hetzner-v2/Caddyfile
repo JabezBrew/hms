@@ -1,0 +1,26 @@
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$CLIENT_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	@publicMetrics path /api/v2/metrics
+	respond @publicMetrics 404
+
+	@api path /api/v2/*
+	reverse_proxy @api hms-api:8080
+
+	reverse_proxy frontend:80
+}

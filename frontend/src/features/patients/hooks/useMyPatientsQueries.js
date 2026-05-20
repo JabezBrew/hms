@@ -22,7 +22,7 @@ export function useMyPatients(options = {}) {
   const { enabled = true } = options;
   return useQuery({
     queryKey: myPatientsKeys.list(),
-    queryFn: () => myPatientsApi.getMyPatients(),
+    queryFn: ({ signal }) => myPatientsApi.getMyPatients({ signal }),
     staleTime: 2 * 60 * 1000, // 2 minutes
     enabled,
   });
@@ -36,7 +36,7 @@ export function useMyPatients(options = {}) {
 export function useCheckPatientInList(patientId) {
   return useQuery({
     queryKey: myPatientsKeys.check(patientId),
-    queryFn: () => myPatientsApi.checkPatient(patientId),
+    queryFn: ({ signal }) => myPatientsApi.checkPatient(patientId, { signal }),
     enabled: !!patientId,
     staleTime: 30 * 1000, // 30 seconds
   });

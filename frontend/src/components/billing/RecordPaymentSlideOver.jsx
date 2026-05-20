@@ -28,6 +28,7 @@ import {
   useCreatePaymentIntent,
 } from '@/features/billing/hooks';
 import { toast } from 'sonner';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
 
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash' },
@@ -76,7 +77,9 @@ export default function RecordPaymentSlideOver({
   const [generateReceipt, setGenerateReceipt] = useState(true);
   const [openingFloat, setOpeningFloat] = useState('0.00');
   const [errors, setErrors] = useState({});
-  const hasPendingIntent = !!intent && intent.status === 'pending';
+  const paymentIntentsAvailable = !isRustV2ApiMode();
+  const paymentIntentPending = paymentIntentsAvailable && createPaymentIntentMutation.isPending;
+  const hasPendingIntent = paymentIntentsAvailable && !!intent && intent.status === 'pending';
 
   // Reset form when panel opens/closes
   useEffect(() => {
@@ -258,7 +261,7 @@ export default function RecordPaymentSlideOver({
           </div>
         )}
 
-        {formData.payment_method === 'mobile_money' && (
+        {formData.payment_method === 'mobile_money' && paymentIntentsAvailable && (
           <div className="mb-6 rounded-xl border border-border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -279,10 +282,10 @@ export default function RecordPaymentSlideOver({
                 variant="outline"
                 size="sm"
                 className="font-mono text-xs"
-                disabled={createPaymentIntentMutation.isPending || (intent && intent.status === 'pending')}
+                disabled={paymentIntentPending || hasPendingIntent}
                 onClick={handleCreateIntent}
               >
-                {createPaymentIntentMutation.isPending ? (
+                {paymentIntentPending ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Sending...
@@ -356,6 +359,24 @@ export default function RecordPaymentSlideOver({
             <p className="mt-3 text-xs text-muted-foreground">
               If you have no connectivity, skip Hubtel and record Mobile Money manually with the transaction reference.
             </p>
+          </div>
+        )}
+
+        {formData.payment_method === 'mobile_money' && !paymentIntentsAvailable && (
+          <div className="mb-6 rounded-xl border border-border bg-muted/30 p-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-[oklch(0.70_0.15_230_/_0.1)]">
+                <Smartphone className="h-5 w-5 text-[oklch(0.70_0.15_230)]" />
+              </div>
+              <div>
+                <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                  Rust V2 manual Mobile Money
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Hubtel payment prompts are not available in Rust V2 mode yet. Record the Mobile Money payment manually with the transaction reference.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -521,14 +542,14 @@ export default function RecordPaymentSlideOver({
         <Button
           variant="outline"
           onClick={onClose}
-          disabled={recordPaymentMutation.isPending || createPaymentIntentMutation.isPending}
+          disabled={recordPaymentMutation.isPending || paymentIntentPending}
           className="font-mono text-xs"
         >
           Cancel
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={recordPaymentMutation.isPending || createPaymentIntentMutation.isPending || hasPendingIntent}
+          disabled={recordPaymentMutation.isPending || paymentIntentPending || hasPendingIntent}
           className="font-mono text-xs bg-[oklch(0.70_0.17_155)] hover:bg-[oklch(0.65_0.17_155)]"
         >
           {recordPaymentMutation.isPending ? (

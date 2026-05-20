@@ -6,6 +6,9 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { handleV2ApiError } from '@/lib/api/v2/errors';
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { v2Api } from '@/lib/api/v2/client';
 import { createKeyFactory, keyWith } from '@/shared/lib/queryKeys';
 
 // Query keys
@@ -16,6 +19,142 @@ export const chronicleKeys = {
   context: (patientId) => keyWith('chronicle', 'context', patientId),
   timeline: (patientId, filters) => keyWith('chronicle', 'timeline', patientId, filters),
 };
+
+function rethrowAbortError(error) {
+  if (error?.name === 'AbortError') {
+    throw error;
+  }
+}
+
+function adaptV2Patient(patient) {
+  if (!patient) {
+    return patient;
+  }
+  return {
+    ...patient,
+    medical_record_number: patient.patient_code,
+    mrn: patient.patient_code,
+    name: patient.display_name,
+    gender: patient.sex,
+    registry_status: patient.status,
+    local_data: {
+      id: patient.id,
+      medical_record_number: patient.patient_code,
+      first_name: patient.first_name,
+      last_name: patient.last_name,
+      date_of_birth: patient.date_of_birth,
+      gender: patient.sex,
+    },
+  };
+}
+
+function adaptV2Problem(problem) {
+  return {
+    ...problem,
+    name: problem.label,
+    title: problem.label,
+    is_active: problem.status === 'active',
+  };
+}
+
+function adaptV2Prescription(prescription) {
+  return {
+    ...prescription,
+    medication: prescription.medication_name,
+    medication_display: prescription.medication_name,
+    prescribed_date: prescription.prescribed_at,
+    is_active: prescription.status === 'active',
+  };
+}
+
+function adaptV2Allergy(allergy) {
+  return {
+    ...allergy,
+    allergen: allergy.substance,
+    is_active: allergy.status === 'active',
+  };
+}
+
+function adaptV2LatestVitals(chartEntries = []) {
+  if (!Array.isArray(chartEntries) || chartEntries.length === 0) {
+    return null;
+  }
+
+  const latestByType = new Map();
+  for (const entry of chartEntries) {
+    const existing = latestByType.get(entry.entry_type);
+    if (!existing || String(entry.measured_at || '') > String(existing.measured_at || '')) {
+      latestByType.set(entry.entry_type, entry);
+    }
+  }
+
+  const latestEntry = [...latestByType.values()].sort((left, right) =>
+    String(right.measured_at || '').localeCompare(String(left.measured_at || ''))
+  )[0];
+
+  const vitals = {
+    id: latestEntry?.id,
+    recorded_at: latestEntry?.measured_at,
+  };
+
+  const assign = (entryType, field) => {
+    const entry = latestByType.get(entryType);
+    if (entry) {
+      vitals[field] = entry.value;
+    }
+  };
+
+  assign('temperature', 'temperature');
+  assign('pulse', 'heart_rate');
+  assign('respiratory_rate', 'respiratory_rate');
+  assign('blood_pressure', 'blood_pressure');
+  assign('oxygen_saturation', 'oxygen_saturation');
+  assign('weight', 'weight');
+
+  return vitals;
+}
+
+function adaptV2ChronicleContext(summary = {}) {
+  const problems = Array.isArray(summary.problems) ? summary.problems.map(adaptV2Problem) : [];
+  const allergies = Array.isArray(summary.allergies) ? summary.allergies.map(adaptV2Allergy) : [];
+  const prescriptions = Array.isArray(summary.prescriptions)
+    ? summary.prescriptions.map(adaptV2Prescription)
+    : [];
+  const activeProblems = problems.filter((problem) => problem.status === 'active');
+  const activeMedications = prescriptions.filter((prescription) => prescription.status === 'active');
+
+  return {
+    ...summary,
+    patient: adaptV2Patient(summary.patient),
+    problems,
+    allergies,
+    prescriptions,
+    active_problems: activeProblems,
+    active_medications: activeMedications,
+    latest_vitals: adaptV2LatestVitals(summary.chart_entries),
+    active_encounter: null,
+  };
+}
+
+export async function fetchChronicleContext(patientId, options = {}) {
+  if (isRustV2ApiMode()) {
+    try {
+      const response = await v2Api.getPatientChronicle({
+        id: patientId,
+      }, { signal: options.signal });
+      return adaptV2ChronicleContext(response?.data ?? {});
+    } catch (error) {
+      rethrowAbortError(error);
+      throw new Error(handleV2ApiError(error, 'Failed to fetch Chronicle context'));
+    }
+  }
+
+  const response = await apiClient.get(`/clinical-notes/chronicle/${patientId}/context/`, {
+    signal: options.signal,
+  });
+  const data = response?.data ?? response;
+  return data ?? {};
+}
 
 /**
  * Fetch patient chronicle context (Tier 1 data)
@@ -31,12 +170,7 @@ export const chronicleKeys = {
 export function useChronicleContext(patientId, options = {}) {
   return useQuery({
     queryKey: chronicleKeys.context(patientId),
-    queryFn: async () => {
-      const response = await apiClient.get(`/clinical-notes/chronicle/${patientId}/context/`);
-      // apiClient.get returns data directly, not wrapped in response.data
-      const data = response?.data ?? response;
-      return data ?? {};
-    },
+    queryFn: ({ signal }) => fetchChronicleContext(patientId, { signal }),
     enabled: !!patientId && (options.enabled !== false),
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
