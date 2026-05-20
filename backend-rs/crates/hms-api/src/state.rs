@@ -32,6 +32,7 @@ struct AppStateInner {
     started_at: DateTime<Utc>,
     facility_id: Uuid,
     pool: hms_db::PgPool,
+    auth_pool: hms_db::PgPool,
     auth_cache: AuthCache,
 }
 
@@ -200,6 +201,12 @@ impl AppState {
         )
         .await
         .context("failed to connect to Postgres")?;
+        let auth_pool = hms_db::pool::connect_with_max_connections(
+            &config.database_url,
+            auth_pool_max_connections(config.database_max_connections),
+        )
+        .await
+        .context("failed to connect to Postgres for auth")?;
 
         if config.auto_migrate {
             hms_db::migrate::run(&pool)
@@ -235,6 +242,7 @@ impl AppState {
                 started_at,
                 facility_id,
                 pool,
+                auth_pool,
                 auth_cache: AuthCache::default(),
             }),
         })
@@ -250,6 +258,14 @@ impl AppState {
 
     pub fn postgres_pool_idle(&self) -> usize {
         self.inner.pool.num_idle()
+    }
+
+    pub fn auth_postgres_pool_size(&self) -> u32 {
+        self.inner.auth_pool.size()
+    }
+
+    pub fn auth_postgres_pool_idle(&self) -> usize {
+        self.inner.auth_pool.num_idle()
     }
 
     pub fn rum_enabled(&self) -> bool {
@@ -327,7 +343,7 @@ impl AppState {
     }
 
     pub async fn auth_user(&self, user_id: Uuid) -> Result<Option<AuthUser>> {
-        Ok(hms_db::auth::user_by_id(&self.inner.pool, user_id)
+        Ok(hms_db::auth::user_by_id(&self.inner.auth_pool, user_id)
             .await?
             .map(|user| user.to_auth_user()))
     }
@@ -338,7 +354,7 @@ impl AppState {
         facility_id: Uuid,
     ) -> Result<Option<AuthUser>> {
         Ok(
-            hms_db::auth::user_by_id_for_facility(&self.inner.pool, user_id, facility_id)
+            hms_db::auth::user_by_id_for_facility(&self.inner.auth_pool, user_id, facility_id)
                 .await?
                 .map(|user| user.to_auth_user()),
         )
@@ -371,7 +387,7 @@ impl AppState {
         facility_id: Uuid,
     ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
         hms_db::auth::request_context_facts(
-            &self.inner.pool,
+            &self.inner.auth_pool,
             user_id,
             facility_id,
             self.inner.config.deployment_profile,
@@ -431,7 +447,7 @@ impl AppState {
         }
 
         let versions = hms_db::auth::user_auth_versions_for_facility(
-            &self.inner.pool,
+            &self.inner.auth_pool,
             claims.sub,
             self.facility_id(),
         )
@@ -922,6 +938,12 @@ fn deployment_profile_claim_value(profile: DeploymentProfile) -> Option<String> 
     serde_json::to_value(profile)
         .ok()
         .and_then(|value| value.as_str().map(ToOwned::to_owned))
+}
+
+fn auth_pool_max_connections(database_max_connections: u32) -> u32 {
+    (database_max_connections / 2)
+        .clamp(2, 8)
+        .min(database_max_connections.max(1))
 }
 
 async fn redis_ready(redis_addr: &str) -> bool {

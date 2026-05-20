@@ -91,6 +91,8 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let started_at = state.started_at().timestamp();
     let pool_size = state.postgres_pool_size();
     let pool_idle = state.postgres_pool_idle();
+    let auth_pool_size = state.auth_postgres_pool_size();
+    let auth_pool_idle = state.auth_postgres_pool_idle();
     let mut body = format!(
         "# HELP hms_api_up API process availability.\n\
          # TYPE hms_api_up gauge\n\
@@ -103,7 +105,13 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
          hms_api_postgres_pool_size {pool_size}\n\
          # HELP hms_api_postgres_pool_idle Current idle sqlx Postgres connections.\n\
          # TYPE hms_api_postgres_pool_idle gauge\n\
-         hms_api_postgres_pool_idle {pool_idle}\n"
+         hms_api_postgres_pool_idle {pool_idle}\n\
+         # HELP hms_api_auth_postgres_pool_size Current auth sqlx Postgres pool size.\n\
+         # TYPE hms_api_auth_postgres_pool_size gauge\n\
+         hms_api_auth_postgres_pool_size {auth_pool_size}\n\
+         # HELP hms_api_auth_postgres_pool_idle Current idle auth sqlx Postgres connections.\n\
+         # TYPE hms_api_auth_postgres_pool_idle gauge\n\
+         hms_api_auth_postgres_pool_idle {auth_pool_idle}\n"
     );
     body.push_str(&hms_observability::prometheus_metrics());
 
