@@ -140,6 +140,17 @@ class BaseWebSocket {
       return;
     }
 
+    if (data?.message_type === 'delta' && data?.payload?.event_type) {
+      const delta = {
+        ...data.payload,
+        channel_name: data.channel_name,
+        generated_at: data.generated_at,
+      };
+      this.emit(data.payload.event_type, delta);
+      this.emit('realtime.delta', delta);
+      return;
+    }
+
     // Emit the event to listeners
     this.emit(type, payload);
   }

@@ -8,6 +8,34 @@ const FLUSH_INTERVAL_MS = 15000;
 const MAX_ROUTE_LENGTH = 120;
 const MAX_LABEL_LENGTH = 80;
 const DYNAMIC_SEGMENT = ':id';
+const UNKNOWN_FACILITY = '_unknown';
+const STATIC_ROUTE_SEGMENTS = new Set([
+  'api', 'v2', 'health', 'alive', 'ready', 'metrics', 'openapi.json',
+  'auth', 'me', 'login', 'logout', 'refresh', 'sessions', 'password',
+  'password-reset', 'reset', 'mfa', 'webauthn', 'challenge', 'credentials',
+  'setup', 'verify', 'recovery', 'codes', 'start', 'finish',
+  'system', 'deployment-capabilities',
+  'patients', 'chronicle', 'contexts', 'validate',
+  'search', 'omni',
+  'wards', 'ward', 'board', 'admissions', 'sections', 'beds', 'handoff', 'mar',
+  'nursing', 'tasks', 'stock', 'requests',
+  'laboratory', 'lab', 'orders', 'results', 'catalog', 'specimens',
+  'inventory', 'items', 'locations', 'requisitions', 'purchase-orders', 'grns',
+  'standing-orders', 'transfers', 'controlled', 'analytics',
+  'billing', 'invoices', 'payments', 'receipts', 'claims', 'nhis',
+  'cash-sessions', 'drawers', 'insurance', 'discharges',
+  'appointments', 'clinics', 'waiting-room', 'encounters',
+  'clinical-notes', 'templates', 'charts', 'builder',
+  'consent', 'grants', 'referrals', 'inbox', 'sent',
+  'dashboards', 'dashboard', 'nurse', 'inpatient', 'reception', 'admin',
+  'doctor', 'provider',
+  'settings', 'profile', 'security', 'preferences', 'feature-entitlements',
+  'organization', 'unit-types', 'leadership-roles', 'duty-roster',
+  'roster-setup', 'roster-builder',
+  'staff', 'create', 'problems', 'visits', 'pharmacy', 'dispensing',
+  'triage', 'workflows', 'ward-round', 'observability', 'rum',
+  'notifications', 'audit-logs', 'facilities', 'capabilities', 'foundation',
+]);
 
 let initialized = false;
 let flushTimer = null;
@@ -46,6 +74,33 @@ function safeLabel(value, fallback = 'unknown') {
   return /^[a-z0-9:_./-]+$/.test(text) ? text : fallback;
 }
 
+function safeFacilityCode(value) {
+  const text = String(value || '').trim().toUpperCase();
+  if (!text || text.length > 32 || !/^[A-Z0-9_-]+$/.test(text)) {
+    return UNKNOWN_FACILITY;
+  }
+  return text;
+}
+
+function statusBucket(status) {
+  if (status == null) {
+    return 'network';
+  }
+  const text = String(status).trim().toLowerCase();
+  if (['2xx', '3xx', '4xx', '5xx', 'network', 'timeout', 'cancelled', 'unknown'].includes(text)) {
+    return text;
+  }
+  const code = Number.parseInt(text, 10);
+  if (!Number.isFinite(code)) {
+    return 'unknown';
+  }
+  if (code >= 200 && code <= 299) return '2xx';
+  if (code >= 300 && code <= 399) return '3xx';
+  if (code >= 400 && code <= 499) return '4xx';
+  if (code >= 500 && code <= 599) return '5xx';
+  return 'unknown';
+}
+
 function isDynamicSegment(segment) {
   if (/^\d+$/.test(segment)) {
     return true;
@@ -81,7 +136,10 @@ export function scrubRouteLabel(input) {
         return DYNAMIC_SEGMENT;
       }
       const normalized = decoded.toLowerCase().replace(/[^a-z0-9_.-]/g, '-');
-      return normalized.length > 32 ? DYNAMIC_SEGMENT : normalized;
+      if (normalized.length > 32 || !STATIC_ROUTE_SEGMENTS.has(normalized)) {
+        return DYNAMIC_SEGMENT;
+      }
+      return normalized;
     });
 
   const label = segments.length > 0 ? `/${segments.join('/')}` : '/';
@@ -138,8 +196,8 @@ function buildPayload(events) {
       name: safeLabel(event.name),
       route: scrubRouteLabel(event.route),
       value: Number.isFinite(event.value) ? Math.max(0, Math.round(event.value)) : 0,
-      status: event.status == null ? undefined : safeLabel(event.status),
-      method: event.method == null ? undefined : safeLabel(event.method),
+      status: statusBucket(event.status),
+      facility_safe: safeFacilityCode(event.facilitySafe || facilityGetter()),
       ts: Number.isFinite(event.ts) ? Math.floor(event.ts) : Date.now(),
     })),
   });
@@ -162,7 +220,7 @@ export function flushRum() {
   const events = queue.splice(0, MAX_BATCH_SIZE);
   const body = buildPayload(events);
   const token = tokenGetter();
-  const facility = facilityGetter();
+  const facility = safeFacilityCode(facilityGetter());
 
   try {
     if (!token && globalThis?.navigator?.sendBeacon) {
@@ -177,7 +235,7 @@ export function flushRum() {
       if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
-      if (facility) {
+      if (facility !== UNKNOWN_FACILITY) {
         headers['X-Facility-Code'] = facility;
       }
       globalThis.fetch(rumUrl(), {
@@ -262,7 +320,7 @@ export function initBrowserRum() {
   return true;
 }
 
-export function recordApiTiming({ endpoint, method, durationMs, status }) {
+export function recordApiTiming({ endpoint, durationMs, status }) {
   if (!isRumEnabled()) {
     return;
   }
@@ -270,8 +328,7 @@ export function recordApiTiming({ endpoint, method, durationMs, status }) {
     type: 'api',
     name: 'duration',
     route: scrubRouteLabel(endpoint),
-    method: String(method || 'GET').toLowerCase(),
-    status: status == null ? 'network' : String(status),
+    status: statusBucket(status),
     value: durationMs,
   });
 }

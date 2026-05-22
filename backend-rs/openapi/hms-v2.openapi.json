@@ -1143,7 +1143,7 @@
       },
       "BrowserRumEvent": {
         "properties": {
-          "method": {
+          "facility_safe": {
             "type": [
               "string",
               "null"
@@ -1613,6 +1613,44 @@
         "required": [
           "patient_id"
         ],
+        "type": "object"
+      },
+      "ChronicleTimelineQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ClaimListItem": {
@@ -8180,6 +8218,79 @@
                 "unit_type",
                 "is_active",
                 "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_PatientChronicleTimelineEntry": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Value"
+                },
+                "encounter_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "entry_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "entry_type": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "occurred_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "summary": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "timestamp": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "entry_id",
+                "entry_type",
+                "type",
+                "occurred_at",
+                "timestamp",
+                "title",
+                "data"
               ],
               "type": "object"
             },
@@ -14837,6 +14948,138 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_PatientChronicleStartup": {
+        "properties": {
+          "data": {
+            "properties": {
+              "active_admission": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PatientChronicleAdmissionSummary"
+                  }
+                ]
+              },
+              "active_context": {
+                "$ref": "#/components/schemas/PatientChronicleActiveContext"
+              },
+              "active_encounter": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PatientChronicleEncounterSummary"
+                  }
+                ]
+              },
+              "active_medications": {
+                "items": {
+                  "$ref": "#/components/schemas/PrescriptionListItem"
+                },
+                "type": "array"
+              },
+              "allergies": {
+                "items": {
+                  "$ref": "#/components/schemas/AllergyListItem"
+                },
+                "type": "array"
+              },
+              "care_team": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientChronicleCareTeamMember"
+                },
+                "type": "array"
+              },
+              "chart_entries": {
+                "items": {
+                  "$ref": "#/components/schemas/ChartEntryListItem"
+                },
+                "type": "array"
+              },
+              "generated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "identity": {
+                "$ref": "#/components/schemas/PatientChronicleIdentitySummary"
+              },
+              "lab_results": {
+                "items": {
+                  "$ref": "#/components/schemas/PatientChronicleLabSummary"
+                },
+                "type": "array"
+              },
+              "latest_vitals": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChartEntryListItem"
+                  }
+                ]
+              },
+              "notes": {
+                "items": {
+                  "$ref": "#/components/schemas/ClinicalNoteListItem"
+                },
+                "type": "array"
+              },
+              "patient": {
+                "$ref": "#/components/schemas/PatientDetail"
+              },
+              "permissions": {
+                "$ref": "#/components/schemas/PatientChronicleActionAvailability"
+              },
+              "prescriptions": {
+                "items": {
+                  "$ref": "#/components/schemas/PrescriptionListItem"
+                },
+                "type": "array"
+              },
+              "problems": {
+                "items": {
+                  "$ref": "#/components/schemas/ProblemListItem"
+                },
+                "type": "array"
+              },
+              "summaries": {
+                "$ref": "#/components/schemas/PatientChronicleSummarySlices"
+              },
+              "timeline": {
+                "$ref": "#/components/schemas/ListResponse_PatientChronicleTimelineEntry"
+              }
+            },
+            "required": [
+              "patient",
+              "identity",
+              "generated_at",
+              "active_context",
+              "care_team",
+              "summaries",
+              "timeline",
+              "permissions",
+              "active_medications",
+              "allergies",
+              "lab_results",
+              "notes",
+              "problems",
+              "prescriptions",
+              "chart_entries"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_PatientChronicleSummary": {
         "properties": {
           "data": {
@@ -17361,6 +17604,418 @@
         ],
         "type": "string"
       },
+      "PatientChronicleActionAvailability": {
+        "properties": {
+          "can_add_note": {
+            "type": "boolean"
+          },
+          "can_manage_admission": {
+            "type": "boolean"
+          },
+          "can_order_labs": {
+            "type": "boolean"
+          },
+          "can_prescribe": {
+            "type": "boolean"
+          },
+          "can_record_vitals": {
+            "type": "boolean"
+          },
+          "can_request_break_glass": {
+            "type": "boolean"
+          },
+          "can_view_chronicle": {
+            "type": "boolean"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_view_chronicle",
+          "can_add_note",
+          "can_record_vitals",
+          "can_prescribe",
+          "can_order_labs",
+          "can_manage_admission",
+          "can_request_break_glass",
+          "read_only"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleActiveContext": {
+        "properties": {
+          "admission": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientChronicleAdmissionSummary"
+              }
+            ]
+          },
+          "encounter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientChronicleEncounterSummary"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PatientChronicleAdmissionSummary": {
+        "properties": {
+          "admission_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "admitted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "bed_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bed_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discharged_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ward_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ward_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "admission_id",
+          "patient_id",
+          "ward_id",
+          "ward_name",
+          "status",
+          "admitted_at"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleCareTeamMember": {
+        "properties": {
+          "assignment_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "encounter_id",
+          "user_id",
+          "display_name",
+          "role",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleEncounterSummary": {
+        "properties": {
+          "encounter_type": {
+            "type": "string"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patient_id",
+          "encounter_type",
+          "status",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleIdentitySummary": {
+        "properties": {
+          "date_of_birth": {
+            "format": "date",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_code": {
+            "type": "string"
+          },
+          "sex": {
+            "$ref": "#/components/schemas/Sex"
+          }
+        },
+        "required": [
+          "id",
+          "patient_code",
+          "display_name",
+          "date_of_birth",
+          "sex"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleLabSummary": {
+        "properties": {
+          "entered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "order_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "patient_code": {
+            "type": "string"
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "specimen_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "test_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "test_name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "verified_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "order_id",
+          "specimen_id",
+          "patient_id",
+          "patient_code",
+          "test_id",
+          "test_name",
+          "value",
+          "status",
+          "entered_at"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleStartup": {
+        "properties": {
+          "active_admission": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientChronicleAdmissionSummary"
+              }
+            ]
+          },
+          "active_context": {
+            "$ref": "#/components/schemas/PatientChronicleActiveContext"
+          },
+          "active_encounter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PatientChronicleEncounterSummary"
+              }
+            ]
+          },
+          "active_medications": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionListItem"
+            },
+            "type": "array"
+          },
+          "allergies": {
+            "items": {
+              "$ref": "#/components/schemas/AllergyListItem"
+            },
+            "type": "array"
+          },
+          "care_team": {
+            "items": {
+              "$ref": "#/components/schemas/PatientChronicleCareTeamMember"
+            },
+            "type": "array"
+          },
+          "chart_entries": {
+            "items": {
+              "$ref": "#/components/schemas/ChartEntryListItem"
+            },
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/PatientChronicleIdentitySummary"
+          },
+          "lab_results": {
+            "items": {
+              "$ref": "#/components/schemas/PatientChronicleLabSummary"
+            },
+            "type": "array"
+          },
+          "latest_vitals": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChartEntryListItem"
+              }
+            ]
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/ClinicalNoteListItem"
+            },
+            "type": "array"
+          },
+          "patient": {
+            "$ref": "#/components/schemas/PatientDetail"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/PatientChronicleActionAvailability"
+          },
+          "prescriptions": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionListItem"
+            },
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemListItem"
+            },
+            "type": "array"
+          },
+          "summaries": {
+            "$ref": "#/components/schemas/PatientChronicleSummarySlices"
+          },
+          "timeline": {
+            "$ref": "#/components/schemas/ListResponse_PatientChronicleTimelineEntry"
+          }
+        },
+        "required": [
+          "patient",
+          "identity",
+          "generated_at",
+          "active_context",
+          "care_team",
+          "summaries",
+          "timeline",
+          "permissions",
+          "active_medications",
+          "allergies",
+          "lab_results",
+          "notes",
+          "problems",
+          "prescriptions",
+          "chart_entries"
+        ],
+        "type": "object"
+      },
       "PatientChronicleSummary": {
         "properties": {
           "allergies": {
@@ -17409,6 +18064,104 @@
           "allergies",
           "prescriptions",
           "chart_entries"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleSummarySlices": {
+        "properties": {
+          "allergies": {
+            "items": {
+              "$ref": "#/components/schemas/AllergyListItem"
+            },
+            "type": "array"
+          },
+          "labs": {
+            "items": {
+              "$ref": "#/components/schemas/PatientChronicleLabSummary"
+            },
+            "type": "array"
+          },
+          "medications": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionListItem"
+            },
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemListItem"
+            },
+            "type": "array"
+          },
+          "vitals": {
+            "items": {
+              "$ref": "#/components/schemas/ChartEntryListItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "problems",
+          "allergies",
+          "medications",
+          "labs",
+          "vitals"
+        ],
+        "type": "object"
+      },
+      "PatientChronicleTimelineEntry": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Value"
+          },
+          "encounter_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entry_type": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entry_id",
+          "entry_type",
+          "type",
+          "occurred_at",
+          "timestamp",
+          "title",
+          "data"
         ],
         "type": "object"
       },
@@ -18469,7 +19222,9 @@
       "RealtimeChannelKind": {
         "enum": [
           "dashboard",
-          "notifications"
+          "notifications",
+          "ward_board",
+          "laboratory"
         ],
         "type": "string"
       },
@@ -20505,6 +21260,7 @@
         ],
         "type": "object"
       },
+      "Value": {},
       "VisitListItem": {
         "properties": {
           "appointment_id": {
@@ -38247,6 +39003,49 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "encounter_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -38254,11 +39053,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_PatientChronicleSummary"
+                  "$ref": "#/components/schemas/ObjectResponse_PatientChronicleStartup"
                 }
               }
             },
-            "description": "Patient Chronicle summary"
+            "description": "Shaped Patient Chronicle startup"
           },
           "401": {
             "content": {
@@ -38326,6 +39125,116 @@
               }
             },
             "description": "Printable Patient Chronicle summary"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Patient not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "clinical"
+        ]
+      }
+    },
+    "/api/v2/patients/{id}/chronicle/timeline": {
+      "get": {
+        "operationId": "getPatientChronicleTimeline",
+        "parameters": [
+          {
+            "description": "Patient id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "encounter_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_PatientChronicleTimelineEntry"
+                }
+              }
+            },
+            "description": "Patient Chronicle timeline page"
           },
           "401": {
             "content": {

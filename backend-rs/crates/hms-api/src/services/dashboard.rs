@@ -1,12 +1,16 @@
+use std::collections::HashMap;
+
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use hms_db::dashboard::{self, NotificationCursor};
+use hms_domain::capabilities::{deployment_capabilities_from_features, ALL_FEATURES};
 use hms_domain::dashboard::{
     AdminCapacityQuery, AdminCapacitySummary, DashboardSnapshot, MarkNotificationReadRequest,
     NotificationCounts, NotificationListItem, NotificationListQuery, RealtimeChannelKind,
     RealtimeMessage, RealtimeSubscribeQuery, RealtimeSubscription,
 };
 use hms_domain::deployment::{FeatureKey, PermissionCode};
+use hms_events::RealtimeDeltaEnvelope;
 use serde_json::json;
 use sha2::Digest;
 use uuid::Uuid;
@@ -51,16 +55,10 @@ impl DashboardService {
         ctx: &hms_access::RequestContext,
     ) -> Result<ObjectResponse<DashboardSnapshot>, ApiError> {
         require_dashboard_access(ctx, self.facility_id())?;
-        let capabilities = self.state.deployment_capabilities().await.map_err(|_| {
-            ApiError::conflict(
-                "dashboard_snapshot_failed",
-                "Dashboard snapshot could not be loaded.",
-            )
-        })?;
-        let snapshot = dashboard::dashboard_snapshot(
+        let capabilities = deployment_capabilities_for_context(ctx);
+        let projection = dashboard::read_dashboard_projection(
             self.pool(),
             self.facility_id(),
-            capabilities.deployment_profile,
             capabilities.navigation,
         )
         .await
@@ -71,7 +69,38 @@ impl DashboardService {
             )
         })?;
 
-        Ok(object(snapshot))
+        let refresh_queued = if projection.is_stale {
+            match dashboard::queue_dashboard_projection_refresh(
+                self.pool(),
+                self.facility_id(),
+                ctx.active_profile,
+            )
+            .await
+            {
+                Ok(queue) => queue.queued,
+                Err(error) => {
+                    tracing::warn!(%error, "dashboard projection refresh enqueue failed");
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
+        let mut snapshot = projection
+            .snapshot
+            .unwrap_or_else(|| empty_dashboard_snapshot(ctx));
+        snapshot.metrics = role_allowed_metrics(snapshot.metrics, ctx);
+
+        Ok(ObjectResponse {
+            data: snapshot,
+            meta: json!({
+                "generated_at": projection.generated_at,
+                "is_stale": projection.is_stale,
+                "refresh_queued": refresh_queued,
+                "ttl_seconds": dashboard::DASHBOARD_PROJECTION_TTL_SECONDS,
+            }),
+        })
     }
 
     pub async fn admin_capacity_summary(
@@ -186,6 +215,18 @@ impl DashboardService {
                 RealtimeChannelKind::Notifications,
             ));
         }
+        if require_ward_board_realtime_access(ctx, self.facility_id()).is_ok() {
+            subscriptions.push(subscription(
+                self.facility_id(),
+                RealtimeChannelKind::WardBoard,
+            ));
+        }
+        if require_laboratory_realtime_access(ctx, self.facility_id()).is_ok() {
+            subscriptions.push(subscription(
+                self.facility_id(),
+                RealtimeChannelKind::Laboratory,
+            ));
+        }
 
         list(
             subscriptions,
@@ -205,19 +246,22 @@ impl DashboardService {
         let channel_kind = query.channel_kind.unwrap_or(RealtimeChannelKind::Dashboard);
         require_realtime_access(ctx, self.facility_id(), channel_kind)?;
         let channel_name = realtime_channel_name(self.facility_id(), channel_kind);
-        let payload = match channel_kind {
-            RealtimeChannelKind::Dashboard => json!({ "status": "snapshot_available" }),
-            RealtimeChannelKind::Notifications => json!({ "status": "notification_stream_ready" }),
-        };
+        let occurred_at = Utc::now();
+        let payload = serde_json::to_value(initial_realtime_delta(
+            self.facility_id(),
+            channel_kind,
+            occurred_at,
+        )?)
+        .map_err(|_| ApiError::conflict("realtime_delta_failed", "Realtime delta failed."))?;
 
         Ok(PreparedRealtimeStream {
             user_id: ctx.user_id,
             channel_kind,
             channel_name: channel_name.clone(),
             message: RealtimeMessage {
-                message_type: "snapshot".to_owned(),
+                message_type: "delta".to_owned(),
                 channel_name,
-                generated_at: Utc::now(),
+                generated_at: occurred_at,
                 payload,
             },
         })
@@ -257,6 +301,11 @@ fn subscription(facility_id: Uuid, channel_kind: RealtimeChannelKind) -> Realtim
         RealtimeChannelKind::Notifications => {
             (FeatureKey::Dashboards, PermissionCode::NotificationView)
         }
+        RealtimeChannelKind::WardBoard => (FeatureKey::Wards, PermissionCode::WardView),
+        RealtimeChannelKind::Laboratory => (
+            FeatureKey::Laboratory,
+            PermissionCode::LaboratoryOrderManage,
+        ),
     };
     RealtimeSubscription {
         channel_name: realtime_channel_name(facility_id, channel_kind),
@@ -264,6 +313,44 @@ fn subscription(facility_id: Uuid, channel_kind: RealtimeChannelKind) -> Realtim
         feature,
         permission,
     }
+}
+
+fn deployment_capabilities_for_context(
+    ctx: &hms_access::RequestContext,
+) -> hms_domain::capabilities::DeploymentCapabilities {
+    let features: HashMap<_, _> = ALL_FEATURES
+        .into_iter()
+        .map(|feature| (feature, ctx.enabled_features.contains(&feature)))
+        .collect();
+    deployment_capabilities_from_features(
+        ctx.active_profile,
+        ctx.facility_id,
+        &ctx.facility_code,
+        features,
+    )
+}
+
+fn empty_dashboard_snapshot(ctx: &hms_access::RequestContext) -> DashboardSnapshot {
+    DashboardSnapshot {
+        id: Uuid::nil(),
+        deployment_profile: ctx.active_profile,
+        generated_at: DateTime::<Utc>::from(std::time::UNIX_EPOCH),
+        metrics: Vec::new(),
+        navigation: deployment_capabilities_for_context(ctx).navigation,
+    }
+}
+
+fn role_allowed_metrics(
+    metrics: Vec<hms_domain::dashboard::DashboardMetric>,
+    ctx: &hms_access::RequestContext,
+) -> Vec<hms_domain::dashboard::DashboardMetric> {
+    metrics
+        .into_iter()
+        .filter(|metric| {
+            ctx.enabled_features.contains(&metric.feature)
+                && ctx.permissions.contains(&metric.permission)
+        })
+        .collect()
 }
 
 fn realtime_channel_name(facility_id: Uuid, channel_kind: RealtimeChannelKind) -> String {
@@ -276,6 +363,8 @@ fn channel_kind_key(channel_kind: RealtimeChannelKind) -> &'static str {
     match channel_kind {
         RealtimeChannelKind::Dashboard => "dashboard",
         RealtimeChannelKind::Notifications => "notifications",
+        RealtimeChannelKind::WardBoard => "ward_board",
+        RealtimeChannelKind::Laboratory => "laboratory",
     }
 }
 
@@ -287,7 +376,48 @@ fn require_realtime_access(
     match channel_kind {
         RealtimeChannelKind::Dashboard => require_dashboard_access(ctx, facility_id),
         RealtimeChannelKind::Notifications => require_notification_access(ctx, facility_id),
+        RealtimeChannelKind::WardBoard => require_ward_board_realtime_access(ctx, facility_id),
+        RealtimeChannelKind::Laboratory => require_laboratory_realtime_access(ctx, facility_id),
     }
+}
+
+fn initial_realtime_delta(
+    facility_id: Uuid,
+    channel_kind: RealtimeChannelKind,
+    occurred_at: DateTime<Utc>,
+) -> Result<RealtimeDeltaEnvelope, ApiError> {
+    let (event_type, entity_type, changed_fields) = match channel_kind {
+        RealtimeChannelKind::Dashboard => (
+            "dashboard.projection_freshness",
+            "dashboard_projection",
+            vec!["generated_at"],
+        ),
+        RealtimeChannelKind::Notifications => (
+            "notifications.summary_updated",
+            "notification_summary",
+            vec!["unread"],
+        ),
+        RealtimeChannelKind::WardBoard => (
+            "ward_board.projection_freshness",
+            "ward_board_projection",
+            vec!["generated_at", "open_task_count", "queue_status"],
+        ),
+        RealtimeChannelKind::Laboratory => (
+            "laboratory.order_status_summary_updated",
+            "laboratory_order_summary",
+            vec!["status_counts"],
+        ),
+    };
+    RealtimeDeltaEnvelope::try_new(
+        event_type,
+        facility_id,
+        entity_type,
+        facility_id,
+        occurred_at.timestamp_millis(),
+        changed_fields,
+        occurred_at,
+    )
+    .map_err(|_| ApiError::conflict("realtime_delta_failed", "Realtime delta failed."))
 }
 
 fn require_dashboard_access(
@@ -311,6 +441,43 @@ fn require_notification_access(
         hms_access::AccessError::MissingPermission => ApiError::forbidden(
             "permission_denied",
             "You do not have permission to view notifications.",
+        ),
+        other => ApiError::from(other),
+    })
+}
+
+fn require_ward_board_realtime_access(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_patient_workflow_access(ctx, facility_id, PermissionCode::WardView).map_err(
+        |error| match error {
+            hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
+                "patient_access_denied",
+                "You do not have access to ward board realtime updates.",
+            ),
+            hms_access::AccessError::MissingPermission => ApiError::forbidden(
+                "permission_denied",
+                "You do not have permission to view ward board realtime updates.",
+            ),
+            other => ApiError::from(other),
+        },
+    )
+}
+
+fn require_laboratory_realtime_access(
+    ctx: &hms_access::RequestContext,
+    facility_id: Uuid,
+) -> Result<(), ApiError> {
+    hms_access::require_lab_list_access(ctx, facility_id).map_err(|error| match error {
+        hms_access::AccessError::LaboratoryAccessDenied
+        | hms_access::AccessError::MissingPermission => ApiError::forbidden(
+            "permission_denied",
+            "You do not have permission to view laboratory realtime updates.",
+        ),
+        hms_access::AccessError::PatientWorkflowAccessDenied => ApiError::forbidden(
+            "patient_access_denied",
+            "You do not have access to laboratory realtime updates.",
         ),
         other => ApiError::from(other),
     })

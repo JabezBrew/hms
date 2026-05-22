@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { patientsApi } from '@/features/patients/api';
 import { useSearchQuery } from '@/hooks/useSearchQuery';
 import { immutableMetadataQueryOptions } from '@/lib/react-query';
@@ -13,6 +13,8 @@ export const patientKeys = {
   recent: () => [...patientKeys.all, 'recent'],
   validation: () => [...patientKeys.all, 'validation'],
   context: (params) => [...patientKeys.all, 'context', params],
+  chronicleStartup: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'startup', params],
+  chronicleTimeline: (id, params = {}) => [...patientKeys.detail(id), 'chronicle', 'timeline', params],
 };
 
 /**
@@ -54,6 +56,47 @@ export function usePatientDemographics(id, options = {}) {
     queryFn: ({ signal }) => patientsApi.getPatientDemographics(id, { signal }),
     enabled: !!id && enabled,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePatientChronicleStartup(id, params = {}, options = {}) {
+  const { enabled = true, staleTime = 30 * 1000 } = options;
+  return useQuery({
+    queryKey: patientKeys.chronicleStartup(id, params),
+    queryFn: ({ signal }) => patientsApi.getPatientChronicleStartup(id, params, { signal }),
+    enabled: !!id && enabled,
+    staleTime,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function usePatientChronicleTimeline(id, params = {}, options = {}) {
+  const { enabled = true, initialPage } = options;
+  return useInfiniteQuery({
+    queryKey: patientKeys.chronicleTimeline(id, params),
+    queryFn: ({ pageParam = null, signal }) => patientsApi.getPatientChronicleTimeline(
+      id,
+      {
+        ...params,
+        cursor: pageParam || undefined,
+      },
+      { signal },
+    ),
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => (
+      lastPage?.has_next ? lastPage.next_cursor : undefined
+    ),
+    enabled: !!id && enabled,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    ...(initialPage
+      ? {
+          initialData: {
+            pages: [initialPage],
+            pageParams: [null],
+          },
+        }
+      : {}),
   });
 }
 

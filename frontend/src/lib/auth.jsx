@@ -8,6 +8,7 @@ import { configureV2ApiClient, performV2TokenRefresh } from "./api/v2/client"
 import { isRustV2ApiMode } from "./api/v2/runtime"
 import { queryClient } from './react-query'
 import { getDefaultFacilityCode } from './runtime-config'
+import { clearAllCockpitCaches } from './cockpit-cache'
 
 // Create an authentication context
 const AuthContext = createContext(undefined)
@@ -37,8 +38,19 @@ export function AuthProvider({ children }) {
     accessTokenRef.current = token
   }, [])
 
+  const clearCockpitCache = useCallback(async (reason) => {
+    try {
+      await clearAllCockpitCaches({ reason })
+    } catch {
+      // Cockpit cache cleanup must never block auth state transitions.
+    }
+  }, [])
+
   const setFacilityCode = useCallback((code) => {
     const normalized = code ? String(code).toUpperCase() : null
+    if (normalized !== facilityCode) {
+      void clearCockpitCache('facility-change')
+    }
     setFacilityCodeState(normalized)
     queryClient.clear()
     if (user) {
@@ -48,7 +60,7 @@ export function AuthProvider({ children }) {
     } else if (mfaUser) {
       setMfaUser({ ...mfaUser, facilityCode: normalized })
     }
-  }, [user, mfaUser])
+  }, [clearCockpitCache, facilityCode, user, mfaUser])
 
   const clearPasswordChangeRequirement = useCallback(() => {
     setUser((currentUser) => {
@@ -61,7 +73,7 @@ export function AuthProvider({ children }) {
     })
   }, [])
 
-  const clearLocalAuthState = useCallback(() => {
+  const clearLocalAuthState = useCallback(async (reason = 'auth-clear') => {
     removeAuthValue("user")
     removeAuthValue("sessionStartTime")
     removeAuthValue("refreshTokenIssuedAt")
@@ -73,7 +85,8 @@ export function AuthProvider({ children }) {
     setMfaEnrollmentRequired(false)
     setMfaAvailableMethods(null)
     queryClient.clear()
-  }, [setAccessToken])
+    await clearCockpitCache(reason)
+  }, [clearCockpitCache, setAccessToken])
 
   const notifyBackendLogout = useCallback(async () => {
     try {
@@ -84,7 +97,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   // Logout function - defined early to avoid circular dependency
-  const logout = useCallback(async (localOnly = false) => {
+  const logout = useCallback(async (localOnly = false, reason = 'logout') => {
     if (logoutPromiseRef.current) {
       return logoutPromiseRef.current
     }
@@ -94,7 +107,7 @@ export function AuthProvider({ children }) {
         await notifyBackendLogout()
       }
 
-      clearLocalAuthState()
+      await clearLocalAuthState(reason)
 
       if (!localOnly) {
         notifications.success("Logged out successfully")
@@ -141,7 +154,7 @@ export function AuthProvider({ children }) {
   const handleRefreshFailure = useCallback(async () => {
     // Try to notify backend to revoke the session, but don't block on it
     // This ensures expired sessions are cleaned up server-side
-    await logout(false)
+    await logout(false, 'session-expired')
     notifications.info("Your session has expired. Please log in again.")
   }, [logout])
 
@@ -184,7 +197,7 @@ export function AuthProvider({ children }) {
           if (!isSessionValid()) {
             // Session expired while app was closed; best-effort server revoke.
             void notifyBackendLogout()
-            clearLocalAuthState()
+            await clearLocalAuthState('session-expired')
             setLoading(false)
             return
           }
@@ -204,7 +217,7 @@ export function AuthProvider({ children }) {
         } catch {
           // Failed to parse stored user
           void notifyBackendLogout()
-          clearLocalAuthState()
+          await clearLocalAuthState('auth-parse-error')
         }
       }
       setLoading(false)
@@ -254,6 +267,15 @@ export function AuthProvider({ children }) {
       accessContext: response.access_context || null,
       passwordChangeRequired,
     }
+
+    if (user?.id && user.id !== userData.id) {
+      void clearCockpitCache('user-change')
+    } else if (user?.role && user.role !== userData.role) {
+      void clearCockpitCache('role-change')
+    } else if (facilityCode && userData.facilityCode && facilityCode !== userData.facilityCode) {
+      void clearCockpitCache('facility-change')
+    }
+
     setAuthValue("user", JSON.stringify(userData))
     setUser(userData)
     setFacilityCodeState(userData.facilityCode || null)
@@ -275,7 +297,7 @@ export function AuthProvider({ children }) {
     }
 
     return userData
-  }, [defaultFacilityCode, setAccessToken])
+  }, [clearCockpitCache, defaultFacilityCode, facilityCode, setAccessToken, user])
 
   const login = async (email, password, facility) => {
     setError(null)

@@ -89,6 +89,63 @@ The Rust API exposes PHI-safe Prometheus text at `/api/v2/metrics` on the
 container network. Caddy returns `404` for that path publicly, so scrape it from
 inside the VPS network or through a private monitoring sidecar.
 
+Postgres is started with `pg_stat_statements` preloaded for staging and
+production diagnostics. Existing databases still need the extension enabled
+once after the Postgres container has restarted with the preload setting:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml exec -T db \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"'
+```
+
+Verify it privately from the VPS:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml exec -T db \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT queryid, calls, total_exec_time, mean_exec_time, rows FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;"'
+```
+
+Do not expose Postgres, `/api/v2/metrics`, Prometheus, or Grafana publicly.
+For a Grafana slow-query table, use a private Postgres datasource or a private
+postgres-exporter custom query; group by `queryid` and never display SQL text in
+public screenshots. The operational SQL for private runbooks is:
+
+```sql
+SELECT queryid,
+       calls,
+       round(total_exec_time::numeric, 2) AS total_exec_ms,
+       round(mean_exec_time::numeric, 2) AS mean_exec_ms,
+       rows
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 20;
+```
+
+Useful private Grafana PromQL panels:
+
+```promql
+# Slow clinical routes p99
+histogram_quantile(0.99, sum by (route_pattern, le) (
+  rate(hms_api_route_request_duration_seconds_bucket{route_pattern=~"/api/v2/(patients/:id/chronicle|dashboards/.*|wards/board)"}[$__rate_interval])
+))
+
+# DB pool pressure
+1 - (hms_api_postgres_pool_idle / clamp_min(hms_api_postgres_pool_size, 1))
+
+# Browser API latency p95 by safe route
+histogram_quantile(0.95, sum by (route_pattern, le) (
+  rate(hms_browser_api_request_duration_seconds_bucket[$__rate_interval])
+))
+
+# Dashboard p95/p99
+histogram_quantile(0.95, sum by (route_pattern, le) (rate(hms_dashboard_read_seconds_bucket[$__rate_interval])))
+histogram_quantile(0.99, sum by (route_pattern, le) (rate(hms_dashboard_read_seconds_bucket[$__rate_interval])))
+
+# Chronicle p95/p99
+histogram_quantile(0.95, sum by (route_pattern, le) (rate(hms_chronicle_read_seconds_bucket[$__rate_interval])))
+histogram_quantile(0.99, sum by (route_pattern, le) (rate(hms_chronicle_read_seconds_bucket[$__rate_interval])))
+```
+
 ## Backups and Restore
 
 Production deploys require encrypted off-server restic backups. Fill these

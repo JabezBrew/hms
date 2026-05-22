@@ -1178,7 +1178,13 @@ export const operations = {
     "pathParamNames": [
       "id"
     ],
-    "queryParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "type",
+      "search",
+      "encounter_id"
+    ],
     "hasBody": false
   },
   "getPatientChroniclePrint": {
@@ -1189,6 +1195,22 @@ export const operations = {
       "id"
     ],
     "queryParamNames": [],
+    "hasBody": false
+  },
+  "getPatientChronicleTimeline": {
+    "operationId": "getPatientChronicleTimeline",
+    "method": "GET",
+    "path": "/api/v2/patients/{id}/chronicle/timeline",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "type",
+      "search",
+      "encounter_id"
+    ],
     "hasBody": false
   },
   "getPatientClinicalNotes": {
@@ -3226,6 +3248,7 @@ export function createGeneratedClient(request) {
     getPatientChartEntries: createOperation(request, operations.getPatientChartEntries),
     getPatientChronicle: createOperation(request, operations.getPatientChronicle),
     getPatientChroniclePrint: createOperation(request, operations.getPatientChroniclePrint),
+    getPatientChronicleTimeline: createOperation(request, operations.getPatientChronicleTimeline),
     getPatientClinicalNotes: createOperation(request, operations.getPatientClinicalNotes),
     getPatientContextList: createOperation(request, operations.getPatientContextList),
     getPatientPharmacyClinicalContext: createOperation(request, operations.getPatientPharmacyClinicalContext),

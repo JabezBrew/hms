@@ -32,8 +32,42 @@ const chronicleHookState = vi.hoisted(() => ({
   },
 }))
 
-const nursingPatientDetailState = vi.hoisted(() => ({
-  data: {},
+const chronicleStartupState = vi.hoisted(() => ({
+  calls: [],
+  data: {
+    patient: {
+      id: 'patient-1',
+      name: 'Ama Mensah',
+      local_data: {
+        id: 'patient-1',
+        medical_record_number: 'MRN-001',
+      },
+    },
+    active_medications: [],
+    allergies: [],
+    problems: [],
+    lab_results: [],
+    active_encounter: {
+      id: 'encounter-1',
+      admission_id: 'admission-1',
+      encounter_type: 'inpatient',
+      status: 'in-progress',
+    },
+    active_admission: {
+      admission_id: 'admission-1',
+      ward_id: 'ward-1',
+      ward_name: 'Ward A',
+      bed_code: 'B1',
+    },
+    timeline: {
+      results: [],
+      has_next: false,
+      next_cursor: null,
+      page_size: 20,
+      count: 0,
+    },
+  },
+  error: null,
 }))
 
 const workspaceHostState = vi.hoisted(() => ({
@@ -41,17 +75,28 @@ const workspaceHostState = vi.hoisted(() => ({
 }))
 
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
-  usePatient: () => ({
+  usePatient: (_id, _options) => ({
     data: patientHookState.data,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
   }),
-}))
-
-vi.mock('@/features/nursing/hooks', () => ({
-  usePatientDetail: () => ({
-    data: nursingPatientDetailState.data,
+  usePatientChronicleStartup: (patientId, params, options) => {
+    chronicleStartupState.calls.push({ patientId, params, options })
+    return {
+      data: chronicleStartupState.data,
+      isLoading: false,
+      error: chronicleStartupState.error,
+      refetch: vi.fn(),
+    }
+  },
+  usePatientChronicleTimeline: () => ({
+    data: { pages: [{ results: [] }] },
+    fetchNextPage: vi.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    isLoading: false,
+    refetch: vi.fn(),
   }),
 }))
 
@@ -202,6 +247,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     chronicleHookState.calls = []
+    chronicleStartupState.calls = []
     chronicleHookState.data = {
       active_medications: [],
       allergies: [],
@@ -210,7 +256,40 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         admission_id: 'admission-1',
       },
     }
-    nursingPatientDetailState.data = {}
+    chronicleStartupState.data = {
+      patient: {
+        id: 'patient-1',
+        name: 'Ama Mensah',
+        local_data: {
+          id: 'patient-1',
+          medical_record_number: 'MRN-001',
+        },
+      },
+      active_medications: [],
+      allergies: [],
+      problems: [],
+      lab_results: [],
+      active_encounter: {
+        id: 'encounter-1',
+        admission_id: 'admission-1',
+        encounter_type: 'inpatient',
+        status: 'in-progress',
+      },
+      active_admission: {
+        admission_id: 'admission-1',
+        ward_id: 'ward-1',
+        ward_name: 'Ward A',
+        bed_code: 'B1',
+      },
+      timeline: {
+        results: [],
+        has_next: false,
+        next_cursor: null,
+        page_size: 20,
+        count: 0,
+      },
+    }
+    chronicleStartupState.error = null
     workspaceHostState.lastProps = null
     patientHookState.data = {
       id: 'patient-1',
@@ -259,10 +338,16 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     renderPage()
 
-    expect(chronicleHookState.calls.at(-1)).toEqual(
+    expect(chronicleStartupState.calls.at(-1)).toEqual(
       expect.objectContaining({
         patientId: 'patient-1',
         options: expect.objectContaining({ enabled: true }),
+      }),
+    )
+    expect(chronicleHookState.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        patientId: 'patient-1',
+        options: expect.objectContaining({ enabled: false }),
       }),
     )
   })
@@ -277,11 +362,30 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
         medical_record_number: 'MRN-001',
       },
     }
-    nursingPatientDetailState.data = {
-      admission_id: 'admission-v2',
-      ward_id: 'ward-v2',
-      ward_name: 'V2 Ward',
-      bed_number: 'B12',
+    chronicleStartupState.data = {
+      ...chronicleStartupState.data,
+      active_admission: {
+        admission_id: 'admission-v2',
+        ward_id: 'ward-v2',
+        ward_name: 'V2 Ward',
+        bed_code: 'B12',
+      },
+      active_context: {
+        admission: {
+          admission_id: 'admission-v2',
+          ward_id: 'ward-v2',
+          ward_name: 'V2 Ward',
+          bed_code: 'B12',
+        },
+      },
+      patient: {
+        id: 'patient-1',
+        name: 'Ama Mensah',
+        local_data: {
+          id: 'patient-1',
+          medical_record_number: 'MRN-001',
+        },
+      },
     }
 
     renderPage('/patients/patient-1?action=add_prescription')
@@ -311,15 +415,8 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
   it('does not expose unsupported break-glass access in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
-    patientHookState.data = {
-      id: 'patient-1',
-      name: 'Ama Mensah',
-      access: { clinical: false },
-      local_data: {
-        id: 'patient-1',
-        medical_record_number: 'MRN-001',
-      },
-    }
+    chronicleStartupState.data = null
+    chronicleStartupState.error = { status: 403, message: 'Forbidden' }
 
     renderPage()
 

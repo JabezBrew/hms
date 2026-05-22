@@ -16,13 +16,16 @@ import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { usePatient } from "@/features/patients/hooks/usePatientQueries";
+import {
+  usePatient,
+  usePatientChronicleStartup,
+  usePatientChronicleTimeline,
+} from "@/features/patients/hooks/usePatientQueries";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePatientTimeline, flattenTimelinePages, getTimelineTotalCount, useInvalidateTimeline } from "@/hooks/useTimelineQueries";
 import { usePatientEncounters } from "@/features/encounters/hooks/useEncounterQueries";
-import { usePatientDetail as useNursingPatientDetail } from "@/features/nursing/hooks";
 // useClinicalSummary removed - context endpoint now provides all sidebar data
 import { useChronicleContext } from "@/hooks/useChronicleContext";
 import { useMultipleSlideOvers } from "@/hooks/useSlideOver";
@@ -201,8 +204,27 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const slideOvers = useMultipleSlideOvers(chronicleWorkspaceIds);
   const [trendReviewTab, setTrendReviewTab] = useState('vitals');
 
+  const {
+    data: chronicleStartup,
+    isLoading: isStartupLoading,
+    error: startupError,
+    refetch: refetchStartup,
+  } = usePatientChronicleStartup(id, {}, {
+    enabled: rustV2Mode,
+  });
+
   // Fetch patient data (includes access flags for conditional fetching)
-  const { data: patient, isLoading, error, refetch } = usePatient(id);
+  const {
+    data: legacyPatient,
+    isLoading: isPatientLoading,
+    error: patientError,
+    refetch: refetchPatient,
+  } = usePatient(id, {
+    enabled: !rustV2Mode,
+  });
+  const patient = rustV2Mode ? chronicleStartup?.patient : legacyPatient;
+  const isLoading = rustV2Mode ? isStartupLoading : isPatientLoading;
+  const error = rustV2Mode ? startupError : patientError;
   const patientName = useMemo(() => resolvePatientDisplayName(patient), [patient]);
   const patientPath = id ? `/patients/${id}` : '/patients';
   const pageMeta = usePageMeta({
@@ -214,18 +236,17 @@ const PatientChroniclePage = ({ defaultAction }) => {
   });
 
   // Check if user has clinical access (from patient endpoint response).
-  // Rust V2 enforces patient access server-side and does not expose the legacy
-  // access envelope yet, so only an explicit false blocks clinical reads.
+  // Rust V2 enforces Chronicle access through the shaped startup read.
   const hasClinicalAccess = rustV2Mode
-    ? patient?.access?.clinical !== false
+    ? startupError?.status !== 403
     : patient?.access?.clinical === true;
   const patientLocalId = patient?.local_data?.id || patient?.id || id;
   const patientIdentityId = patient?.local_data?.patient_identity_id || patient?.patient_identity_id || null;
-  const { data: nursingPatientDetail } = useNursingPatientDetail(patientLocalId, {
-    enabled: rustV2Mode && hasClinicalAccess && !!patientLocalId,
-  });
+  const rustV2ActiveAdmission = rustV2Mode
+    ? chronicleStartup?.active_admission || chronicleStartup?.active_context?.admission || null
+    : null;
   const rustV2ActiveAdmissionId = rustV2Mode
-    ? nursingPatientDetail?.admission_id || nursingPatientDetail?.admission?.id || null
+    ? rustV2ActiveAdmission?.admission_id || rustV2ActiveAdmission?.id || null
     : null;
   const patientForChronicle = useMemo(() => {
     if (!patient || !rustV2ActiveAdmissionId) {
@@ -236,22 +257,23 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return {
       ...patient,
       current_admission_id: patient.current_admission_id || rustV2ActiveAdmissionId,
-      current_ward_id: patient.current_ward_id || nursingPatientDetail?.ward_id || null,
-      current_ward: patient.current_ward || nursingPatientDetail?.ward_name || null,
-      current_bed: patient.current_bed || nursingPatientDetail?.bed_number || null,
+      current_ward_id: patient.current_ward_id || rustV2ActiveAdmission?.ward_id || null,
+      current_ward: patient.current_ward || rustV2ActiveAdmission?.ward_name || null,
+      current_bed: patient.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null,
       local_data: {
         ...localData,
         current_admission_id: localData.current_admission_id || rustV2ActiveAdmissionId,
-        current_ward_id: localData.current_ward_id || nursingPatientDetail?.ward_id || null,
-        current_ward: localData.current_ward || nursingPatientDetail?.ward_name || null,
-        current_bed: localData.current_bed || nursingPatientDetail?.bed_number || null,
+        current_ward_id: localData.current_ward_id || rustV2ActiveAdmission?.ward_id || null,
+        current_ward: localData.current_ward || rustV2ActiveAdmission?.ward_name || null,
+        current_bed: localData.current_bed || rustV2ActiveAdmission?.bed_code || rustV2ActiveAdmission?.bed_number || null,
       },
     };
   }, [
-    nursingPatientDetail?.bed_number,
-    nursingPatientDetail?.ward_id,
-    nursingPatientDetail?.ward_name,
     patient,
+    rustV2ActiveAdmission?.bed_code,
+    rustV2ActiveAdmission?.bed_number,
+    rustV2ActiveAdmission?.ward_id,
+    rustV2ActiveAdmission?.ward_name,
     rustV2ActiveAdmissionId,
   ]);
   const prefetchWorkspaceForOpen = useCallback((workspaceId) => {
@@ -349,29 +371,40 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // ====== TIER 1: Chronicle Context (optimized single-call) ======
   // Only fetch if user has clinical access - prevents wasted 403 requests
   const {
-    data: chronicleContext,
-    isLoading: isContextLoading,
-    error: contextError,
-    refetch: refetchContext,
+    data: legacyChronicleContext,
+    isLoading: isLegacyContextLoading,
+    error: legacyContextError,
+    refetch: refetchLegacyContext,
   } = useChronicleContext(id, {
-    enabled: hasClinicalAccess,
+    enabled: !rustV2Mode && hasClinicalAccess,
   });
 
+  const chronicleContext = rustV2Mode ? chronicleStartup : legacyChronicleContext;
+  const isContextLoading = rustV2Mode ? false : isLegacyContextLoading;
+  const contextError = rustV2Mode ? startupError : legacyContextError;
+  const refetchContext = rustV2Mode ? refetchStartup : refetchLegacyContext;
+
   const canFetchClinical = hasClinicalAccess;
-  const canViewDischargeCase = DISCHARGE_CASE_ROLES.has(user?.user_type);
+  const canViewDischargeCase = !rustV2Mode && DISCHARGE_CASE_ROLES.has(user?.user_type);
 
   // Fetch patient encounters for grouping
   const {
-    data: encounters,
-    isLoading: areEncountersLoading,
+    data: legacyEncounters,
+    isLoading: areLegacyEncountersLoading,
     refetch: refetchEncounters,
   } = usePatientEncounters(id, {
-    enabled: canFetchClinical,
+    enabled: !rustV2Mode && canFetchClinical,
   });
+  const rustV2Encounters = useMemo(
+    () => (chronicleContext?.active_encounter ? [chronicleContext.active_encounter] : []),
+    [chronicleContext?.active_encounter],
+  );
+  const encounters = rustV2Mode ? rustV2Encounters : legacyEncounters;
+  const areEncountersLoading = rustV2Mode ? false : areLegacyEncountersLoading;
 
   // Fetch patient insurance (only if user has clinical access)
   const { data: insuranceData } = usePatientInsurance(id, {}, {
-    enabled: hasClinicalAccess,
+    enabled: !rustV2Mode && hasClinicalAccess,
   });
   const patientInsurance = insuranceData?.results || insuranceData || [];
 
@@ -435,7 +468,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [navigate, wardBoardHref]);
 
   const resolvedVisitScope = useMemo(() => resolveChronicleVisitScope({
-    requestedVisit: visitParam,
+    requestedVisit: visitParam || (rustV2Mode ? CHRONICLE_ALL_VISITS : undefined),
     activeEncounterId: chronicleContext?.active_encounter?.id || activeEncounter?.id,
     encounters,
     areEncountersLoading,
@@ -444,6 +477,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     areEncountersLoading,
     chronicleContext?.active_encounter?.id,
     encounters,
+    rustV2Mode,
     visitParam,
   ]);
   const isAllVisitsScope = resolvedVisitScope === CHRONICLE_ALL_VISITS;
@@ -531,8 +565,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [id]);
 
   // Use chronicle context data directly - no more legacy fallback needed
-  const medications = chronicleContext?.active_medications || [];
-  const parsedAllergies = chronicleContext?.allergies || [];
+  const medications = chronicleContext?.active_medications || chronicleContext?.summaries?.medications || [];
+  const parsedAllergies = chronicleContext?.allergies || chronicleContext?.summaries?.allergies || [];
 
   // Get latest vitals from context
   const latestVitals = chronicleContext?.latest_vitals;
@@ -542,6 +576,19 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Transform latest_vitals from context into labResults format for sidebar
   const labResults = useMemo(() => {
+    const shapedLabs = chronicleContext?.lab_results || chronicleContext?.summaries?.labs || [];
+    if (Array.isArray(shapedLabs) && shapedLabs.length > 0) {
+      return shapedLabs.map((result) => ({
+        id: result.id,
+        name: result.name || result.test_name,
+        value: result.value,
+        unit: result.unit,
+        timestamp: result.timestamp || result.entered_at,
+        is_abnormal: result.is_abnormal === true,
+        abnormal_direction: result.abnormal_direction || null,
+      }));
+    }
+
     // Early return using the primitives we already checked
     if (!vitalsId || !latestVitals) return [];
 
@@ -617,11 +664,34 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
     return results;
     // Use primitive vitalsId as dependency - will only re-run when vitals actually change
-  }, [vitalsId, vitalsRecordedAt, latestVitals]);
+  }, [chronicleContext?.lab_results, chronicleContext?.summaries?.labs, vitalsId, vitalsRecordedAt, latestVitals]);
 
   // Map filter to API type
   // Fetch timeline with infinite scroll
   // Uses id from URL params to start fetching immediately in parallel with patient data
+  const chronicleTimelineParams = useMemo(() => ({
+    type: CHRONICLE_TYPE_MAPPING[activeFilter] || 'all',
+    search: debouncedSearch,
+    limit: 20,
+    encounterId: selectedEncounterId || undefined,
+  }), [activeFilter, debouncedSearch, selectedEncounterId]);
+  const canSeedRustTimeline = rustV2Mode
+    && chronicleTimelineParams.type === 'all'
+    && !chronicleTimelineParams.search
+    && !chronicleTimelineParams.encounterId
+    && chronicleContext?.timeline;
+  const rustTimelineQuery = usePatientChronicleTimeline(id, chronicleTimelineParams, {
+    enabled: rustV2Mode && canFetchClinical && !!resolvedVisitScope && !!chronicleContext && !canSeedRustTimeline,
+    initialPage: canSeedRustTimeline ? chronicleContext.timeline : undefined,
+  });
+  const legacyTimelineQuery = usePatientTimeline(id, {
+    type: chronicleTimelineParams.type,
+    search: chronicleTimelineParams.search,
+    pageSize: chronicleTimelineParams.limit,
+    encounterId: chronicleTimelineParams.encounterId,
+    enabled: !rustV2Mode && canFetchClinical && !!resolvedVisitScope,
+  });
+  const activeTimelineQuery = rustV2Mode ? rustTimelineQuery : legacyTimelineQuery;
   const {
     data: timelineData,
     fetchNextPage,
@@ -629,13 +699,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     isFetchingNextPage,
     isLoading: isTimelineLoading,
     refetch: refetchTimeline,
-  } = usePatientTimeline(id, {
-    type: CHRONICLE_TYPE_MAPPING[activeFilter] || 'all',
-    search: debouncedSearch,
-    pageSize: 20,
-    encounterId: selectedEncounterId || undefined,
-    enabled: canFetchClinical && !!resolvedVisitScope,
-  });
+  } = activeTimelineQuery;
 
   // Invalidate timeline cache helper
   const invalidateTimeline = useInvalidateTimeline();
@@ -722,6 +786,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
   // Use allergies from clinical summary hook (already parsed from patient data)
   // The hook handles parsing from string/array formats
   const allergies = parsedAllergies;
+  const problemSummaries = chronicleContext?.problems || chronicleContext?.summaries?.problems || [];
 
   // ============================================
   // Filter entries (filtering is done by API, but we keep this for local display type mapping)
@@ -940,12 +1005,20 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Refresh data after any slide-over action
   const refreshData = useCallback(() => {
+    if (rustV2Mode) {
+      Promise.all([
+        refetchStartup?.(),
+        refetchTimeline?.(),
+      ]);
+      return;
+    }
+
     Promise.all([
       invalidateTimeline(id),
-      refetch(),
+      refetchPatient(),
       refetchContext(),
     ]);
-  }, [refetch, refetchContext, id, invalidateTimeline]);
+  }, [id, invalidateTimeline, refetchContext, refetchPatient, refetchStartup, refetchTimeline, rustV2Mode]);
 
   const prefetchActionResources = useCallback((action) => {
     if (!action) return;
@@ -1244,7 +1317,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const userRole = user?.role || user?.user_type;
   const canRequestBreakGlass = !rustV2Mode && ['admin', 'doctor', 'nurse'].includes(userRole);
   // Access denied if patient loaded but user lacks clinical access
-  const accessDenied = patient && !isLoading && patient?.access?.clinical === false;
+  const accessDenied = rustV2Mode
+    ? !isLoading && startupError?.status === 403
+    : patient && !isLoading && patient?.access?.clinical === false;
   const hasGateError = (contextError && contextError?.status !== 403) || (error && error?.status !== 403);
   const gateError = contextError && contextError?.status !== 403 ? contextError : error;
 
@@ -1264,7 +1339,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       });
 
       // Refetch patient to update access flags, then clinical data will load
-      refetch();
+      refetchPatient();
       refetchContext();
       refetchTimeline();
       refetchEncounters();
@@ -1429,7 +1504,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               {gateError?.message || 'An error occurred while fetching patient data.'}
             </p>
             <Button onClick={() => {
-              refetch();
+              refetchPatient();
               refetchContext();
             }}>
               <RefreshCw className="h-4 w-4 mr-2" />
@@ -1453,7 +1528,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         <PatientIdentityHero
           patient={patientForChronicle}
           allergies={allergies}
-          onActionIntent={prefetchActionResources}
+          onActionIntent={rustV2Mode ? undefined : prefetchActionResources}
           onAskChronicle={canUseAiAssistant ? handleAskChronicle : undefined}
           onAddNote={handleAddNote}
           onRecordVitals={handleRecordVitals}
@@ -1514,11 +1589,11 @@ const PatientChroniclePage = ({ defaultAction }) => {
             )}
           >
             <div className="w-80 border-r border-border bg-muted/20 p-6">
-              <ProblemListSidebar patientId={id} />
+              {!rustV2Mode && <ProblemListSidebar patientId={id} />}
             </div>
             <ClinicalSummarySidebar
               patient={patientForChronicle}
-              problems={[]}
+              problems={rustV2Mode ? problemSummaries : []}
               medications={medications}
               allergies={allergies}
               labResults={labResults}

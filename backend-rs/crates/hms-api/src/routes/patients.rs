@@ -23,6 +23,10 @@ pub fn routes() -> Router<AppState> {
             get(patients::get_patient_chronicle),
         )
         .route(
+            "/api/v2/patients/:id/chronicle/timeline",
+            get(patients::list_patient_chronicle_timeline),
+        )
+        .route(
             "/api/v2/patients/:id/chronicle/print",
             get(patients::get_patient_chronicle_print),
         )

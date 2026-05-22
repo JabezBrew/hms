@@ -202,6 +202,14 @@ services:
       - -c
       - wal_compression=on
       - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=${PG_STAT_STATEMENTS_MAX:-10000}
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
+      - -c
       - log_min_duration_statement=500
     volumes:
       - postgres_data:/var/lib/postgresql/data

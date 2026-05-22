@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use axum::extract::FromRequestParts;
+use axum::extract::{FromRequestParts, MatchedPath};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use chrono::{DateTime, Utc};
@@ -86,8 +86,9 @@ async fn resolve_request_context(
     let claims_elapsed = claims_started_at.elapsed();
 
     let facts_started_at = Instant::now();
+    let route_pattern = route_pattern(parts);
     let context_facts = state
-        .request_context_facts_for_claims(&claims)
+        .request_context_facts_for_claims(&claims, &route_pattern)
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;
@@ -163,6 +164,14 @@ fn access_claims(parts: &Parts, state: &AppState) -> Result<AccessClaims, ApiErr
     state
         .verify_access_token(token)
         .map_err(|_| ApiError::unauthorized())
+}
+
+fn route_pattern(parts: &Parts) -> String {
+    parts
+        .extensions
+        .get::<MatchedPath>()
+        .map(|matched_path| matched_path.as_str().to_owned())
+        .unwrap_or_else(|| "_unknown".to_owned())
 }
 
 fn reject_stale_claims(user: &AuthUser, claims: &AccessClaims) -> Result<(), ApiError> {

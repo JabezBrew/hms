@@ -3,6 +3,7 @@ use hms_db::clinical::{
     NewAllergy, NewChartEntry, NewClinicalNote, NewClinicalNoteTemplate, NewPrescription,
     NewProblem, UpdateClinicalNoteTemplate,
 };
+use hms_db::laboratory::{NewLabOrder, NewLabResult, NewSpecimen};
 use hms_db::patients::{PatientContextCursor, PatientContextFilters, PatientUpdate};
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::clinical::{
@@ -10,6 +11,7 @@ use hms_domain::clinical::{
     UpdateAllergyRequest, UpdatePrescriptionRequest, UpdateProblemRequest,
 };
 use hms_domain::deployment::DeploymentProfile;
+use hms_domain::laboratory::LabPriority;
 use hms_domain::patients::{PatientAdministrativeStatus, Sex};
 
 #[tokio::test]
@@ -385,6 +387,56 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
     )
     .await
     .expect("chart entry is created");
+    let test_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM lab_tests WHERE facility_id = $1 ORDER BY code LIMIT 1",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("baseline lab test exists");
+    let lab_order = hms_db::laboratory::create_order(
+        &pool,
+        NewLabOrder {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            patient_id,
+            test_ids: vec![test_id],
+            panel_ids: vec![],
+            priority: LabPriority::Routine,
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("lab order is created");
+    let specimen = hms_db::laboratory::create_specimen(
+        &pool,
+        NewSpecimen {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            order_id: lab_order.id,
+            patient_id,
+            specimen_type: "blood".to_owned(),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("lab specimen is created");
+    hms_db::laboratory::create_result(
+        &pool,
+        NewLabResult {
+            id: uuid::Uuid::new_v4(),
+            facility_id,
+            specimen_id: specimen.id,
+            order_id: lab_order.id,
+            patient_id,
+            test_id,
+            value: "11.4".to_owned(),
+            unit: Some("g/dL".to_owned()),
+            actor_user_id: owner_id,
+        },
+    )
+    .await
+    .expect("lab result is created");
 
     let summary = hms_db::clinical::patient_chronicle_summary(&pool, facility_id, patient_id, 1)
         .await
@@ -403,13 +455,44 @@ async fn patient_chronicle_summary_repository_is_bounded_and_facility_scoped() {
         .expect("patient lookup succeeds")
         .expect("patient exists");
     let (loaded_summary, observed_queries) = hms_observability::with_request_query_counter(async {
-        hms_db::clinical::patient_chronicle_summary_for_patient(&pool, patient, 1).await
+        hms_db::clinical::patient_chronicle_summary_for_patient(&pool, patient.clone(), 1).await
     })
     .await;
     let loaded_summary = loaded_summary.expect("summary from loaded patient succeeds");
     assert_eq!(loaded_summary.patient.id, patient_id);
     assert_eq!(loaded_summary.notes.len(), 1);
     assert_eq!(observed_queries, 1);
+
+    let (startup, startup_observed_queries) =
+        hms_observability::with_request_query_counter(async {
+            hms_db::clinical::patient_chronicle_startup_for_patient(
+                &pool,
+                &patient,
+                5,
+                21,
+                None,
+                hms_db::clinical::ChronicleTimelineFilters::default(),
+            )
+            .await
+        })
+        .await;
+    let startup = startup.expect("startup read succeeds");
+    assert_eq!(startup_observed_queries, 1);
+    assert_eq!(startup.notes.len(), 1);
+    assert_eq!(startup.problems[0].label, "Hypertension");
+    assert_eq!(startup.allergies[0].substance, "Penicillin");
+    assert_eq!(startup.prescriptions[0].medication_name, "Amlodipine");
+    assert_eq!(startup.chart_entries[0].value, "130/82");
+    assert_eq!(startup.lab_results[0].test_id, test_id);
+    assert!(startup.timeline_entries.len() <= 21);
+    assert!(startup
+        .timeline_entries
+        .iter()
+        .any(|entry| entry.entry_type == "lab_result"));
+    assert!(startup
+        .timeline_entries
+        .iter()
+        .all(|entry| { !entry.data.to_string().contains("Clinical summary body.") }));
 
     assert!(hms_db::clinical::patient_chronicle_summary(
         &pool,

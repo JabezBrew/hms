@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { ClinicDashboardWebSocket, DoctorDashboardWebSocket } from '@/lib/websocket';
+import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -115,8 +116,8 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
-    ws.on('dashboard.invalidate', ({ dashboard, facility_code, practitioner_id, target_date }) => {
-      if (dashboard !== 'doctor') {
+    const handleDashboardEvent = ({ dashboard, facility_code, practitioner_id, target_date, ...event }) => {
+      if (dashboard && dashboard !== 'doctor') {
         return;
       }
 
@@ -140,6 +141,15 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
         return;
       }
 
+      const delta = { ...event, dashboard };
+      if (stream === 'clinic') {
+        if (patchDashboardProjectionFreshness(queryClient, ['dashboards', 'clinic'], delta, 'doctor')) {
+          return;
+        }
+      } else if (patchDashboardProjectionFreshness(queryClient, ['dashboards', 'my-work'], delta, 'doctor')) {
+        return;
+      }
+
       if (typeof onInvalidate === 'function') {
         onInvalidate({
           dashboard,
@@ -157,7 +167,10 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
         queryClient.invalidateQueries({ queryKey: ['doctor-dashboard'] });
         queryClient.invalidateQueries({ queryKey: ['dashboards', 'my-work'] });
       }
-    });
+    };
+
+    ws.on('dashboard.invalidate', handleDashboardEvent);
+    ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 

@@ -11,6 +11,9 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiErrorResponse};
 use crate::extractors::RequestContext;
 use crate::response::{ListResponse, ObjectResponse};
+use crate::services::patients::{
+    ChronicleTimelineQuery, PatientChronicleStartup, PatientChronicleTimelineEntry,
+};
 use crate::state::AppState;
 
 #[utoipa::path(
@@ -141,9 +144,9 @@ pub async fn get_patient(
     operation_id = "getPatientChronicle",
     tag = "clinical",
     security(("bearerAuth" = [])),
-    params(("id" = Uuid, Path, description = "Patient id")),
+    params(("id" = Uuid, Path, description = "Patient id"), ChronicleTimelineQuery),
     responses(
-        (status = 200, description = "Patient Chronicle summary", body = ObjectResponse<PatientChronicleSummary>),
+        (status = 200, description = "Shaped Patient Chronicle startup", body = ObjectResponse<PatientChronicleStartup>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Patient access denied", body = ApiErrorResponse),
         (status = 404, description = "Patient not found", body = ApiErrorResponse)
@@ -153,11 +156,40 @@ pub async fn get_patient_chronicle(
     State(state): State<AppState>,
     RequestContext(user): RequestContext,
     Path(id): Path<Uuid>,
-) -> Result<Json<ObjectResponse<PatientChronicleSummary>>, ApiError> {
+    Query(query): Query<ChronicleTimelineQuery>,
+) -> Result<Json<ObjectResponse<PatientChronicleStartup>>, ApiError> {
     Ok(Json(
         state
             .patients_service()
-            .get_patient_chronicle(&user, id)
+            .get_patient_chronicle(&user, id, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/patients/{id}/chronicle/timeline",
+    operation_id = "getPatientChronicleTimeline",
+    tag = "clinical",
+    security(("bearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "Patient id"), ChronicleTimelineQuery),
+    responses(
+        (status = 200, description = "Patient Chronicle timeline page", body = ListResponse<PatientChronicleTimelineEntry>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Patient access denied", body = ApiErrorResponse),
+        (status = 404, description = "Patient not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_patient_chronicle_timeline(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Path(id): Path<Uuid>,
+    Query(query): Query<ChronicleTimelineQuery>,
+) -> Result<Json<ListResponse<PatientChronicleTimelineEntry>>, ApiError> {
+    Ok(Json(
+        state
+            .patients_service()
+            .list_patient_chronicle_timeline(&user, id, query)
             .await?,
     ))
 }
@@ -184,7 +216,7 @@ pub async fn get_patient_chronicle_print(
     Ok(Json(
         state
             .patients_service()
-            .get_patient_chronicle(&user, id)
+            .get_patient_chronicle_summary(&user, id)
             .await?,
     ))
 }

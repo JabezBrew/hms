@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { AdminDashboardWebSocket } from '@/lib/websocket';
 import { dashboardKeys } from '@/hooks/useDashboardQueries';
 import { isRustV2ApiMode } from '@/lib/api/v2/runtime';
+import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -101,8 +102,8 @@ export function useAdminDashboardLiveUpdates(options = {}) {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
-    ws.on('dashboard.invalidate', ({ dashboard, facility_code }) => {
-      if (dashboard !== 'admin') {
+    const handleDashboardEvent = ({ dashboard, facility_code, ...event }) => {
+      if (dashboard && dashboard !== 'admin') {
         return;
       }
       const eventFacility = normalizeFacilityCode(facility_code);
@@ -110,9 +111,28 @@ export function useAdminDashboardLiveUpdates(options = {}) {
       if (eventFacility && currentFacility && eventFacility !== currentFacility) {
         return;
       }
+      const delta = { ...event, dashboard };
+      const patchedRoot = patchDashboardProjectionFreshness(
+        queryClient,
+        dashboardKeys.admin(),
+        delta,
+        'admin',
+      );
+      const patchedV2 = patchDashboardProjectionFreshness(
+        queryClient,
+        dashboardKeys.adminV2Base(),
+        delta,
+        'admin',
+      );
+      if (patchedRoot || patchedV2) {
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: dashboardKeys.admin() });
       queryClient.invalidateQueries({ queryKey: dashboardKeys.adminV2Base() });
-    });
+    };
+
+    ws.on('dashboard.invalidate', handleDashboardEvent);
+    ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 

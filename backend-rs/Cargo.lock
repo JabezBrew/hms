@@ -823,7 +823,10 @@ dependencies = [
 name = "hms-events"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -852,6 +855,7 @@ dependencies = [
  "anyhow",
  "axum",
  "hms-db",
+ "hms-domain",
  "hms-observability",
  "sqlx",
  "tokio",

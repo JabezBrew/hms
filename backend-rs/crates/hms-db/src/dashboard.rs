@@ -1,20 +1,41 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use hms_domain::dashboard::{
     AdminCapacityCounts, AdminCapacitySummary, AdminCapacityWaitTime, AdminCapacityWard,
     DashboardMetric, DashboardSnapshot, NotificationCounts, NotificationListItem,
     NotificationPriority,
 };
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, NavigationManifest, PermissionCode};
+use serde::Deserialize;
 use sqlx::{FromRow, QueryBuilder};
 use uuid::Uuid;
 
 use crate::{codec, PgPool};
 
-const DASHBOARD_SNAPSHOT_MAX_AGE_SECONDS: i64 = 30;
+pub const DASHBOARD_PROJECTION_TTL_SECONDS: i64 = 30;
+pub const DASHBOARD_REFRESH_JOB_KIND: &str = "dashboard_projection_refresh";
+pub const DASHBOARD_SNAPSHOT_KEY: &str = "operations";
+const DASHBOARD_REFRESH_MAX_ATTEMPTS: i32 = 3;
 
 pub struct NotificationCursor {
     pub occurred_at: DateTime<Utc>,
     pub id: Uuid,
+}
+
+pub struct DashboardProjectionRead {
+    pub snapshot: Option<DashboardSnapshot>,
+    pub generated_at: Option<DateTime<Utc>>,
+    pub is_stale: bool,
+}
+
+pub struct DashboardRefreshQueue {
+    pub queued: bool,
+    pub inserted: bool,
+}
+
+pub struct DashboardProjectionRefreshJob {
+    pub id: Uuid,
+    pub facility_id: Uuid,
+    pub deployment_profile: DeploymentProfile,
 }
 
 pub struct NewNotification {
@@ -64,33 +85,52 @@ struct AdminCapacityWardRow {
     high_occupancy_wards: i64,
 }
 
-pub async fn dashboard_snapshot(
+#[derive(FromRow)]
+struct JobRow {
+    id: Uuid,
+    payload: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct DashboardProjectionRefreshPayload {
+    facility_id: Uuid,
+    deployment_profile: DeploymentProfile,
+    snapshot_key: Option<String>,
+}
+
+pub async fn read_dashboard_projection(
+    pool: &PgPool,
+    facility_id: Uuid,
+    navigation: NavigationManifest,
+) -> anyhow::Result<DashboardProjectionRead> {
+    let snapshot = cached_dashboard_snapshot(pool, facility_id, navigation).await?;
+    let generated_at = snapshot.as_ref().map(|snapshot| snapshot.generated_at);
+    let is_stale = generated_at
+        .map(dashboard_projection_is_stale)
+        .unwrap_or(true);
+
+    Ok(DashboardProjectionRead {
+        snapshot,
+        generated_at,
+        is_stale,
+    })
+}
+
+pub async fn refresh_dashboard_projection(
     pool: &PgPool,
     facility_id: Uuid,
     profile: DeploymentProfile,
-    navigation: NavigationManifest,
 ) -> anyhow::Result<DashboardSnapshot> {
-    if let Some(snapshot) = cached_dashboard_snapshot(pool, facility_id, navigation.clone()).await?
-    {
-        if Utc::now()
-            .signed_duration_since(snapshot.generated_at)
-            .num_seconds()
-            < DASHBOARD_SNAPSHOT_MAX_AGE_SECONDS
-        {
-            return Ok(snapshot);
-        }
-    }
-
     let metrics = dashboard_metrics(pool, facility_id).await?;
     let metrics_json = serde_json::to_value(&metrics)?;
     let id = Uuid::new_v4();
     let row = hms_observability::observe_db_query(
-        "dashboard.refresh_snapshot",
+        "dashboard.refresh_projection",
         sqlx::query_as::<_, SnapshotRow>(
             "INSERT INTO dashboard_snapshots (
             id, facility_id, snapshot_key, deployment_profile, metrics, generated_at
          )
-         VALUES ($1, $2, 'operations', $3, $4, now())
+         VALUES ($1, $2, $3, $4, $5, now())
          ON CONFLICT (facility_id, snapshot_key) DO UPDATE
          SET deployment_profile = EXCLUDED.deployment_profile,
              metrics = EXCLUDED.metrics,
@@ -100,6 +140,7 @@ pub async fn dashboard_snapshot(
         )
         .bind(id)
         .bind(facility_id)
+        .bind(DASHBOARD_SNAPSHOT_KEY)
         .bind(codec::encode(profile)?)
         .bind(metrics_json)
         .fetch_one(pool),
@@ -111,8 +152,136 @@ pub async fn dashboard_snapshot(
         deployment_profile: codec::decode(&row.deployment_profile)?,
         generated_at: row.generated_at,
         metrics: serde_json::from_value(row.metrics)?,
-        navigation,
+        navigation: NavigationManifest { groups: Vec::new() },
     })
+}
+
+pub async fn queue_dashboard_projection_refresh(
+    pool: &PgPool,
+    facility_id: Uuid,
+    profile: DeploymentProfile,
+) -> anyhow::Result<DashboardRefreshQueue> {
+    let id = Uuid::new_v4();
+    let payload = serde_json::json!({
+        "facility_id": facility_id,
+        "deployment_profile": profile,
+        "snapshot_key": DASHBOARD_SNAPSHOT_KEY,
+    });
+    let inserted_id = hms_observability::observe_db_query(
+        "dashboard.queue_projection_refresh",
+        sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO jobs (id, kind, payload)
+             VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING
+             RETURNING id",
+        )
+        .bind(id)
+        .bind(DASHBOARD_REFRESH_JOB_KIND)
+        .bind(payload)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    Ok(DashboardRefreshQueue {
+        queued: true,
+        inserted: inserted_id.is_some(),
+    })
+}
+
+pub async fn lock_next_dashboard_projection_refresh_job(
+    pool: &PgPool,
+    worker_id: &str,
+) -> anyhow::Result<Option<DashboardProjectionRefreshJob>> {
+    let row = hms_observability::observe_db_query(
+        "dashboard.lock_projection_refresh_job",
+        sqlx::query_as::<_, JobRow>(
+            r#"
+            WITH next_job AS (
+                SELECT id
+                FROM jobs
+                WHERE kind = $1
+                  AND status = 'queued'
+                  AND available_at <= now()
+                ORDER BY available_at ASC, created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE jobs
+            SET status = 'running',
+                attempts = attempts + 1,
+                locked_by = $2,
+                locked_at = now(),
+                updated_at = now()
+            FROM next_job
+            WHERE jobs.id = next_job.id
+            RETURNING jobs.id, jobs.payload
+            "#,
+        )
+        .bind(DASHBOARD_REFRESH_JOB_KIND)
+        .bind(worker_id)
+        .fetch_optional(pool),
+    )
+    .await?;
+
+    row.map(dashboard_projection_job_from_row).transpose()
+}
+
+pub async fn complete_dashboard_projection_refresh_job(
+    pool: &PgPool,
+    job_id: Uuid,
+) -> anyhow::Result<()> {
+    hms_observability::observe_db_query(
+        "dashboard.complete_projection_refresh_job",
+        sqlx::query(
+            "UPDATE jobs
+             SET status = 'completed',
+                 locked_by = NULL,
+                 locked_at = NULL,
+                 last_error = NULL,
+                 updated_at = now()
+             WHERE id = $1
+               AND kind = $2",
+        )
+        .bind(job_id)
+        .bind(DASHBOARD_REFRESH_JOB_KIND)
+        .execute(pool),
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn fail_dashboard_projection_refresh_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    last_error: &str,
+) -> anyhow::Result<()> {
+    hms_observability::observe_db_query(
+        "dashboard.fail_projection_refresh_job",
+        sqlx::query(
+            "UPDATE jobs
+             SET status = CASE
+                     WHEN attempts >= $3 THEN 'failed'
+                     ELSE 'queued'
+                 END,
+                 available_at = CASE
+                     WHEN attempts >= $3 THEN available_at
+                     ELSE now() + INTERVAL '30 seconds'
+                 END,
+                 locked_by = NULL,
+                 locked_at = NULL,
+                 last_error = $2,
+                 updated_at = now()
+             WHERE id = $1
+               AND kind = $4",
+        )
+        .bind(job_id)
+        .bind(last_error)
+        .bind(DASHBOARD_REFRESH_MAX_ATTEMPTS)
+        .bind(DASHBOARD_REFRESH_JOB_KIND)
+        .execute(pool),
+    )
+    .await?;
+    Ok(())
 }
 
 async fn cached_dashboard_snapshot(
@@ -130,10 +299,11 @@ async fn cached_dashboard_snapshot(
                    generated_at
             FROM dashboard_snapshots
             WHERE facility_id = $1
-              AND snapshot_key = 'operations'
+              AND snapshot_key = $2
             "#,
         )
         .bind(facility_id)
+        .bind(DASHBOARD_SNAPSHOT_KEY)
         .fetch_optional(pool),
     )
     .await?;
@@ -148,6 +318,29 @@ async fn cached_dashboard_snapshot(
         })
     })
     .transpose()
+}
+
+fn dashboard_projection_is_stale(generated_at: DateTime<Utc>) -> bool {
+    Utc::now().signed_duration_since(generated_at)
+        >= Duration::seconds(DASHBOARD_PROJECTION_TTL_SECONDS)
+}
+
+fn dashboard_projection_job_from_row(row: JobRow) -> anyhow::Result<DashboardProjectionRefreshJob> {
+    let payload: DashboardProjectionRefreshPayload = serde_json::from_value(row.payload)?;
+    let snapshot_key = payload
+        .snapshot_key
+        .as_deref()
+        .unwrap_or(DASHBOARD_SNAPSHOT_KEY);
+    anyhow::ensure!(
+        snapshot_key == DASHBOARD_SNAPSHOT_KEY,
+        "unsupported dashboard projection snapshot key"
+    );
+
+    Ok(DashboardProjectionRefreshJob {
+        id: row.id,
+        facility_id: payload.facility_id,
+        deployment_profile: payload.deployment_profile,
+    })
 }
 
 pub async fn admin_capacity_summary(

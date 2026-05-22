@@ -26,7 +26,7 @@ pub struct BrowserRumEvent {
     pub route: String,
     pub value: f64,
     pub status: Option<String>,
-    pub method: Option<String>,
+    pub facility_safe: Option<String>,
     pub ts: Option<i64>,
 }
 
@@ -44,7 +44,7 @@ pub struct BrowserRumEvent {
     security(("bearerAuth" = []))
 )]
 pub async fn ingest_browser_rum(
-    RequestContext(_ctx): RequestContext,
+    RequestContext(ctx): RequestContext,
     Json(payload): Json<BrowserRumIngestRequest>,
 ) -> Result<StatusCode, ApiError> {
     if payload.events.len() > MAX_RUM_EVENTS {
@@ -56,19 +56,21 @@ pub async fn ingest_browser_rum(
 
     for event in payload.events {
         validate_rum_event(&event)?;
-        let method = event
-            .method
+        let route_pattern = hms_observability::normalize_browser_route_pattern(&event.route);
+        let status_bucket = event
+            .status
             .as_deref()
-            .map(|value| value.trim().to_ascii_uppercase());
-        let status = event.status.as_deref().map(str::trim);
+            .map(hms_observability::normalize_status_bucket)
+            .unwrap_or_else(|| "unknown".to_owned());
+        let facility_safe = hms_observability::sanitize_facility_safe(&ctx.facility_code);
         let duration = Duration::from_millis(event.value.round() as u64);
 
         hms_observability::record_browser_rum_event(
             &event.event_type,
             &event.name,
-            &event.route,
-            method.as_deref(),
-            status,
+            &route_pattern,
+            &status_bucket,
+            &facility_safe,
             duration,
         );
     }
@@ -87,10 +89,10 @@ fn validate_rum_event(event: &BrowserRumEvent) -> Result<(), ApiError> {
         ));
     }
     if let Some(status) = &event.status {
-        validate_label("rum_status_invalid", status)?;
+        validate_status_bucket(status)?;
     }
-    if let Some(method) = &event.method {
-        validate_method(method)?;
+    if let Some(facility_safe) = &event.facility_safe {
+        validate_facility_safe(facility_safe)?;
     }
 
     Ok(())
@@ -125,12 +127,28 @@ fn validate_route(route: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn validate_method(method: &str) -> Result<(), ApiError> {
-    match method.trim().to_ascii_uppercase().as_str() {
-        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD" => Ok(()),
-        _ => Err(ApiError::bad_request(
-            "rum_method_invalid",
-            "RUM method labels are invalid.",
-        )),
+fn validate_status_bucket(status: &str) -> Result<(), ApiError> {
+    let status = status.trim().to_ascii_lowercase();
+    match status.as_str() {
+        "2xx" | "3xx" | "4xx" | "5xx" | "network" | "timeout" | "cancelled" | "unknown" => Ok(()),
+        _ => status
+            .parse::<u16>()
+            .ok()
+            .filter(|code| (100..=599).contains(code))
+            .map(|_| ())
+            .ok_or_else(|| {
+                ApiError::bad_request("rum_status_invalid", "RUM status labels are invalid.")
+            }),
+    }
+}
+
+fn validate_facility_safe(facility_safe: &str) -> Result<(), ApiError> {
+    if hms_observability::sanitize_facility_safe(facility_safe) == "_unknown" {
+        Err(ApiError::bad_request(
+            "rum_facility_invalid",
+            "RUM facility labels are invalid.",
+        ))
+    } else {
+        Ok(())
     }
 }

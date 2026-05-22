@@ -12,8 +12,15 @@ const queryClient = {
   prefetchInfiniteQuery: mockPrefetchInfiniteQuery,
 }
 
+const runtimeState = vi.hoisted(() => ({
+  rustV2: false,
+}))
+
 vi.mock('@/features/patients/api', () => ({
-  patientsApi: { getPatient: vi.fn() },
+  patientsApi: {
+    getPatient: vi.fn(),
+    getPatientChronicleStartup: vi.fn(),
+  },
 }))
 
 vi.mock('@/features/encounters/api', () => ({
@@ -21,7 +28,10 @@ vi.mock('@/features/encounters/api', () => ({
 }))
 
 vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
-  patientKeys: { detail: (id) => ['patients', id] },
+  patientKeys: {
+    detail: (id) => ['patients', id],
+    chronicleStartup: (id, params = {}) => ['patients', id, 'chronicle', 'startup', params],
+  },
 }))
 
 vi.mock('@/features/encounters/hooks/useEncounterQueries', () => ({
@@ -42,9 +52,14 @@ vi.mock('@/lib/api-client', () => ({
   apiClient: { get: vi.fn() },
 }))
 
+vi.mock('@/lib/api/v2/runtime', () => ({
+  isRustV2ApiMode: () => runtimeState.rustV2,
+}))
+
 describe('prefetchPatientChronicleData hover mode', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    runtimeState.rustV2 = false
   })
 
   it('does NOT call prefetchQuery for patient detail in hover mode', () => {
@@ -101,5 +116,24 @@ describe('prefetchPatientChronicleData hover mode', () => {
 
     expect(patientsApi.getPatient).toHaveBeenCalledWith('patient-5', { signal })
     expect(encountersApi.getEncountersForPatient).toHaveBeenCalledWith('patient-5', { signal })
+  })
+
+  it('prefetches only the shaped Chronicle startup read on Rust V2 navigation', async () => {
+    runtimeState.rustV2 = true
+    const signal = new AbortController().signal
+
+    prefetchPatientChronicleData(queryClient, 'patient-6', { mode: 'navigation' })
+
+    const startupCall = mockPrefetchQuery.mock.calls.find((c) =>
+      Array.isArray(c[0]?.queryKey) && c[0].queryKey.includes('chronicle')
+    )
+    expect(startupCall).toBeDefined()
+
+    await startupCall[0].queryFn({ signal })
+
+    expect(patientsApi.getPatientChronicleStartup).toHaveBeenCalledWith('patient-6', {}, { signal })
+    expect(patientsApi.getPatient).not.toHaveBeenCalled()
+    expect(fetchChronicleContext).not.toHaveBeenCalled()
+    expect(encountersApi.getEncountersForPatient).not.toHaveBeenCalled()
   })
 })

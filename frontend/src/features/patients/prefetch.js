@@ -3,6 +3,7 @@ import { patientKeys } from '@/features/patients/hooks/usePatientQueries'
 import { encounterKeys } from '@/features/encounters/hooks/useEncounterQueries'
 import { encountersApi } from '@/features/encounters/api'
 import { chronicleKeys, fetchChronicleContext } from '@/hooks/useChronicleContext'
+import { isRustV2ApiMode } from '@/lib/api/v2/runtime'
 
 const PREFETCH_MODE = {
   HOVER: 'hover',
@@ -142,6 +143,15 @@ export function prefetchPatientChronicleData(queryClient, patientId, options = {
   }
 
   prefetchPatientDetailRoute()
+
+  if (isRustV2ApiMode()) {
+    void queryClient.prefetchQuery({
+      queryKey: patientKeys.chronicleStartup(patientId, {}),
+      queryFn: ({ signal }) => patientsApi.getPatientChronicleStartup(patientId, {}, { signal }),
+      staleTime: 30 * 1000,
+    })
+    return
+  }
 
   void queryClient.prefetchQuery({
     queryKey: patientKeys.detail(patientId),
