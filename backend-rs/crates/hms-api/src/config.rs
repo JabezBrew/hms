@@ -39,6 +39,23 @@ impl CloudflareAccessConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct OpsPrometheusConfig {
+    pub enabled: bool,
+    pub url: Option<String>,
+    pub timeout: Duration,
+}
+
+impl Default for OpsPrometheusConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            url: None,
+            timeout: Duration::from_millis(1500),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub environment: String,
     pub listen_addr: SocketAddr,
@@ -57,6 +74,7 @@ pub struct Config {
     pub rum_enabled: bool,
     pub ops_auth_mode: OpsAuthMode,
     pub cloudflare_access: CloudflareAccessConfig,
+    pub ops_prometheus: OpsPrometheusConfig,
 }
 
 impl Config {
@@ -128,6 +146,19 @@ impl Config {
             test_secret: env_optional("HMS_CLOUDFLARE_ACCESS_TEST_SECRET"),
         };
         validate_ops_auth(&environment, ops_auth_mode, &cloudflare_access)?;
+        let ops_prometheus = OpsPrometheusConfig {
+            enabled: match env::var("HMS_OPS_PROMETHEUS_ENABLED") {
+                Ok(value) => parse_bool(&value, "HMS_OPS_PROMETHEUS_ENABLED")?,
+                Err(_) => false,
+            },
+            url: env_optional("HMS_OPS_PROMETHEUS_URL"),
+            timeout: match env::var("HMS_OPS_PROMETHEUS_TIMEOUT_MS") {
+                Ok(value) => {
+                    Duration::from_millis(parse_u64(&value, "HMS_OPS_PROMETHEUS_TIMEOUT_MS")?)
+                }
+                Err(_) => OpsPrometheusConfig::default().timeout,
+            },
+        };
 
         Ok(Self {
             environment,
@@ -147,6 +178,7 @@ impl Config {
             rum_enabled,
             ops_auth_mode,
             cloudflare_access,
+            ops_prometheus,
         })
     }
 
@@ -169,6 +201,7 @@ impl Config {
             rum_enabled: false,
             ops_auth_mode: OpsAuthMode::HmsPermission,
             cloudflare_access: CloudflareAccessConfig::default(),
+            ops_prometheus: OpsPrometheusConfig::default(),
         }
     }
 }
@@ -184,6 +217,17 @@ fn parse_u32(value: &str, name: &str) -> anyhow::Result<u32> {
     let parsed = value
         .trim()
         .parse::<u32>()
+        .with_context(|| format!("{name} must be an integer"))?;
+    if parsed == 0 {
+        bail!("{name} must be greater than zero");
+    }
+    Ok(parsed)
+}
+
+fn parse_u64(value: &str, name: &str) -> anyhow::Result<u64> {
+    let parsed = value
+        .trim()
+        .parse::<u64>()
         .with_context(|| format!("{name} must be an integer"))?;
     if parsed == 0 {
         bail!("{name} must be greater than zero");

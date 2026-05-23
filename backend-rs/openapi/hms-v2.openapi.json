@@ -14844,7 +14844,35 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_OpsDatabaseSnapshot": {
+      "ObjectResponse_OpsClinicalBudgetSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "budgets": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsClinicalBudgetSummary"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "budgets",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsDbPoolSnapshot": {
         "properties": {
           "data": {
             "properties": {
@@ -14860,18 +14888,6 @@
                 },
                 "type": "array"
               },
-              "slow_queries_by_route": {
-                "items": {
-                  "$ref": "#/components/schemas/OpsRouteCounterSummary"
-                },
-                "type": "array"
-              },
-              "slow_query_fingerprints": {
-                "items": {
-                  "$ref": "#/components/schemas/OpsQueryFingerprintSummary"
-                },
-                "type": "array"
-              },
               "source": {
                 "$ref": "#/components/schemas/OpsSnapshotSource"
               }
@@ -14879,8 +14895,6 @@
             "required": [
               "pools",
               "pool_waits",
-              "slow_query_fingerprints",
-              "slow_queries_by_route",
               "source"
             ],
             "type": "object"
@@ -14893,7 +14907,200 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_OpsFrontendSnapshot": {
+      "ObjectResponse_OpsDeploysSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "deploys": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsDeploySummary"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "deploys",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsEdgeStatusSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "checks": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsEdgeStatusSummary"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "checks",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsOverviewSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "api": {
+                "$ref": "#/components/schemas/OpsApiHealthSummary"
+              },
+              "db_pool": {
+                "$ref": "#/components/schemas/OpsDbPoolSnapshot"
+              },
+              "request_context_cache": {
+                "$ref": "#/components/schemas/OpsRequestContextCacheSnapshot"
+              },
+              "route_latency": {
+                "$ref": "#/components/schemas/OpsRouteLatencySnapshot"
+              },
+              "rum": {
+                "$ref": "#/components/schemas/OpsRumSnapshot"
+              },
+              "runtime": {
+                "$ref": "#/components/schemas/OpsRuntimeSummary"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              },
+              "unavailable": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsUnavailableSource"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "runtime",
+              "api",
+              "db_pool",
+              "route_latency",
+              "request_context_cache",
+              "rum",
+              "unavailable",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsPayloadSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "routes": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsPayloadRouteSummary"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "routes",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsRequestContextCacheSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "cache": {
+                "$ref": "#/components/schemas/OpsRequestContextCacheSummary"
+              },
+              "hydration": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsRouteLatencySummary"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "cache",
+              "hydration",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsRouteLatencySnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "groups": {
+                "$ref": "#/components/schemas/OpsRouteLatencyGroups"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "groups",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsRumSnapshot": {
         "properties": {
           "data": {
             "properties": {
@@ -14922,35 +15129,22 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_OpsOverviewSnapshot": {
+      "ObjectResponse_OpsServiceErrorsSnapshot": {
         "properties": {
           "data": {
             "properties": {
-              "api": {
-                "$ref": "#/components/schemas/OpsApiHealthSummary"
-              },
-              "database": {
-                "$ref": "#/components/schemas/OpsDatabaseSnapshot"
-              },
-              "frontend": {
-                "$ref": "#/components/schemas/OpsFrontendSnapshot"
-              },
-              "performance": {
-                "$ref": "#/components/schemas/OpsPerformanceSnapshot"
-              },
-              "runtime": {
-                "$ref": "#/components/schemas/OpsRuntimeSummary"
+              "errors": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsServiceErrorSummary"
+                },
+                "type": "array"
               },
               "source": {
                 "$ref": "#/components/schemas/OpsSnapshotSource"
               }
             },
             "required": [
-              "runtime",
-              "api",
-              "database",
-              "performance",
-              "frontend",
+              "errors",
               "source"
             ],
             "type": "object"
@@ -14963,30 +15157,33 @@
         ],
         "type": "object"
       },
-      "ObjectResponse_OpsPerformanceSnapshot": {
+      "ObjectResponse_OpsSlowQueryFingerprintSnapshot": {
         "properties": {
           "data": {
             "properties": {
-              "payloads": {
+              "fingerprints": {
                 "items": {
-                  "$ref": "#/components/schemas/OpsPayloadRouteSummary"
+                  "$ref": "#/components/schemas/OpsQueryFingerprintSummary"
                 },
                 "type": "array"
               },
-              "request_context_cache": {
-                "$ref": "#/components/schemas/OpsRequestContextCacheSummary"
+              "pg_stat_statements": {
+                "$ref": "#/components/schemas/OpsPgStatStatementsSnapshot"
               },
-              "routes": {
-                "$ref": "#/components/schemas/OpsRouteLatencyGroups"
+              "slow_queries_by_route": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsRouteCounterSummary"
+                },
+                "type": "array"
               },
               "source": {
                 "$ref": "#/components/schemas/OpsSnapshotSource"
               }
             },
             "required": [
-              "routes",
-              "request_context_cache",
-              "payloads",
+              "fingerprints",
+              "pg_stat_statements",
+              "slow_queries_by_route",
               "source"
             ],
             "type": "object"
@@ -17670,6 +17867,121 @@
         ],
         "type": "object"
       },
+      "OpsClinicalBudgetSnapshot": {
+        "properties": {
+          "budgets": {
+            "items": {
+              "$ref": "#/components/schemas/OpsClinicalBudgetSummary"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "budgets",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsClinicalBudgetSummary": {
+        "properties": {
+          "budget_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "observed_p99_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "budget_ms",
+          "count",
+          "status"
+        ],
+        "type": "object"
+      },
+      "OpsConfigurationStatus": {
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "OpsDashboardQuery": {
+        "properties": {
+          "component": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "environment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "OpsDataNote": {
         "properties": {
           "key": {
@@ -17689,7 +18001,7 @@
         ],
         "type": "object"
       },
-      "OpsDatabaseSnapshot": {
+      "OpsDbPoolSnapshot": {
         "properties": {
           "pool_waits": {
             "items": {
@@ -17703,18 +18015,6 @@
             },
             "type": "array"
           },
-          "slow_queries_by_route": {
-            "items": {
-              "$ref": "#/components/schemas/OpsRouteCounterSummary"
-            },
-            "type": "array"
-          },
-          "slow_query_fingerprints": {
-            "items": {
-              "$ref": "#/components/schemas/OpsQueryFingerprintSummary"
-            },
-            "type": "array"
-          },
           "source": {
             "$ref": "#/components/schemas/OpsSnapshotSource"
           }
@@ -17722,8 +18022,6 @@
         "required": [
           "pools",
           "pool_waits",
-          "slow_query_fingerprints",
-          "slow_queries_by_route",
           "source"
         ],
         "type": "object"
@@ -17743,22 +18041,106 @@
         ],
         "type": "object"
       },
-      "OpsFrontendSnapshot": {
+      "OpsDeploySummary": {
         "properties": {
-          "rum": {
-            "$ref": "#/components/schemas/OpsBrowserRumSummary"
+          "build_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "rum_enabled": {
-            "type": "boolean"
+          "cloudflare_access": {
+            "$ref": "#/components/schemas/OpsConfigurationStatus"
+          },
+          "deployed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "environment": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "environment",
+          "version",
+          "started_at",
+          "cloudflare_access",
+          "status"
+        ],
+        "type": "object"
+      },
+      "OpsDeploysSnapshot": {
+        "properties": {
+          "deploys": {
+            "items": {
+              "$ref": "#/components/schemas/OpsDeploySummary"
+            },
+            "type": "array"
           },
           "source": {
             "$ref": "#/components/schemas/OpsSnapshotSource"
           }
         },
         "required": [
-          "rum_enabled",
-          "rum",
+          "deploys",
           "source"
+        ],
+        "type": "object"
+      },
+      "OpsEdgeStatusSnapshot": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/OpsEdgeStatusSummary"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "checks",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsEdgeStatusSummary": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "component": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "status"
         ],
         "type": "object"
       },
@@ -17767,28 +18149,39 @@
           "api": {
             "$ref": "#/components/schemas/OpsApiHealthSummary"
           },
-          "database": {
-            "$ref": "#/components/schemas/OpsDatabaseSnapshot"
+          "db_pool": {
+            "$ref": "#/components/schemas/OpsDbPoolSnapshot"
           },
-          "frontend": {
-            "$ref": "#/components/schemas/OpsFrontendSnapshot"
+          "request_context_cache": {
+            "$ref": "#/components/schemas/OpsRequestContextCacheSnapshot"
           },
-          "performance": {
-            "$ref": "#/components/schemas/OpsPerformanceSnapshot"
+          "route_latency": {
+            "$ref": "#/components/schemas/OpsRouteLatencySnapshot"
+          },
+          "rum": {
+            "$ref": "#/components/schemas/OpsRumSnapshot"
           },
           "runtime": {
             "$ref": "#/components/schemas/OpsRuntimeSummary"
           },
           "source": {
             "$ref": "#/components/schemas/OpsSnapshotSource"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/OpsUnavailableSource"
+            },
+            "type": "array"
           }
         },
         "required": [
           "runtime",
           "api",
-          "database",
-          "performance",
-          "frontend",
+          "db_pool",
+          "route_latency",
+          "request_context_cache",
+          "rum",
+          "unavailable",
           "source"
         ],
         "type": "object"
@@ -17849,19 +18242,13 @@
         ],
         "type": "object"
       },
-      "OpsPerformanceSnapshot": {
+      "OpsPayloadSnapshot": {
         "properties": {
-          "payloads": {
+          "routes": {
             "items": {
               "$ref": "#/components/schemas/OpsPayloadRouteSummary"
             },
             "type": "array"
-          },
-          "request_context_cache": {
-            "$ref": "#/components/schemas/OpsRequestContextCacheSummary"
-          },
-          "routes": {
-            "$ref": "#/components/schemas/OpsRouteLatencyGroups"
           },
           "source": {
             "$ref": "#/components/schemas/OpsSnapshotSource"
@@ -17869,9 +18256,56 @@
         },
         "required": [
           "routes",
-          "request_context_cache",
-          "payloads",
           "source"
+        ],
+        "type": "object"
+      },
+      "OpsPgStatStatementAggregateSummary": {
+        "properties": {
+          "calls": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fingerprint_id": {
+            "type": "string"
+          },
+          "mean_exec_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "rows": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_exec_ms": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "fingerprint_id",
+          "calls",
+          "total_exec_ms",
+          "mean_exec_ms",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "OpsPgStatStatementsSnapshot": {
+        "properties": {
+          "availability": {
+            "type": "string"
+          },
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/OpsPgStatStatementAggregateSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "availability",
+          "statements"
         ],
         "type": "object"
       },
@@ -17959,6 +18393,28 @@
           "fingerprint",
           "count",
           "total_ms"
+        ],
+        "type": "object"
+      },
+      "OpsRequestContextCacheSnapshot": {
+        "properties": {
+          "cache": {
+            "$ref": "#/components/schemas/OpsRequestContextCacheSummary"
+          },
+          "hydration": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "cache",
+          "hydration",
+          "source"
         ],
         "type": "object"
       },
@@ -18069,6 +18525,21 @@
         ],
         "type": "object"
       },
+      "OpsRouteLatencySnapshot": {
+        "properties": {
+          "groups": {
+            "$ref": "#/components/schemas/OpsRouteLatencyGroups"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "groups",
+          "source"
+        ],
+        "type": "object"
+      },
       "OpsRouteLatencySummary": {
         "properties": {
           "avg_ms": {
@@ -18122,8 +18593,43 @@
         ],
         "type": "object"
       },
+      "OpsRumSnapshot": {
+        "properties": {
+          "rum": {
+            "$ref": "#/components/schemas/OpsBrowserRumSummary"
+          },
+          "rum_enabled": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "rum_enabled",
+          "rum",
+          "source"
+        ],
+        "type": "object"
+      },
       "OpsRuntimeSummary": {
         "properties": {
+          "build_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cloudflare_access": {
+            "$ref": "#/components/schemas/OpsConfigurationStatus"
+          },
+          "deployed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "service": {
             "type": "string"
           },
@@ -18138,12 +18644,91 @@
         "required": [
           "service",
           "version",
-          "started_at"
+          "started_at",
+          "cloudflare_access"
+        ],
+        "type": "object"
+      },
+      "OpsServiceErrorSummary": {
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error_class": {
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "component",
+          "error_class",
+          "count"
+        ],
+        "type": "object"
+      },
+      "OpsServiceErrorsSnapshot": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/OpsServiceErrorSummary"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "errors",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsSlowQueryFingerprintSnapshot": {
+        "properties": {
+          "fingerprints": {
+            "items": {
+              "$ref": "#/components/schemas/OpsQueryFingerprintSummary"
+            },
+            "type": "array"
+          },
+          "pg_stat_statements": {
+            "$ref": "#/components/schemas/OpsPgStatStatementsSnapshot"
+          },
+          "slow_queries_by_route": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteCounterSummary"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "fingerprints",
+          "pg_stat_statements",
+          "slow_queries_by_route",
+          "source"
         ],
         "type": "object"
       },
       "OpsSnapshotSource": {
         "properties": {
+          "available": {
+            "type": "boolean"
+          },
           "generated_at": {
             "format": "date-time",
             "type": "string"
@@ -18163,9 +18748,25 @@
         },
         "required": [
           "kind",
+          "available",
           "generated_at",
           "window",
           "notes"
+        ],
+        "type": "object"
+      },
+      "OpsUnavailableSource": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "reason"
         ],
         "type": "object"
       },
@@ -39086,19 +39687,89 @@
         ]
       }
     },
-    "/api/v2/ops/database": {
+    "/api/v2/ops/clinical-budgets": {
       "get": {
-        "operationId": "getOpsDatabase",
+        "operationId": "getOpsClinicalBudgets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_OpsDatabaseSnapshot"
+                  "$ref": "#/components/schemas/ObjectResponse_OpsClinicalBudgetSnapshot"
                 }
               }
             },
-            "description": "PHI-safe database and pool snapshot"
+            "description": "Clinical performance budget snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           },
           "401": {
             "content": {
@@ -39108,7 +39779,7 @@
                 }
               }
             },
-            "description": "Ops operator authentication is required"
+            "description": ""
           },
           "403": {
             "content": {
@@ -39118,7 +39789,7 @@
                 }
               }
             },
-            "description": "Ops operator access is required"
+            "description": ""
           }
         },
         "security": [
@@ -39134,19 +39805,89 @@
         ]
       }
     },
-    "/api/v2/ops/frontend": {
+    "/api/v2/ops/db-pool": {
       "get": {
-        "operationId": "getOpsFrontend",
+        "operationId": "getOpsDbPool",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_OpsFrontendSnapshot"
+                  "$ref": "#/components/schemas/ObjectResponse_OpsDbPoolSnapshot"
                 }
               }
             },
-            "description": "PHI-safe frontend RUM snapshot"
+            "description": "Database pool pressure snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           },
           "401": {
             "content": {
@@ -39156,7 +39897,7 @@
                 }
               }
             },
-            "description": "Ops operator authentication is required"
+            "description": ""
           },
           "403": {
             "content": {
@@ -39166,7 +39907,243 @@
                 }
               }
             },
-            "description": "Ops operator access is required"
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/deploys": {
+      "get": {
+        "operationId": "getOpsDeploys",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsDeploysSnapshot"
+                }
+              }
+            },
+            "description": "Deploy history snapshot or unavailable source note"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/edge-status": {
+      "get": {
+        "operationId": "getOpsEdgeStatus",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsEdgeStatusSnapshot"
+                }
+              }
+            },
+            "description": "Edge status snapshot or unavailable source note"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [
@@ -39185,6 +40162,66 @@
     "/api/v2/ops/overview": {
       "get": {
         "operationId": "getOpsOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -39195,6 +40232,16 @@
               }
             },
             "description": "Engineer dashboard overview snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid ops query"
           },
           "401": {
             "content": {
@@ -39230,19 +40277,89 @@
         ]
       }
     },
-    "/api/v2/ops/performance": {
+    "/api/v2/ops/payload": {
       "get": {
-        "operationId": "getOpsPerformance",
+        "operationId": "getOpsPayload",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObjectResponse_OpsPerformanceSnapshot"
+                  "$ref": "#/components/schemas/ObjectResponse_OpsPayloadSnapshot"
                 }
               }
             },
-            "description": "PHI-safe API performance snapshot"
+            "description": "API payload size snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           },
           "401": {
             "content": {
@@ -39252,7 +40369,7 @@
                 }
               }
             },
-            "description": "Ops operator authentication is required"
+            "description": ""
           },
           "403": {
             "content": {
@@ -39262,7 +40379,597 @@
                 }
               }
             },
-            "description": "Ops operator access is required"
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/request-context-cache": {
+      "get": {
+        "operationId": "getOpsRequestContextCache",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsRequestContextCacheSnapshot"
+                }
+              }
+            },
+            "description": "RequestContext cache and hydration snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/route-latency": {
+      "get": {
+        "operationId": "getOpsRouteLatency",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsRouteLatencySnapshot"
+                }
+              }
+            },
+            "description": "PHI-safe route latency snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/rum": {
+      "get": {
+        "operationId": "getOpsRum",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsRumSnapshot"
+                }
+              }
+            },
+            "description": "Browser RUM snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/service-errors": {
+      "get": {
+        "operationId": "getOpsServiceErrors",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsServiceErrorsSnapshot"
+                }
+              }
+            },
+            "description": "Service error snapshot or unavailable source note"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cloudflareAccess": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/slow-query-fingerprints": {
+      "get": {
+        "operationId": "getOpsSlowQueryFingerprints",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "component",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsSlowQueryFingerprintSnapshot"
+                }
+              }
+            },
+            "description": "Redacted slow query fingerprint snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "security": [

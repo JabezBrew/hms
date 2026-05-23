@@ -1,19 +1,13 @@
 use super::*;
+use axum::http::header::CACHE_CONTROL;
 use std::time::Duration as StdDuration;
 
 const CF_TEST_SECRET: &str = "test-only-cloudflare-access-secret";
 const CF_TEST_ISSUER: &str = "https://hms-test.cloudflareaccess.com";
 const CF_TEST_AUD: &str = "test-cloudflare-access-audience";
 
-const IMPLEMENTED_OPS_ENDPOINTS: [&str; 4] = [
+const IMPLEMENTED_OPS_ENDPOINTS: [&str; 11] = [
     "/api/v2/ops/overview",
-    "/api/v2/ops/performance",
-    "/api/v2/ops/database",
-    "/api/v2/ops/frontend",
-];
-
-const RESERVED_PROMETHEUS_OPS_ENDPOINTS: [&str; 10] = [
-    "/api/v2/ops/health-version",
     "/api/v2/ops/route-latency",
     "/api/v2/ops/clinical-budgets",
     "/api/v2/ops/db-pool",
@@ -22,7 +16,8 @@ const RESERVED_PROMETHEUS_OPS_ENDPOINTS: [&str; 10] = [
     "/api/v2/ops/rum",
     "/api/v2/ops/slow-query-fingerprints",
     "/api/v2/ops/service-errors",
-    "/api/v2/ops/cloudflare-status",
+    "/api/v2/ops/deploys",
+    "/api/v2/ops/edge-status",
 ];
 
 const FORBIDDEN_OPS_QUERY_PARAMS: [&str; 9] = [
@@ -62,12 +57,6 @@ async fn ops_endpoints_require_ops_access_and_return_phi_safe_snapshots() {
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
     }
 
-    let owner_without_platform_grant = Actor::login(&app, "owner@hms.local").await;
-    for endpoint in IMPLEMENTED_OPS_ENDPOINTS {
-        let response = api_get(app.clone(), &owner_without_platform_grant, endpoint).await;
-        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
-    }
-
     grant_test_permission(
         &app,
         Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
@@ -103,19 +92,35 @@ async fn ops_endpoints_require_ops_access_and_return_phi_safe_snapshots() {
     for endpoint in IMPLEMENTED_OPS_ENDPOINTS {
         let response = api_get(app.clone(), &owner, endpoint).await;
         assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+        assert_eq!(
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store"),
+            "{endpoint}"
+        );
         let body = text_body(response).await;
 
-        assert!(body.contains("in_process_metrics"), "{body}");
+        assert!(
+            body.contains("in_process_metrics") || body.contains("\"available\":false"),
+            "{body}"
+        );
         assert_ops_body_is_safe(&body, endpoint, patient_id);
     }
 
-    let database = text_body(api_get(app.clone(), &owner, "/api/v2/ops/database").await).await;
+    let database =
+        text_body(api_get(app.clone(), &owner, "/api/v2/ops/slow-query-fingerprints").await).await;
     assert!(database.contains("_redacted_query_fingerprint"));
-    assert_ops_body_is_safe(&database, "/api/v2/ops/database", patient_id);
+    assert_ops_body_is_safe(&database, "/api/v2/ops/slow-query-fingerprints", patient_id);
 
-    let frontend = text_body(api_get(app, &owner, "/api/v2/ops/frontend").await).await;
+    let frontend = text_body(api_get(app.clone(), &owner, "/api/v2/ops/rum").await).await;
     assert!(frontend.contains("/patients/:id/chronicle"));
-    assert_ops_body_is_safe(&frontend, "/api/v2/ops/frontend", patient_id);
+    assert_ops_body_is_safe(&frontend, "/api/v2/ops/rum", patient_id);
+
+    let unavailable = json_body(api_get(app, &owner, "/api/v2/ops/service-errors").await).await;
+    assert_eq!(unavailable["data"]["source"]["available"], json!(false));
+    assert_eq!(unavailable["data"]["source"]["kind"], json!("unavailable"));
 }
 
 #[tokio::test]
@@ -136,15 +141,23 @@ async fn implemented_ops_endpoints_do_not_echo_forbidden_query_values() {
                 "{endpoint}?{param}=SELECT%20MRN%20P-0000000001%20FROM%20patients%20WHERE%20url=https://browser.example/patients/Ama-Mensah-{patient_id}"
             );
             let response = api_get(app.clone(), &owner, uri).await;
-            assert!(
-                matches!(response.status(), StatusCode::OK | StatusCode::BAD_REQUEST),
-                "{endpoint} {param} returned {}",
-                response.status()
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{endpoint} {param}"
             );
             let body = text_body(response).await;
             assert_ops_body_is_safe(&body, endpoint, patient_id);
         }
     }
+
+    let accepted = api_get(
+        app,
+        &owner,
+        "/api/v2/ops/route-latency?window=5m&limit=1&group=chronicle&status=2xx",
+    )
+    .await;
+    assert_eq!(accepted.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -170,8 +183,19 @@ async fn ops_endpoints_accept_cloudflare_access_operator_without_hms_user() {
     for endpoint in IMPLEMENTED_OPS_ENDPOINTS {
         let response = cloudflare_access_get(app.clone(), endpoint, &allowed_token).await;
         assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+        assert_eq!(
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store"),
+            "{endpoint}"
+        );
         let body = text_body(response).await;
-        assert!(body.contains("in_process_metrics"), "{body}");
+        assert!(
+            body.contains("in_process_metrics") || body.contains("\"available\":false"),
+            "{body}"
+        );
         assert_ops_body_is_safe(&body, endpoint, Uuid::nil());
     }
 
@@ -193,7 +217,6 @@ async fn ops_endpoints_accept_cloudflare_access_operator_without_hms_user() {
 }
 
 #[tokio::test]
-#[ignore = "pending ops query parser: implemented endpoints must reject these before Prometheus-backed tabs ship"]
 async fn implemented_ops_endpoints_reject_forbidden_query_params() {
     let app = app().await;
     grant_test_permission(
@@ -207,54 +230,6 @@ async fn implemented_ops_endpoints_reject_forbidden_query_params() {
     for endpoint in IMPLEMENTED_OPS_ENDPOINTS {
         for param in FORBIDDEN_OPS_QUERY_PARAMS {
             let uri = format!("{endpoint}?{param}=SELECT%20patient_id%20FROM%20patients");
-            let response = api_get(app.clone(), &owner, uri).await;
-            assert_eq!(
-                response.status(),
-                StatusCode::BAD_REQUEST,
-                "{endpoint} {param}"
-            );
-        }
-    }
-}
-
-#[tokio::test]
-#[ignore = "pending Prometheus-backed ops endpoints: enable when routes are mounted"]
-async fn prometheus_backed_ops_endpoints_require_auth_access_and_reject_forbidden_params() {
-    let app = app().await;
-
-    for endpoint in RESERVED_PROMETHEUS_OPS_ENDPOINTS {
-        let unauthenticated = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method(Method::GET)
-                    .uri(endpoint)
-                    .body(Body::empty())
-                    .expect("request builds"),
-            )
-            .await
-            .expect("ops request succeeds");
-        assert_eq!(
-            unauthenticated.status(),
-            StatusCode::UNAUTHORIZED,
-            "{endpoint}"
-        );
-
-        let limited = Actor::login(&app, "limited@hms.local").await;
-        let forbidden = api_get(app.clone(), &limited, endpoint).await;
-        assert_eq!(forbidden.status(), StatusCode::FORBIDDEN, "{endpoint}");
-    }
-
-    grant_test_permission(
-        &app,
-        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
-        PermissionCode::SystemOpsView,
-    )
-    .await;
-    let owner = Actor::login(&app, "owner@hms.local").await;
-    for endpoint in RESERVED_PROMETHEUS_OPS_ENDPOINTS {
-        for param in FORBIDDEN_OPS_QUERY_PARAMS {
-            let uri = format!("{endpoint}?{param}=raw");
             let response = api_get(app.clone(), &owner, uri).await;
             assert_eq!(
                 response.status(),

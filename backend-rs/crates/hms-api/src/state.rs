@@ -19,7 +19,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
-use crate::config::{Config, OpsAuthMode};
+use crate::config::{Config, OpsAuthMode, OpsPrometheusConfig};
 use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
 use crate::passwords::hash_password;
 
@@ -312,6 +312,10 @@ impl AppState {
 
     pub fn ops_auth_mode(&self) -> OpsAuthMode {
         self.inner.config.ops_auth_mode
+    }
+
+    pub fn ops_prometheus_config(&self) -> &OpsPrometheusConfig {
+        &self.inner.config.ops_prometheus
     }
 
     pub async fn verify_cloudflare_access_operator(
