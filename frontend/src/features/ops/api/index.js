@@ -232,11 +232,16 @@ function normalizeBudgets({ routes, pool, payloads, rum }) {
 
 function normalizePerformance(snapshot = {}) {
   const performance = snapshot.performance || snapshot
-  const payloadsSummary = summarizePayloads(performance.payloads)
+  const routeLatency = performance.route_latency || performance.routeLatency || performance
+  const requestContext = performance.request_context_cache || performance.requestContextCache || {}
+  const payloadSnapshot = performance.payload || performance.payload_snapshot || performance
+  const payloadRoutes = payloadSnapshot.routes || performance.payloads || []
+  const routeGroups = routeLatency.groups || performance.routes || {}
+  const payloadsSummary = summarizePayloads(payloadRoutes)
   return {
-    source: performance.source,
-    routes: normalizeRoutes(performance.routes, performance.payloads),
-    request_context_cache: normalizeRequestContextCache(performance.request_context_cache),
+    source: routeLatency.source || performance.source,
+    routes: normalizeRoutes(routeGroups, payloadRoutes),
+    request_context_cache: normalizeRequestContextCache(requestContext.cache || requestContext),
     payloads: payloadsSummary,
   }
 }
@@ -276,12 +281,14 @@ function normalizeRouteCounters(rows) {
 
 function normalizeDatabase(snapshot = {}) {
   const database = snapshot.database || snapshot
+  const poolSnapshot = database.db_pool || database.pool_snapshot || database
+  const slowQuerySnapshot = database.slow_queries || database.slow_query_fingerprints || database
   return {
-    source: database.source,
-    pool: normalizePool(database),
-    pool_waits: normalizeRoutes({ pool_waits: database.pool_waits }, []),
-    slow_query_fingerprints: normalizeSlowQueries(database.slow_query_fingerprints),
-    slow_queries_by_route: normalizeRouteCounters(database.slow_queries_by_route),
+    source: poolSnapshot.source || slowQuerySnapshot.source || database.source,
+    pool: normalizePool(poolSnapshot),
+    pool_waits: normalizeRoutes({ pool_waits: poolSnapshot.pool_waits }, []),
+    slow_query_fingerprints: normalizeSlowQueries(slowQuerySnapshot.fingerprints || slowQuerySnapshot.slow_query_fingerprints),
+    slow_queries_by_route: normalizeRouteCounters(slowQuerySnapshot.slow_queries_by_route),
   }
 }
 
@@ -296,13 +303,19 @@ function normalizeFrontend(snapshot = {}) {
 }
 
 function normalizeOpsOverview(snapshot = {}) {
-  const performance = snapshot.performance || {}
-  const database = snapshot.database || {}
-  const frontend = snapshot.frontend || {}
-  const payloads = summarizePayloads(performance.payloads)
-  const routes = normalizeRoutes(performance.routes, performance.payloads)
+  const performance = snapshot.performance || {
+    route_latency: snapshot.route_latency,
+    request_context_cache: snapshot.request_context_cache,
+    payload: snapshot.payload,
+  }
+  const database = snapshot.database || snapshot.db_pool || {}
+  const frontend = snapshot.frontend || snapshot.rum || {}
+  const payloadRoutes = performance.payload?.routes || performance.payloads || []
+  const payloads = summarizePayloads(payloadRoutes)
+  const routeGroups = performance.route_latency?.groups || performance.routes || {}
+  const routes = normalizeRoutes(routeGroups, payloadRoutes)
   const pool = normalizePool(database)
-  const requestContextCache = normalizeRequestContextCache(performance.request_context_cache)
+  const requestContextCache = normalizeRequestContextCache(performance.request_context_cache?.cache || performance.request_context_cache)
   const rum = normalizeRum(frontend)
 
   return {
@@ -318,7 +331,7 @@ function normalizeOpsOverview(snapshot = {}) {
     database: {
       pool,
       pool_waits: database.pool_waits || [],
-      slow_query_fingerprints: normalizeSlowQueries(database.slow_query_fingerprints),
+      slow_query_fingerprints: normalizeSlowQueries(database.fingerprints || database.slow_query_fingerprints),
       slow_queries_by_route: normalizeRouteCounters(database.slow_queries_by_route),
     },
     frontend: {
@@ -345,6 +358,10 @@ async function requestOpsSnapshot(path, params = {}, options = {}, fallbackMessa
   }
 }
 
+function requestOpsSnapshots(paths, params = {}, options = {}, fallbackMessage) {
+  return Promise.all(paths.map((path) => requestOpsSnapshot(path, params, options, fallbackMessage)))
+}
+
 export async function getOpsOverview(params = {}, options = {}) {
   const snapshot = await requestOpsSnapshot(
     '/api/v2/ops/overview',
@@ -356,28 +373,35 @@ export async function getOpsOverview(params = {}, options = {}) {
 }
 
 export async function getOpsPerformance(params = {}, options = {}) {
-  const snapshot = await requestOpsSnapshot(
-    '/api/v2/ops/performance',
+  const [routeLatency, requestContextCache, payload] = await requestOpsSnapshots(
+    [
+      '/api/v2/ops/route-latency',
+      '/api/v2/ops/request-context-cache',
+      '/api/v2/ops/payload',
+    ],
     params,
     options,
     'Failed to load ops route performance',
   )
-  return normalizePerformance(snapshot)
+  return normalizePerformance({ route_latency: routeLatency, request_context_cache: requestContextCache, payload })
 }
 
 export async function getOpsDatabase(params = {}, options = {}) {
-  const snapshot = await requestOpsSnapshot(
-    '/api/v2/ops/database',
+  const [dbPool, slowQueries] = await requestOpsSnapshots(
+    [
+      '/api/v2/ops/db-pool',
+      '/api/v2/ops/slow-query-fingerprints',
+    ],
     params,
     options,
     'Failed to load ops database snapshot',
   )
-  return normalizeDatabase(snapshot)
+  return normalizeDatabase({ db_pool: dbPool, slow_queries: slowQueries })
 }
 
 export async function getOpsFrontend(params = {}, options = {}) {
   const snapshot = await requestOpsSnapshot(
-    '/api/v2/ops/frontend',
+    '/api/v2/ops/rum',
     params,
     options,
     'Failed to load ops frontend snapshot',

@@ -169,8 +169,11 @@ describe('opsApi', () => {
   it('requests only Rust V2 ops drilldown endpoints with abort signals', async () => {
     const signal = new AbortController().signal
     v2Request
-      .mockResolvedValueOnce({ data: { routes: {}, payloads: [], request_context_cache: {} } })
-      .mockResolvedValueOnce({ data: { pools: [], pool_waits: [], slow_query_fingerprints: [], slow_queries_by_route: [] } })
+      .mockResolvedValueOnce({ data: { groups: {}, source: { generated_at: '2026-05-23T10:00:00Z' } } })
+      .mockResolvedValueOnce({ data: { cache: {}, hydration: [] } })
+      .mockResolvedValueOnce({ data: { routes: [] } })
+      .mockResolvedValueOnce({ data: { pools: [], pool_waits: [] } })
+      .mockResolvedValueOnce({ data: { fingerprints: [], slow_queries_by_route: [] } })
       .mockResolvedValueOnce({ data: { rum_enabled: true, rum: { all: [], api: [], navigation: [], app_shell: [] } } })
 
     await opsApi.getPerformance({ window: '6h' }, { signal })
@@ -179,26 +182,47 @@ describe('opsApi', () => {
 
     expect(v2Request).toHaveBeenNthCalledWith(1, {
       method: 'GET',
-      path: '/api/v2/ops/performance',
+      path: '/api/v2/ops/route-latency',
       query: { window: '6h' },
       signal,
     })
     expect(v2Request).toHaveBeenNthCalledWith(2, {
       method: 'GET',
-      path: '/api/v2/ops/database',
-      query: { window: '24h' },
+      path: '/api/v2/ops/request-context-cache',
+      query: { window: '6h' },
       signal,
     })
     expect(v2Request).toHaveBeenNthCalledWith(3, {
       method: 'GET',
-      path: '/api/v2/ops/frontend',
+      path: '/api/v2/ops/payload',
+      query: { window: '6h' },
+      signal,
+    })
+    expect(v2Request).toHaveBeenNthCalledWith(4, {
+      method: 'GET',
+      path: '/api/v2/ops/db-pool',
+      query: { window: '24h' },
+      signal,
+    })
+    expect(v2Request).toHaveBeenNthCalledWith(5, {
+      method: 'GET',
+      path: '/api/v2/ops/slow-query-fingerprints',
+      query: { window: '24h' },
+      signal,
+    })
+    expect(v2Request).toHaveBeenNthCalledWith(6, {
+      method: 'GET',
+      path: '/api/v2/ops/rum',
       query: { window: '5m' },
       signal,
     })
     expect(v2Request.mock.calls.map(([request]) => request.path)).toEqual([
-      '/api/v2/ops/performance',
-      '/api/v2/ops/database',
-      '/api/v2/ops/frontend',
+      '/api/v2/ops/route-latency',
+      '/api/v2/ops/request-context-cache',
+      '/api/v2/ops/payload',
+      '/api/v2/ops/db-pool',
+      '/api/v2/ops/slow-query-fingerprints',
+      '/api/v2/ops/rum',
     ])
   })
 })
