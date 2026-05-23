@@ -38,17 +38,19 @@
 	encode zstd gzip
 	import hms_secure_headers
 
-	@rawMetrics path /api/v2/metrics /metrics /prometheus /prometheus/*
-	respond @rawMetrics 404
+	route {
+		@rawMetrics path /api/v2/metrics /metrics /prometheus /prometheus/*
+		respond @rawMetrics 404
 
-	@opsApi path /api/v2/ops /api/v2/ops/*
-	reverse_proxy @opsApi hms-api:8080
+		@opsApi path /api/v2/ops /api/v2/ops/*
+		reverse_proxy @opsApi hms-api:8080
 
-	@api path /api/v2/*
-	respond @api 404
+		@api path /api/v2/*
+		respond @api 404
 
-	@opsRoot path /
-	redir @opsRoot /system/ops 302
+		@opsRoot path /
+		redir @opsRoot /system/ops 302
 
-	reverse_proxy {$OPS_DASHBOARD_UPSTREAM:frontend:80}
+		reverse_proxy {$OPS_DASHBOARD_UPSTREAM:frontend:80}
+	}
 }
