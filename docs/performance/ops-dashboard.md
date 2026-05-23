@@ -1,6 +1,6 @@
 # HMS Rust V2 Ops Dashboard Contract
 
-Status: implementation-aligned v1 contract for a custom engineer dashboard.
+Status: implementation-wave contract for a custom engineer dashboard.
 
 Scope: this document defines the product, security, and API contracts for the
 HMS Rust V2 Ops Dashboard. It does not implement backend handlers, frontend UI,
@@ -9,9 +9,12 @@ changes.
 
 ## Product Intent
 
-The v1 dashboard is an HMS engineer dashboard in the style of Vercel or
+The v1 dashboard is an HMS engineer cockpit in the style of Vercel or
 Cloudflare: fast status, release, route, latency, payload, RUM, database, and
-operational budget signals in one protected HMS UI.
+operational budget signals in one protected HMS UI. The first screen is an
+overview with safe status cards; drilldown tabs provide route latency, clinical
+budgets, database pressure, payload, browser/RUM, and safe service-error
+summaries.
 
 It is not a Grafana replacement. Grafana remains the private fallback for deep
 incident work. The custom dashboard gives platform engineers a safer, narrower,
@@ -45,7 +48,8 @@ The dashboard UI may route internally under `/`, `/routes`, `/database`,
 Primary source:
 
 - Prometheus-compatible HMS metrics scraped privately from the Rust V2 API and
-  worker. The browser must never receive raw Prometheus queries.
+  worker, summarized through fixed server-side windows. The browser must never
+  receive raw Prometheus queries.
 
 Secondary optional source:
 
@@ -64,6 +68,12 @@ Deferred source:
 - Logs. v1 must not include log search, raw log lines, request body inspection,
   or arbitrary log queries. Safe service error counts may be shown only when an
   existing aggregate metric or safe log-derived counter is already present.
+
+Cloudflare source:
+
+- Cloudflare status is a stub/status-card only in this wave. Do not call
+  Cloudflare APIs, expose Cloudflare request logs, or present Cloudflare events
+  as drilldown data until a separate safe Adapter contract is written.
 
 ## Safe Label Contract
 
@@ -88,8 +98,8 @@ lines, free-form search text, or arbitrary error messages.
 
 Base path: `/api/v2/ops`
 
-All v1 endpoints are read-only JSON endpoints and use the existing Rust V2
-response envelope:
+All v1 endpoints are read-only JSON endpoints called by the browser only under
+`/api/v2/ops/*`. They use the existing Rust V2 response envelope:
 
 ```json
 {
@@ -130,7 +140,36 @@ Forbidden query params:
 Timestamps are UTC ISO-8601 strings. Durations are milliseconds in JSON and
 seconds only in Prometheus metrics. Payload sizes are bytes.
 
-## Current V1 Endpoints
+## Current Implementation Wave
+
+Dashboard views:
+
+- Overview: fast status, release/version, budget, route, database, payload, RUM,
+  service-error, and Cloudflare-status-stub cards.
+- Route latency tab: Prometheus-backed request rate, p95/p99 latency, and
+  status-bucket summaries by route template.
+- Clinical budgets tab: curated HMS safety/performance budgets for hot clinical
+  surfaces.
+- Database tab: pool pressure, wait histograms, safe route-level DB summaries,
+  and optional `pg_stat_statements` fingerprints.
+- Payload tab: route-level payload size budgets only; never response bodies.
+- Browser tab: RUM aggregates from sanitized route templates only.
+- Service errors tab: aggregate error counts only; no raw logs or exception
+  strings.
+
+The mounted Rust V2 endpoints may be coarse snapshots while other agents land
+the Prometheus-backed tabs:
+
+- `GET /api/v2/ops/overview`
+- `GET /api/v2/ops/performance`
+- `GET /api/v2/ops/database`
+- `GET /api/v2/ops/frontend`
+
+These snapshot endpoints must continue to satisfy the safety contract: auth is
+mandatory, labels are sanitized, and responses contain no PHI, SQL, PromQL,
+logs, raw browser URLs, emails, or request bodies.
+
+## Overview Endpoint
 
 ### `GET /api/v2/ops/overview`
 
@@ -163,17 +202,7 @@ The overview endpoint is backed by the same `OpsService` Interface as the
 focused endpoints below. It must not become a shallow handler that performs
 Prometheus, Postgres, and authorization work inline.
 
-Additional current-process snapshot endpoints:
-
-- `GET /api/v2/ops/performance`
-- `GET /api/v2/ops/database`
-- `GET /api/v2/ops/frontend`
-
-The current v1 implementation reads in-process Rust metrics only. Fixed
-historical windows remain a follow-up once a server-side, allowlisted
-Prometheus summary Adapter exists.
-
-## Future Endpoint Contracts
+## Drilldown Endpoint Contracts
 
 The focused endpoint names below are reserved for the Prometheus-backed phase.
 They should either be implemented as aliases over the current service Interface
@@ -188,6 +217,8 @@ Data sources:
 - Rust health endpoints and process gauges.
 - Deployment metadata if already available to `AppState` or a safe runtime
   Adapter.
+- Cloudflare status stub, limited to `available`, `not_configured`, or
+  `unknown` with an optional safe reason code.
 
 Required fields:
 
@@ -200,6 +231,7 @@ Required fields:
 | `started_at` | string or null | UTC. |
 | `dependencies` | array | `{ name, ready }` only. |
 | `rum_enabled` | boolean | From safe runtime config/metric. |
+| `cloudflare_status` | object | Stub only: `{ status, reason_code }`; no Cloudflare events/logs. |
 
 ### `GET /api/v2/ops/route-latency`
 
@@ -444,14 +476,34 @@ Required fields:
 No stack traces, error messages, log lines, exception strings, or request bodies
 are allowed in v1.
 
+### `GET /api/v2/ops/cloudflare-status`
+
+Purpose: show whether the ops edge/protection layer has a safe configured
+status signal.
+
+This endpoint is a stub only in the current wave. It may return safe fields
+such as:
+
+```json
+{
+  "status": "unknown",
+  "reason_code": "adapter_not_configured"
+}
+```
+
+It must not call Cloudflare APIs, expose Cloudflare logs/events, return operator
+emails, or include request URLs.
+
 ## Security Contract
 
 Authorization:
 
-- Every `/api/v2/ops/*` endpoint must require an authenticated
-  `RequestContext`.
-- Every endpoint must require the explicit ops dashboard permission
-  `system.ops.view`.
+- Every `/api/v2/ops/*` endpoint must require an authenticated ops operator.
+- In HMS-permission mode, every endpoint must resolve a `RequestContext` and
+  require the explicit ops dashboard permission `system.ops.view`.
+- When the deployment uses Cloudflare Access ops auth, allowlisted Cloudflare
+  Access operators may load `/api/v2/ops/*` without an HMS user account. The
+  response must not include their email address, token claims, or Access JWT.
 - The permission is granted only to platform administrator/operator authority,
   not client facility administrators.
 - `system.ops.view` must not be included in deployment-profile permission seeds
@@ -483,6 +535,9 @@ PHI and operational safety:
 
 - No PHI, MRN, patient names, raw SQL, request bodies, raw PromQL, or log search
   appears in request params, API responses, UI state, browser storage, or URLs.
+- No raw log lines, stack traces, exception messages, response bodies, request
+  bodies, raw SQL, raw PromQL, raw browser URLs, emails, or patient identifiers
+  may appear in ops responses.
 - Route labels must come from matched route patterns or the existing RUM route
   scrubber. Raw paths from the browser are not displayable.
 - Unknown or unsafe labels collapse to `_unknown` or `:id`.
