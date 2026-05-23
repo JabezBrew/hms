@@ -13,8 +13,10 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::AccessClaims;
+use crate::config::OpsAuthMode;
 use crate::error::ApiError;
 use crate::middleware::request_id::{current_request_id, RequestId};
+use crate::ops_auth::{CloudflareAccessError, OpsOperator, CF_ACCESS_JWT_HEADER};
 use crate::state::AppState;
 
 const SLOW_REQUEST_CONTEXT_THRESHOLD: Duration = Duration::from_millis(75);
@@ -67,6 +69,66 @@ impl FromRequestParts<AppState> for AuthenticatedSession {
             context,
             session_id,
         })
+    }
+}
+
+#[async_trait]
+impl FromRequestParts<AppState> for OpsOperator {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        match state.ops_auth_mode() {
+            OpsAuthMode::HmsPermission => Ok(OpsOperator::Hms(
+                resolve_request_context(parts, state).await?,
+            )),
+            OpsAuthMode::CloudflareAccess => resolve_cloudflare_ops_operator(parts, state).await,
+            OpsAuthMode::Hybrid => {
+                if parts.headers.contains_key(CF_ACCESS_JWT_HEADER) {
+                    resolve_cloudflare_ops_operator(parts, state).await
+                } else {
+                    Ok(OpsOperator::Hms(
+                        resolve_request_context(parts, state).await?,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+async fn resolve_cloudflare_ops_operator(
+    parts: &Parts,
+    state: &AppState,
+) -> Result<OpsOperator, ApiError> {
+    let token = parts
+        .headers
+        .get(CF_ACCESS_JWT_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(ApiError::unauthorized)?;
+    let identity = state
+        .verify_cloudflare_access_operator(token)
+        .await
+        .map_err(cloudflare_access_error)?;
+    Ok(OpsOperator::CloudflareAccess(identity))
+}
+
+fn cloudflare_access_error(error: CloudflareAccessError) -> ApiError {
+    match error {
+        CloudflareAccessError::EmailNotAllowed => ApiError::forbidden(
+            "ops_operator_not_allowed",
+            "This operator is not allowed to access the ops dashboard.",
+        ),
+        CloudflareAccessError::Misconfigured => ApiError::forbidden(
+            "ops_access_misconfigured",
+            "Ops dashboard access is not configured.",
+        ),
+        CloudflareAccessError::KeyFetchFailed | CloudflareAccessError::InvalidToken => {
+            ApiError::unauthorized()
+        }
     }
 }
 

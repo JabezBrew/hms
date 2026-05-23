@@ -111,22 +111,40 @@ Then visit `http://127.0.0.1:3001` and sign in with
 Generate a unique Grafana password per client VPS; do not commit it.
 
 The public Caddy edge can reserve an ops host for the custom HMS Ops dashboard.
-Leave `OPS_DOMAIN=localhost` until DNS is ready. To enable it, set
-`OPS_DOMAIN=ops.<client-domain>` or another explicit ops hostname and keep
-`OPS_DASHBOARD_UPSTREAM=frontend:80` unless a future standalone ops frontend is
-introduced. The ops host proxies `/api/v2/*` to `hms-api`, redirects `/` to
-`/system/ops`, and serves the protected React route for everything else. The
-client hospital host returns `404` for `/system/ops` and `/api/v2/ops/*`; those
-paths are reserved for `OPS_DOMAIN`. The frontend receives `OPS_DOMAIN` as the
-allowed ops dashboard host at container start. The dashboard must continue to
-enforce HMS authentication plus `system.ops.view` before the ops DNS record is
-published.
-`system.ops.view` is not seeded into normal client deployment-profile
-permissions, so grant it only through a platform/operator provisioning process,
-not through hospital facility-admin workflows. Set `HMS_OPS_OPERATOR_EMAILS`
-to a comma-separated list of existing HMS user emails in the private `.env`
-file when those users should receive dashboard access during provisioning. Do
-not point this route at Grafana or Prometheus.
+Leave `OPS_DOMAIN=localhost` until DNS is ready. The preferred production setup
+is Cloudflare Access in front of a dedicated hostname such as
+`ops.<client-domain>`, with the DNS record proxied through Cloudflare. The ops
+host proxies only `/api/v2/ops/*` to `hms-api`, redirects `/` to `/system/ops`,
+and serves the React ops dashboard for everything else. Other `/api/v2/*` paths
+on the ops host return `404`. The client hospital host also returns `404` for
+`/system/ops` and `/api/v2/ops/*`; those paths are reserved for `OPS_DOMAIN`.
+
+For Cloudflare Access:
+
+1. Put the domain zone on Cloudflare DNS, or Cloudflare Access will not sit in
+   front of the hostname on the free plan.
+2. Create a proxied DNS record for the ops hostname, for example
+   `ops.staging.thehms.systems`, pointing to this VPS or to the existing staging
+   hostname.
+3. In Cloudflare Zero Trust, create a self-hosted Access application for the ops
+   hostname and allow only the operator emails.
+4. Copy the application Audience (AUD) tag and set the private `.env` values:
+
+```bash
+OPS_DOMAIN=ops.staging.thehms.systems
+HMS_OPS_AUTH_MODE=cloudflare_access
+HMS_CLOUDFLARE_ACCESS_TEAM_DOMAIN=https://<team-name>.cloudflareaccess.com
+HMS_CLOUDFLARE_ACCESS_AUD=<cloudflare-access-aud-tag>
+HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS=jabezbrew3@gmail.com,jabezbrew79@gmail.com
+HMS_OPS_OPERATOR_EMAILS=
+```
+
+Cloudflare injects `Cf-Access-Jwt-Assertion` after login. `hms-api` validates
+that JWT against the Cloudflare Access signing keys and the configured AUD
+before it serves `/api/v2/ops/*`, so operators do not need to be HMS facility
+users. `HMS_OPS_OPERATOR_EMAILS` is now a legacy/hybrid fallback for the
+`hms_permission` auth mode only. Do not point this route at Grafana or
+Prometheus.
 
 Postgres is started with `pg_stat_statements` preloaded for staging and
 production diagnostics. Existing databases still need the extension enabled

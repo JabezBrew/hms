@@ -41,8 +41,11 @@
 	@rawMetrics path /api/v2/metrics /metrics /prometheus /prometheus/*
 	respond @rawMetrics 404
 
+	@opsApi path /api/v2/ops /api/v2/ops/*
+	reverse_proxy @opsApi hms-api:8080
+
 	@api path /api/v2/*
-	reverse_proxy @api hms-api:8080
+	respond @api 404
 
 	@opsRoot path /
 	redir @opsRoot /system/ops 302

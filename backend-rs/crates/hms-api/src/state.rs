@@ -19,7 +19,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
-use crate::config::Config;
+use crate::config::{Config, OpsAuthMode};
+use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
 use crate::passwords::hash_password;
 
 #[derive(Clone)]
@@ -34,6 +35,7 @@ struct AppStateInner {
     pool: hms_db::PgPool,
     auth_pool: hms_db::PgPool,
     auth_cache: AuthCache,
+    cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
 const AUTH_FACT_CACHE_TTL: Duration = Duration::from_secs(5);
@@ -255,6 +257,14 @@ impl AppState {
                 .context("failed to rebuild OmniSearch index")?;
         }
 
+        let cloudflare_access = if config.ops_auth_mode.allows_cloudflare_access() {
+            Some(CloudflareAccessVerifier::new(
+                config.cloudflare_access.clone(),
+            )?)
+        } else {
+            None
+        };
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 config,
@@ -263,6 +273,7 @@ impl AppState {
                 pool,
                 auth_pool,
                 auth_cache: AuthCache::default(),
+                cloudflare_access,
             }),
         })
     }
@@ -297,6 +308,22 @@ impl AppState {
 
     pub fn rum_enabled(&self) -> bool {
         self.inner.config.rum_enabled
+    }
+
+    pub fn ops_auth_mode(&self) -> OpsAuthMode {
+        self.inner.config.ops_auth_mode
+    }
+
+    pub async fn verify_cloudflare_access_operator(
+        &self,
+        token: &str,
+    ) -> Result<CloudflareAccessIdentity, CloudflareAccessError> {
+        let verifier = self
+            .inner
+            .cloudflare_access
+            .as_ref()
+            .ok_or(CloudflareAccessError::Misconfigured)?;
+        verifier.verify(token).await
     }
 
     pub async fn readiness_snapshot(&self) -> ReadinessSnapshot {

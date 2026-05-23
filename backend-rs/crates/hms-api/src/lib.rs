@@ -7,6 +7,7 @@ pub mod extractors;
 pub mod handlers;
 pub mod middleware;
 pub mod openapi;
+pub mod ops_auth;
 pub(crate) mod passwords;
 pub mod response;
 pub mod routes;

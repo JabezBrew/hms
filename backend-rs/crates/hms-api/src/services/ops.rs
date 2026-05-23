@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::error::ApiError;
+use crate::ops_auth::OpsOperator;
 use crate::response::{object, ObjectResponse};
 use crate::state::{AppState, DependencyReadiness, ReadinessSnapshot};
 
@@ -169,9 +170,9 @@ impl OpsService {
 
     pub async fn overview(
         &self,
-        ctx: &hms_access::RequestContext,
+        operator: &OpsOperator,
     ) -> Result<ObjectResponse<OpsOverviewSnapshot>, ApiError> {
-        self.require_ops_access(ctx)?;
+        self.require_ops_access(operator)?;
         let readiness = self.state.readiness_snapshot().await;
         let metrics = hms_observability::metrics_snapshot();
         let database = self.database_from_metrics(&metrics);
@@ -190,9 +191,9 @@ impl OpsService {
 
     pub async fn performance(
         &self,
-        ctx: &hms_access::RequestContext,
+        operator: &OpsOperator,
     ) -> Result<ObjectResponse<OpsPerformanceSnapshot>, ApiError> {
-        self.require_ops_access(ctx)?;
+        self.require_ops_access(operator)?;
         Ok(object(self.performance_from_metrics(
             &hms_observability::metrics_snapshot(),
         )))
@@ -200,9 +201,9 @@ impl OpsService {
 
     pub async fn database(
         &self,
-        ctx: &hms_access::RequestContext,
+        operator: &OpsOperator,
     ) -> Result<ObjectResponse<OpsDatabaseSnapshot>, ApiError> {
-        self.require_ops_access(ctx)?;
+        self.require_ops_access(operator)?;
         Ok(object(self.database_from_metrics(
             &hms_observability::metrics_snapshot(),
         )))
@@ -210,17 +211,22 @@ impl OpsService {
 
     pub async fn frontend(
         &self,
-        ctx: &hms_access::RequestContext,
+        operator: &OpsOperator,
     ) -> Result<ObjectResponse<OpsFrontendSnapshot>, ApiError> {
-        self.require_ops_access(ctx)?;
+        self.require_ops_access(operator)?;
         Ok(object(self.frontend_from_metrics(
             &hms_observability::metrics_snapshot(),
         )))
     }
 
-    fn require_ops_access(&self, ctx: &hms_access::RequestContext) -> Result<(), ApiError> {
-        hms_access::require_ops_dashboard_access(ctx, self.state.facility_id())?;
-        Ok(())
+    fn require_ops_access(&self, operator: &OpsOperator) -> Result<(), ApiError> {
+        match operator {
+            OpsOperator::Hms(ctx) => {
+                hms_access::require_ops_dashboard_access(ctx, self.state.facility_id())?;
+                Ok(())
+            }
+            OpsOperator::CloudflareAccess(_) => Ok(()),
+        }
     }
 
     fn performance_from_metrics(

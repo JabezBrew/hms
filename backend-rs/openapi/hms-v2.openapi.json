@@ -22307,6 +22307,12 @@
         "bearerFormat": "JWT",
         "scheme": "bearer",
         "type": "http"
+      },
+      "cloudflareAccess": {
+        "description": "Cloudflare Access JWT assertion injected by the protected ops subdomain.",
+        "in": "header",
+        "name": "Cf-Access-Jwt-Assertion",
+        "type": "apiKey"
       }
     }
   },
@@ -39102,7 +39108,7 @@
                 }
               }
             },
-            "description": "Authentication is required"
+            "description": "Ops operator authentication is required"
           },
           "403": {
             "content": {
@@ -39112,10 +39118,13 @@
                 }
               }
             },
-            "description": "Ops dashboard permission is required"
+            "description": "Ops operator access is required"
           }
         },
         "security": [
+          {
+            "cloudflareAccess": []
+          },
           {
             "bearerAuth": []
           }
@@ -39147,7 +39156,7 @@
                 }
               }
             },
-            "description": "Authentication is required"
+            "description": "Ops operator authentication is required"
           },
           "403": {
             "content": {
@@ -39157,10 +39166,13 @@
                 }
               }
             },
-            "description": "Ops dashboard permission is required"
+            "description": "Ops operator access is required"
           }
         },
         "security": [
+          {
+            "cloudflareAccess": []
+          },
           {
             "bearerAuth": []
           }
@@ -39192,7 +39204,7 @@
                 }
               }
             },
-            "description": "Authentication is required"
+            "description": "Ops operator authentication is required"
           },
           "403": {
             "content": {
@@ -39202,10 +39214,13 @@
                 }
               }
             },
-            "description": "Ops dashboard permission is required"
+            "description": "Ops operator access is required"
           }
         },
         "security": [
+          {
+            "cloudflareAccess": []
+          },
           {
             "bearerAuth": []
           }
@@ -39237,7 +39252,7 @@
                 }
               }
             },
-            "description": "Authentication is required"
+            "description": "Ops operator authentication is required"
           },
           "403": {
             "content": {
@@ -39247,10 +39262,13 @@
                 }
               }
             },
-            "description": "Ops dashboard permission is required"
+            "description": "Ops operator access is required"
           }
         },
         "security": [
+          {
+            "cloudflareAccess": []
+          },
           {
             "bearerAuth": []
           }

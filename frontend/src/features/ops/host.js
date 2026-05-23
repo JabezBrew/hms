@@ -28,6 +28,15 @@ function configuredOpsHosts() {
   return configured.length > 0 ? configured : normalizeHostList(envHosts)
 }
 
+function isLocalHostname(hostname) {
+  return (
+    hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '::1'
+    || hostname === '[::1]'
+  )
+}
+
 export function isOpsDashboardHost(hostname = globalThis.window?.location?.hostname) {
   const normalized = String(hostname || '').trim().toLowerCase()
   const configuredHosts = configuredOpsHosts()
@@ -36,11 +45,16 @@ export function isOpsDashboardHost(hostname = globalThis.window?.location?.hostn
     return configuredHosts.includes(normalized)
   }
 
-  return (
-    normalized === 'localhost'
-    || normalized === '127.0.0.1'
-    || normalized === '::1'
-    || normalized === '[::1]'
-    || normalized.startsWith('ops.')
-  )
+  return isLocalHostname(normalized) || normalized.startsWith('ops.')
+}
+
+export function isStandaloneOpsDashboardHost(hostname = globalThis.window?.location?.hostname) {
+  const normalized = String(hostname || '').trim().toLowerCase()
+  const configuredHosts = configuredOpsHosts()
+
+  if (configuredHosts.length > 0) {
+    return configuredHosts.includes(normalized) && !isLocalHostname(normalized)
+  }
+
+  return normalized.startsWith('ops.')
 }

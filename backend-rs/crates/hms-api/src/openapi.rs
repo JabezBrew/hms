@@ -1,5 +1,5 @@
 use serde_json::Value;
-use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::OpenApi as OpenApiDocument;
 use utoipa::{Modify, OpenApi};
 
@@ -758,6 +758,13 @@ impl Modify for SecurityAddon {
                     .bearer_format("JWT")
                     .build(),
             ),
+        );
+        components.add_security_scheme(
+            "cloudflareAccess",
+            SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
+                "Cf-Access-Jwt-Assertion",
+                "Cloudflare Access JWT assertion injected by the protected ops subdomain.",
+            ))),
         );
     }
 }
