@@ -6,6 +6,7 @@ import { publishBuildInfo } from './lib/build-info.js'
 import { setCockpitCacheTelemetryHook } from './lib/cockpit-cache.js'
 import { initBrowserRum } from './lib/observability/rum.js'
 import { registerStaticAssetServiceWorker } from './lib/service-worker-registration.js'
+import { isOpsDashboardHost } from './features/ops/host.js'
 
 publishBuildInfo()
 
@@ -39,7 +40,9 @@ setCockpitCacheTelemetryHook((event) => {
 })
 
 runAfterBoot(() => {
-  initBrowserRum()
+  if (!isOpsDashboardHost()) {
+    initBrowserRum()
+  }
   void registerStaticAssetServiceWorker()
   preloadLikelyPostLoginShell()
 })
