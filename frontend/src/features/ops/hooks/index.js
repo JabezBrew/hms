@@ -6,15 +6,53 @@ const baseKeys = createKeyFactory('ops')
 
 export const opsKeys = {
   ...baseKeys,
-  dashboard: (params = {}) => [...baseKeys.all, 'dashboard', { params }],
+  overview: (params = {}) => [...baseKeys.all, 'overview', { params }],
+  performance: (params = {}) => [...baseKeys.all, 'performance', { params }],
+  database: (params = {}) => [...baseKeys.all, 'database', { params }],
+  frontend: (params = {}) => [...baseKeys.all, 'frontend', { params }],
+  dashboard: (params = {}) => [...baseKeys.all, 'overview', { params }],
 }
 
-export function useOpsDashboard(params = {}, options = {}) {
+export function useOpsOverview(params = {}, options = {}) {
   return useQuery({
-    queryKey: opsKeys.dashboard(params),
-    queryFn: ({ signal }) => opsApi.getDashboard(params, { signal }),
+    queryKey: opsKeys.overview(params),
+    queryFn: ({ signal }) => opsApi.getOverview(params, { signal }),
     staleTime: 15 * 1000,
     refetchInterval: 30 * 1000,
     ...options,
   })
+}
+
+export function useOpsPerformance(params = {}, options = {}) {
+  return useQuery({
+    queryKey: opsKeys.performance(params),
+    queryFn: ({ signal }) => opsApi.getPerformance(params, { signal }),
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
+    ...options,
+  })
+}
+
+export function useOpsDatabase(params = {}, options = {}) {
+  return useQuery({
+    queryKey: opsKeys.database(params),
+    queryFn: ({ signal }) => opsApi.getDatabase(params, { signal }),
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
+    ...options,
+  })
+}
+
+export function useOpsFrontend(params = {}, options = {}) {
+  return useQuery({
+    queryKey: opsKeys.frontend(params),
+    queryFn: ({ signal }) => opsApi.getFrontend(params, { signal }),
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
+    ...options,
+  })
+}
+
+export function useOpsDashboard(params = {}, options = {}) {
+  return useOpsOverview(params, options)
 }

@@ -34,8 +34,23 @@ describe('opsApi', () => {
             in_use: 7,
             max_connections: 10,
             pressure: 0.7,
+            pressure_state: 'elevated',
           }],
           pool_waits: [{ p95_ms: 18 }],
+          slow_query_fingerprints: [{
+            fingerprint: 'SELECT * FROM patients WHERE email = "ama@example.com"',
+            count: 2,
+            total_ms: 900,
+            avg_ms: 450,
+            p95_ms: 500,
+            p99_ms: 520,
+          }],
+          slow_queries_by_route: [{
+            route_pattern: '/api/v2/patients/:id/chronicle',
+            status_bucket: '2xx',
+            facility_safe: 'MAIN',
+            count: 2,
+          }],
         },
         performance: {
           routes: {
@@ -104,10 +119,22 @@ describe('opsApi', () => {
           used: 7,
           max: 10,
           pressure: 0.7,
+          pressure_state: 'elevated',
           wait_p95_ms: 18,
         }),
         pool_waits: expect.any(Array),
-        slow_query_fingerprints: expect.any(Array),
+        slow_query_fingerprints: [
+          expect.objectContaining({
+            fingerprint: '_redacted_query_fingerprint_1',
+            status: 'fail',
+          }),
+        ],
+        slow_queries_by_route: [
+          expect.objectContaining({
+            route: '/api/v2/patients/:id/chronicle',
+            count: 2,
+          }),
+        ],
       },
       frontend: {
         rum: expect.objectContaining({
@@ -137,5 +164,41 @@ describe('opsApi', () => {
     v2Request.mockRejectedValueOnce(abortError)
 
     await expect(opsApi.getDashboard({}, { signal: new AbortController().signal })).rejects.toBe(abortError)
+  })
+
+  it('requests only Rust V2 ops drilldown endpoints with abort signals', async () => {
+    const signal = new AbortController().signal
+    v2Request
+      .mockResolvedValueOnce({ data: { routes: {}, payloads: [], request_context_cache: {} } })
+      .mockResolvedValueOnce({ data: { pools: [], pool_waits: [], slow_query_fingerprints: [], slow_queries_by_route: [] } })
+      .mockResolvedValueOnce({ data: { rum_enabled: true, rum: { all: [], api: [], navigation: [], app_shell: [] } } })
+
+    await opsApi.getPerformance({ window: '6h' }, { signal })
+    await opsApi.getDatabase({ window: '24h' }, { signal })
+    await opsApi.getFrontend({ window: '5m' }, { signal })
+
+    expect(v2Request).toHaveBeenNthCalledWith(1, {
+      method: 'GET',
+      path: '/api/v2/ops/performance',
+      query: { window: '6h' },
+      signal,
+    })
+    expect(v2Request).toHaveBeenNthCalledWith(2, {
+      method: 'GET',
+      path: '/api/v2/ops/database',
+      query: { window: '24h' },
+      signal,
+    })
+    expect(v2Request).toHaveBeenNthCalledWith(3, {
+      method: 'GET',
+      path: '/api/v2/ops/frontend',
+      query: { window: '5m' },
+      signal,
+    })
+    expect(v2Request.mock.calls.map(([request]) => request.path)).toEqual([
+      '/api/v2/ops/performance',
+      '/api/v2/ops/database',
+      '/api/v2/ops/frontend',
+    ])
   })
 })

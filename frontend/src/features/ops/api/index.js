@@ -2,7 +2,7 @@ import { handleV2ApiError } from '@/lib/api/v2/errors'
 import { v2Request } from '@/lib/api/v2/client'
 
 const DEFAULT_WINDOW = '15m'
-const SUPPORTED_WINDOWS = new Set(['15m', '1h', '24h'])
+const SUPPORTED_WINDOWS = new Set(['5m', '15m', '1h', '6h', '24h'])
 const EMPTY_ARRAY = Object.freeze([])
 
 function normalizeOpsQuery(params = {}) {
@@ -94,15 +94,6 @@ function payloadLookup(payloads) {
 }
 
 function flattenRouteGroups(routeGroups = {}) {
-  const priorityGroups = [
-    ...asArray(routeGroups.chronicle),
-    ...asArray(routeGroups.dashboards),
-    ...asArray(routeGroups.ward_board),
-  ]
-  if (priorityGroups.length > 0) {
-    return priorityGroups
-  }
-
   return Object.values(routeGroups)
     .filter(Array.isArray)
     .flat()
@@ -148,6 +139,7 @@ function normalizePool(database = {}) {
     used: primary.in_use,
     max: primary.max_connections,
     pressure: primary.pressure,
+    pressure_state: primary.pressure_state,
     wait_p95_ms: waitP95Ms,
     waiters: 0,
     status: statusForPressure(primary.pressure),
@@ -238,6 +230,71 @@ function normalizeBudgets({ routes, pool, payloads, rum }) {
   ]
 }
 
+function normalizePerformance(snapshot = {}) {
+  const performance = snapshot.performance || snapshot
+  const payloadsSummary = summarizePayloads(performance.payloads)
+  return {
+    source: performance.source,
+    routes: normalizeRoutes(performance.routes, performance.payloads),
+    request_context_cache: normalizeRequestContextCache(performance.request_context_cache),
+    payloads: payloadsSummary,
+  }
+}
+
+function sanitizeQueryFingerprint(value, index) {
+  const text = String(value || '').trim()
+  if (
+    !text
+    || text.length > 96
+    || /(\bselect\b|\binsert\b|\bupdate\b|\bdelete\b|\bfrom\b|\bwhere\b|\bjoin\b|promql|rate\(|mrn|patient|email|@)/i.test(text)
+  ) {
+    return `_redacted_query_fingerprint_${index + 1}`
+  }
+  return /^[a-z0-9._:-]+$/i.test(text) ? text : `_redacted_query_fingerprint_${index + 1}`
+}
+
+function normalizeSlowQueries(rows) {
+  return asArray(rows).slice(0, 20).map((row, index) => ({
+    fingerprint: sanitizeQueryFingerprint(row.fingerprint || row.query_fingerprint, index),
+    count: row.count,
+    total_ms: row.total_ms,
+    avg_ms: row.avg_ms,
+    p95_ms: row.p95_ms,
+    p99_ms: row.p99_ms,
+    status: statusForThreshold(row.p99_ms || row.p95_ms || row.avg_ms, 250, 500),
+  }))
+}
+
+function normalizeRouteCounters(rows) {
+  return asArray(rows).slice(0, 20).map((row) => ({
+    route: row.route_pattern,
+    status_bucket: row.status_bucket,
+    facility_safe: row.facility_safe,
+    count: row.count,
+  }))
+}
+
+function normalizeDatabase(snapshot = {}) {
+  const database = snapshot.database || snapshot
+  return {
+    source: database.source,
+    pool: normalizePool(database),
+    pool_waits: normalizeRoutes({ pool_waits: database.pool_waits }, []),
+    slow_query_fingerprints: normalizeSlowQueries(database.slow_query_fingerprints),
+    slow_queries_by_route: normalizeRouteCounters(database.slow_queries_by_route),
+  }
+}
+
+function normalizeFrontend(snapshot = {}) {
+  const frontend = snapshot.frontend || snapshot
+  return {
+    source: frontend.source,
+    rum: normalizeRum(frontend),
+    rum_enabled: frontend.rum_enabled,
+    routes: normalizeRoutes(frontend.rum, []),
+  }
+}
+
 function normalizeOpsOverview(snapshot = {}) {
   const performance = snapshot.performance || {}
   const database = snapshot.database || {}
@@ -261,31 +318,77 @@ function normalizeOpsOverview(snapshot = {}) {
     database: {
       pool,
       pool_waits: database.pool_waits || [],
-      slow_query_fingerprints: database.slow_query_fingerprints || [],
+      slow_query_fingerprints: normalizeSlowQueries(database.slow_query_fingerprints),
+      slow_queries_by_route: normalizeRouteCounters(database.slow_queries_by_route),
     },
     frontend: {
       rum,
       rum_enabled: frontend.rum_enabled,
+      routes: normalizeRoutes(frontend.rum, []),
     },
     deploys: normalizeDeployment(snapshot),
   }
 }
 
-export async function getOpsDashboard(params = {}, options = {}) {
+async function requestOpsSnapshot(path, params = {}, options = {}, fallbackMessage) {
   try {
     const response = await v2Request({
       method: 'GET',
-      path: '/api/v2/ops/overview',
+      path,
       query: normalizeOpsQuery(params),
       signal: options.signal,
     })
-    return normalizeOpsOverview(unwrapData(response))
+    return unwrapData(response)
   } catch (error) {
     rethrowAbortError(error)
-    throw new Error(handleV2ApiError(error, 'Failed to load ops dashboard'))
+    throw new Error(handleV2ApiError(error, fallbackMessage))
   }
 }
 
+export async function getOpsOverview(params = {}, options = {}) {
+  const snapshot = await requestOpsSnapshot(
+    '/api/v2/ops/overview',
+    params,
+    options,
+    'Failed to load ops overview',
+  )
+  return normalizeOpsOverview(snapshot)
+}
+
+export async function getOpsPerformance(params = {}, options = {}) {
+  const snapshot = await requestOpsSnapshot(
+    '/api/v2/ops/performance',
+    params,
+    options,
+    'Failed to load ops route performance',
+  )
+  return normalizePerformance(snapshot)
+}
+
+export async function getOpsDatabase(params = {}, options = {}) {
+  const snapshot = await requestOpsSnapshot(
+    '/api/v2/ops/database',
+    params,
+    options,
+    'Failed to load ops database snapshot',
+  )
+  return normalizeDatabase(snapshot)
+}
+
+export async function getOpsFrontend(params = {}, options = {}) {
+  const snapshot = await requestOpsSnapshot(
+    '/api/v2/ops/frontend',
+    params,
+    options,
+    'Failed to load ops frontend snapshot',
+  )
+  return normalizeFrontend(snapshot)
+}
+
 export const opsApi = Object.freeze({
-  getDashboard: getOpsDashboard,
+  getDashboard: getOpsOverview,
+  getOverview: getOpsOverview,
+  getPerformance: getOpsPerformance,
+  getDatabase: getOpsDatabase,
+  getFrontend: getOpsFrontend,
 })
