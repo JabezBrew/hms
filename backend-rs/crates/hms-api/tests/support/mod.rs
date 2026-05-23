@@ -296,7 +296,7 @@ pub(crate) async fn enroll_test_passkey(app: &TestApp, user_id: Uuid) {
             id: Uuid::new_v4(),
             user_id,
             facility_id: Uuid::from_u128(hms_db::provision::FACILITY_ID),
-            credential_id: format!("test-passkey-{user_id}"),
+            credential_id: format!("test-passkey-{user_id}-{}", Uuid::new_v4()),
             passkey: json!({ "test_credential": true }),
             label: Some("Contract test passkey".to_owned()),
         },

@@ -5,9 +5,7 @@
 	}
 }
 
-{$CLIENT_DOMAIN} {
-	encode zstd gzip
-
+(hms_secure_headers) {
 	header {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
@@ -15,6 +13,11 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		-Server
 	}
+}
+
+{$CLIENT_DOMAIN} {
+	encode zstd gzip
+	import hms_secure_headers
 
 	@publicMetrics path /api/v2/metrics
 	respond @publicMetrics 404
@@ -23,4 +26,20 @@
 	reverse_proxy @api hms-api:8080
 
 	reverse_proxy frontend:80
+}
+
+{$OPS_DOMAIN:localhost} {
+	encode zstd gzip
+	import hms_secure_headers
+
+	@rawMetrics path /api/v2/metrics /metrics /prometheus /prometheus/*
+	respond @rawMetrics 404
+
+	@api path /api/v2/*
+	reverse_proxy @api hms-api:8080
+
+	@opsRoot path /
+	redir @opsRoot /system/ops 302
+
+	reverse_proxy {$OPS_DASHBOARD_UPSTREAM:frontend:80}
 }

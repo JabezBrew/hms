@@ -41,6 +41,8 @@ pub enum PermissionCode {
     AuthMeView,
     #[serde(rename = "system.deployment_capabilities.view")]
     SystemDeploymentCapabilitiesView,
+    #[serde(rename = "system.ops.view")]
+    SystemOpsView,
     #[serde(rename = "patient.demographics.view")]
     PatientDemographicsView,
     #[serde(rename = "patient.create")]

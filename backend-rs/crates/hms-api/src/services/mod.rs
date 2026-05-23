@@ -6,6 +6,7 @@ pub mod consent;
 pub mod dashboard;
 pub mod inventory;
 pub mod laboratory;
+pub mod ops;
 pub mod patients;
 pub mod referrals;
 pub mod ward;

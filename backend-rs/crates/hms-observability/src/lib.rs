@@ -42,6 +42,80 @@ pub struct RequestMetricsSnapshot {
     db_pool_wait_durations: Vec<Duration>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct MetricsSnapshot {
+    pub dashboard_reads: Vec<RouteDurationSnapshot>,
+    pub chronicle_reads: Vec<RouteDurationSnapshot>,
+    pub ward_board_reads: Vec<RouteDurationSnapshot>,
+    pub api_payloads: Vec<RoutePayloadSnapshot>,
+    pub request_context_cache: RequestContextCacheSnapshot,
+    pub request_context_hydration: Vec<RouteDurationSnapshot>,
+    pub db_pool_waits: Vec<RouteDurationSnapshot>,
+    pub route_db_queries: Vec<RouteDurationSnapshot>,
+    pub route_slow_queries: Vec<RouteCounterSnapshot>,
+    pub db_query_fingerprints: Vec<DbQueryFingerprintSnapshot>,
+    pub browser_rum: BrowserMetricsSnapshot,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RouteDurationSnapshot {
+    pub route_pattern: String,
+    pub status_bucket: String,
+    pub facility_safe: String,
+    pub count: u64,
+    pub avg_ms: Option<f64>,
+    pub p50_ms: Option<f64>,
+    pub p95_ms: Option<f64>,
+    pub p99_ms: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RoutePayloadSnapshot {
+    pub route_pattern: String,
+    pub status_bucket: String,
+    pub facility_safe: String,
+    pub count: u64,
+    pub avg_bytes: Option<f64>,
+    pub p50_bytes: Option<u64>,
+    pub p95_bytes: Option<u64>,
+    pub p99_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RouteCounterSnapshot {
+    pub route_pattern: String,
+    pub status_bucket: String,
+    pub facility_safe: String,
+    pub count: u64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RequestContextCacheSnapshot {
+    pub hits_total: u64,
+    pub misses_total: u64,
+    pub hit_rate: Option<f64>,
+    pub hits_by_route: Vec<RouteCounterSnapshot>,
+    pub misses_by_route: Vec<RouteCounterSnapshot>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DbQueryFingerprintSnapshot {
+    pub fingerprint: String,
+    pub count: u64,
+    pub total_ms: f64,
+    pub avg_ms: Option<f64>,
+    pub p95_ms: Option<f64>,
+    pub p99_ms: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BrowserMetricsSnapshot {
+    pub all: Vec<RouteDurationSnapshot>,
+    pub api: Vec<RouteDurationSnapshot>,
+    pub navigation: Vec<RouteDurationSnapshot>,
+    pub app_shell: Vec<RouteDurationSnapshot>,
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct HttpRequestMetricKey {
     method: String,
@@ -829,6 +903,113 @@ pub fn record_browser_rum_event(
     }
 }
 
+pub fn metrics_snapshot() -> MetricsSnapshot {
+    let dashboard_reads = route_duration_snapshots(
+        &dashboard_read_metrics()
+            .read()
+            .expect("dashboard metrics lock poisoned"),
+        HTTP_DURATION_BUCKETS,
+    );
+    let chronicle_reads = route_duration_snapshots(
+        &chronicle_read_metrics()
+            .read()
+            .expect("chronicle metrics lock poisoned"),
+        HTTP_DURATION_BUCKETS,
+    );
+    let ward_board_reads = route_duration_snapshots(
+        &ward_board_read_metrics()
+            .read()
+            .expect("ward board metrics lock poisoned"),
+        HTTP_DURATION_BUCKETS,
+    );
+    let api_payloads = route_payload_snapshots(
+        &api_response_payload_metrics()
+            .read()
+            .expect("payload metrics lock poisoned"),
+    );
+    let hits_by_route = route_counter_snapshots(
+        &request_context_cache_hit_metrics()
+            .read()
+            .expect("request context cache hit metrics lock poisoned"),
+    );
+    let misses_by_route = route_counter_snapshots(
+        &request_context_cache_miss_metrics()
+            .read()
+            .expect("request context cache miss metrics lock poisoned"),
+    );
+    let request_context_hydration = route_duration_snapshots(
+        &request_context_hydration_db_metrics()
+            .read()
+            .expect("request context hydration metrics lock poisoned"),
+        DB_QUERY_DURATION_BUCKETS,
+    );
+    let db_pool_waits = route_duration_snapshots(
+        &db_pool_wait_metrics()
+            .read()
+            .expect("pool wait metrics lock poisoned"),
+        DB_POOL_WAIT_BUCKETS,
+    );
+    let route_db_queries = route_duration_snapshots(
+        &route_db_query_metrics()
+            .read()
+            .expect("route db metrics lock poisoned"),
+        DB_QUERY_DURATION_BUCKETS,
+    );
+    let route_slow_queries = route_counter_snapshots(
+        &route_db_slow_query_metrics()
+            .read()
+            .expect("slow query metrics lock poisoned"),
+    );
+    let db_query_fingerprints = db_query_fingerprint_snapshots(
+        &db_query_metrics().read().expect("db metrics lock poisoned"),
+    );
+    let browser_rum = BrowserMetricsSnapshot {
+        all: browser_duration_snapshots(
+            &browser_rum_metrics()
+                .read()
+                .expect("browser RUM metrics lock poisoned"),
+        ),
+        api: browser_duration_snapshots(
+            &browser_api_metrics()
+                .read()
+                .expect("browser API metrics lock poisoned"),
+        ),
+        navigation: browser_duration_snapshots(
+            &browser_navigation_metrics()
+                .read()
+                .expect("browser navigation metrics lock poisoned"),
+        ),
+        app_shell: browser_duration_snapshots(
+            &browser_app_shell_metrics()
+                .read()
+                .expect("browser app shell metrics lock poisoned"),
+        ),
+    };
+    let hits_total = hits_by_route.iter().map(|route| route.count).sum();
+    let misses_total = misses_by_route.iter().map(|route| route.count).sum();
+    let cache_total = hits_total + misses_total;
+
+    MetricsSnapshot {
+        dashboard_reads,
+        chronicle_reads,
+        ward_board_reads,
+        api_payloads,
+        request_context_cache: RequestContextCacheSnapshot {
+            hits_total,
+            misses_total,
+            hit_rate: (cache_total > 0).then(|| hits_total as f64 / cache_total as f64),
+            hits_by_route,
+            misses_by_route,
+        },
+        request_context_hydration,
+        db_pool_waits,
+        route_db_queries,
+        route_slow_queries,
+        db_query_fingerprints,
+        browser_rum,
+    }
+}
+
 #[cfg(test)]
 pub fn reset_metrics_for_tests() {
     http_request_metrics()
@@ -1280,6 +1461,11 @@ fn is_allowed_static_route_segment(segment: &str) -> bool {
             | "ready"
             | "metrics"
             | "openapi.json"
+            | "ops"
+            | "overview"
+            | "performance"
+            | "database"
+            | "frontend"
             | "auth"
             | "me"
             | "login"
@@ -1360,6 +1546,8 @@ fn is_allowed_static_route_segment(segment: &str) -> bool {
             | "sent"
             | "dashboards"
             | "dashboard"
+            | "admin-v2"
+            | "capacity"
             | "nurse"
             | "inpatient"
             | "reception"
@@ -1791,6 +1979,227 @@ fn labels_to_prometheus(labels: &[(&str, &str)]) -> String {
     format!("{{{labels}}}")
 }
 
+fn route_duration_snapshots(
+    metrics: &BTreeMap<RouteMetricKey, Arc<RouteDurationMetricValue>>,
+    buckets: &[f64],
+) -> Vec<RouteDurationSnapshot> {
+    let mut snapshots = metrics
+        .iter()
+        .map(|(key, value)| {
+            let count = value.count();
+            let bucket_counts = value.duration_bucket_counts();
+            RouteDurationSnapshot {
+                route_pattern: snapshot_route_pattern(&key.route_pattern),
+                status_bucket: key.status_bucket.clone(),
+                facility_safe: sanitize_facility_safe(&key.facility_safe),
+                count,
+                avg_ms: average_ms(value.duration_ns_sum(), count),
+                p50_ms: duration_percentile_ms(&bucket_counts, buckets, count, 0.50),
+                p95_ms: duration_percentile_ms(&bucket_counts, buckets, count, 0.95),
+                p99_ms: duration_percentile_ms(&bucket_counts, buckets, count, 0.99),
+            }
+        })
+        .collect::<Vec<_>>();
+    snapshots.sort_by(|left, right| {
+        right.count.cmp(&left.count).then_with(|| {
+            left.route_pattern
+                .cmp(&right.route_pattern)
+                .then(left.status_bucket.cmp(&right.status_bucket))
+        })
+    });
+    snapshots
+}
+
+fn browser_duration_snapshots(
+    metrics: &BTreeMap<BrowserRumMetricKey, Arc<BrowserRumMetricValue>>,
+) -> Vec<RouteDurationSnapshot> {
+    let mut snapshots = metrics
+        .iter()
+        .map(|(key, value)| {
+            let count = value.count();
+            let bucket_counts = value.duration_bucket_counts();
+            RouteDurationSnapshot {
+                route_pattern: snapshot_route_pattern(&key.route_pattern),
+                status_bucket: key.status_bucket.clone(),
+                facility_safe: sanitize_facility_safe(&key.facility_safe),
+                count,
+                avg_ms: average_ms(value.duration_ns_sum(), count),
+                p50_ms: duration_percentile_ms(&bucket_counts, RUM_DURATION_BUCKETS, count, 0.50),
+                p95_ms: duration_percentile_ms(&bucket_counts, RUM_DURATION_BUCKETS, count, 0.95),
+                p99_ms: duration_percentile_ms(&bucket_counts, RUM_DURATION_BUCKETS, count, 0.99),
+            }
+        })
+        .collect::<Vec<_>>();
+    snapshots.sort_by(|left, right| {
+        right.count.cmp(&left.count).then_with(|| {
+            left.route_pattern
+                .cmp(&right.route_pattern)
+                .then(left.status_bucket.cmp(&right.status_bucket))
+        })
+    });
+    snapshots
+}
+
+fn route_payload_snapshots(
+    metrics: &BTreeMap<RouteMetricKey, Arc<RoutePayloadMetricValue>>,
+) -> Vec<RoutePayloadSnapshot> {
+    let mut snapshots = metrics
+        .iter()
+        .map(|(key, value)| {
+            let count = value.count();
+            let bucket_counts = value.bytes_bucket_counts();
+            RoutePayloadSnapshot {
+                route_pattern: snapshot_route_pattern(&key.route_pattern),
+                status_bucket: key.status_bucket.clone(),
+                facility_safe: sanitize_facility_safe(&key.facility_safe),
+                count,
+                avg_bytes: (count > 0).then(|| value.bytes_sum() as f64 / count as f64),
+                p50_bytes: bytes_percentile(&bucket_counts, count, 0.50),
+                p95_bytes: bytes_percentile(&bucket_counts, count, 0.95),
+                p99_bytes: bytes_percentile(&bucket_counts, count, 0.99),
+            }
+        })
+        .collect::<Vec<_>>();
+    snapshots.sort_by(|left, right| {
+        right.count.cmp(&left.count).then_with(|| {
+            left.route_pattern
+                .cmp(&right.route_pattern)
+                .then(left.status_bucket.cmp(&right.status_bucket))
+        })
+    });
+    snapshots
+}
+
+fn route_counter_snapshots(
+    metrics: &BTreeMap<RouteMetricKey, Arc<RouteCounterMetricValue>>,
+) -> Vec<RouteCounterSnapshot> {
+    let mut snapshots = metrics
+        .iter()
+        .map(|(key, value)| RouteCounterSnapshot {
+            route_pattern: snapshot_route_pattern(&key.route_pattern),
+            status_bucket: key.status_bucket.clone(),
+            facility_safe: sanitize_facility_safe(&key.facility_safe),
+            count: value.count(),
+        })
+        .collect::<Vec<_>>();
+    snapshots.sort_by(|left, right| {
+        right.count.cmp(&left.count).then_with(|| {
+            left.route_pattern
+                .cmp(&right.route_pattern)
+                .then(left.status_bucket.cmp(&right.status_bucket))
+        })
+    });
+    snapshots
+}
+
+fn db_query_fingerprint_snapshots(
+    metrics: &BTreeMap<DbQueryMetricKey, Arc<DbQueryMetricValue>>,
+) -> Vec<DbQueryFingerprintSnapshot> {
+    let mut snapshots = metrics
+        .iter()
+        .map(|(key, value)| {
+            let count = value.count();
+            let total_ms = nanos_to_seconds(value.duration_ns_sum()) * 1000.0;
+            let bucket_counts = value.duration_bucket_counts();
+            DbQueryFingerprintSnapshot {
+                fingerprint: snapshot_query_fingerprint(&key.query),
+                count,
+                total_ms,
+                avg_ms: average_ms(value.duration_ns_sum(), count),
+                p95_ms: duration_percentile_ms(
+                    &bucket_counts,
+                    DB_QUERY_DURATION_BUCKETS,
+                    count,
+                    0.95,
+                ),
+                p99_ms: duration_percentile_ms(
+                    &bucket_counts,
+                    DB_QUERY_DURATION_BUCKETS,
+                    count,
+                    0.99,
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+    snapshots.sort_by(|left, right| {
+        right
+            .total_ms
+            .partial_cmp(&left.total_ms)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.fingerprint.cmp(&right.fingerprint))
+    });
+    snapshots
+}
+
+fn average_ms(duration_ns_sum: u64, count: u64) -> Option<f64> {
+    (count > 0).then(|| nanos_to_seconds(duration_ns_sum) * 1000.0 / count as f64)
+}
+
+fn duration_percentile_ms(
+    bucket_counts: &[u64],
+    buckets: &[f64],
+    count: u64,
+    quantile: f64,
+) -> Option<f64> {
+    histogram_percentile_upper_bound(bucket_counts, buckets, count, quantile)
+        .map(|seconds| seconds * 1000.0)
+}
+
+fn bytes_percentile(bucket_counts: &[u64], count: u64, quantile: f64) -> Option<u64> {
+    histogram_percentile_upper_bound(bucket_counts, API_PAYLOAD_SIZE_BUCKETS, count, quantile)
+        .map(|bytes| bytes as u64)
+}
+
+fn histogram_percentile_upper_bound(
+    bucket_counts: &[u64],
+    buckets: &[f64],
+    count: u64,
+    quantile: f64,
+) -> Option<f64> {
+    if count == 0 {
+        return None;
+    }
+
+    let target = ((count as f64) * quantile).ceil().max(1.0) as u64;
+    let mut cumulative = 0_u64;
+    for (index, upper_bound) in buckets.iter().enumerate() {
+        cumulative += bucket_counts.get(index).copied().unwrap_or_default();
+        if cumulative >= target {
+            return Some(*upper_bound);
+        }
+    }
+    None
+}
+
+fn snapshot_route_pattern(value: &str) -> String {
+    normalize_browser_route_pattern(value)
+}
+
+fn snapshot_query_fingerprint(value: &str) -> String {
+    let lower = value.to_ascii_lowercase();
+    let raw_sql_marker = lower.contains("select")
+        || lower.contains("insert")
+        || lower.contains("update")
+        || lower.contains("delete")
+        || lower.contains(" where ")
+        || lower.contains(" from ")
+        || lower.contains(" join ")
+        || lower.contains("patient_code")
+        || lower.contains("mrn");
+    let unsafe_punctuation = value.bytes().any(|byte| {
+        byte.is_ascii_whitespace()
+            || matches!(
+                byte,
+                b'\'' | b'"' | b';' | b',' | b'(' | b')' | b'*' | b'=' | b'<' | b'>'
+            )
+    });
+    if raw_sql_marker || unsafe_punctuation {
+        "_redacted_query_fingerprint".to_owned()
+    } else {
+        sanitize_query_label(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1896,6 +2305,61 @@ mod tests {
         assert!(metrics.contains("hms_db_query_duration_seconds_count{route_pattern=\"/api/v2/patients/:id/chronicle\",status_bucket=\"2xx\",facility_safe=\"MAIN\"} 2"));
         assert!(metrics.contains("hms_db_slow_query_total{route_pattern=\"/api/v2/patients/:id/chronicle\",status_bucket=\"2xx\",facility_safe=\"MAIN\"} 1"));
         assert!(metrics.contains("hms_db_pool_wait_seconds_count{route_pattern=\"/api/v2/patients/:id/chronicle\",status_bucket=\"2xx\",facility_safe=\"MAIN\"} 1"));
+    }
+
+    #[test]
+    fn metrics_snapshot_redacts_unsafe_routes_and_query_fingerprints() {
+        let _guard = TEST_LOCK.lock().expect("test lock is available");
+        reset_metrics_for_tests();
+        let patient_id = "018f4d5f-8469-7ae0-8b42-7b2a3f790c91";
+        let request_metrics = RequestMetricsSnapshot {
+            db_query_count: 1,
+            db_query_durations: vec![Duration::from_millis(300)],
+            db_pool_wait_durations: vec![Duration::from_millis(2)],
+        };
+
+        record_http_route_metrics(
+            &format!("/api/v2/patients/{patient_id}/chronicle"),
+            "200",
+            "main",
+            Duration::from_millis(125),
+            Some(8_192),
+            &request_metrics,
+        );
+        record_db_query(
+            "SELECT * FROM patients WHERE patient_code = 'P-0000000001'",
+            Duration::from_millis(300),
+        );
+        record_browser_rum_event(
+            "api",
+            "duration",
+            "/patients/Ama Mensah/chronicle",
+            "200",
+            "main",
+            Duration::from_millis(125),
+        );
+
+        let snapshot = metrics_snapshot();
+        let debug = format!("{snapshot:?}");
+
+        assert!(snapshot
+            .api_payloads
+            .iter()
+            .any(|route| route.route_pattern == "/api/v2/patients/:id/chronicle"));
+        assert!(snapshot
+            .db_query_fingerprints
+            .iter()
+            .any(|query| query.fingerprint == "_redacted_query_fingerprint"));
+        assert!(snapshot
+            .browser_rum
+            .all
+            .iter()
+            .any(|route| route.route_pattern == "/patients/:id/chronicle"));
+        assert!(!debug.contains(patient_id));
+        assert!(!debug.contains("Ama"));
+        assert!(!debug.contains("Mensah"));
+        assert!(!debug.contains("P-0000000001"));
+        assert!(!debug.contains("SELECT"));
     }
 
     #[tokio::test]

@@ -89,6 +89,37 @@ The Rust API exposes PHI-safe Prometheus text at `/api/v2/metrics` on the
 container network. Caddy returns `404` for that path publicly, so scrape it from
 inside the VPS network or through a private monitoring sidecar.
 
+The V2 Compose stack includes a private Prometheus service that scrapes the
+Rust API inside Docker at `hms-api:8080/api/v2/metrics`. It has no published
+host port and must not be routed through Caddy:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml up -d prometheus
+```
+
+Grafana is included only as an engineer fallback/debug console. It binds to
+`127.0.0.1:${GRAFANA_LOCAL_PORT:-3001}` on the VPS, uses the private
+Prometheus datasource, and must be opened through SSH tunneling:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml up -d grafana
+ssh -L 3001:127.0.0.1:3001 hms-staging
+```
+
+Then visit `http://127.0.0.1:3001` and sign in with
+`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from the private `.env` file.
+Generate a unique Grafana password per client VPS; do not commit it.
+
+The public Caddy edge can reserve an ops host for the custom HMS Ops dashboard.
+Leave `OPS_DOMAIN=localhost` until DNS is ready. To enable it, set
+`OPS_DOMAIN=ops.<client-domain>` or another explicit ops hostname and keep
+`OPS_DASHBOARD_UPSTREAM=frontend:80` unless a future standalone ops frontend is
+introduced. The ops host proxies `/api/v2/*` to `hms-api`, redirects `/` to
+`/system/ops`, and serves the protected React route for everything else. The
+dashboard must continue to enforce HMS authentication plus `system.ops.view`
+before the ops DNS record is published. Do not point this route at Grafana or
+Prometheus.
+
 Postgres is started with `pg_stat_statements` preloaded for staging and
 production diagnostics. Existing databases still need the extension enabled
 once after the Postgres container has restarted with the preload setting:

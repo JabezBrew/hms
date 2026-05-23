@@ -36,6 +36,8 @@ services:
     image: caddy:2-alpine
     environment:
       CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/hetzner-v2/.env}
+      OPS_DOMAIN: ${OPS_DOMAIN:-localhost}
+      OPS_DASHBOARD_UPSTREAM: ${OPS_DASHBOARD_UPSTREAM:-frontend:80}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/hetzner-v2/.env}
     ports:
       - "80:80"
@@ -158,6 +160,65 @@ services:
       start_period: 30s
     mem_limit: 384m
     cpus: 0.50
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}
+      - --web.listen-address=0.0.0.0:9090
+    expose:
+      - "9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      hms-api:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-CHANGE_ME_before_starting_grafana}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SERVER_HTTP_ADDR: 0.0.0.0
+      GF_SERVER_HTTP_PORT: "3000"
+    ports:
+      - "127.0.0.1:${GRAFANA_LOCAL_PORT:-3001}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   hms-migrator:
     <<: *rust-image
@@ -317,3 +378,5 @@ volumes:
   caddy_config:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:

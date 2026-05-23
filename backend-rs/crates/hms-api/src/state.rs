@@ -279,12 +279,20 @@ impl AppState {
         self.inner.pool.num_idle()
     }
 
+    pub fn postgres_pool_max_connections(&self) -> u32 {
+        self.inner.config.database_max_connections
+    }
+
     pub fn auth_postgres_pool_size(&self) -> u32 {
         self.inner.auth_pool.size()
     }
 
     pub fn auth_postgres_pool_idle(&self) -> usize {
         self.inner.auth_pool.num_idle()
+    }
+
+    pub fn auth_postgres_pool_max_connections(&self) -> u32 {
+        auth_pool_max_connections(self.inner.config.database_max_connections)
     }
 
     pub fn rum_enabled(&self) -> bool {

@@ -151,6 +151,8 @@ describe('featureRoutes', () => {
     expect(routesByPath.get('/admin/audit-logs')?.features).toEqual(
       expect.arrayContaining(['audit'])
     )
+    expect(routesByPath.get('/system/ops')?.roles).toEqual([])
+    expect(routesByPath.get('/system/ops')?.capabilities).toEqual(['system.ops.view'])
     expect(routesByPath.get('/charts/templates')?.features).toEqual(
       expect.arrayContaining(['clinical_notes'])
     )

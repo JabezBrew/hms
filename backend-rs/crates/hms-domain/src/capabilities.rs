@@ -180,6 +180,7 @@ fn permissions_for_features(features: &HashMap<FeatureKey, bool>) -> Vec<Permiss
         permissions.push(PermissionCode::AdminAuthorityManage);
         permissions.push(PermissionCode::AdminFeatureEntitlementsManage);
         permissions.push(PermissionCode::AdminStaffManage);
+        permissions.push(PermissionCode::SystemOpsView);
     }
     if enabled(&features, FeatureKey::Dashboards) {
         permissions.push(PermissionCode::DashboardView);

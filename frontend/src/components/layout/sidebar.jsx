@@ -16,6 +16,7 @@ import FileSearch from 'lucide-react/dist/esm/icons/file-search.js'
 import TestTube2 from 'lucide-react/dist/esm/icons/test-tube-diagonal.js'
 import ArrowLeftRight from 'lucide-react/dist/esm/icons/arrow-left-right.js'
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js'
+import Gauge from 'lucide-react/dist/esm/icons/gauge.js'
 import FolderTree from 'lucide-react/dist/esm/icons/folder-tree.js'
 import CalendarClock from 'lucide-react/dist/esm/icons/calendar-clock.js'
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js'
@@ -418,6 +419,15 @@ const globalSections = [
           features: ['audit'],
           exact: true,
         }),
+        item({
+          key: 'ops-dashboard',
+          label: 'Ops Dashboard',
+          href: '/system/ops',
+          icon: Gauge,
+          roles: [],
+          capabilities: [ADMIN_CAPABILITIES.SYSTEM_OPS_VIEW],
+          exact: true,
+        }),
       ],
     }),
   ]),
@@ -529,6 +539,7 @@ const adminSections = [
     item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE], exact: false }),
     item({ key: 'duty-roster', label: 'Duty Roster', href: '/admin/organization/duty-roster', icon: CalendarClock, roles: DUTY_ROSTER_ROLES, capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW], features: ['department_rosters'], exact: true }),
     item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], features: ['audit'], exact: true }),
+    item({ key: 'ops-dashboard', label: 'Ops Dashboard', href: '/system/ops', icon: Gauge, roles: [], capabilities: [ADMIN_CAPABILITIES.SYSTEM_OPS_VIEW], exact: true }),
   ]),
 ]
 

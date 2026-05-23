@@ -14844,6 +14844,161 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_OpsDatabaseSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "pool_waits": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsRouteLatencySummary"
+                },
+                "type": "array"
+              },
+              "pools": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsPoolSummary"
+                },
+                "type": "array"
+              },
+              "slow_queries_by_route": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsRouteCounterSummary"
+                },
+                "type": "array"
+              },
+              "slow_query_fingerprints": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsQueryFingerprintSummary"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "pools",
+              "pool_waits",
+              "slow_query_fingerprints",
+              "slow_queries_by_route",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsFrontendSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "rum": {
+                "$ref": "#/components/schemas/OpsBrowserRumSummary"
+              },
+              "rum_enabled": {
+                "type": "boolean"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "rum_enabled",
+              "rum",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsOverviewSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "api": {
+                "$ref": "#/components/schemas/OpsApiHealthSummary"
+              },
+              "database": {
+                "$ref": "#/components/schemas/OpsDatabaseSnapshot"
+              },
+              "frontend": {
+                "$ref": "#/components/schemas/OpsFrontendSnapshot"
+              },
+              "performance": {
+                "$ref": "#/components/schemas/OpsPerformanceSnapshot"
+              },
+              "runtime": {
+                "$ref": "#/components/schemas/OpsRuntimeSummary"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "runtime",
+              "api",
+              "database",
+              "performance",
+              "frontend",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_OpsPerformanceSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "payloads": {
+                "items": {
+                  "$ref": "#/components/schemas/OpsPayloadRouteSummary"
+                },
+                "type": "array"
+              },
+              "request_context_cache": {
+                "$ref": "#/components/schemas/OpsRequestContextCacheSummary"
+              },
+              "routes": {
+                "$ref": "#/components/schemas/OpsRouteLatencyGroups"
+              },
+              "source": {
+                "$ref": "#/components/schemas/OpsSnapshotSource"
+              }
+            },
+            "required": [
+              "routes",
+              "request_context_cache",
+              "payloads",
+              "source"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_OrganizationUnitListItem": {
         "properties": {
           "data": {
@@ -17458,6 +17613,562 @@
         ],
         "type": "object"
       },
+      "OpsApiHealthSummary": {
+        "properties": {
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/OpsDependencyStatus"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "ready",
+          "dependencies"
+        ],
+        "type": "object"
+      },
+      "OpsBrowserRumSummary": {
+        "properties": {
+          "all": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "api": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "app_shell": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "navigation": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "all",
+          "api",
+          "navigation",
+          "app_shell"
+        ],
+        "type": "object"
+      },
+      "OpsDataNote": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "note"
+        ],
+        "type": "object"
+      },
+      "OpsDatabaseSnapshot": {
+        "properties": {
+          "pool_waits": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/OpsPoolSummary"
+            },
+            "type": "array"
+          },
+          "slow_queries_by_route": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteCounterSummary"
+            },
+            "type": "array"
+          },
+          "slow_query_fingerprints": {
+            "items": {
+              "$ref": "#/components/schemas/OpsQueryFingerprintSummary"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "pools",
+          "pool_waits",
+          "slow_query_fingerprints",
+          "slow_queries_by_route",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsDependencyStatus": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "OpsFrontendSnapshot": {
+        "properties": {
+          "rum": {
+            "$ref": "#/components/schemas/OpsBrowserRumSummary"
+          },
+          "rum_enabled": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "rum_enabled",
+          "rum",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsOverviewSnapshot": {
+        "properties": {
+          "api": {
+            "$ref": "#/components/schemas/OpsApiHealthSummary"
+          },
+          "database": {
+            "$ref": "#/components/schemas/OpsDatabaseSnapshot"
+          },
+          "frontend": {
+            "$ref": "#/components/schemas/OpsFrontendSnapshot"
+          },
+          "performance": {
+            "$ref": "#/components/schemas/OpsPerformanceSnapshot"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/OpsRuntimeSummary"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "runtime",
+          "api",
+          "database",
+          "performance",
+          "frontend",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsPayloadRouteSummary": {
+        "properties": {
+          "avg_bytes": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "facility_safe": {
+            "type": "string"
+          },
+          "p50_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "p95_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "p99_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "route_pattern": {
+            "type": "string"
+          },
+          "status_bucket": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_pattern",
+          "status_bucket",
+          "facility_safe",
+          "count"
+        ],
+        "type": "object"
+      },
+      "OpsPerformanceSnapshot": {
+        "properties": {
+          "payloads": {
+            "items": {
+              "$ref": "#/components/schemas/OpsPayloadRouteSummary"
+            },
+            "type": "array"
+          },
+          "request_context_cache": {
+            "$ref": "#/components/schemas/OpsRequestContextCacheSummary"
+          },
+          "routes": {
+            "$ref": "#/components/schemas/OpsRouteLatencyGroups"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OpsSnapshotSource"
+          }
+        },
+        "required": [
+          "routes",
+          "request_context_cache",
+          "payloads",
+          "source"
+        ],
+        "type": "object"
+      },
+      "OpsPoolSummary": {
+        "properties": {
+          "idle": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "in_use": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_connections": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pressure": {
+            "format": "double",
+            "type": "number"
+          },
+          "pressure_state": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "idle",
+          "in_use",
+          "max_connections",
+          "pressure",
+          "pressure_state"
+        ],
+        "type": "object"
+      },
+      "OpsQueryFingerprintSummary": {
+        "properties": {
+          "avg_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "p95_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "p99_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_ms": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "count",
+          "total_ms"
+        ],
+        "type": "object"
+      },
+      "OpsRequestContextCacheSummary": {
+        "properties": {
+          "hit_rate": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "hits_by_route": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteCounterSummary"
+            },
+            "type": "array"
+          },
+          "hits_total": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "misses_by_route": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteCounterSummary"
+            },
+            "type": "array"
+          },
+          "misses_total": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hits_total",
+          "misses_total",
+          "hits_by_route",
+          "misses_by_route"
+        ],
+        "type": "object"
+      },
+      "OpsRouteCounterSummary": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "facility_safe": {
+            "type": "string"
+          },
+          "route_pattern": {
+            "type": "string"
+          },
+          "status_bucket": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_pattern",
+          "status_bucket",
+          "facility_safe",
+          "count"
+        ],
+        "type": "object"
+      },
+      "OpsRouteLatencyGroups": {
+        "properties": {
+          "chronicle": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "dashboards": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "db_queries_by_route": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "request_context_hydration": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          },
+          "ward_board": {
+            "items": {
+              "$ref": "#/components/schemas/OpsRouteLatencySummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "chronicle",
+          "dashboards",
+          "ward_board",
+          "request_context_hydration",
+          "db_queries_by_route"
+        ],
+        "type": "object"
+      },
+      "OpsRouteLatencySummary": {
+        "properties": {
+          "avg_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "facility_safe": {
+            "type": "string"
+          },
+          "p50_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "p95_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "p99_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "route_pattern": {
+            "type": "string"
+          },
+          "status_bucket": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_pattern",
+          "status_bucket",
+          "facility_safe",
+          "count"
+        ],
+        "type": "object"
+      },
+      "OpsRuntimeSummary": {
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "version",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "OpsSnapshotSource": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/OpsDataNote"
+            },
+            "type": "array"
+          },
+          "window": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "generated_at",
+          "window",
+          "notes"
+        ],
+        "type": "object"
+      },
       "OrgUnitType": {
         "enum": [
           "facility",
@@ -18668,6 +19379,7 @@
         "enum": [
           "auth.me.view",
           "system.deployment_capabilities.view",
+          "system.ops.view",
           "patient.demographics.view",
           "patient.create",
           "patient.update",
@@ -38368,6 +39080,186 @@
         ]
       }
     },
+    "/api/v2/ops/database": {
+      "get": {
+        "operationId": "getOpsDatabase",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsDatabaseSnapshot"
+                }
+              }
+            },
+            "description": "PHI-safe database and pool snapshot"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ops dashboard permission is required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/frontend": {
+      "get": {
+        "operationId": "getOpsFrontend",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsFrontendSnapshot"
+                }
+              }
+            },
+            "description": "PHI-safe frontend RUM snapshot"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ops dashboard permission is required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/overview": {
+      "get": {
+        "operationId": "getOpsOverview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsOverviewSnapshot"
+                }
+              }
+            },
+            "description": "Engineer dashboard overview snapshot"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ops dashboard permission is required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/api/v2/ops/performance": {
+      "get": {
+        "operationId": "getOpsPerformance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_OpsPerformanceSnapshot"
+                }
+              }
+            },
+            "description": "PHI-safe API performance snapshot"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ops dashboard permission is required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "ops"
+        ]
+      }
+    },
     "/api/v2/patients": {
       "get": {
         "operationId": "getPatients",
@@ -44454,6 +45346,10 @@
     {
       "description": "PHI-safe browser and service observability ingestion",
       "name": "observability"
+    },
+    {
+      "description": "Allowlisted PHI-safe engineering dashboard summaries",
+      "name": "ops"
     },
     {
       "description": "Pharmacy dispensing and controlled-substance register workflows",

@@ -9,6 +9,7 @@ pub mod health;
 pub mod inventory;
 pub mod laboratory;
 pub mod observability;
+pub mod ops;
 pub mod patients;
 pub mod referrals;
 pub mod search;

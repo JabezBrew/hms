@@ -169,6 +169,27 @@ describe('dynamic sidebar', () => {
     expect(screen.queryByRole('link', { name: /Audit Logs/i })).not.toBeInTheDocument()
   })
 
+  it('shows the ops dashboard only to users with the system ops capability', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.ADMIN,
+      user: { role: ROLES.ADMIN },
+      route: '/admin/organization',
+    })
+
+    expect(screen.queryByRole('link', { name: /Ops Dashboard/i })).not.toBeInTheDocument()
+
+    renderSidebar({
+      sidebar: SIDEBARS.ADMIN,
+      user: {
+        role: ROLES.ADMIN,
+        adminAccess: { capabilities: ['system.ops.view'] },
+      },
+      route: '/system/ops',
+    })
+
+    expect(screen.getByRole('link', { name: /Ops Dashboard/i })).toHaveAttribute('href', '/system/ops')
+  })
+
   it('hides feature-gated entries until feature flags are known', () => {
     renderSidebar({
       sidebar: SIDEBARS.GLOBAL,

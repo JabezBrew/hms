@@ -55,6 +55,7 @@ pub fn is_privileged_permission(permission: &PermissionCode) -> bool {
         PermissionCode::AdminAuthorityManage
             | PermissionCode::AdminFeatureEntitlementsManage
             | PermissionCode::AdminStaffManage
+            | PermissionCode::SystemOpsView
             | PermissionCode::ControlledSubstanceManage
             | PermissionCode::LaboratoryResultVerify
             | PermissionCode::BillingManage
