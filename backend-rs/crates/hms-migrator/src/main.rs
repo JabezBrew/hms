@@ -82,6 +82,13 @@ fn baseline_from_env(profile: DeploymentProfile) -> anyhow::Result<BaselineProvi
             .map(|value| parse_bool(value, "HMS_SEED_DEMO_DATA"))
             .transpose()?
             .unwrap_or(false),
+        ops_operator_emails: env::var("HMS_OPS_OPERATOR_EMAILS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect(),
     })
 }
 

@@ -30,6 +30,7 @@ import { PageHeader } from '@/shared/components/page/PageHeader'
 import { PageShell } from '@/shared/components/page/PageShell'
 import { PageState } from '@/shared/components/page/PageState'
 import { usePageMeta } from '@/shared/hooks/usePageMeta'
+import { isOpsDashboardHost } from '@/features/ops/host'
 import { useOpsDashboard } from '@/features/ops/hooks'
 
 const WINDOW_OPTIONS = [
@@ -659,6 +660,7 @@ function LoadingDashboard({ pageMeta }) {
 
 export default function OpsDashboardPage() {
   const [windowValue, setWindowValue] = useState('15m')
+  const opsHostAllowed = isOpsDashboardHost()
   const pageMeta = usePageMeta({
     title: 'Ops Dashboard | Hospital Management System',
     breadcrumbs: [
@@ -667,7 +669,7 @@ export default function OpsDashboardPage() {
     ],
   })
 
-  const dashboardQuery = useOpsDashboard({ window: windowValue })
+  const dashboardQuery = useOpsDashboard({ window: windowValue }, { enabled: opsHostAllowed })
   const dashboard = dashboardQuery.data || EMPTY_DASHBOARD
   const budgets = useMemo(() => normalizeBudgets(dashboard), [dashboard])
   const routes = useMemo(() => normalizeRouteRows(dashboard), [dashboard])
@@ -678,6 +680,20 @@ export default function OpsDashboardPage() {
   const deployment = useMemo(() => normalizeDeployment(dashboard), [dashboard])
   const updatedAt = valueFrom(dashboard.generated_at, dashboard.generatedAt)
   const cacheHitPercent = normalizePercentNumber(valueFrom(cache.hit_ratio, cache.hit_percent))
+
+  if (!opsHostAllowed) {
+    return (
+      <>
+        {pageMeta}
+        <PageState
+          variant="empty"
+          title="Not found"
+          description="This page is not available on this host."
+          icon={ShieldCheck}
+        />
+      </>
+    )
+  }
 
   if (dashboardQuery.isLoading && !dashboardQuery.data) {
     return <LoadingDashboard pageMeta={pageMeta} />

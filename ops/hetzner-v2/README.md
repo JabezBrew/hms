@@ -116,9 +116,17 @@ Leave `OPS_DOMAIN=localhost` until DNS is ready. To enable it, set
 `OPS_DASHBOARD_UPSTREAM=frontend:80` unless a future standalone ops frontend is
 introduced. The ops host proxies `/api/v2/*` to `hms-api`, redirects `/` to
 `/system/ops`, and serves the protected React route for everything else. The
-dashboard must continue to enforce HMS authentication plus `system.ops.view`
-before the ops DNS record is published. Do not point this route at Grafana or
-Prometheus.
+client hospital host returns `404` for `/system/ops` and `/api/v2/ops/*`; those
+paths are reserved for `OPS_DOMAIN`. The frontend receives `OPS_DOMAIN` as the
+allowed ops dashboard host at container start. The dashboard must continue to
+enforce HMS authentication plus `system.ops.view` before the ops DNS record is
+published.
+`system.ops.view` is not seeded into normal client deployment-profile
+permissions, so grant it only through a platform/operator provisioning process,
+not through hospital facility-admin workflows. Set `HMS_OPS_OPERATOR_EMAILS`
+to a comma-separated list of existing HMS user emails in the private `.env`
+file when those users should receive dashboard access during provisioning. Do
+not point this route at Grafana or Prometheus.
 
 Postgres is started with `pg_stat_statements` preloaded for staging and
 production diagnostics. Existing databases still need the extension enabled

@@ -6,8 +6,14 @@ import { BreadcrumbProvider } from '@/components/layout/PageBreadcrumb'
 import OpsDashboardPage from '../OpsDashboardPage'
 import { useOpsDashboard } from '@/features/ops/hooks'
 
+const opsHostMock = vi.hoisted(() => ({ allowed: true }))
+
 vi.mock('@/features/ops/hooks', () => ({
   useOpsDashboard: vi.fn(),
+}))
+
+vi.mock('@/features/ops/host', () => ({
+  isOpsDashboardHost: vi.fn(() => opsHostMock.allowed),
 }))
 
 const mockUseOpsDashboard = vi.mocked(useOpsDashboard)
@@ -108,6 +114,18 @@ const dashboardFixture = {
 describe('OpsDashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    opsHostMock.allowed = true
+  })
+
+  it('does not load dashboard data on non-ops hosts', () => {
+    opsHostMock.allowed = false
+    mockUseOpsDashboard.mockReturnValue(queryState({}))
+
+    renderOpsDashboard()
+
+    expect(mockUseOpsDashboard).toHaveBeenCalledWith({ window: '15m' }, { enabled: false })
+    expect(screen.getByText('Not found')).toBeInTheDocument()
+    expect(screen.getByText('This page is not available on this host.')).toBeInTheDocument()
   })
 
   it('renders a loading state', () => {

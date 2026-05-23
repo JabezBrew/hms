@@ -450,10 +450,12 @@ Authorization:
 
 - Every `/api/v2/ops/*` endpoint must require an authenticated
   `RequestContext`.
-- Every endpoint must require an explicit ops dashboard permission such as
-  `ops.dashboard.view`.
+- Every endpoint must require the explicit ops dashboard permission
+  `system.ops.view`.
 - The permission is granted only to platform administrator/operator authority,
   not client facility administrators.
+- `system.ops.view` must not be included in deployment-profile permission seeds
+  or assignable through normal client facility-admin workflows.
 - No endpoint may rely on a broad `is_admin` check.
 - The frontend must hide the dashboard unless the same capability is present,
   but backend authorization is authoritative.
@@ -461,6 +463,8 @@ Authorization:
 Transport and exposure:
 
 - The UI is served only on the ops subdomain surface.
+- The client hospital host must return `404` for `/system/ops` and
+  `/api/v2/ops/*`.
 - Prometheus, Grafana, Loki, Postgres, Redis, metrics proxy, and exporter ports
   remain private.
 - The browser calls only the HMS `/api/v2/ops/*` JSON API. It never calls

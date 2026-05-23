@@ -22,6 +22,12 @@
 	@publicMetrics path /api/v2/metrics
 	respond @publicMetrics 404
 
+	@opsApi path /api/v2/ops /api/v2/ops/*
+	respond @opsApi 404
+
+	@opsUi path /system/ops /system/ops/*
+	respond @opsUi 404
+
 	@api path /api/v2/*
 	reverse_proxy @api hms-api:8080
 

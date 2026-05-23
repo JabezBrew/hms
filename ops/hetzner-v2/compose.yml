@@ -83,6 +83,7 @@ services:
       DEFAULT_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
       MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
       RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
+      OPS_DASHBOARD_HOSTS: ${OPS_DOMAIN:-localhost}
     expose:
       - "80"
     networks:
@@ -233,6 +234,7 @@ services:
       HMS_BOOTSTRAP_ADMIN_NAME: ${HMS_BOOTSTRAP_ADMIN_NAME:-HMS Administrator}
       HMS_BOOTSTRAP_ADMIN_PASSWORD: ${HMS_BOOTSTRAP_ADMIN_PASSWORD:?set HMS_BOOTSTRAP_ADMIN_PASSWORD in ops/hetzner-v2/.env}
       HMS_SEED_DEMO_DATA: ${HMS_SEED_DEMO_DATA:-false}
+      HMS_OPS_OPERATOR_EMAILS: ${HMS_OPS_OPERATOR_EMAILS:-}
     depends_on:
       db:
         condition: service_healthy

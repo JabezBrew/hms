@@ -50,6 +50,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useAuth } from '@/lib/auth'
 import { useInboxCount } from '@/features/inbox/hooks'
+import { isOpsDashboardHost } from '@/features/ops/host'
 import { useSystemCapabilities } from '@/hooks/useSystemQueries'
 import { ADMIN_CAPABILITIES, ROLES, ROLE_GROUPS } from '@/shared/constants/roles'
 import { userCanAccess } from '@/shared/lib/access'
@@ -167,6 +168,7 @@ const item = ({
   exact,
   badge,
   props,
+  host,
 }) => ({
   key,
   label,
@@ -179,6 +181,7 @@ const item = ({
   exact,
   badge,
   props,
+  host,
 })
 
 const section = (key, label, items) => ({ key, label, items })
@@ -426,6 +429,7 @@ const globalSections = [
           icon: Gauge,
           roles: [],
           capabilities: [ADMIN_CAPABILITIES.SYSTEM_OPS_VIEW],
+          host: 'ops',
           exact: true,
         }),
       ],
@@ -539,7 +543,7 @@ const adminSections = [
     item({ key: 'organization', label: 'Organization', href: '/admin/organization', icon: FolderTree, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.ORGANIZATION_MANAGE], exact: false }),
     item({ key: 'duty-roster', label: 'Duty Roster', href: '/admin/organization/duty-roster', icon: CalendarClock, roles: DUTY_ROSTER_ROLES, capabilities: [ADMIN_CAPABILITIES.ROSTER_VIEW], features: ['department_rosters'], exact: true }),
     item({ key: 'audit-logs', label: 'Audit Logs', href: '/admin/audit-logs', icon: FileSearch, roles: ROLE_GROUPS.ADMIN_ONLY, capabilities: [ADMIN_CAPABILITIES.AUDIT_VIEW], features: ['audit'], exact: true }),
-    item({ key: 'ops-dashboard', label: 'Ops Dashboard', href: '/system/ops', icon: Gauge, roles: [], capabilities: [ADMIN_CAPABILITIES.SYSTEM_OPS_VIEW], exact: true }),
+    item({ key: 'ops-dashboard', label: 'Ops Dashboard', href: '/system/ops', icon: Gauge, roles: [], capabilities: [ADMIN_CAPABILITIES.SYSTEM_OPS_VIEW], host: 'ops', exact: true }),
   ]),
 ]
 
@@ -621,6 +625,10 @@ function formatBadge(value) {
 }
 
 function resolveItem(entry, context) {
+  if (entry.host === 'ops' && !isOpsDashboardHost()) {
+    return null
+  }
+
   if (!hasFeatureAccess(entry.features, context.enabledFeatures, context) || !hasAccess(context.user, entry)) {
     return null
   }

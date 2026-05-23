@@ -33,6 +33,18 @@ async fn ops_endpoints_require_ops_access_and_return_phi_safe_snapshots() {
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
     }
 
+    let owner_without_platform_grant = Actor::login(&app, "owner@hms.local").await;
+    for endpoint in OPS_ENDPOINTS {
+        let response = api_get(app.clone(), &owner_without_platform_grant, endpoint).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
+    }
+
+    grant_test_permission(
+        &app,
+        Uuid::from_u128(hms_db::provision::OWNER_USER_ID),
+        PermissionCode::SystemOpsView,
+    )
+    .await;
     let owner = Actor::login(&app, "owner@hms.local").await;
     let patient_id = Uuid::new_v4();
 
