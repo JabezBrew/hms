@@ -219,6 +219,7 @@ pub struct OpsRuntimeSummary {
     pub service: String,
     pub version: String,
     pub build_sha: Option<String>,
+    pub image_tag: Option<String>,
     pub started_at: DateTime<Utc>,
     pub deployed_at: Option<DateTime<Utc>>,
     pub cloudflare_access: OpsConfigurationStatus,
@@ -358,6 +359,7 @@ pub struct OpsServiceErrorSummary {
 pub struct OpsDeploySummary {
     pub service: String,
     pub build_sha: Option<String>,
+    pub image_tag: Option<String>,
     pub environment: String,
     pub version: String,
     pub started_at: DateTime<Utc>,
@@ -1004,6 +1006,7 @@ fn runtime_summary(state: &AppState) -> OpsRuntimeSummary {
         service: "hms-api".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         build_sha: build_sha(),
+        image_tag: image_tag(),
         started_at: state.started_at(),
         deployed_at: deployed_at(),
         cloudflare_access: cloudflare_access_status(state),
@@ -1014,6 +1017,7 @@ fn current_deploy_summary(state: &AppState) -> OpsDeploySummary {
     OpsDeploySummary {
         service: "hms-api".to_owned(),
         build_sha: build_sha(),
+        image_tag: image_tag(),
         environment: safe_env_value("HMS_ENV").unwrap_or_else(|| "unknown".to_owned()),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         started_at: state.started_at(),
@@ -1027,6 +1031,12 @@ fn build_sha() -> Option<String> {
     safe_env_value("HMS_BUILD_SHA")
         .or_else(|| safe_env_value("SOURCE_VERSION"))
         .or_else(|| safe_env_value("GIT_COMMIT"))
+}
+
+fn image_tag() -> Option<String> {
+    safe_env_value("HMS_IMAGE_TAG")
+        .or_else(|| safe_env_value("VERSION"))
+        .filter(|value| value != "latest")
 }
 
 fn deployed_at() -> Option<DateTime<Utc>> {

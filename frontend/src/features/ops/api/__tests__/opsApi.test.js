@@ -17,8 +17,9 @@ describe('opsApi', () => {
 
   it('requests the Rust V2 ops dashboard with the TanStack Query abort signal', async () => {
     const signal = new AbortController().signal
-    v2Request.mockResolvedValueOnce({
-      data: {
+    v2Request
+      .mockResolvedValueOnce({
+        data: {
         runtime: {
           service: 'hms-api',
           version: '0.1.0',
@@ -89,7 +90,36 @@ describe('opsApi', () => {
           window: 'current_process_lifetime',
         },
       },
-    })
+      })
+      .mockResolvedValueOnce({
+        data: {
+          routes: [{
+            route_pattern: '/api/v2/patients/:id/chronicle',
+            status_bucket: '2xx',
+            facility_safe: 'MAIN',
+            count: 14,
+            p95_bytes: 65_536,
+            p99_bytes: 131_072,
+          }],
+        },
+      })
+      .mockResolvedValueOnce({ data: { budgets: [] } })
+      .mockResolvedValueOnce({
+        data: {
+          deploys: [{
+            service: 'hms-api',
+            version: '0.1.0',
+            build_sha: 'abc123def4567890',
+            image_tag: 'staging',
+            environment: 'staging',
+            started_at: '2026-05-23T10:00:00Z',
+            deployed_at: '2026-05-23T10:01:00Z',
+            status: 'running',
+          }],
+        },
+      })
+      .mockResolvedValueOnce({ data: { errors: [] } })
+      .mockResolvedValueOnce({ data: { checks: [] } })
 
     await expect(opsApi.getDashboard({ window: '1h' }, { signal })).resolves.toMatchObject({
       generated_at: '2026-05-23T10:25:00Z',
@@ -126,7 +156,8 @@ describe('opsApi', () => {
         slow_query_fingerprints: [
           expect.objectContaining({
             fingerprint: '_redacted_query_fingerprint_1',
-            status: 'fail',
+            status: 'unknown',
+            confidence: 'low',
           }),
         ],
         slow_queries_by_route: [
@@ -147,16 +178,26 @@ describe('opsApi', () => {
       },
       deploys: expect.objectContaining({
         version: '0.1.0',
+        commit: 'abc123def4567890',
+        image_tag: 'staging',
         status: 'pass',
       }),
     })
 
-    expect(v2Request).toHaveBeenCalledWith({
+    expect(v2Request).toHaveBeenNthCalledWith(1, {
       method: 'GET',
       path: '/api/v2/ops/overview',
       query: { window: '1h' },
       signal,
     })
+    expect(v2Request.mock.calls.map(([request]) => request.path)).toEqual([
+      '/api/v2/ops/overview',
+      '/api/v2/ops/payload',
+      '/api/v2/ops/clinical-budgets',
+      '/api/v2/ops/deploys',
+      '/api/v2/ops/service-errors',
+      '/api/v2/ops/edge-status',
+    ])
   })
 
   it('preserves AbortError instead of wrapping it', async () => {

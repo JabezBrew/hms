@@ -247,7 +247,7 @@ describe('OpsDashboardPage', () => {
 
     await user.click(screen.getByRole('tab', { name: /routes/i }))
     expect(screen.getByRole('tab', { name: /routes/i })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('GET /api/v2/patients/:redacted/chronicle')).toBeInTheDocument()
+    expect(screen.getByText('GET /api/v2/patients/:id/chronicle')).toBeInTheDocument()
     assertNoUnsafeText(container)
 
     await user.click(screen.getByRole('tab', { name: /database/i }))
@@ -257,13 +257,13 @@ describe('OpsDashboardPage', () => {
 
     await user.click(screen.getByRole('tab', { name: /frontend/i }))
     expect(screen.getByText('Browser API p99')).toBeInTheDocument()
-    expect(screen.getByText('/patients/:redacted/chronicle')).toBeInTheDocument()
+    expect(screen.getByText('/patients/:id/chronicle')).toBeInTheDocument()
     assertNoUnsafeText(container)
 
     await user.click(screen.getByRole('tab', { name: /deploys/i }))
     expect(screen.getByText('hms-api')).toBeInTheDocument()
     expect(screen.getAllByText('1.8.2').length).toBeGreaterThan(0)
-    expect(screen.getByText('a1b2c3d4e5f6')).toBeInTheDocument()
+    expect(screen.getAllByText('a1b2c3d4e5f6').length).toBeGreaterThan(0)
     assertNoUnsafeText(container)
 
     await user.click(screen.getByRole('tab', { name: /incidents/i }))

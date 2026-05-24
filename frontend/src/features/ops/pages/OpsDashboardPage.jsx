@@ -65,7 +65,16 @@ const SAFE_ROUTE_SEGMENTS = new Set([
   'dashboard',
   'overview',
   'performance',
+  'route-latency',
+  'clinical-budgets',
   'database',
+  'db-pool',
+  'request-context-cache',
+  'payload',
+  'slow-query-fingerprints',
+  'service-errors',
+  'deploys',
+  'edge-status',
   'frontend',
   'health',
   'alive',
@@ -153,13 +162,13 @@ function toNumber(value) {
 
 function normalizeStatus(value) {
   const status = String(value || '').trim().toLowerCase()
-  if (['pass', 'passed', 'ok', 'healthy', 'success', 'green', 'normal', 'nominal', 'ready'].includes(status)) {
+  if (['pass', 'passed', 'ok', 'healthy', 'success', 'green', 'normal', 'nominal', 'ready', 'running', 'configured', 'within_budget'].includes(status)) {
     return 'pass'
   }
   if (['warn', 'warning', 'degraded', 'incomplete', 'yellow', 'elevated', 'not_ready'].includes(status)) {
     return 'warn'
   }
-  if (['fail', 'failed', 'critical', 'error', 'unhealthy', 'down', 'red', 'saturated'].includes(status)) {
+  if (['fail', 'failed', 'critical', 'error', 'unhealthy', 'down', 'red', 'saturated', 'over_budget'].includes(status)) {
     return 'fail'
   }
   return 'unknown'
@@ -203,11 +212,15 @@ function statusForPercent(value, warnAt, failAt) {
 
 function routeStatus(row) {
   const bucket = String(valueFrom(row.status_bucket, row.statusBucket, '')).toLowerCase()
+  const samples = toNumber(valueFrom(row.sample_count, row.requests, row.count)) || 0
   if (bucket === '5xx' || bucket === 'timeout' || bucket === 'network') {
-    return 'fail'
+    return samples < 5 ? 'warn' : 'fail'
   }
   if (bucket === '4xx') {
     return 'warn'
+  }
+  if (samples < 5) {
+    return 'unknown'
   }
   return normalizeStatus(valueFrom(row.status, statusForThreshold(row.p99_ms, 200, 350)))
 }
@@ -231,6 +244,20 @@ function formatMs(value) {
 function formatPercent(value) {
   const numeric = normalizePercentNumber(value)
   return numeric === null ? 'Awaiting data' : `${numeric.toFixed(1)}%`
+}
+
+function formatConfidence(value) {
+  const confidence = String(value || '').trim().toLowerCase()
+  if (confidence === 'high') {
+    return 'High confidence'
+  }
+  if (confidence === 'low') {
+    return 'Low confidence'
+  }
+  if (confidence === 'no_samples' || confidence === 'insufficient_data') {
+    return 'No samples'
+  }
+  return 'Unknown confidence'
 }
 
 function formatSizeKb(value) {
@@ -295,6 +322,12 @@ function isDynamicSegment(segment) {
   )
 }
 
+function shouldTreatAsPatientIdentifier(segment, previousSegment) {
+  const previous = String(previousSegment || '').toLowerCase()
+  return ['patients', 'patient', 'encounters', 'admissions', 'orders', 'invoices', 'payments', 'claims'].includes(previous)
+    && !String(segment || '').startsWith(':')
+}
+
 function sanitizeRoutePath(value) {
   const route = String(value || '/').split('?')[0].split('#')[0].trim()
   const methodMatch = route.match(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)$/i)
@@ -312,10 +345,10 @@ function sanitizeRoutePath(value) {
     .split('/')
     .filter(Boolean)
     .slice(0, 8)
-    .map((segment) => {
+    .map((segment, index, allSegments) => {
       const decoded = decodeSegment(segment)
       const normalized = decoded.toLowerCase()
-      if (!decoded || isDynamicSegment(decoded)) {
+      if (!decoded || isDynamicSegment(decoded) || shouldTreatAsPatientIdentifier(decoded, allSegments[index - 1])) {
         return ':id'
       }
       if (SAFE_ROUTE_SEGMENTS.has(normalized)) {
@@ -344,8 +377,9 @@ function sortRoutes(rows) {
 
 function normalizeBudget(budget, index) {
   const value = valueFrom(budget.display_value, budget.value_label, budget.value)
-  const valueMs = valueFrom(budget.value_ms, budget.p99_ms, budget.p95_ms)
+  const valueMs = valueFrom(budget.value_ms, budget.observed_p99_ms, budget.p99_ms, budget.p95_ms)
   const valuePercent = valueFrom(budget.value_percent, budget.percent, budget.ratio)
+  const sampleCount = toNumber(valueFrom(budget.sample_count, budget.count, budget.samples))
   return {
     key: safeText(valueFrom(budget.key, budget.id), `budget-${index}`, 48),
     label: safeText(valueFrom(budget.label, budget.name, `Budget ${index + 1}`), `Budget ${index + 1}`, 48),
@@ -356,8 +390,12 @@ function normalizeBudget(budget, index) {
         : valuePercent !== undefined
           ? formatPercent(valuePercent)
           : 'Awaiting data',
-    target: safeText(valueFrom(budget.target, budget.budget, budget.threshold, 'No target'), 'No target', 32),
+    target: safeText(valueFrom(budget.target, budget.budget, budget.threshold, budget.budget_ms ? `<= ${Math.round(budget.budget_ms)} ms` : 'No target'), 'No target', 32),
     status: normalizeStatus(budget.status),
+    sample_count: sampleCount,
+    confidence: valueFrom(budget.confidence, sampleCount > 0 ? 'high' : 'no_samples'),
+    next_action: safeText(budget.next_action, 'Review related drilldown', 80),
+    delta_label: safeText(budget.delta_label, 'Previous-window baseline pending', 80),
   }
 }
 
@@ -377,13 +415,18 @@ function sourceNotes(source) {
 function buildFallbackBudgets(dashboard) {
   const pool = dashboard.database?.pool || {}
   const rum = dashboard.frontend?.rum || {}
+  const routeSamples = asArray(dashboard.performance?.routes).reduce((total, row) => total + (toNumber(valueFrom(row.sample_count, row.requests, row.count)) || 0), 0)
   return [
     {
       key: 'api-p99',
       label: 'API p99',
       value: formatMs(Math.max(...asArray(dashboard.performance?.routes).map((row) => toNumber(row.p99_ms) || 0))),
       target: '<= 200 ms',
-      status: statusForThreshold(Math.max(...asArray(dashboard.performance?.routes).map((row) => toNumber(row.p99_ms) || 0)), 200, 350),
+      status: routeSamples < 5 ? 'unknown' : statusForThreshold(Math.max(...asArray(dashboard.performance?.routes).map((row) => toNumber(row.p99_ms) || 0)), 200, 350),
+      sample_count: routeSamples,
+      confidence: routeSamples >= 5 ? 'high' : routeSamples > 0 ? 'low' : 'no_samples',
+      next_action: 'Review slow routes',
+      delta_label: 'Previous-window baseline pending',
     },
     {
       key: 'db-pool',
@@ -391,18 +434,26 @@ function buildFallbackBudgets(dashboard) {
       value: formatPercent(valueFrom(pool.pressure, pool.pressure_percent)),
       target: '< 70%',
       status: pool.status || statusForPercent(valueFrom(pool.pressure, pool.pressure_percent), 70, 85),
+      sample_count: pool.sample_count,
+      confidence: pool.confidence,
+      next_action: 'Check pool waits and slow DB fingerprints',
+      delta_label: 'Previous-window baseline pending',
     },
     {
       key: 'rum-shell',
       label: 'App shell p95',
       value: formatMs(rum.app_shell_p95_ms),
       target: '<= 1200 ms',
-      status: statusForThreshold(rum.app_shell_p95_ms, 1200, 1800),
+      status: (toNumber(rum.sample_count) || 0) < 5 ? 'unknown' : statusForThreshold(rum.app_shell_p95_ms, 1200, 1800),
+      sample_count: rum.sample_count,
+      confidence: rum.confidence,
+      next_action: 'Break down app shell, API, and navigation timings',
+      delta_label: 'Previous-window baseline pending',
     },
   ]
 }
 
-function collectIncidents({ budgets, routes, database, frontend, deploys }) {
+function collectIncidents({ budgets, routes, database, frontend, deploys, serviceErrors }) {
   const incidents = []
   budgets.forEach((budget) => {
     if (['fail', 'warn'].includes(normalizeStatus(budget.status))) {
@@ -412,6 +463,10 @@ function collectIncidents({ budgets, routes, database, frontend, deploys }) {
         area: 'Budget',
         title: budget.label,
         detail: `${budget.value} against ${budget.target}`,
+        threshold: budget.target,
+        sample_count: budget.sample_count,
+        source: 'ops budget',
+        next_action: budget.next_action,
       })
     }
   })
@@ -425,6 +480,10 @@ function collectIncidents({ budgets, routes, database, frontend, deploys }) {
         area: 'Route',
         title: sanitizeRoutePath(valueFrom(row.route, row.path, row.name)),
         detail: `${formatMs(row.p99_ms)} p99 / ${formatNumber(valueFrom(row.requests, row.count))} requests`,
+        threshold: '<= 200 ms p99',
+        sample_count: valueFrom(row.sample_count, row.requests, row.count),
+        source: 'route latency',
+        next_action: safeText(row.next_action, 'Inspect route detail', 80),
       })
     }
   })
@@ -437,16 +496,30 @@ function collectIncidents({ budgets, routes, database, frontend, deploys }) {
       area: 'Database',
       title: 'Pool pressure',
       detail: `${formatPercent(database.pool?.pressure)} pressure / ${formatMs(database.pool?.wait_p95_ms)} acquire p95`,
+      threshold: '< 70% pressure',
+      sample_count: database.pool?.sample_count,
+      source: 'db pool',
+      next_action: 'Check pool waits and slow query fingerprints',
     })
   }
 
   asArray(database.slow_query_fingerprints).slice(0, 4).forEach((query, index) => {
+    const severity = normalizeStatus(query.status || statusForThreshold(query.p99_ms || query.p95_ms || query.avg_ms, 250, 500))
+    if (!['fail', 'warn'].includes(severity)) {
+      return
+    }
     incidents.push({
       key: `slow-query-${index}`,
-      severity: normalizeStatus(query.status || statusForThreshold(query.p99_ms || query.p95_ms, 250, 500)),
+      severity,
       area: 'Database',
       title: safeFingerprint(query.fingerprint, index),
-      detail: `${formatMs(query.p99_ms || query.p95_ms)} slow fingerprint`,
+      detail: `${formatMs(valueFrom(query.p99_ms, query.p95_ms, query.avg_ms))} slow fingerprint`,
+      threshold: '<= 250 ms',
+      sample_count: query.sample_count || query.count,
+      source: query.source || 'slow query',
+      next_action: query.fix_category === 'projection_or_index'
+        ? 'Check projection and index coverage'
+        : 'Inspect query plan and lock pressure',
     })
   })
 
@@ -458,8 +531,26 @@ function collectIncidents({ budgets, routes, database, frontend, deploys }) {
       area: 'Frontend',
       title: 'Browser API p99',
       detail: formatMs(frontend.rum?.browser_api_p99_ms),
+      threshold: '<= 600 ms',
+      sample_count: frontend.rum?.sample_count,
+      source: 'browser RUM',
+      next_action: 'Separate auth redirects from app API latency',
     })
   }
+
+  asArray(serviceErrors).forEach((error, index) => {
+    incidents.push({
+      key: `service-error-${index}`,
+      severity: 'fail',
+      area: 'Service',
+      title: safeText(error.component, 'service error', 48),
+      detail: `${formatNumber(error.count)} ${safeText(error.error_class, 'errors', 48)}`,
+      threshold: '0 errors',
+      sample_count: error.count,
+      source: 'service errors',
+      next_action: 'Open the related route or service logs',
+    })
+  })
 
   asArray(deploys.services).forEach((service, index) => {
     const status = normalizeStatus(valueFrom(service.status, service.health))
@@ -470,11 +561,50 @@ function collectIncidents({ budgets, routes, database, frontend, deploys }) {
         area: 'Service',
         title: safeText(service.name, 'service', 40),
         detail: 'Dependency is not reporting healthy.',
+        threshold: 'healthy',
+        sample_count: 1,
+        source: 'readiness',
+        next_action: 'Check container health and recent restarts',
       })
     }
   })
 
   return incidents
+}
+
+function dashboardDiagnosis({ incidents, routes, dashboard }) {
+  const source = dashboard.source || {}
+  const sourceAvailable = source.available !== false
+  const degradedRoutes = asArray(routes).filter((route) => ['fail', 'warn'].includes(routeStatus(route)))
+  const failed = incidents.filter((incident) => normalizeStatus(incident.severity) === 'fail').length
+  const warnings = incidents.filter((incident) => normalizeStatus(incident.severity) === 'warn').length
+
+  if (!sourceAvailable) {
+    return {
+      status: 'unknown',
+      title: 'Historical telemetry is unavailable',
+      why: 'The dashboard is falling back to process-local metrics, so missing samples are not treated as healthy.',
+      action: 'Verify Prometheus env is present in hms-api and that Prometheus can query hms-api metrics.',
+    }
+  }
+  if (failed || warnings) {
+    return {
+      status: failed ? 'fail' : 'warn',
+      title: failed
+        ? `${failed} failed ops signal${failed === 1 ? '' : 's'} need review`
+        : `${warnings} warning signal${warnings === 1 ? '' : 's'} need review`,
+      why: degradedRoutes.length
+        ? `${degradedRoutes.length} route family${degradedRoutes.length === 1 ? '' : 'ies'} exceed or approach the p99 budget.`
+        : 'One or more budget, database, frontend, or service health signals is outside target.',
+      action: degradedRoutes.length ? 'Open Routes, then inspect related DB fingerprints and payload size.' : 'Open Incidents and follow the next action for the highest severity row.',
+    }
+  }
+  return {
+    status: 'pass',
+    title: 'No breached ops signals with current samples',
+    why: 'Current sampled route, database, payload, RUM, and deploy health signals are within configured thresholds.',
+    action: 'Keep monitoring; compare against previous windows before making performance changes.',
+  }
 }
 
 function StatusPill({ status }) {
@@ -560,6 +690,11 @@ function BudgetCard({ budget }) {
         />
       </div>
       <p className="mt-3 font-mono text-[11px] text-muted-foreground">{budget.target}</p>
+      <div className="mt-3 grid gap-1 font-mono text-[11px] text-muted-foreground">
+        <span>{formatNumber(budget.sample_count)} samples · {formatConfidence(budget.confidence)}</span>
+        <span>{safeText(budget.delta_label, 'Previous-window baseline pending', 80)}</span>
+        <span>Next: {safeText(budget.next_action, 'Review related drilldown', 80)}</span>
+      </div>
     </article>
   )
 }
@@ -596,6 +731,24 @@ function SourceNotes({ source }) {
           <p className="mt-2 text-sm text-muted-foreground">{note.note}</p>
         </div>
       ))}
+    </div>
+  )
+}
+
+function DiagnosisPanel({ diagnosis }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[11px] uppercase text-muted-foreground">Current diagnosis</p>
+          <h3 className="mt-1 font-heading text-lg text-foreground">{diagnosis.title}</h3>
+        </div>
+        <StatusPill status={diagnosis.status} />
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <p className="text-sm text-muted-foreground">{diagnosis.why}</p>
+        <p className="text-sm text-muted-foreground">Next: {diagnosis.action}</p>
+      </div>
     </div>
   )
 }
@@ -639,7 +792,10 @@ function RouteLatencyTable({ rows, compact = false }) {
             <TableHead>p95</TableHead>
             <TableHead>p99</TableHead>
             <TableHead>Requests</TableHead>
+            <TableHead>Confidence</TableHead>
+            <TableHead>Delta</TableHead>
             <TableHead>Payload p99</TableHead>
+            <TableHead>Next action</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -659,7 +815,10 @@ function RouteLatencyTable({ rows, compact = false }) {
                 <TableCell className="font-mono text-xs">{formatMs(row.p95_ms)}</TableCell>
                 <TableCell className="font-mono text-xs">{formatMs(row.p99_ms)}</TableCell>
                 <TableCell className="font-mono text-xs">{formatNumber(valueFrom(row.requests, row.count))}</TableCell>
+                <TableCell className="font-mono text-xs">{formatConfidence(row.confidence)}</TableCell>
+                <TableCell className="font-mono text-xs">{safeText(row.delta_label, 'Baseline pending', 80)}</TableCell>
                 <TableCell className="font-mono text-xs">{formatSizeKb(valueFrom(row.payload_p99_kb, row.payload?.p99_kb))}</TableCell>
+                <TableCell className="max-w-[260px] text-xs text-muted-foreground">{safeText(row.next_action, 'Inspect route detail', 80)}</TableCell>
                 <TableCell><StatusPill status={routeStatus(row)} /></TableCell>
               </TableRow>
             )
@@ -703,7 +862,9 @@ function DatabasePanel({ database, cache }) {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-heading text-base text-foreground">Pool Pressure</h3>
-              <p className="text-xs text-muted-foreground">Checked-out connections against configured capacity</p>
+              <p className="text-xs text-muted-foreground">
+                Checked-out connections against capacity · {formatConfidence(pool.confidence)}
+              </p>
             </div>
             <StatusPill status={pool.status || statusForPercent(pressure, 70, 85)} />
           </div>
@@ -743,6 +904,8 @@ function SlowQueryTable({ rows }) {
             <TableHead>Avg</TableHead>
             <TableHead>p95</TableHead>
             <TableHead>p99</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Fix category</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -754,6 +917,8 @@ function SlowQueryTable({ rows }) {
               <TableCell className="font-mono text-xs">{formatMs(row.avg_ms)}</TableCell>
               <TableCell className="font-mono text-xs">{formatMs(row.p95_ms)}</TableCell>
               <TableCell className="font-mono text-xs">{formatMs(row.p99_ms)}</TableCell>
+              <TableCell className="font-mono text-xs">{safeText(row.source, 'in_process', 32)}</TableCell>
+              <TableCell className="font-mono text-xs">{safeText(row.fix_category, 'review_plan', 32)}</TableCell>
               <TableCell><StatusPill status={row.status || statusForThreshold(row.p99_ms || row.p95_ms, 250, 500)} /></TableCell>
             </TableRow>
           ))}
@@ -771,10 +936,10 @@ function RumPanel({ frontend }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricBox icon={Monitor} label="App shell p95" value={formatMs(appShellP95)} status={statusForThreshold(appShellP95, 1200, 1800)} />
-        <MetricBox icon={Globe} label="Browser API p95" value={formatMs(apiP95)} status={statusForThreshold(apiP95, 300, 500)} />
-        <MetricBox icon={Timer} label="Browser API p99" value={formatMs(apiP99)} status={statusForThreshold(apiP99, 600, 900)} />
-        <MetricBox icon={Activity} label="RUM samples" value={formatNumber(valueFrom(rum.sample_count, rum.samples))} status={rum.status || (frontend.rum_enabled ? 'pass' : 'unknown')} />
+        <MetricBox icon={Monitor} label="App shell p95" value={formatMs(appShellP95)} detail="Static assets and app boot" status={(toNumber(rum.sample_count) || 0) < 5 ? 'unknown' : statusForThreshold(appShellP95, 1200, 1800)} />
+        <MetricBox icon={Globe} label="Browser API p95" value={formatMs(apiP95)} detail="Client-observed API calls" status={(toNumber(rum.sample_count) || 0) < 5 ? 'unknown' : statusForThreshold(apiP95, 300, 500)} />
+        <MetricBox icon={Timer} label="Browser API p99" value={formatMs(apiP99)} detail="Separate redirects before backend work" status={(toNumber(rum.sample_count) || 0) < 5 ? 'unknown' : statusForThreshold(apiP99, 600, 900)} />
+        <MetricBox icon={Activity} label="RUM samples" value={formatNumber(valueFrom(rum.sample_count, rum.samples))} detail={formatConfidence(rum.confidence)} status={rum.status || 'unknown'} />
       </div>
       <RouteLatencyTable rows={frontend.routes} />
     </div>
@@ -785,10 +950,11 @@ function DeploymentPanel({ deployment }) {
   const services = asArray(valueFrom(deployment.services, deployment.health, []))
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <MetricBox icon={Cloud} label="API readiness" value={normalizeStatus(deployment.status).toUpperCase()} status={deployment.status} />
         <MetricBox icon={GitBranch} label="Version" value={safeText(deployment.version, 'N/A', 32)} status={deployment.status} />
-        <MetricBox icon={Timer} label="Started" value={formatIso(valueFrom(deployment.deployed_at, deployment.updated_at))} status={deployment.status} />
+        <MetricBox icon={GitBranch} label="Commit" value={shortCommit(valueFrom(deployment.commit, deployment.git_sha))} status={deployment.status} />
+        <MetricBox icon={Timer} label="Started" value={formatIso(valueFrom(deployment.started_at, deployment.deployed_at, deployment.updated_at))} status={deployment.status} />
       </div>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <Table>
@@ -798,6 +964,8 @@ function DeploymentPanel({ deployment }) {
               <TableHead>Status</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Commit</TableHead>
+              <TableHead>Image</TableHead>
+              <TableHead>Started</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -807,10 +975,12 @@ function DeploymentPanel({ deployment }) {
                 <TableCell><StatusPill status={valueFrom(service.status, service.health)} /></TableCell>
                 <TableCell className="font-mono text-xs">{safeText(service.version, 'N/A', 32)}</TableCell>
                 <TableCell className="font-mono text-xs">{shortCommit(valueFrom(service.commit, service.git_sha))}</TableCell>
+                <TableCell className="font-mono text-xs">{safeText(service.image_tag, 'N/A', 32)}</TableCell>
+                <TableCell className="font-mono text-xs">{formatIso(valueFrom(service.started_at, service.checked_at))}</TableCell>
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={4} className="py-6 text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-6 text-sm text-muted-foreground">
                   Service health is not available yet.
                 </TableCell>
               </TableRow>
@@ -841,6 +1011,10 @@ function IncidentPanel({ incidents }) {
                 <TableHead>Area</TableHead>
                 <TableHead>Signal</TableHead>
                 <TableHead>Detail</TableHead>
+                <TableHead>Threshold</TableHead>
+                <TableHead>Samples</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Next action</TableHead>
                 <TableHead>Severity</TableHead>
               </TableRow>
             </TableHeader>
@@ -849,7 +1023,11 @@ function IncidentPanel({ incidents }) {
                 <TableRow key={incident.key}>
                   <TableCell className="font-mono text-xs">{safeText(incident.area, 'Signal', 24)}</TableCell>
                   <TableCell className="max-w-[320px] truncate font-mono text-xs">{incident.title}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{safeText(incident.detail, 'Review safe aggregate', 80)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{safeText(incident.detail, 'Review measured signal', 80)}</TableCell>
+                  <TableCell className="font-mono text-xs">{safeText(incident.threshold, 'N/A', 32)}</TableCell>
+                  <TableCell className="font-mono text-xs">{formatNumber(incident.sample_count)}</TableCell>
+                  <TableCell className="font-mono text-xs">{safeText(incident.source, 'ops', 32)}</TableCell>
+                  <TableCell className="max-w-[260px] text-xs text-muted-foreground">{safeText(incident.next_action, 'Open related drilldown', 96)}</TableCell>
                   <TableCell><StatusPill status={incident.severity} /></TableCell>
                 </TableRow>
               ))}
@@ -903,6 +1081,7 @@ export default function OpsDashboardPage() {
   const database = databaseQuery.data || dashboard.database || EMPTY_DASHBOARD
   const frontend = frontendQuery.data || dashboard.frontend || EMPTY_DASHBOARD
   const deployment = dashboard.deploys || EMPTY_DASHBOARD
+  const serviceErrors = dashboard.service_errors || EMPTY_ARRAY
   const budgets = useMemo(() => {
     const normalized = asArray(valueFrom(dashboard.budgets, dashboard.overview?.budgets)).map(normalizeBudget)
     return normalized.length ? normalized : buildFallbackBudgets(dashboard)
@@ -911,8 +1090,12 @@ export default function OpsDashboardPage() {
   const cache = valueFrom(performance.request_context_cache, dashboard.performance?.request_context_cache, {})
   const payloads = valueFrom(performance.payloads, dashboard.performance?.payloads, {})
   const incidents = useMemo(
-    () => collectIncidents({ budgets, routes: routeRows, database, frontend, deploys: deployment }),
-    [budgets, routeRows, database, frontend, deployment],
+    () => collectIncidents({ budgets, routes: routeRows, database, frontend, deploys: deployment, serviceErrors }),
+    [budgets, routeRows, database, frontend, deployment, serviceErrors],
+  )
+  const diagnosis = useMemo(
+    () => dashboardDiagnosis({ incidents, routes: routeRows, dashboard }),
+    [incidents, routeRows, dashboard],
   )
   const updatedAt = valueFrom(
     dashboard.generated_at,
@@ -1008,6 +1191,7 @@ export default function OpsDashboardPage() {
             <SectionHeading icon={Gauge} title="Overview">
               {overviewQuery.isFetching ? <span className="font-mono text-xs text-muted-foreground">Refreshing</span> : null}
             </SectionHeading>
+            <DiagnosisPanel diagnosis={diagnosis} />
             <div className="grid gap-4 md:grid-cols-3">
               {budgets.map((budget) => (
                 <BudgetCard key={budget.key} budget={budget} />
