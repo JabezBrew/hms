@@ -59,13 +59,21 @@ const formSchema = z.object({
   slotId: z.string().optional(),
   description: z.string().optional(),
   comment: z.string().optional(),
+  overbookReason: z.string().optional(),
 });
+
+function slotRequiresOverbookReason(slot) {
+  const capacity = slot?.capacity || null;
+  const remaining = Number(capacity?.remaining ?? 0);
+  const overbookRemaining = Number(capacity?.overbook_remaining ?? 0);
+  return slot?.status === 'overbook_available' || (remaining <= 0 && overbookRemaining > 0);
+}
 
 const AppointmentCreatePage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { search, state: routeState } = useLocation();
   const queryInitialData = useMemo(() => {
-    const params = new URLSearchParams(location.search || '');
+    const params = new URLSearchParams(search || '');
     return {
       // Support deep-linking from pages that use query params instead of navigation state.
       patientId: params.get('patient') || params.get('patientId') || '',
@@ -75,12 +83,13 @@ const AppointmentCreatePage = () => {
       slotId: params.get('slot') || params.get('slotId') || '',
       description: params.get('description') || '',
       comment: params.get('comment') || '',
+      overbookReason: params.get('overbook_reason') || params.get('overbookReason') || '',
     };
-  }, [location.search]);
+  }, [search]);
 
   const initialData = useMemo(
-    () => ({ ...queryInitialData, ...(location.state || {}) }),
-    [queryInitialData, location.state]
+    () => ({ ...queryInitialData, ...(routeState || {}) }),
+    [queryInitialData, routeState]
   );
 
   const [appointmentTypes, setAppointmentTypes] = useState([]);
@@ -110,6 +119,7 @@ const AppointmentCreatePage = () => {
       slotId: '',
       description: '',
       comment: '',
+      overbookReason: '',
     },
   });
 
@@ -118,6 +128,7 @@ const AppointmentCreatePage = () => {
   const watchAppointmentTypeId = form.watch('appointmentTypeId');
   const watchPatientId = form.watch('patientId');
   const watchSlotId = form.watch('slotId');
+  const watchOverbookReason = form.watch('overbookReason');
 
   const selectedClinic = useMemo(
     () => clinics.find((clinic) => clinic.id === watchClinicId),
@@ -157,6 +168,7 @@ const AppointmentCreatePage = () => {
         slotId: initialData.slotId || '',
         description: initialData.description || '',
         comment: initialData.comment || '',
+        overbookReason: initialData.overbookReason || '',
       });
     }
   }, [initialData, form]);
@@ -255,6 +267,7 @@ const AppointmentCreatePage = () => {
   useEffect(() => {
     setSelectedSlot(null);
     form.setValue('slotId', '', { shouldDirty: true });
+    form.setValue('overbookReason', '', { shouldDirty: true });
 
     if (isPoolClinic) {
       form.setValue('practitionerId', '', { shouldDirty: true });
@@ -268,12 +281,18 @@ const AppointmentCreatePage = () => {
 
     setSelectedSlot(null);
     form.setValue('slotId', '', { shouldDirty: true });
+    form.setValue('overbookReason', '', { shouldDirty: true });
   }, [form, watchPractitionerId, requiresPractitioner]);
 
   const handleSlotSelect = (slot) => {
     setSelectedSlot(slot);
     form.setValue('slotId', slot.id, { shouldValidate: true, shouldDirty: true });
+    if (!slotRequiresOverbookReason(slot)) {
+      form.setValue('overbookReason', '', { shouldDirty: true });
+    }
   };
+
+  const selectedSlotRequiresOverbook = slotRequiresOverbookReason(selectedSlot);
 
   const onSubmit = async (data) => {
     if (!selectedSlot) {
@@ -283,6 +302,12 @@ const AppointmentCreatePage = () => {
 
     if (requiresPractitioner && !data.practitionerId) {
       toast.error('Please select a doctor for this clinic');
+      return;
+    }
+
+    const overbookReason = data.overbookReason?.trim();
+    if (selectedSlotRequiresOverbook && !overbookReason) {
+      toast.error('Overbooking approval reason is required');
       return;
     }
 
@@ -301,6 +326,10 @@ const AppointmentCreatePage = () => {
 
       if (requiresPractitioner) {
         appointmentData.practitioner = data.practitionerId;
+      }
+
+      if (selectedSlotRequiresOverbook) {
+        appointmentData.overbook_reason = overbookReason;
       }
 
       if (selectedClinic?.waitlist_enabled) {
@@ -441,7 +470,8 @@ const AppointmentCreatePage = () => {
     Boolean(watchClinicId) &&
     Boolean(watchAppointmentTypeId) &&
     Boolean(watchSlotId) &&
-    (!requiresPractitioner || Boolean(watchPractitionerId));
+    (!requiresPractitioner || Boolean(watchPractitionerId)) &&
+    (!selectedSlotRequiresOverbook || Boolean(watchOverbookReason?.trim()));
 
   return (
     <PageShell className="h-screen flex flex-col overflow-hidden">
@@ -664,7 +694,12 @@ const AppointmentCreatePage = () => {
                     render={({ field }) => (
                       <FormItem>
                         <Select
-                          onValueChange={field.onChange}
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setSelectedSlot(null);
+                            form.setValue('slotId', '', { shouldDirty: true });
+                            form.setValue('overbookReason', '', { shouldDirty: true });
+                          }}
                           value={field.value}
                           disabled={submitting}
                         >
@@ -697,6 +732,32 @@ const AppointmentCreatePage = () => {
                 <div className="border-t border-border/50" />
 
                 <div className="space-y-4">
+                  {selectedSlotRequiresOverbook && (
+                    <FormField
+                      control={form.control}
+                      name="overbookReason"
+                      render={({ field }) => (
+                        <FormItem>
+                          <label
+                            htmlFor="overbook-reason"
+                            className="font-mono text-xs uppercase tracking-wider text-amber-700"
+                          >
+                            Overbooking Approval Reason
+                          </label>
+                          <FormControl>
+                            <Textarea
+                              id="overbook-reason"
+                              placeholder="Clinician or supervisor approval"
+                              className="h-16 resize-none border-amber-400/60 bg-amber-50/40 text-sm"
+                              {...field}
+                              disabled={submitting}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                   <FormField
                     control={form.control}
                     name="description"

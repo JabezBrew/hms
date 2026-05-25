@@ -29,6 +29,31 @@ import {
   useBlockedTimes
 } from '@/features/appointments/hooks/useAppointmentQueries';
 
+function numberOr(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function slotAvailability(slot) {
+  const capacity = slot?.capacity || null;
+  const remaining = capacity
+    ? numberOr(capacity.remaining, 0)
+    : (slot?.status === 'booked' || slot?.status === 'busy' ? 0 : 1);
+  const overbookRemaining = capacity ? numberOr(capacity.overbook_remaining, 0) : 0;
+  const max = capacity ? numberOr(capacity.max, 1) : 1;
+  const unavailable = slot?.status === 'busy-unavailable' || slot?.status === 'cancelled';
+  const overbook = slot?.status === 'overbook_available' || (remaining <= 0 && overbookRemaining > 0);
+  const selectable = !unavailable && (remaining > 0 || overbookRemaining > 0);
+
+  return {
+    max,
+    remaining,
+    overbookRemaining,
+    overbook,
+    selectable,
+  };
+}
+
 /**
  * DoctorAvailabilityCalendar - Chronicle-style calendar component
  *
@@ -130,7 +155,7 @@ const DoctorAvailabilityCalendar = ({
       const isPast = isBefore(iterDate, startOfDay(new Date()));
       const blocked = isBlocked(iterDate);
       const dateStr = format(iterDate, 'yyyy-MM-dd');
-      const hasSlots = map[dateStr]?.some(s => s.status === 'free' || !s.status);
+      const hasSlots = map[dateStr]?.some((slot) => slotAvailability(slot).selectable);
 
       if (!isPast && !blocked && hasSlots) {
         available.push(new Date(iterDate));
@@ -155,13 +180,7 @@ const DoctorAvailabilityCalendar = ({
   };
 
   const handleSlotClick = (slot) => {
-    const cap = slot.capacity || null;
-    const remaining =
-      cap && cap.remaining !== undefined && cap.remaining !== null
-        ? Number(cap.remaining)
-        : (slot.status === 'booked' || slot.status === 'busy' ? 0 : 1);
-    if (!Number.isFinite(remaining) ? true : remaining <= 0) return;
-    if (slot.status === 'busy-unavailable') return;
+    if (!slotAvailability(slot).selectable) return;
     setSelectedSlotId(slot.id);
     if (onSlotSelect) {
       onSlotSelect(slot);
@@ -179,20 +198,17 @@ const DoctorAvailabilityCalendar = ({
   const capacitySummary = useMemo(() => {
     let totalMax = 0;
     let totalRemaining = 0;
+    let totalOverbookRemaining = 0;
     selectedDateSlots.forEach((slot) => {
-      const cap = slot.capacity || null;
-      const max =
-        cap && cap.max !== undefined && cap.max !== null ? Number(cap.max) : 1;
-      const remaining =
-        cap && cap.remaining !== undefined && cap.remaining !== null
-          ? Number(cap.remaining)
-          : (slot.status === 'booked' || slot.status === 'busy' ? 0 : 1);
-      if (Number.isFinite(max)) totalMax += Math.max(0, max);
-      if (Number.isFinite(remaining)) totalRemaining += Math.max(0, remaining);
+      const availability = slotAvailability(slot);
+      totalMax += Math.max(0, availability.max);
+      totalRemaining += Math.max(0, availability.remaining);
+      totalOverbookRemaining += Math.max(0, availability.overbookRemaining);
     });
     return {
       totalMax,
       totalRemaining,
+      totalOverbookRemaining,
       totalBooked: Math.max(0, totalMax - totalRemaining),
     };
   }, [selectedDateSlots]);
@@ -274,7 +290,7 @@ const DoctorAvailabilityCalendar = ({
             </h3>
             <p className="text-sm text-muted-foreground">
               {selectedDateSlots.length > 0
-                ? `${capacitySummary.totalRemaining} remaining, ${capacitySummary.totalBooked} booked`
+                ? `${capacitySummary.totalRemaining} remaining, ${capacitySummary.totalBooked} booked${capacitySummary.totalOverbookRemaining > 0 ? `, ${capacitySummary.totalOverbookRemaining} overbook` : ''}`
                 : 'No scheduled slots'
               }
             </p>
@@ -302,14 +318,8 @@ const DoctorAvailabilityCalendar = ({
           <ScrollArea className="h-[350px] rounded-xl border border-border/50 p-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {selectedDateSlots.map((slot) => {
-                const cap = slot.capacity || null;
-                const remaining =
-                  cap && cap.remaining !== undefined && cap.remaining !== null
-                    ? Number(cap.remaining)
-                    : (slot.status === 'booked' || slot.status === 'busy' ? 0 : 1);
-                const max =
-                  cap && cap.max !== undefined && cap.max !== null ? Number(cap.max) : 1;
-                const isBooked = slot.status === 'booked' || slot.status === 'busy' || remaining <= 0;
+                const availability = slotAvailability(slot);
+                const isBooked = !availability.selectable;
                 const isSelected = selectedSlotId === slot.id;
 
                 return (
@@ -322,34 +332,35 @@ const DoctorAvailabilityCalendar = ({
                       "flex items-center justify-between p-3 rounded-lg border transition-all text-left",
                       isBooked
                         ? "bg-rose-500/5 border-rose-500/20 text-rose-600/60 cursor-not-allowed"
-                        : "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10 hover:border-emerald-500/40 cursor-pointer dark:text-emerald-400",
+                        : availability.overbook
+                          ? "bg-amber-500/5 border-amber-500/30 text-amber-700 hover:bg-amber-500/10 hover:border-amber-500/50 cursor-pointer dark:text-amber-300"
+                          : "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10 hover:border-emerald-500/40 cursor-pointer dark:text-emerald-400",
                       isSelected && !isBooked && "ring-2 ring-primary ring-offset-2"
                     )}
                   >
                     <div className="flex items-center gap-2">
                       <Clock className={cn(
                         "h-4 w-4",
-                        isBooked ? "text-rose-400" : "text-emerald-500"
+                        isBooked ? "text-rose-400" : availability.overbook ? "text-amber-500" : "text-emerald-500"
                       )} />
                       <span className="font-mono text-sm">
                         {format(new Date(slot.start), 'h:mm a')} - {format(new Date(slot.end), 'h:mm a')}
                       </span>
                     </div>
-                    {Number.isFinite(max) && max > 1 ? (
+                    {availability.max > 1 && availability.remaining > 0 ? (
                       <Badge
                         variant="secondary"
-                        className={cn(
-                          "text-[10px] px-1.5 py-0",
-                          remaining > 0
-                            ? "bg-emerald-500/10 text-emerald-700"
-                            : "bg-rose-500/10 text-rose-600"
-                        )}
+                        className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-700"
                       >
-                        {remaining > 0 ? `${remaining}/${max} left` : 'Full'}
+                        {`${availability.remaining}/${availability.max} left`}
+                      </Badge>
+                    ) : availability.overbook ? (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-700">
+                        Overbook
                       </Badge>
                     ) : isBooked ? (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-rose-500/10 text-rose-600">
-                        Booked
+                        Full
                       </Badge>
                     ) : null}
                   </button>
