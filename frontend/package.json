@@ -14,6 +14,7 @@
     "e2e": "playwright test",
     "e2e:list": "playwright test --list",
     "perf:bundle-budget": "node ./scripts/check-bundle-budget.mjs",
+    "perf:runtime": "node ./scripts/measure-runtime-perf.mjs",
     "perf:lhci": "npx -y @lhci/cli@0.13.x autorun --config=.lighthouserc.json",
     "perf:ci": "npm run build && npm run perf:bundle-budget",
     "analyze": "vite build --mode analyze",

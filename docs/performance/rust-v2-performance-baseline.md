@@ -5,9 +5,10 @@ Status: Agent 0 baseline report for the first Rust V2 performance wave.
 Current-tree note, 2026-05-25: the historical gaps below for route-level
 payload-size metrics and DB pool-wait metrics have since been closed in code,
 and the maintained Rust V2 reporter now enforces payload, pool-wait, and
-slow-SQL budgets when Prometheus snapshots are supplied. The accepted stress
-artifact is still preserved as the 2026-05-20 baseline and still needs
-regeneration for a dashboard trend and larger seeded data profiles.
+slow-SQL budgets when Prometheus snapshots are supplied. Rust V2 now also has a
+PHI-safe synthetic performance seed behind `HMS_PERF_SEED_SCALE`. The accepted
+stress artifact is still preserved as the 2026-05-20 baseline and still needs
+regeneration for a dashboard trend and a seeded medium or large profile.
 
 This report uses only the maintained Rust V2 load harness:
 
@@ -67,11 +68,62 @@ Server-side visibility in the accepted baseline:
 | Surface | Visibility |
 | --- | --- |
 | DB query counts | Available from `hms_api_http_db_query_count_sum`; all committed baseline route query budgets passed. |
-| DB pool pressure | Available as pool size/idle snapshots; committed baseline pool snapshot passed. Peak pool wait is not visible yet. |
+| DB pool pressure | Available as pool size/idle snapshots and route pool-wait metrics when current Prometheus snapshots are supplied. |
 | Dashboard p95/p99 | Missing dedicated k6 trend in the preserved accepted artifact. Server route counters were present, but dashboard user-latency trend was not. |
 | Chronicle p95/p99 | Present and passing for the current staging seed. Larger Chronicle data profiles remain unproven. |
-| API payload size | Not visible per route. k6 exposes aggregate `data_received`/`data_sent`, but there is no route-level `hms_api_response_payload_bytes` metric yet. |
-| Slow SQL | Partially visible through stable query metrics, but not yet through the frozen route-pattern/status-bucket/facility-safe slow SQL budget labels. |
+| API payload size | Available per route through `hms_api_response_payload_bytes` when current Prometheus snapshots are supplied. |
+| Slow SQL | Available through route-pattern/status-bucket/facility-safe slow SQL budget labels when current Prometheus snapshots are supplied. |
+
+## Current Medium-Seed Follow-Up
+
+Local follow-up on 2026-05-25 provisioned a synthetic medium seed with
+`HMS_PERF_SEED_SCALE=medium` and ran the maintained regression harness using
+metrics snapshots from the local Rust V2 API.
+
+The medium seed included 2,500 synthetic performance patients, 8,000 clinical
+notes, 1,500 lab orders, 1,000 inventory items, 250 admissions, 750 nursing
+tasks, and 1,500 invoices. These rows are synthetic and scoped to deterministic
+performance fixtures; no PHI is written to reports or test artifacts.
+
+Run artifact:
+
+`/private/tmp/hms-perf-medium-after-patient-search/report.json`
+
+Result:
+
+| Surface | p99 | Budget | DB queries/request | Status |
+| --- | ---: | ---: | ---: | --- |
+| Auth/me | 45.86ms | 75ms | 0.00 | Pass |
+| Patient list | 19.64ms | 200ms | 1.43 | Pass |
+| Patient Chronicle | 10.49ms | 300ms | 2.00 | Pass |
+| Omni search | 65.18ms | 250ms | 1.00 | Pass |
+| Ward board | 12.65ms | 250ms | 1.00 | Pass |
+| Dashboard snapshot | 204.03ms | 250ms | 2.89 | Pass |
+| Laboratory routes | 36.98ms | 300ms | 0.22 | Pass |
+| Inventory/pharmacy routes | 12.87ms | 300ms | 0.44 | Pass |
+| Billing routes | 10.71ms | 500ms | 0.10 | Pass |
+
+Payload, pool-wait, slow-SQL, pool snapshot, and named query guardrails all
+passed. This local run does not replace the accepted staging stress baseline
+until the same seeded profile is run on staging.
+
+Example local medium seed:
+
+```bash
+cd backend-rs
+HMS_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/hms_perf_medium \
+HMS_PROVISION_BASELINE=true \
+HMS_SEED_DEMO_DATA=true \
+HMS_PERF_SEED_SCALE=medium \
+HMS_ENV=development \
+HMS_BOOTSTRAP_ADMIN_EMAIL=owner@hms.local \
+HMS_BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123! \
+cargo run -p hms-migrator
+```
+
+`HMS_PERF_SEED_SCALE` accepts `small`, `medium`, and `large`. The migrator
+refuses performance seeding when `HMS_ENV=production`. `HMS_LOAD_DATA_SCALE`
+remains a run label and does not seed data by itself.
 
 ## Fresh Staging Attempt
 
@@ -224,10 +276,7 @@ Payload visibility:
 3. Add the missing `hms_dashboard_snapshot` trend to all preserved baseline
    artifacts, or regenerate the accepted baseline after the current script is
    deployed.
-4. Add route-level payload-size metrics using
-   `hms_api_response_payload_bytes`.
-5. Add DB pool wait metrics using `hms_db_pool_wait_seconds`.
-6. Add route-scoped slow SQL budget visibility using the label contract in
-   `performance-budget.md`.
-7. Treat the stopped 2026-05-22 host-network run as partial evidence only. Do
+4. Reprovision staging with `HMS_PERF_SEED_SCALE=medium` or `large` before
+   replacing the accepted current-seed baseline.
+5. Treat the stopped 2026-05-22 host-network run as partial evidence only. Do
    not use it as the accepted baseline for downstream optimization approval.

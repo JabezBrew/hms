@@ -56,7 +56,6 @@ import { format } from "date-fns";
 import {
   prefetchMyPatientsRoute,
   prefetchPatientChronicleData,
-  prefetchPatientDetailRoute,
   prefetchPatientRegistryRoute,
 } from "@/features/patients/prefetch";
 
@@ -326,26 +325,6 @@ const PatientChronicleListPage = () => {
     isLoading: isPractitionersLoading,
     setSearchTerm: setPractitionerSearch,
   } = useSearchPractitioners(false, { minLength: 2 });
-
-  // Warm key route chunks after initial render.
-  useEffect(() => {
-    prefetchPatientDetailRoute();
-
-    if (typeof window === 'undefined') return;
-
-    const runIdlePrefetch = () => {
-      prefetchMyPatientsRoute();
-      prefetchPatientRegistryRoute();
-    };
-
-    if (typeof window.requestIdleCallback === 'function') {
-      const idleId = window.requestIdleCallback(runIdlePrefetch, { timeout: 1200 });
-      return () => window.cancelIdleCallback?.(idleId);
-    }
-
-    const timeoutId = window.setTimeout(runIdlePrefetch, 300);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
 
   const hasSearchQuery = searchQuery.length > 0;
 

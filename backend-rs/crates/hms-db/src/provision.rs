@@ -1,3 +1,6 @@
+use std::sync::OnceLock;
+
+use anyhow::ensure;
 use argon2::{Argon2, PasswordHasher};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -80,6 +83,103 @@ pub struct BaselineProvisioning {
     pub ops_operator_emails: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PerformanceSeedScale {
+    Small,
+    Medium,
+    Large,
+}
+
+impl PerformanceSeedScale {
+    pub fn parse(value: &str) -> anyhow::Result<Option<Self>> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "0" | "false" | "no" | "off" | "none" | "current-seed" => Ok(None),
+            "small" => Ok(Some(Self::Small)),
+            "medium" => Ok(Some(Self::Medium)),
+            "large" => Ok(Some(Self::Large)),
+            _ => anyhow::bail!("HMS_PERF_SEED_SCALE must be small, medium, large, or disabled"),
+        }
+    }
+
+    pub fn config(self) -> PerformanceSeedConfig {
+        match self {
+            Self::Small => PerformanceSeedConfig {
+                patient_count: 500,
+                chronicled_patient_count: 50,
+                notes_per_chronicle_patient: 20,
+                lab_order_count: 400,
+                inventory_item_count: 300,
+                admission_count: 80,
+                invoice_count: 400,
+            },
+            Self::Medium => PerformanceSeedConfig {
+                patient_count: 2_500,
+                chronicled_patient_count: 200,
+                notes_per_chronicle_patient: 40,
+                lab_order_count: 1_500,
+                inventory_item_count: 1_000,
+                admission_count: 250,
+                invoice_count: 1_500,
+            },
+            Self::Large => PerformanceSeedConfig {
+                patient_count: 10_000,
+                chronicled_patient_count: 500,
+                notes_per_chronicle_patient: 60,
+                lab_order_count: 5_000,
+                inventory_item_count: 3_000,
+                admission_count: 750,
+                invoice_count: 5_000,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PerformanceSeedConfig {
+    pub patient_count: i32,
+    pub chronicled_patient_count: i32,
+    pub notes_per_chronicle_patient: i32,
+    pub lab_order_count: i32,
+    pub inventory_item_count: i32,
+    pub admission_count: i32,
+    pub invoice_count: i32,
+}
+
+impl PerformanceSeedConfig {
+    fn validate(self) -> anyhow::Result<()> {
+        ensure!(
+            self.patient_count > 0,
+            "patient_count must be greater than zero"
+        );
+        ensure!(
+            self.chronicled_patient_count >= 0
+                && self.chronicled_patient_count <= self.patient_count,
+            "chronicled_patient_count must fit inside patient_count"
+        );
+        ensure!(
+            self.notes_per_chronicle_patient >= 0,
+            "notes_per_chronicle_patient must be non-negative"
+        );
+        ensure!(
+            self.lab_order_count >= 0,
+            "lab_order_count must be non-negative"
+        );
+        ensure!(
+            self.inventory_item_count >= 0,
+            "inventory_item_count must be non-negative"
+        );
+        ensure!(
+            self.admission_count >= 0 && self.admission_count <= self.patient_count,
+            "admission_count must fit inside patient_count"
+        );
+        ensure!(
+            self.invoice_count >= 0,
+            "invoice_count must be non-negative"
+        );
+        Ok(())
+    }
+}
+
 impl BaselineProvisioning {
     pub fn hms_local(deployment_profile: DeploymentProfile) -> Self {
         Self {
@@ -131,6 +231,937 @@ pub async fn provision_baseline(
         seed_patients(pool, baseline).await?;
         seed_patient_contexts(pool, baseline).await?;
     }
+    Ok(())
+}
+
+pub async fn provision_performance_seed(
+    pool: &PgPool,
+    baseline: &BaselineProvisioning,
+    config: PerformanceSeedConfig,
+) -> anyhow::Result<()> {
+    config.validate()?;
+
+    let mut tx = pool.begin().await?;
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let default_ward_id = Uuid::from_u128(DEFAULT_WARD_ID);
+    let performance_ward_id = Uuid::from_u128(0x51000000000000000000000000000001);
+    let main_store_id = Uuid::from_u128(DEFAULT_MAIN_STORE_ID);
+    let default_category_id = Uuid::from_u128(DEFAULT_INVENTORY_CATEGORY_MED_ID);
+    let default_lab_test_id = Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID);
+    let default_service_price_id = Uuid::from_u128(DEFAULT_PRICE_CONSULTATION_ID);
+
+    sqlx::query(
+        r#"
+        WITH perf_invoices AS (
+            SELECT id
+            FROM invoices
+            WHERE facility_id = $1
+              AND invoice_number ~ '^PERF-[0-9]{8}$'
+        )
+        DELETE FROM payments
+        USING perf_invoices
+        WHERE payments.invoice_id = perf_invoices.id
+          AND payments.facility_id = $1
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_patients AS (
+            SELECT id
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+        )
+        DELETE FROM clinical_notes
+        USING perf_patients
+        WHERE clinical_notes.patient_id = perf_patients.id
+          AND clinical_notes.facility_id = $1
+          AND clinical_notes.title LIKE 'Performance note %'
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_patients AS (
+            SELECT id
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+        )
+        DELETE FROM lab_orders
+        USING perf_patients
+        WHERE lab_orders.patient_id = perf_patients.id
+          AND lab_orders.facility_id = $1
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_patients AS (
+            SELECT id
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+        )
+        DELETE FROM admission_cases
+        USING perf_patients
+        WHERE admission_cases.patient_id = perf_patients.id
+          AND admission_cases.facility_id = $1
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_patients AS (
+            SELECT id
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+        )
+        DELETE FROM invoices
+        USING perf_patients
+        WHERE invoices.patient_id = perf_patients.id
+          AND invoices.facility_id = $1
+          AND invoices.invoice_number ~ '^PERF-[0-9]{8}$'
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_items AS (
+            SELECT id
+            FROM inventory_items
+            WHERE facility_id = $1
+              AND code ~ '^PERF-MED-[0-9]{6}$'
+        )
+        DELETE FROM stock_movements
+        USING perf_items
+        WHERE stock_movements.item_id = perf_items.id
+          AND stock_movements.facility_id = $1
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_items AS (
+            SELECT id
+            FROM inventory_items
+            WHERE facility_id = $1
+              AND code ~ '^PERF-MED-[0-9]{6}$'
+        )
+        DELETE FROM stock_batches
+        USING perf_items
+        WHERE stock_batches.item_id = perf_items.id
+          AND stock_batches.facility_id = $1
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM patients
+        WHERE facility_id = $1
+          AND patient_code ~ '^PERF-[0-9]{6}$'
+          AND substring(patient_code from 6)::int > $2
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.patient_count)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM inventory_items
+        WHERE facility_id = $1
+          AND code ~ '^PERF-MED-[0-9]{6}$'
+          AND substring(code from 10)::int > $2
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.inventory_item_count)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO patients (
+            id,
+            facility_id,
+            patient_code,
+            first_name,
+            last_name,
+            date_of_birth,
+            sex,
+            status,
+            created_at,
+            updated_at
+        )
+        SELECT ('310000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               'PERF-' || lpad(i::text, 6, '0'),
+               'Load',
+               'Patient ' || lpad(i::text, 6, '0'),
+               DATE '1970-01-01' + (i % 18000),
+               CASE WHEN i % 3 = 0 THEN 'unknown'
+                    WHEN i % 2 = 0 THEN 'female'
+                    ELSE 'male'
+               END,
+               'active',
+               TIMESTAMPTZ '2026-02-01 00:00:00+00' + (i * INTERVAL '1 minute'),
+               TIMESTAMPTZ '2026-02-01 00:00:00+00' + (i * INTERVAL '1 minute')
+        FROM generated
+        ON CONFLICT (facility_id, patient_code) DO UPDATE
+        SET first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            date_of_birth = EXCLUDED.date_of_birth,
+            sex = EXCLUDED.sex,
+            status = EXCLUDED.status,
+            created_at = EXCLUDED.created_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.patient_count)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_patients AS (
+            SELECT id,
+                   substring(patient_code from 6)::int AS ordinal
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+              AND substring(patient_code from 6)::int <= $3
+        )
+        INSERT INTO patient_contexts (
+            id,
+            facility_id,
+            user_id,
+            patient_id,
+            context_kind,
+            label,
+            created_at,
+            updated_at
+        )
+        SELECT ('320000000000000000000000' || lpad(to_hex(ordinal::bigint), 8, '0'))::uuid,
+               $1,
+               $2,
+               id,
+               'assigned',
+               'performance-seed',
+               TIMESTAMPTZ '2026-02-01 00:00:00+00' + (ordinal * INTERVAL '1 minute'),
+               TIMESTAMPTZ '2026-02-01 00:00:00+00' + (ordinal * INTERVAL '1 minute')
+        FROM perf_patients
+        ON CONFLICT (user_id, patient_id, context_kind) DO UPDATE
+        SET label = EXCLUDED.label,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(owner_user_id)
+    .bind(config.patient_count)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH perf_patients AS (
+            SELECT id,
+                   substring(patient_code from 6)::int AS ordinal
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+              AND substring(patient_code from 6)::int <= $2
+        )
+        INSERT INTO clinical_notes (
+            id,
+            facility_id,
+            patient_id,
+            encounter_id,
+            note_type,
+            title,
+            body,
+            status,
+            version,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        SELECT ('610000000000000000000000'
+                    || lpad(to_hex(((ordinal - 1) * $3 + note_index)::bigint), 8, '0'))::uuid,
+               $1,
+               id,
+               NULL,
+               CASE WHEN note_index % 4 = 0 THEN 'ward_round'
+                    WHEN note_index % 3 = 0 THEN 'review'
+                    ELSE 'general'
+               END,
+               'Performance note ' || lpad(note_index::text, 3, '0'),
+               'Synthetic clinical performance seed note. No patient-identifying content.',
+               CASE WHEN note_index % 5 = 0 THEN 'signed' ELSE 'draft' END,
+               1,
+               $4,
+               TIMESTAMPTZ '2026-03-01 00:00:00+00'
+                    + (((ordinal - 1) * $3 + note_index) * INTERVAL '1 minute'),
+               TIMESTAMPTZ '2026-03-01 00:00:00+00'
+                    + (((ordinal - 1) * $3 + note_index) * INTERVAL '1 minute')
+        FROM perf_patients
+        CROSS JOIN generate_series(1, $3::int) AS note_index
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.chronicled_patient_count)
+    .bind(config.notes_per_chronicle_patient)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO patient_chronicle_read_models (
+            patient_id,
+            facility_id,
+            summary_status,
+            latest_event_at,
+            updated_at
+        )
+        SELECT id,
+               facility_id,
+               CASE
+                   WHEN substring(patient_code from 6)::int <= $2 THEN 'active'
+                   ELSE 'empty'
+               END,
+               CASE
+                   WHEN substring(patient_code from 6)::int <= $2
+                   THEN TIMESTAMPTZ '2026-03-01 00:00:00+00'
+                        + ((substring(patient_code from 6)::int * $3) * INTERVAL '1 minute')
+                   ELSE NULL
+               END,
+               now()
+        FROM patients
+        WHERE facility_id = $1
+          AND patient_code ~ '^PERF-[0-9]{6}$'
+          AND substring(patient_code from 6)::int <= $4
+        ON CONFLICT (patient_id) DO UPDATE
+        SET summary_status = EXCLUDED.summary_status,
+            latest_event_at = EXCLUDED.latest_event_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.chronicled_patient_count)
+    .bind(config.notes_per_chronicle_patient)
+    .bind(config.patient_count)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO wards (id, facility_id, code, name, status)
+        VALUES ($1, $2, 'perf-load', 'Performance Load Ward', 'active')
+        ON CONFLICT (facility_id, code) DO UPDATE
+        SET id = EXCLUDED.id,
+            name = EXCLUDED.name,
+            status = EXCLUDED.status,
+            updated_at = now()
+        "#,
+    )
+    .bind(performance_ward_id)
+    .bind(baseline.facility_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE beds SET status = 'available', updated_at = now() WHERE facility_id = $1 AND ward_id = $2 AND bed_code ~ '^PERF-[0-9]{4}$'",
+    )
+    .bind(baseline.facility_id)
+    .bind(performance_ward_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, GREATEST($3::int, 1)) AS i
+        )
+        INSERT INTO beds (id, facility_id, ward_id, bed_code, status)
+        SELECT ('511000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               $2,
+               'PERF-' || lpad(i::text, 4, '0'),
+               CASE WHEN i <= $3 THEN 'occupied' ELSE 'available' END
+        FROM generated
+        ON CONFLICT (ward_id, bed_code) DO UPDATE
+        SET status = EXCLUDED.status,
+            updated_at = now()
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(performance_ward_id)
+    .bind(config.admission_count)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $3::int) AS i
+        ),
+        perf_patients AS (
+            SELECT id,
+                   substring(patient_code from 6)::int AS ordinal
+            FROM patients
+            WHERE facility_id = $1
+              AND patient_code ~ '^PERF-[0-9]{6}$'
+        )
+        INSERT INTO admission_cases (
+            id,
+            facility_id,
+            patient_id,
+            ward_id,
+            bed_id,
+            status,
+            admitted_at,
+            attending_user_id,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        SELECT ('520000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               perf_patients.id,
+               $2,
+               ('511000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               'admitted',
+               TIMESTAMPTZ '2026-04-01 00:00:00+00' + (i * INTERVAL '30 minutes'),
+               $4,
+               $4,
+               TIMESTAMPTZ '2026-04-01 00:00:00+00' + (i * INTERVAL '30 minutes'),
+               TIMESTAMPTZ '2026-04-01 00:00:00+00' + (i * INTERVAL '30 minutes')
+        FROM generated
+        JOIN perf_patients ON perf_patients.ordinal = i
+        ON CONFLICT (id) DO UPDATE
+        SET patient_id = EXCLUDED.patient_id,
+            ward_id = EXCLUDED.ward_id,
+            bed_id = EXCLUDED.bed_id,
+            status = EXCLUDED.status,
+            admitted_at = EXCLUDED.admitted_at,
+            attending_user_id = EXCLUDED.attending_user_id,
+            created_by_user_id = EXCLUDED.created_by_user_id,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(performance_ward_id)
+    .bind(config.admission_count)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH admissions AS (
+            SELECT id, patient_id, row_number() OVER (ORDER BY admitted_at, id) AS ordinal
+            FROM admission_cases
+            WHERE facility_id = $1
+              AND ward_id = $2
+              AND status = 'admitted'
+        )
+        INSERT INTO nursing_tasks (
+            id,
+            facility_id,
+            admission_case_id,
+            patient_id,
+            ward_id,
+            task_type,
+            status,
+            due_at,
+            assigned_to_user_id,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        SELECT ('530000000000000000000000'
+                    || lpad(to_hex(((ordinal - 1) * 3 + task_index)::bigint), 8, '0'))::uuid,
+               $1,
+               id,
+               patient_id,
+               $2,
+               CASE WHEN task_index = 1 THEN 'ward_round'
+                    WHEN task_index = 2 THEN 'observation'
+                    ELSE 'medication'
+               END,
+               'open',
+               TIMESTAMPTZ '2026-04-02 00:00:00+00'
+                    + (((ordinal - 1) * 3 + task_index) * INTERVAL '15 minutes'),
+               $3,
+               $3,
+               TIMESTAMPTZ '2026-04-01 00:00:00+00',
+               TIMESTAMPTZ '2026-04-01 00:00:00+00'
+        FROM admissions
+        CROSS JOIN generate_series(1, 3) AS task_index
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(performance_ward_id)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO lab_orders (
+            id,
+            facility_id,
+            patient_id,
+            priority,
+            status,
+            ordered_by_user_id,
+            ordered_at,
+            updated_at
+        )
+        SELECT ('710000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('310000000000000000000000'
+                    || lpad(to_hex((((i - 1) % $3) + 1)::bigint), 8, '0'))::uuid,
+               CASE WHEN i % 11 = 0 THEN 'urgent' ELSE 'routine' END,
+               CASE WHEN i % 4 = 0 THEN 'verified'
+                    WHEN i % 3 = 0 THEN 'result_entered'
+                    ELSE 'ordered'
+               END,
+               $4,
+               TIMESTAMPTZ '2026-05-01 00:00:00+00' + (i * INTERVAL '10 minutes'),
+               TIMESTAMPTZ '2026-05-01 00:00:00+00' + (i * INTERVAL '10 minutes')
+        FROM generated
+        ON CONFLICT (id) DO UPDATE
+        SET patient_id = EXCLUDED.patient_id,
+            priority = EXCLUDED.priority,
+            status = EXCLUDED.status,
+            ordered_at = EXCLUDED.ordered_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.lab_order_count)
+    .bind(config.patient_count)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $1::int) AS i
+        )
+        INSERT INTO lab_order_tests (order_id, test_id)
+        SELECT ('710000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $2
+        FROM generated
+        ON CONFLICT (order_id, test_id) DO NOTHING
+        "#,
+    )
+    .bind(config.lab_order_count)
+    .bind(default_lab_test_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO lab_specimens (
+            id,
+            facility_id,
+            order_id,
+            patient_id,
+            specimen_type,
+            status,
+            collected_by_user_id,
+            collected_at,
+            updated_at
+        )
+        SELECT ('720000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('710000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               ('310000000000000000000000'
+                    || lpad(to_hex((((i - 1) % $3) + 1)::bigint), 8, '0'))::uuid,
+               'blood',
+               'collected',
+               $4,
+               TIMESTAMPTZ '2026-05-01 01:00:00+00' + (i * INTERVAL '10 minutes'),
+               TIMESTAMPTZ '2026-05-01 01:00:00+00' + (i * INTERVAL '10 minutes')
+        FROM generated
+        ON CONFLICT (id) DO UPDATE
+        SET patient_id = EXCLUDED.patient_id,
+            status = EXCLUDED.status,
+            collected_at = EXCLUDED.collected_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.lab_order_count)
+    .bind(config.patient_count)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO lab_results (
+            id,
+            facility_id,
+            order_id,
+            specimen_id,
+            patient_id,
+            test_id,
+            value,
+            unit,
+            status,
+            entered_by_user_id,
+            entered_at,
+            verified_by_user_id,
+            verified_at,
+            updated_at
+        )
+        SELECT ('730000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('710000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               ('720000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               ('310000000000000000000000'
+                    || lpad(to_hex((((i - 1) % $3) + 1)::bigint), 8, '0'))::uuid,
+               $4,
+               (10 + (i % 7))::text,
+               'g/dL',
+               CASE WHEN i % 4 = 0 THEN 'verified' ELSE 'entered' END,
+               $5,
+               TIMESTAMPTZ '2026-05-01 02:00:00+00' + (i * INTERVAL '10 minutes'),
+               CASE WHEN i % 4 = 0 THEN $5 ELSE NULL END,
+               CASE WHEN i % 4 = 0
+                    THEN TIMESTAMPTZ '2026-05-01 03:00:00+00' + (i * INTERVAL '10 minutes')
+                    ELSE NULL
+               END,
+               TIMESTAMPTZ '2026-05-01 02:00:00+00' + (i * INTERVAL '10 minutes')
+        FROM generated
+        ON CONFLICT (specimen_id, test_id) DO UPDATE
+        SET value = EXCLUDED.value,
+            status = EXCLUDED.status,
+            entered_at = EXCLUDED.entered_at,
+            verified_by_user_id = EXCLUDED.verified_by_user_id,
+            verified_at = EXCLUDED.verified_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.lab_order_count)
+    .bind(config.patient_count)
+    .bind(default_lab_test_id)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO inventory_items (
+            id,
+            facility_id,
+            category_id,
+            code,
+            name,
+            item_type,
+            unit,
+            controlled,
+            is_active,
+            created_at,
+            updated_at
+        )
+        SELECT ('810000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               $3,
+               'PERF-MED-' || lpad(i::text, 6, '0'),
+               'Performance Item ' || lpad(i::text, 6, '0'),
+               'medication',
+               'unit',
+               FALSE,
+               TRUE,
+               TIMESTAMPTZ '2026-06-01 00:00:00+00' + (i * INTERVAL '1 minute'),
+               TIMESTAMPTZ '2026-06-01 00:00:00+00' + (i * INTERVAL '1 minute')
+        FROM generated
+        ON CONFLICT (facility_id, code) DO UPDATE
+        SET name = EXCLUDED.name,
+            item_type = EXCLUDED.item_type,
+            unit = EXCLUDED.unit,
+            controlled = EXCLUDED.controlled,
+            is_active = TRUE,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.inventory_item_count)
+    .bind(default_category_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO stock_batches (
+            id,
+            facility_id,
+            item_id,
+            location_id,
+            batch_number,
+            expires_on,
+            quantity_on_hand,
+            received_at,
+            updated_at
+        )
+        SELECT ('820000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('810000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $3,
+               'PERF-BATCH-' || lpad(i::text, 6, '0'),
+               DATE '2027-01-01' + (i % 365),
+               50 + (i % 500),
+               TIMESTAMPTZ '2026-06-02 00:00:00+00' + (i * INTERVAL '1 minute'),
+               TIMESTAMPTZ '2026-06-02 00:00:00+00' + (i * INTERVAL '1 minute')
+        FROM generated
+        ON CONFLICT (id) DO UPDATE
+        SET quantity_on_hand = EXCLUDED.quantity_on_hand,
+            expires_on = EXCLUDED.expires_on,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.inventory_item_count)
+    .bind(main_store_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO stock_movements (
+            id,
+            facility_id,
+            item_id,
+            batch_id,
+            location_id,
+            movement_type,
+            quantity,
+            balance_after,
+            reason,
+            created_by_user_id,
+            created_at
+        )
+        SELECT ('830000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('810000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               ('820000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $3,
+               'receipt',
+               50 + (i % 500),
+               50 + (i % 500),
+               'performance-seed',
+               $4,
+               TIMESTAMPTZ '2026-06-02 00:00:00+00' + (i * INTERVAL '1 minute')
+        FROM generated
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.inventory_item_count)
+    .bind(main_store_id)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO invoices (
+            id,
+            facility_id,
+            patient_id,
+            invoice_number,
+            status,
+            gross_amount_minor,
+            paid_amount_minor,
+            currency,
+            issued_by_user_id,
+            issued_at,
+            updated_at
+        )
+        SELECT ('910000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('310000000000000000000000'
+                    || lpad(to_hex((((i - 1) % $3) + 1)::bigint), 8, '0'))::uuid,
+               'PERF-' || lpad(i::text, 8, '0'),
+               CASE WHEN i % 3 = 0 THEN 'paid'
+                    WHEN i % 3 = 1 THEN 'partially_paid'
+                    ELSE 'issued'
+               END,
+               15000 + ((i % 9) * 2500),
+               CASE WHEN i % 3 = 0 THEN 15000 + ((i % 9) * 2500)
+                    WHEN i % 3 = 1 THEN 5000
+                    ELSE 0
+               END,
+               'GHS',
+               $4,
+               TIMESTAMPTZ '2026-07-01 00:00:00+00' + (i * INTERVAL '10 minutes'),
+               TIMESTAMPTZ '2026-07-01 00:00:00+00' + (i * INTERVAL '10 minutes')
+        FROM generated
+        ON CONFLICT (facility_id, invoice_number) DO UPDATE
+        SET patient_id = EXCLUDED.patient_id,
+            status = EXCLUDED.status,
+            gross_amount_minor = EXCLUDED.gross_amount_minor,
+            paid_amount_minor = EXCLUDED.paid_amount_minor,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.invoice_count)
+    .bind(config.patient_count)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH generated AS (
+            SELECT generate_series(1, $2::int) AS i
+        )
+        INSERT INTO invoice_lines (
+            id,
+            facility_id,
+            invoice_id,
+            service_price_id,
+            description,
+            quantity,
+            unit_amount_minor,
+            line_amount_minor,
+            currency,
+            created_at
+        )
+        SELECT ('911000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $1,
+               ('910000000000000000000000' || lpad(to_hex(i::bigint), 8, '0'))::uuid,
+               $3,
+               'Performance consultation',
+               1,
+               15000 + ((i % 9) * 2500),
+               15000 + ((i % 9) * 2500),
+               'GHS',
+               TIMESTAMPTZ '2026-07-01 00:00:00+00' + (i * INTERVAL '10 minutes')
+        FROM generated
+        ON CONFLICT (id) DO UPDATE
+        SET unit_amount_minor = EXCLUDED.unit_amount_minor,
+            line_amount_minor = EXCLUDED.line_amount_minor
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(config.invoice_count)
+    .bind(default_service_price_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH paid_invoices AS (
+            SELECT id,
+                   row_number() OVER (ORDER BY issued_at, id) AS ordinal,
+                   paid_amount_minor,
+                   issued_at
+            FROM invoices
+            WHERE facility_id = $1
+              AND invoice_number ~ '^PERF-[0-9]{8}$'
+              AND paid_amount_minor > 0
+        )
+        INSERT INTO payments (
+            id,
+            facility_id,
+            invoice_id,
+            cash_session_id,
+            receipt_number,
+            amount_minor,
+            currency,
+            method,
+            status,
+            recorded_by_user_id,
+            paid_at
+        )
+        SELECT ('912000000000000000000000' || lpad(to_hex(ordinal::bigint), 8, '0'))::uuid,
+               $1,
+               id,
+               NULL,
+               'PERF-RCPT-' || lpad(ordinal::text, 8, '0'),
+               paid_amount_minor,
+               'GHS',
+               'cash',
+               'recorded',
+               $2,
+               issued_at + INTERVAL '20 minutes'
+        FROM paid_invoices
+        ON CONFLICT (facility_id, receipt_number) DO UPDATE
+        SET amount_minor = EXCLUDED.amount_minor,
+            status = EXCLUDED.status,
+            paid_at = EXCLUDED.paid_at
+        "#,
+    )
+    .bind(baseline.facility_id)
+    .bind(owner_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("UPDATE wards SET status = 'active', updated_at = now() WHERE id IN ($1, $2)")
+        .bind(default_ward_id)
+        .bind(performance_ward_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -1221,4 +2252,3 @@ struct SeedPatientValidationRule {
     validation_message: &'static str,
     is_required: bool,
 }
-use std::sync::OnceLock;

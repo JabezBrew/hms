@@ -1,7 +1,9 @@
 use std::env;
 
 use anyhow::{bail, Context};
-use hms_db::provision::{provision_baseline, BaselineProvisioning};
+use hms_db::provision::{
+    provision_baseline, provision_performance_seed, BaselineProvisioning, PerformanceSeedScale,
+};
 use hms_domain::deployment::DeploymentProfile;
 use uuid::Uuid;
 
@@ -25,14 +27,26 @@ async fn main() -> anyhow::Result<()> {
 
     hms_db::migrate::run(&pool).await?;
 
-    if env::var("HMS_PROVISION_BASELINE")
+    let baseline = baseline_from_env(profile)?;
+    let provision_baseline_requested = env::var("HMS_PROVISION_BASELINE")
         .ok()
         .as_deref()
         .map(|value| parse_bool(value, "HMS_PROVISION_BASELINE"))
         .transpose()?
-        .unwrap_or(false)
-    {
-        provision_baseline(&pool, &baseline_from_env(profile)?).await?;
+        .unwrap_or(false);
+    let performance_seed_scale = performance_seed_scale_from_env()?;
+
+    let environment = env::var("HMS_ENV").unwrap_or_else(|_| "development".to_owned());
+    if performance_seed_is_forbidden(&environment, performance_seed_scale) {
+        bail!("HMS_PERF_SEED_SCALE is not allowed when HMS_ENV=production");
+    }
+
+    if provision_baseline_requested || performance_seed_scale.is_some() {
+        provision_baseline(&pool, &baseline).await?;
+    }
+
+    if let Some(seed_scale) = performance_seed_scale {
+        provision_performance_seed(&pool, &baseline, seed_scale.config()).await?;
     }
 
     if env::var("HMS_SEARCH_INDEX_REBUILD")
@@ -46,6 +60,22 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn performance_seed_scale_from_env() -> anyhow::Result<Option<PerformanceSeedScale>> {
+    env::var("HMS_PERF_SEED_SCALE")
+        .ok()
+        .as_deref()
+        .map(PerformanceSeedScale::parse)
+        .transpose()
+        .map(Option::flatten)
+}
+
+fn performance_seed_is_forbidden(
+    environment: &str,
+    seed_scale: Option<PerformanceSeedScale>,
+) -> bool {
+    seed_scale.is_some() && environment.eq_ignore_ascii_case("production")
 }
 
 fn baseline_from_env(profile: DeploymentProfile) -> anyhow::Result<BaselineProvisioning> {
@@ -108,6 +138,29 @@ fn parse_bool(value: &str, name: &str) -> anyhow::Result<bool> {
         "1" | "true" | "yes" | "on" => Ok(true),
         "0" | "false" | "no" | "off" => Ok(false),
         _ => bail!("{name} must be a boolean"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn performance_seed_is_blocked_before_writes_in_production() {
+        assert!(performance_seed_is_forbidden(
+            "production",
+            Some(PerformanceSeedScale::Small)
+        ));
+        assert!(performance_seed_is_forbidden(
+            "PRODUCTION",
+            Some(PerformanceSeedScale::Medium)
+        ));
+        assert!(!performance_seed_is_forbidden("development", None));
+        assert!(!performance_seed_is_forbidden(
+            "development",
+            Some(PerformanceSeedScale::Large)
+        ));
+        assert!(!performance_seed_is_forbidden("production", None));
     }
 }
 

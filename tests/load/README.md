@@ -155,7 +155,7 @@ Override soak duration with `HMS_LOAD_SOAK_HOLD_DURATION=2h`.
 | `HMS_LOAD_WORKFLOWS` | all | Comma-separated subset: `reception,doctor,nurse,lab,pharmacy,billing,admin`. |
 | `HMS_LOAD_ENABLE_WRITES` | false | Enables synthetic patient, visit, triage, note, vitals, lab, pharmacy, and billing writes. |
 | `HMS_LOAD_INCLUDE_OPD_RUSH` | false | Adds an arrival-rate OPD rush scenario. |
-| `HMS_LOAD_DATA_SCALE` | `current-seed` | Labels the dataset scale in k6 tags and logs. Use `small`, `medium`, or `large` only after the environment has actually been seeded to that scale. |
+| `HMS_LOAD_DATA_SCALE` | `current-seed` | Labels the dataset scale in k6 tags and logs. Use `small`, `medium`, or `large` only after the environment has actually been provisioned with `HMS_PERF_SEED_SCALE` or an equivalent safe seed. |
 | `HMS_LOAD_THINK_TIME_SCALE` | `1` | Lower for faster tests, higher for slower human pacing. |
 | `HMS_LOAD_BUDGET_MULTIPLIER` | `1` | Multiplies p99 thresholds when measuring over higher-latency public links. |
 | `HMS_LOAD_DEBUG_FAILURES` | false | Logs method, route template, role, and status for failed requests. Never logs bodies. |
@@ -290,9 +290,27 @@ user latency from this k6 baseline alone.
 
 ## Data-Scale Profiles
 
-The current committed baseline is only for the current staging seed. Larger
-Chronicle and search datasets are still unproven. Once staging has explicit
-seed profiles, label runs like this:
+`HMS_LOAD_DATA_SCALE` is a k6 label. It does not seed data by itself.
+
+Rust V2 synthetic performance data is provisioned through `hms-migrator`:
+
+```bash
+cd backend-rs
+HMS_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/hms_perf_medium \
+HMS_PROVISION_BASELINE=true \
+HMS_SEED_DEMO_DATA=true \
+HMS_PERF_SEED_SCALE=medium \
+HMS_ENV=development \
+HMS_BOOTSTRAP_ADMIN_EMAIL=owner@hms.local \
+HMS_BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123! \
+cargo run -p hms-migrator
+```
+
+Supported values are `small`, `medium`, and `large`. The migrator refuses
+performance seeding when `HMS_ENV=production`.
+
+After the environment is actually seeded to the intended scale, label runs like
+this:
 
 ```bash
 HMS_LOAD_DATA_SCALE=small tests/load/scripts/run-rust-v2-regression.sh
@@ -300,9 +318,8 @@ HMS_LOAD_DATA_SCALE=medium tests/load/scripts/run-rust-v2-regression.sh
 HMS_LOAD_DATA_SCALE=large tests/load/scripts/run-rust-v2-regression.sh
 ```
 
-The `HMS_LOAD_DATA_SCALE` value is a label only. It does not seed data and must
-not be used to claim small/medium/large performance until the environment has
-actually been provisioned to that scale.
+Do not use the label to claim small, medium, or large performance unless the
+database was provisioned to that scale first.
 
 ## Guardrails
 

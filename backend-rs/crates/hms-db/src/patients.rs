@@ -128,15 +128,8 @@ pub async fn list_patients(
 
     if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
         let pattern = format!("%{}%", search.to_lowercase());
-        query.push(" AND (lower(patient_code) LIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" OR lower(first_name) LIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" OR lower(last_name) LIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" OR lower(first_name || ' ' || last_name) LIKE ");
+        query.push(" AND lower(patient_code || ' ' || first_name || ' ' || last_name) LIKE ");
         query.push_bind(pattern);
-        query.push(")");
     }
 
     if let Some(status) = status {
@@ -436,15 +429,10 @@ pub async fn list_context_patients(
         .filter(|value| !value.is_empty())
     {
         let pattern = format!("%{}%", search.to_lowercase());
-        query.push(" AND (lower(patients.patient_code) LIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" OR lower(patients.first_name) LIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" OR lower(patients.last_name) LIKE ");
-        query.push_bind(pattern.clone());
-        query.push(" OR lower(patients.first_name || ' ' || patients.last_name) LIKE ");
+        query.push(
+            " AND lower(patients.patient_code || ' ' || patients.first_name || ' ' || patients.last_name) LIKE ",
+        );
         query.push_bind(pattern);
-        query.push(")");
     }
 
     if let Some(cursor) = cursor {

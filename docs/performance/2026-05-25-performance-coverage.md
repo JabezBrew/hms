@@ -1,7 +1,7 @@
 # HMS Performance Coverage Pass - 2026-05-25
 
-Status: current-tree coverage and regression-hardening pass after the auth/session
-latency fix in commit `9a21db613`.
+Status: current-tree coverage, regression-hardening, scaled synthetic seed, and
+frontend runtime pass after the auth/session latency fix in commit `9a21db613`.
 
 Scope:
 
@@ -42,6 +42,34 @@ Current local after-run, using `/private/tmp/hms-perf-after-local`:
 - DB pool-wait budgets after this pass: passed.
 - Slow SQL budgets after this pass: passed.
 
+Scaled local follow-up, using `/private/tmp/hms-perf-medium-after-patient-search`:
+
+- Dataset: synthetic medium seed, generated through `hms-migrator` with
+  `HMS_PERF_SEED_SCALE=medium`.
+- Synthetic rows: 2,500 performance patients, 8,000 clinical notes, 1,500 lab
+  orders, 1,000 inventory items, 250 admissions, 750 nursing tasks, and 1,500
+  invoices.
+- Checks: 402 passed, 0 failed.
+- HTTP failures: 0.
+- HMS application errors: 0.
+- Route DB-query budgets: passed.
+- Payload budgets: passed.
+- DB pool-wait budgets: passed.
+- Slow SQL budgets: passed.
+- Pool snapshot: main pool 25% used with 3 idle connections; auth pool 0% used
+  with 2 idle connections.
+- Guardrails: `auth.user_auth_versions_for_facility=0` and
+  `dashboard.refresh_snapshot=0`.
+
+Focused database plan evidence for patient search on the medium seed:
+
+- Previous predicate: index scan on `patients_facility_created_idx`, filtered
+  2,501 rows, execution time 5.882ms.
+- Optimized predicate: bitmap scan on the existing
+  `patients_search_trgm_idx`, execution time 0.438ms.
+- Result: 13.4x faster plan for the selective search case, while preserving
+  the same facility-scoped search surface.
+
 Frontend bundle budget from `frontend/dist`:
 
 - Startup transfer gzip: 41.74 KB / 90 KB.
@@ -49,23 +77,39 @@ Frontend bundle budget from `frontend/dist`:
 - Entry JS gzip: 10.6 KB / 40 KB.
 - Entry CSS gzip: 31.15 KB / 45 KB.
 - Largest JS chunk gzip: 112.55 KB / 120 KB, `vendor-core-CD4Y7yJX.js`.
+- Initial modulepreloads: 6.
+- Initial chart chunks: none. `vendor-recharts` is now a forbidden initial
+  script/preload in `frontend/scripts/check-bundle-budget.mjs`.
+
+Low-end browser probe from `/private/tmp/hms-frontend-runtime-perf.json`:
+
+- Browser: Playwright Chromium, 1366x768, 4x CPU throttle, reduced motion.
+- Login shell/dashboard: 1,709.1ms, 3 long tasks totaling 231ms, API p99
+  335.6ms, no chart chunk.
+- Patient Registry: 261.2ms, 0 long tasks, API p99 45.2ms, 20 script assets,
+  no `PatientChroniclePage` chunk, no chart chunk.
+- Patient Chronicle: 320.5ms, 0 long tasks, API p99 30.1ms, Chronicle route
+  code loads only on `/patients/:id`.
+- Ward Board: 210.6ms, 1 long task at 50ms, API p99 15.8ms.
+- Lab Orders: 246.3ms, 0 long tasks, API p99 11.9ms.
+- Inventory Items: 340.7ms, 1 long task at 55ms, API p99 14.1ms.
 
 ## Surface Matrix
 
-| Surface | Current local p50/p95/p99 | Accepted stress p99 | DB queries/request | Payload, pool wait, slow SQL | Frontend/static evidence | Status |
+| Surface | Medium local p99 | Accepted stress p99 | DB queries/request | Payload, pool wait, slow SQL | Frontend/runtime evidence | Status |
 | --- | ---: | ---: | ---: | --- | --- | --- |
-| Auth/session hydration, `GET /api/v2/auth/me` | 1.77ms / 2.80ms / 29.49ms | 44.97ms | 0.00, budget 0 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | App shell lazy-loads authenticated runtime; auth API threads `signal` | Pass after auth cache fix |
-| Patient list/search page, `GET /api/v2/patients` | 4.52ms / 14.21ms / 16.59ms | 87.51ms | 1.39, budget 2 | p99 payload 1,014 B, pool wait 0ms, slow SQL 0 | No production `apiClient.getAll()` calls; patient list uses server params and cursor adapter | Pass for current seed |
-| Patient Chronicle initial API, `GET /api/v2/patients/:id/chronicle` | 11.38ms / 20.48ms / 20.62ms | 62.08ms | 2.00, budget 3 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | Chronicle queries pass TanStack `signal`; timeline is cursor-paged | Pass for current seed; large Chronicle seed still unproven |
-| OmniSearch, `POST /api/v2/search/omni` | 7.17ms / 32.97ms / 56.66ms | 91.11ms | 1.00, budget 2 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | Search is debounced in shared search hooks; no client-side full-dataset filtering found | Pass for current seed; large search corpus still unproven |
-| Ward/admission/nursing board, `GET /api/v2/wards/board` | 5.45ms / 13.02ms / 24.11ms | 44.87ms | 1.00, budget 2 | p99 payload 1,014 B, pool wait 0ms, slow SQL 0 | Ward board, admissions, and nursing queries thread `signal`; ward bed layout uses virtualization | Pass for current seed |
-| Dashboard snapshot, `GET /api/v2/dashboards/snapshot` | 11.30ms / 50.59ms / 72.21ms | Missing in preserved stress artifact | 2.86, budget 3 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | Dashboard queries thread `signal`; chart code is lazy-loadable | Local pass; regenerate accepted stress baseline with dashboard trend |
-| Laboratory read group | 1.94ms / 7.79ms / 8.33ms | 52.63ms | 0.22, budget 2 | p99 payload 1,014 B, pool wait 0ms, slow SQL 0 | Lab APIs use paginated helpers with `options`; lab pages use backend params | Pass for current seed |
-| Inventory/pharmacy read group | 2.60ms / 7.45ms / 12.24ms | 70.10ms | 0.43, budget 2 | p99 payload 1,014 B, pool wait 0ms, slow SQL 0 | Inventory list pages use `VirtualizedTable`; signal gaps in legacy fallback list helpers were closed | Pass for current seed |
-| Billing/NHIS read group | 1.94ms / 6.86ms / 7.02ms | 55.18ms | 0.19, budget 2 | p99 payload 1,014 B, pool wait 0ms, slow SQL 0 | Billing helpers now pass cancellation signals through paginated fallback paths | Pass for current seed |
-| Frontend startup/chunks | Bundle budget passed | n/a | n/a | n/a | App/authenticated/ops/public runtimes lazy-loaded; heavy chart widgets have lazy wrappers | Pass, but largest vendor chunk is close to the 120 KB gzip ceiling |
-| Frontend list cancellation and low-end rendering | Static audit pass for no production `getAll()`; paginated calls now preserve signals | n/a | n/a | n/a | Virtualized tables are used in high-density inventory, encounters, audit, and ward-bed views | Pass with residual need for low-end browser profiling |
-| Observability/regression protection | Reporter now enforces p99 latency, DB-query budgets, route payloads, DB pool waits, slow SQL, pool snapshot, and named query guards | n/a | n/a | n/a | Metrics use route patterns, status buckets, and safe facility labels only | Improved in this pass |
+| Auth/session hydration, `GET /api/v2/auth/me` | 45.86ms | 44.97ms | 0.00, budget 0 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | App shell lazy-loads authenticated runtime; auth API threads `signal` | Pass after auth cache fix |
+| Patient list/search page, `GET /api/v2/patients` | 19.64ms | 87.51ms | 1.43, budget 2 | p99 payload 14.16 KiB, pool wait 0ms, slow SQL 0 | Registry route 261.2ms at 4x CPU, 0 long tasks, no Chronicle chunk before navigation | Pass on medium seed |
+| Patient Chronicle initial API, `GET /api/v2/patients/:id/chronicle` | 10.49ms | 62.08ms | 2.00, budget 3 | p99 payload 15.91 KiB, pool wait 0ms, slow SQL 0 | Chronicle route 320.5ms at 4x CPU, 0 long tasks, route code loads on `/patients/:id` only | Pass on medium seed |
+| OmniSearch, `POST /api/v2/search/omni` | 65.18ms | 91.11ms | 1.00, budget 2 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | Search is debounced in shared search hooks; no client-side full-dataset filtering found | Pass on medium seed |
+| Ward/admission/nursing board, `GET /api/v2/wards/board` | 12.65ms | 44.87ms | 1.00, budget 2 | p99 payload 15.92 KiB, pool wait 0ms, slow SQL 0 | Ward Board route 210.6ms at 4x CPU, one 50ms long task | Pass on medium seed; frontend residual |
+| Dashboard snapshot, `GET /api/v2/dashboards/snapshot` | 204.03ms | Missing in preserved stress artifact | 2.89, budget 3 | p99 payload 3.97 KiB, pool wait 0ms, slow SQL 0 | Login/dashboard path had three long tasks totaling 231ms under 4x CPU | Pass, close to budget |
+| Laboratory read group | 36.98ms | 52.63ms | 0.22, budget 2 | p99 payload 15.82 KiB, pool wait 0ms, slow SQL 0 | Lab Orders route 246.3ms at 4x CPU, 0 long tasks | Pass on medium seed |
+| Inventory/pharmacy read group | 12.87ms | 70.10ms | 0.44, budget 2 | p99 payload 29.12 KiB, pool wait 0ms, slow SQL 0 | Inventory Items route 340.7ms at 4x CPU, one 55ms long task | Pass on medium seed; frontend residual |
+| Billing/NHIS read group | 10.71ms | 55.18ms | 0.10, budget 2 | p99 payload 7.90 KiB, pool wait 0ms, slow SQL 0 | Billing helpers pass cancellation signals through paginated fallback paths | Pass on medium seed |
+| Frontend startup/chunks | Bundle budget passed | n/a | n/a | n/a | `vendor-recharts` no longer appears in initial scripts or modulepreloads; initial chart chunks: none | Pass, but largest vendor chunk is close to the 120 KB gzip ceiling |
+| Frontend list cancellation and low-end rendering | Browser probe passed key routes | n/a | n/a | n/a | Patient Registry no longer route-prefetches Chronicle on hover/focus; PHI data prefetch remains navigation-gated | Improved in this pass |
+| Observability/regression protection | Reporter and browser probe cover hot paths | n/a | n/a | n/a | Metrics use route patterns, status buckets, and safe facility labels only; runtime probe sanitizes UUIDs and records no PHI | Improved in this pass |
 
 ## Fixes Made In This Pass
 
@@ -77,29 +121,43 @@ Frontend bundle budget from `frontend/dist`:
    baseline surface definitions.
 4. Threaded cancellation signals through paginated frontend list fallbacks in
    encounters, nursing, audit logs, inventory/pharmacy, and billing/NHIS helpers.
+5. Added `HMS_PERF_SEED_SCALE=small|medium|large` provisioning in
+   `hms-migrator`, guarded against `HMS_ENV=production`, with deterministic
+   synthetic non-PHI data and idempotence coverage.
+6. Changed patient search to use the existing combined trigram expression index
+   instead of filtering facility-created index scans with multiple `OR` clauses.
+7. Split shared UI utility packages out of the Recharts chunk and made the bundle
+   budget fail if `vendor-recharts` becomes an initial script or modulepreload.
+8. Added `frontend/scripts/measure-runtime-perf.mjs`, a PHI-safe Playwright
+   probe for login, Patient Registry, Patient Chronicle, Ward Board, Lab Orders,
+   and Inventory Items.
+9. Removed Patient Registry row hover/focus loading of the heavy Chronicle route.
+   Route and PHI data prefetch now remain navigation-gated for patient rows.
 
 ## Residual Risks
 
-- The accepted staging stress artifact proves the current staging seed only.
-  Chronicle and OmniSearch still need a deliberately larger seeded profile
-  before their current numbers can be treated as realistic data-scale proof.
+- The accepted staging stress artifact proves the older staging seed only. The
+  new medium seed evidence is local; staging should be reprovisioned and rerun
+  with the current reporter before replacing the accepted baseline.
 - The preserved accepted stress artifact predates the `hms_dashboard_snapshot`
-  k6 trend. Local evidence covers the trend; staging should be regenerated.
-- The maintained harness has `HMS_LOAD_DATA_SCALE`, but that value is currently
-  a label. It does not seed small, medium, or large datasets by itself.
+  k6 trend. Local evidence covers the trend, but the accepted staging artifact
+  still lacks it.
+- The dashboard snapshot p99 passed at 204.03ms on medium seed but is close to
+  the 250ms clinical-view budget and remains the next backend hot path.
 - Frontend bundle size passes, but `vendor-core` is near the 120 KB gzip budget.
-- Low-end browser runtime proof is still static plus bundle-budget evidence; the
-  next pass should capture real route-level RUM or browser trace evidence for a
-  large Chronicle timeline, busy inventory list, and dashboard navigation.
+- Ward Board still produced one 50ms long task under 4x CPU throttling.
+- Inventory Items still produced one 55ms long task under 4x CPU throttling.
+- The large seed profile exists but was not run in this pass.
 
 ## Next Highest-ROI Targets
 
-1. Add a PHI-safe Rust V2 performance seed/provisioning command for `small`,
-   `medium`, and `large` data profiles, especially Chronicle timelines and
-   search documents.
-2. Regenerate the accepted staging stress baseline with the current reporter,
+1. Regenerate the accepted staging stress baseline with the current reporter,
    role-specific load credentials, dashboard trend, payload budgets, pool-wait
-   budgets, and slow-SQL budgets.
-3. Add a low-end frontend profiling script or Playwright trace flow for
-   Chronicle, dashboards, ward board, inventory, lab, and billing navigation.
+   budgets, slow-SQL budgets, and `HMS_PERF_SEED_SCALE=medium`.
+2. Move dashboard reads further toward precomputed projections or async refresh
+   so p99 has more headroom under load.
+3. Profile and split the Inventory Items route to remove the remaining low-end
+   long task.
 4. Investigate reducing `vendor-core` before it crosses the gzip budget.
+5. Run `HMS_PERF_SEED_SCALE=large` locally or on staging once the environment
+   has enough database headroom.

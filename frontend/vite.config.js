@@ -65,6 +65,11 @@ export default defineConfig(({ mode }) => {
             ) return "vendor-core"
             if (id.includes("react-router")) return "vendor-router"
             if (id.includes("@tanstack/react-query") || id.includes("@tanstack/query-core")) return "vendor-query"
+            if (
+              id.includes("clsx") ||
+              id.includes("tailwind-merge") ||
+              id.includes("class-variance-authority")
+            ) return "vendor-ui-utils"
             if (id.includes("recharts") || id.includes("react-smooth") || id.includes("d3-")) return "vendor-recharts"
             if (id.includes("@dnd-kit")) return "vendor-dnd"
             if (id.includes("date-fns")) return "vendor-date"

@@ -30,9 +30,11 @@ function getFileStats(filePath) {
 
 function parseEntryAssets(indexHtml) {
   const scriptRegex = /<script[^>]+type="module"[^>]+src="([^"]+)"/g
+  const modulePreloadRegex = /<link[^>]+rel="modulepreload"[^>]+href="([^"]+)"/g
   const cssRegex = /<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g
 
   const scripts = []
+  const modulePreloads = []
   const styles = []
 
   let match = null
@@ -40,11 +42,15 @@ function parseEntryAssets(indexHtml) {
     scripts.push(match[1])
   }
 
+  while ((match = modulePreloadRegex.exec(indexHtml)) !== null) {
+    modulePreloads.push(match[1])
+  }
+
   while ((match = cssRegex.exec(indexHtml)) !== null) {
     styles.push(match[1])
   }
 
-  return { scripts, styles }
+  return { scripts, modulePreloads, styles }
 }
 
 function resolveDistAsset(assetPath) {
@@ -63,7 +69,7 @@ if (!fs.existsSync(INDEX_HTML)) {
 }
 
 const indexHtml = fs.readFileSync(INDEX_HTML, 'utf8')
-const { scripts, styles } = parseEntryAssets(indexHtml)
+const { scripts, modulePreloads, styles } = parseEntryAssets(indexHtml)
 
 const entryScriptStats = scripts
   .map((asset) => ({ asset, ...getFileStats(resolveDistAsset(asset)) }))
@@ -127,9 +133,24 @@ if (largestJsChunk.name) {
   console.log(`  - Largest JS chunk: ${largestJsChunk.name}`)
 }
 
+const initialJsAssets = [...scripts, ...modulePreloads]
+const forbiddenInitialChunks = [/\/vendor-recharts-[^/]+\.js$/]
+const forbiddenInitialAssets = initialJsAssets.filter((asset) =>
+  forbiddenInitialChunks.some((pattern) => pattern.test(asset))
+)
+
+console.log(`  - Initial modulepreloads: ${modulePreloads.length}`)
+console.log(
+  `  - Initial chart chunks: ${forbiddenInitialAssets.length === 0 ? 'none' : forbiddenInitialAssets.join(', ')}`
+)
+
 const failures = checks
   .filter((check) => check.actual > check.max)
   .map((check) => `${check.label} exceeded: ${check.actual} KB > ${check.max} KB`)
+
+forbiddenInitialAssets.forEach((asset) => {
+  failures.push(`Charting chunk must stay lazy, but ${asset} is in the initial script/preload set`)
+})
 
 if (failures.length > 0) {
   fail('Bundle budget check failed.', failures)
