@@ -4,8 +4,10 @@ use hms_domain::care::VisitListItem;
 use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
-    BookableSessionListQuery, CancelBookableSessionRequest, CreateBookableServiceRequest,
-    CreateBookableSessionRequest, SchedulingExceptionItem, SchedulingExceptionListQuery,
+    BookableSessionListQuery, BookableSessionTemplateListItem, BookableSessionTemplateListQuery,
+    CancelBookableSessionRequest, CreateBookableServiceRequest, CreateBookableSessionRequest,
+    CreateBookableSessionTemplateRequest, GenerateBookableSessionsRequest,
+    GenerateBookableSessionsResponse, SchedulingExceptionItem, SchedulingExceptionListQuery,
     SchedulingExceptionRequest, SchedulingListQuery,
 };
 use uuid::Uuid;
@@ -117,6 +119,87 @@ pub async fn create_session(
         state
             .scheduling_service()
             .create_session(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/scheduling/templates",
+    operation_id = "getSchedulingTemplates",
+    tag = "scheduling",
+    security(("bearerAuth" = [])),
+    params(BookableSessionTemplateListQuery),
+    responses(
+        (status = 200, description = "Bookable session templates", body = ListResponse<BookableSessionTemplateListItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_templates(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<BookableSessionTemplateListQuery>,
+) -> Result<Json<ListResponse<BookableSessionTemplateListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .scheduling_service()
+            .list_templates(&user, query)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/scheduling/templates",
+    operation_id = "postSchedulingTemplates",
+    tag = "scheduling",
+    security(("bearerAuth" = [])),
+    request_body = CreateBookableSessionTemplateRequest,
+    responses(
+        (status = 200, description = "Bookable session template created", body = ObjectResponse<BookableSessionTemplateListItem>),
+        (status = 400, description = "Invalid template request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_template(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<CreateBookableSessionTemplateRequest>,
+) -> Result<Json<ObjectResponse<BookableSessionTemplateListItem>>, ApiError> {
+    Ok(Json(
+        state
+            .scheduling_service()
+            .create_template(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v2/scheduling/templates/generate",
+    operation_id = "postSchedulingTemplatesGenerate",
+    tag = "scheduling",
+    security(("bearerAuth" = [])),
+    request_body = GenerateBookableSessionsRequest,
+    responses(
+        (status = 200, description = "Bookable sessions generated", body = ObjectResponse<GenerateBookableSessionsResponse>),
+        (status = 400, description = "Invalid generation request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Sessions could not be generated", body = ApiErrorResponse)
+    )
+)]
+pub async fn generate_sessions(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Json(payload): Json<GenerateBookableSessionsRequest>,
+) -> Result<Json<ObjectResponse<GenerateBookableSessionsResponse>>, ApiError> {
+    Ok(Json(
+        state
+            .scheduling_service()
+            .generate_sessions(&user, payload)
             .await?,
     ))
 }

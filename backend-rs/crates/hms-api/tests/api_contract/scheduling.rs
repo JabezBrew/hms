@@ -93,6 +93,35 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
         .expect("unknown clinic session is handled");
     assert_eq!(invalid_session_clinic.status(), StatusCode::BAD_REQUEST);
 
+    let invalid_template_weekday = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/templates")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "owner_type": "clinic",
+                        "owner_id": clinic_id,
+                        "name": "Invalid weekday template",
+                        "mode": "capacity_block",
+                        "weekdays": [0],
+                        "starts_on": "2026-06-01",
+                        "start_time": "13:00:00",
+                        "end_time": "15:00:00",
+                        "capacity": 4
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("invalid template weekday is handled");
+    assert_eq!(invalid_template_weekday.status(), StatusCode::BAD_REQUEST);
+
     let unknown_service_id = Uuid::new_v4();
     let invalid_session_service = app
         .clone()
@@ -121,6 +150,119 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
         .await
         .expect("invalid session service is handled");
     assert_eq!(invalid_session_service.status(), StatusCode::BAD_REQUEST);
+
+    let template = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/templates")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "service_code": "general",
+                        "owner_type": "clinic",
+                        "owner_id": clinic_id,
+                        "name": "General OPD Monday Wednesday afternoon",
+                        "mode": "capacity_block",
+                        "weekdays": [1, 3],
+                        "starts_on": "2026-06-01",
+                        "start_time": "13:00:00",
+                        "end_time": "15:00:00",
+                        "capacity": 4,
+                        "allowed_service_ids": [service_id]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("template create succeeds");
+    assert_eq!(template.status(), StatusCode::OK);
+    let template_body = json_body(template).await;
+    let template_id = template_body["data"]["id"]
+        .as_str()
+        .expect("template id exists");
+    assert_eq!(template_body["data"]["weekdays"], json!([1, 3]));
+
+    let listed_templates = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/scheduling/templates?clinic_id={clinic_id}&service_id={service_id}&limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("template list succeeds");
+    assert_eq!(listed_templates.status(), StatusCode::OK);
+    let listed_templates_body = json_body(listed_templates).await;
+    assert!(listed_templates_body["data"]
+        .as_array()
+        .expect("template data is an array")
+        .iter()
+        .any(|item| item["id"] == template_id));
+
+    let generated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/templates/generate")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "template_id": template_id,
+                        "start_date": "2026-06-08",
+                        "end_date": "2026-06-10"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("template generation succeeds");
+    assert_eq!(generated.status(), StatusCode::OK);
+    let generated_body = json_body(generated).await;
+    assert_eq!(generated_body["data"]["generated_count"], 2);
+    assert_eq!(generated_body["data"]["skipped_count"], 0);
+    assert!(generated_body["data"]["sessions"]
+        .as_array()
+        .expect("generated sessions are an array")
+        .iter()
+        .all(|session| session["source_template_id"] == template_id));
+
+    let generated_again = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/templates/generate")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "template_id": template_id,
+                        "start_date": "2026-06-08",
+                        "end_date": "2026-06-10"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("repeat template generation succeeds");
+    assert_eq!(generated_again.status(), StatusCode::OK);
+    let generated_again_body = json_body(generated_again).await;
+    assert_eq!(generated_again_body["data"]["generated_count"], 0);
+    assert_eq!(generated_again_body["data"]["skipped_count"], 2);
 
     let patients = app
         .clone()

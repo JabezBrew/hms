@@ -3,6 +3,7 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import CircleOff from 'lucide-react/dist/esm/icons/circle-off.js';
 import ListChecks from 'lucide-react/dist/esm/icons/list-checks.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import UsersRound from 'lucide-react/dist/esm/icons/users-round.js';
 import { useMemo, useState } from 'react';
@@ -13,6 +14,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import AppointmentList from '@/features/appointments/components/AppointmentList';
 import AppointmentTypeManager from '@/features/appointments/components/AppointmentTypeManager';
+import SchedulingTemplatesPanel from '@/features/appointments/components/SchedulingTemplatesPanel';
 import {
   useCreateSchedulingException,
   useCreateSchedulingSession,
@@ -579,6 +581,10 @@ const AppointmentsPage = () => {
               <Plus className="size-4" />
               Sessions
             </TabsTrigger>
+            <TabsTrigger value="templates" className="gap-2 rounded-sm px-4 py-2 font-mono text-xs">
+              <RefreshCw className="size-4" />
+              Templates
+            </TabsTrigger>
             <TabsTrigger value="waitlist" className="gap-2 rounded-sm px-4 py-2 font-mono text-xs">
               <ListChecks className="size-4" />
               Waitlist
@@ -621,6 +627,14 @@ const AppointmentsPage = () => {
             ) : (
               <SessionRows sessions={sessions} emptyTitle="No sessions match the selected day" />
             )}
+          </TabsContent>
+
+          <TabsContent value="templates" className="animate-chronicle-enter space-y-6 pt-6">
+            <SchedulingTemplatesPanel
+              clinics={clinics}
+              services={services}
+              servicesLoading={servicesLoading}
+            />
           </TabsContent>
 
           <TabsContent value="waitlist" className="animate-chronicle-enter pt-6">

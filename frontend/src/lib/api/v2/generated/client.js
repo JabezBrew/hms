@@ -1672,6 +1672,20 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getSchedulingTemplates": {
+    "operationId": "getSchedulingTemplates",
+    "method": "GET",
+    "path": "/api/v2/scheduling/templates",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "clinic_id",
+      "service_id",
+      "practitioner_user_id"
+    ],
+    "hasBody": false
+  },
   "getStaffDirectory": {
     "operationId": "getStaffDirectory",
     "method": "GET",
@@ -3192,6 +3206,22 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postSchedulingTemplates": {
+    "operationId": "postSchedulingTemplates",
+    "method": "POST",
+    "path": "/api/v2/scheduling/templates",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingTemplatesGenerate": {
+    "operationId": "postSchedulingTemplatesGenerate",
+    "method": "POST",
+    "path": "/api/v2/scheduling/templates/generate",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postSearchOmni": {
     "operationId": "postSearchOmni",
     "method": "POST",
@@ -3615,6 +3645,7 @@ export function createGeneratedClient(request) {
     getSchedulingExceptions: createOperation(request, operations.getSchedulingExceptions),
     getSchedulingServices: createOperation(request, operations.getSchedulingServices),
     getSchedulingSessions: createOperation(request, operations.getSchedulingSessions),
+    getSchedulingTemplates: createOperation(request, operations.getSchedulingTemplates),
     getStaffDirectory: createOperation(request, operations.getStaffDirectory),
     getStockBatches: createOperation(request, operations.getStockBatches),
     getStockMovements: createOperation(request, operations.getStockMovements),
@@ -3777,6 +3808,8 @@ export function createGeneratedClient(request) {
     postSchedulingServices: createOperation(request, operations.postSchedulingServices),
     postSchedulingSessionCancel: createOperation(request, operations.postSchedulingSessionCancel),
     postSchedulingSessions: createOperation(request, operations.postSchedulingSessions),
+    postSchedulingTemplates: createOperation(request, operations.postSchedulingTemplates),
+    postSchedulingTemplatesGenerate: createOperation(request, operations.postSchedulingTemplatesGenerate),
     postSearchOmni: createOperation(request, operations.postSearchOmni),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),

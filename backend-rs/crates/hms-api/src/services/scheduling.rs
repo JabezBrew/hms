@@ -2,8 +2,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::NewVisit;
 use hms_db::scheduling::{
-    AvailabilityFilters, ExceptionFilters, NewBookableService, NewBookableSession,
-    NewSchedulingException, SchedulingCursor, SessionFilters,
+    AvailabilityFilters, ExceptionFilters, GenerateSessionFilters, NewBookableService,
+    NewBookableSession, NewBookableSessionTemplate, NewSchedulingException, SchedulingCursor,
+    SessionFilters, TemplateFilters,
 };
 use hms_domain::care::VisitListItem;
 use hms_domain::deployment::PermissionCode;
@@ -11,8 +12,10 @@ use hms_domain::patients::PatientRecord;
 use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
-    BookableSessionListQuery, BookableUnitType, CancelBookableSessionRequest,
-    CreateBookableServiceRequest, CreateBookableSessionRequest, SchedulingExceptionItem,
+    BookableSessionListQuery, BookableSessionTemplateListItem, BookableSessionTemplateListQuery,
+    BookableUnitType, CancelBookableSessionRequest, CreateBookableServiceRequest,
+    CreateBookableSessionRequest, CreateBookableSessionTemplateRequest,
+    GenerateBookableSessionsRequest, GenerateBookableSessionsResponse, SchedulingExceptionItem,
     SchedulingExceptionListQuery, SchedulingExceptionRequest, SchedulingListQuery,
 };
 use uuid::Uuid;
@@ -29,6 +32,7 @@ const MAX_NAME_LEN: usize = 160;
 const MAX_CODE_LEN: usize = 48;
 const MAX_REASON_LEN: usize = 1_000;
 const MAX_AVAILABILITY_DAYS: i64 = 45;
+const MAX_TEMPLATE_GENERATION_DAYS: i64 = 120;
 
 #[derive(Clone)]
 pub struct SchedulingService {
@@ -177,6 +181,7 @@ impl SchedulingService {
             NewBookableSession {
                 id: Uuid::new_v4(),
                 facility_id: self.facility_id(),
+                source_template_id: None,
                 clinic_id: payload.clinic_id,
                 service_code: validate_optional_text(
                     payload.service_code,
@@ -206,6 +211,122 @@ impl SchedulingService {
             )
         })?;
         Ok(object(session))
+    }
+
+    pub async fn list_templates(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: BookableSessionTemplateListQuery,
+    ) -> Result<ListResponse<BookableSessionTemplateListItem>, ApiError> {
+        require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
+        let (cursor, page_size) = page_request(SchedulingListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let rows = hms_db::scheduling::list_bookable_session_templates(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            TemplateFilters {
+                clinic_id: query.clinic_id,
+                service_id: query.service_id,
+                practitioner_user_id: query.practitioner_user_id,
+            },
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_template_list_failed",
+                "Bookable session templates could not be loaded.",
+            )
+        })?;
+
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.created_at, item.id)
+        }))
+    }
+
+    pub async fn create_template(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: CreateBookableSessionTemplateRequest,
+    ) -> Result<ObjectResponse<BookableSessionTemplateListItem>, ApiError> {
+        require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
+        validate_template_time_range(&payload)?;
+        self.validate_template_targets(&payload).await?;
+        let weekdays = validate_weekdays(payload.weekdays)?;
+        let allowed_service_ids = payload.allowed_service_ids.unwrap_or_default();
+        self.ensure_allowed_services(&allowed_service_ids).await?;
+        let template = hms_db::scheduling::create_bookable_session_template(
+            self.pool(),
+            NewBookableSessionTemplate {
+                id: Uuid::new_v4(),
+                facility_id: self.facility_id(),
+                clinic_id: payload.clinic_id,
+                service_code: validate_optional_text(
+                    payload.service_code,
+                    MAX_CODE_LEN,
+                    "service_code",
+                )?,
+                practitioner_user_id: payload.practitioner_user_id,
+                owner_type: payload.owner_type,
+                owner_id: payload.owner_id,
+                name: validate_required_text(payload.name, MAX_NAME_LEN, "template_name")?,
+                mode: payload.mode,
+                weekdays,
+                starts_on: payload.starts_on,
+                ends_on: payload.ends_on,
+                start_time: payload.start_time,
+                end_time: payload.end_time,
+                slot_minutes: payload.slot_minutes,
+                capacity: payload.capacity,
+                allow_overbooking: payload.allow_overbooking.unwrap_or(false),
+                overbook_limit: payload.overbook_limit.unwrap_or(0),
+                created_by_user_id: ctx.user_id,
+                allowed_service_ids,
+            },
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_template_create_failed",
+                "Bookable session template could not be created.",
+            )
+        })?;
+        Ok(object(template))
+    }
+
+    pub async fn generate_sessions(
+        &self,
+        ctx: &hms_access::RequestContext,
+        payload: GenerateBookableSessionsRequest,
+    ) -> Result<ObjectResponse<GenerateBookableSessionsResponse>, ApiError> {
+        require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
+        validate_generation_range(payload.start_date, payload.end_date)?;
+        if let Some(clinic_id) = payload.clinic_id {
+            self.ensure_active_clinic(clinic_id, "clinic_not_found")
+                .await?;
+        }
+        let response = hms_db::scheduling::generate_bookable_sessions(
+            self.pool(),
+            self.facility_id(),
+            payload.start_date,
+            payload.end_date,
+            GenerateSessionFilters {
+                template_id: payload.template_id,
+                clinic_id: payload.clinic_id,
+            },
+            ctx.user_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_template_generate_failed",
+                "Bookable sessions could not be generated from templates.",
+            )
+        })?;
+        Ok(object(response))
     }
 
     pub async fn cancel_session(
@@ -467,18 +588,47 @@ impl SchedulingService {
         &self,
         payload: &CreateBookableSessionRequest,
     ) -> Result<(), ApiError> {
-        if let Some(clinic_id) = payload.clinic_id {
+        self.validate_owner_targets(
+            payload.clinic_id,
+            payload.practitioner_user_id,
+            payload.owner_type,
+            payload.owner_id,
+        )
+        .await
+    }
+
+    async fn validate_template_targets(
+        &self,
+        payload: &CreateBookableSessionTemplateRequest,
+    ) -> Result<(), ApiError> {
+        self.validate_owner_targets(
+            payload.clinic_id,
+            payload.practitioner_user_id,
+            payload.owner_type,
+            payload.owner_id,
+        )
+        .await
+    }
+
+    async fn validate_owner_targets(
+        &self,
+        clinic_id: Option<Uuid>,
+        practitioner_user_id: Option<Uuid>,
+        owner_type: BookableUnitType,
+        owner_id: Option<Uuid>,
+    ) -> Result<(), ApiError> {
+        if let Some(clinic_id) = clinic_id {
             self.ensure_active_clinic(clinic_id, "clinic_not_found")
                 .await?;
         }
-        if let Some(practitioner_user_id) = payload.practitioner_user_id {
+        if let Some(practitioner_user_id) = practitioner_user_id {
             self.ensure_active_user(practitioner_user_id, "practitioner_not_found")
                 .await?;
         }
 
-        match payload.owner_type {
+        match owner_type {
             BookableUnitType::Facility => {
-                if let Some(owner_id) = payload.owner_id {
+                if let Some(owner_id) = owner_id {
                     if owner_id != self.facility_id() {
                         return Err(ApiError::bad_request(
                             "invalid_session_owner",
@@ -488,13 +638,13 @@ impl SchedulingService {
                 }
             }
             BookableUnitType::Clinic => {
-                let clinic_id = payload.clinic_id.ok_or_else(|| {
+                let clinic_id = clinic_id.ok_or_else(|| {
                     ApiError::bad_request(
                         "invalid_session_owner",
                         "Clinic-owned sessions require a clinic.",
                     )
                 })?;
-                if let Some(owner_id) = payload.owner_id {
+                if let Some(owner_id) = owner_id {
                     if owner_id != clinic_id {
                         return Err(ApiError::bad_request(
                             "invalid_session_owner",
@@ -504,13 +654,13 @@ impl SchedulingService {
                 }
             }
             BookableUnitType::Practitioner => {
-                let practitioner_user_id = payload.practitioner_user_id.ok_or_else(|| {
+                let practitioner_user_id = practitioner_user_id.ok_or_else(|| {
                     ApiError::bad_request(
                         "invalid_session_owner",
                         "Practitioner-owned sessions require a practitioner.",
                     )
                 })?;
-                if let Some(owner_id) = payload.owner_id {
+                if let Some(owner_id) = owner_id {
                     if owner_id != practitioner_user_id {
                         return Err(ApiError::bad_request(
                             "invalid_session_owner",
@@ -520,7 +670,7 @@ impl SchedulingService {
                 }
             }
             BookableUnitType::Service => {
-                if let Some(owner_id) = payload.owner_id {
+                if let Some(owner_id) = owner_id {
                     self.ensure_bookable_service(owner_id, "bookable_service_not_found")
                         .await?;
                 }
@@ -614,6 +764,14 @@ impl SchedulingService {
         Ok(())
     }
 
+    async fn ensure_allowed_services(&self, service_ids: &[Uuid]) -> Result<(), ApiError> {
+        for service_id in service_ids {
+            self.ensure_bookable_service(*service_id, "bookable_service_not_found")
+                .await?;
+        }
+        Ok(())
+    }
+
     async fn ensure_active_session(
         &self,
         session_id: Uuid,
@@ -692,6 +850,62 @@ fn validate_time_range(
         ));
     }
     Ok(())
+}
+
+fn validate_template_time_range(
+    payload: &CreateBookableSessionTemplateRequest,
+) -> Result<(), ApiError> {
+    if payload.end_time <= payload.start_time {
+        return Err(ApiError::bad_request(
+            "invalid_template",
+            "Template end time must be after start time.",
+        ));
+    }
+    if let Some(ends_on) = payload.ends_on {
+        if ends_on < payload.starts_on {
+            return Err(ApiError::bad_request(
+                "invalid_template",
+                "Template end date cannot be before start date.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_generation_range(start_date: NaiveDate, end_date: NaiveDate) -> Result<(), ApiError> {
+    if end_date < start_date {
+        return Err(ApiError::bad_request(
+            "invalid_generation_range",
+            "Generation end date cannot be before start date.",
+        ));
+    }
+    if (end_date - start_date).num_days() > MAX_TEMPLATE_GENERATION_DAYS {
+        return Err(ApiError::bad_request(
+            "invalid_generation_range",
+            "Generation range is too large.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_weekdays(weekdays: Vec<u8>) -> Result<Vec<i16>, ApiError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for weekday in weekdays {
+        if !(1..=7).contains(&weekday) {
+            return Err(ApiError::bad_request(
+                "invalid_template_weekdays",
+                "Template weekdays must be between 1 and 7.",
+            ));
+        }
+        seen.insert(weekday);
+    }
+    if seen.is_empty() {
+        return Err(ApiError::bad_request(
+            "invalid_template_weekdays",
+            "At least one template weekday is required.",
+        ));
+    }
+    Ok(seen.into_iter().map(i16::from).collect())
 }
 
 fn validate_required_text(

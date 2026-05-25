@@ -19,6 +19,14 @@ pub fn routes() -> Router<AppState> {
             post(scheduling::cancel_session),
         )
         .route(
+            "/api/v2/scheduling/templates",
+            get(scheduling::list_templates).post(scheduling::create_template),
+        )
+        .route(
+            "/api/v2/scheduling/templates/generate",
+            post(scheduling::generate_sessions),
+        )
+        .route(
             "/api/v2/scheduling/availability",
             get(scheduling::availability),
         )

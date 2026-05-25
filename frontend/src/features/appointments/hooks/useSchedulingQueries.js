@@ -10,6 +10,7 @@ export const schedulingKeys = {
   ...baseKeys,
   services: (params = {}) => [...baseKeys.all, 'services', params],
   sessions: (params = {}) => [...baseKeys.all, 'sessions', params],
+  templates: (params = {}) => [...baseKeys.all, 'templates', params],
   exceptions: (params = {}) => [...baseKeys.all, 'exceptions', params],
 };
 
@@ -43,10 +44,41 @@ export function useSchedulingExceptions(params = {}, options = {}) {
   });
 }
 
+export function useSchedulingTemplates(params = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: schedulingKeys.templates(params),
+    queryFn: ({ signal }) => schedulingApi.listTemplates({ ...params, signal }),
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useCreateSchedulingSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => schedulingApi.createSession(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
+      queryClient.invalidateQueries({ queryKey: availabilitySlotsKey });
+    },
+  });
+}
+
+export function useCreateSchedulingTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => schedulingApi.createTemplate(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
+    },
+  });
+}
+
+export function useGenerateSchedulingSessions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => schedulingApi.generateSessions(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
       queryClient.invalidateQueries({ queryKey: availabilitySlotsKey });

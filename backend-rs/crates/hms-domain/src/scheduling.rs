@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -41,6 +41,15 @@ pub struct BookableSessionListQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct BookableSessionTemplateListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub clinic_id: Option<Uuid>,
+    pub service_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
 pub struct AvailabilityQuery {
     pub start_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
@@ -70,6 +79,7 @@ pub struct CreateBookableServiceRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct BookableSessionListItem {
     pub id: Uuid,
+    pub source_template_id: Option<Uuid>,
     pub clinic_id: Option<Uuid>,
     pub service_code: Option<String>,
     pub practitioner_user_id: Option<Uuid>,
@@ -91,6 +101,29 @@ pub struct BookableSessionListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct BookableSessionTemplateListItem {
+    pub id: Uuid,
+    pub clinic_id: Option<Uuid>,
+    pub service_code: Option<String>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub owner_type: BookableUnitType,
+    pub owner_id: Option<Uuid>,
+    pub name: String,
+    pub mode: BookableSessionMode,
+    pub weekdays: Vec<u8>,
+    pub starts_on: NaiveDate,
+    pub ends_on: Option<NaiveDate>,
+    pub start_time: NaiveTime,
+    pub end_time: NaiveTime,
+    pub slot_minutes: Option<i32>,
+    pub capacity: i32,
+    pub allow_overbooking: bool,
+    pub overbook_limit: i32,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateBookableSessionRequest {
     pub clinic_id: Option<Uuid>,
     pub service_code: Option<String>,
@@ -106,6 +139,42 @@ pub struct CreateBookableSessionRequest {
     pub allow_overbooking: Option<bool>,
     pub overbook_limit: Option<i32>,
     pub allowed_service_ids: Option<Vec<Uuid>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CreateBookableSessionTemplateRequest {
+    pub clinic_id: Option<Uuid>,
+    pub service_code: Option<String>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub owner_type: BookableUnitType,
+    pub owner_id: Option<Uuid>,
+    pub name: String,
+    pub mode: BookableSessionMode,
+    pub weekdays: Vec<u8>,
+    pub starts_on: NaiveDate,
+    pub ends_on: Option<NaiveDate>,
+    pub start_time: NaiveTime,
+    pub end_time: NaiveTime,
+    pub slot_minutes: Option<i32>,
+    pub capacity: i32,
+    pub allow_overbooking: Option<bool>,
+    pub overbook_limit: Option<i32>,
+    pub allowed_service_ids: Option<Vec<Uuid>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct GenerateBookableSessionsRequest {
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub template_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct GenerateBookableSessionsResponse {
+    pub generated_count: i64,
+    pub skipped_count: i64,
+    pub sessions: Vec<BookableSessionListItem>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
