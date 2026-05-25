@@ -65,6 +65,16 @@ export function useCreateSchedulingSession() {
   });
 }
 
+export function useCreateSchedulingService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => schedulingApi.createService(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
+    },
+  });
+}
+
 export function useCreateSchedulingTemplate() {
   const queryClient = useQueryClient();
   return useMutation({

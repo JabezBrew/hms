@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 import { cn } from '@/lib/utils';
 import AppointmentList from '@/features/appointments/components/AppointmentList';
-import AppointmentTypeManager from '@/features/appointments/components/AppointmentTypeManager';
+import BookableServicesPanel from '@/features/appointments/components/BookableServicesPanel';
 import SchedulingTemplatesPanel from '@/features/appointments/components/SchedulingTemplatesPanel';
 import {
   useCreateSchedulingException,
@@ -671,7 +671,7 @@ const AppointmentsPage = () => {
           </TabsContent>
 
           <TabsContent value="services" className="animate-chronicle-enter pt-6">
-            <AppointmentTypeManager />
+            <BookableServicesPanel services={services} isLoading={servicesLoading} />
           </TabsContent>
         </Tabs>
       </main>

@@ -26,6 +26,80 @@ describe('Rust V2 scheduling bridge', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it('lists and creates bookable services through Rust V2', async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'service-1',
+                code: 'general',
+                name: 'General consultation',
+                default_duration_minutes: 30,
+                is_active: true,
+                created_at: '2026-06-01T08:00:00Z',
+              },
+            ],
+            page: { limit: 10, has_next: false, next_cursor: null },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'service-2',
+              code: 'anc-review',
+              name: 'Antenatal review',
+              default_duration_minutes: 20,
+              is_active: true,
+              created_at: '2026-06-01T08:05:00Z',
+            },
+            meta: {},
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      );
+
+    const services = await schedulingApi.listServices({ limit: 10 });
+    const created = await schedulingApi.createService({
+      code: 'anc-review',
+      name: 'Antenatal review',
+      default_duration_minutes: '20',
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080/api/v2/scheduling/services?limit=10',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080/api/v2/scheduling/services',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'anc-review',
+          name: 'Antenatal review',
+          default_duration_minutes: 20,
+        }),
+      }),
+    );
+    expect(services).toEqual([
+      expect.objectContaining({ id: 'service-1', code: 'general' }),
+    ]);
+    expect(created).toEqual(expect.objectContaining({ id: 'service-2' }));
+  });
+
   it('lists scheduling exceptions through Rust V2 with date filters', async () => {
     globalThis.fetch.mockResolvedValueOnce(
       new Response(
