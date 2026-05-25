@@ -1135,6 +1135,182 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getOpsClinicalBudgets": {
+    "operationId": "getOpsClinicalBudgets",
+    "method": "GET",
+    "path": "/api/v2/ops/clinical-budgets",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsDbPool": {
+    "operationId": "getOpsDbPool",
+    "method": "GET",
+    "path": "/api/v2/ops/db-pool",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsDeploys": {
+    "operationId": "getOpsDeploys",
+    "method": "GET",
+    "path": "/api/v2/ops/deploys",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsEdgeStatus": {
+    "operationId": "getOpsEdgeStatus",
+    "method": "GET",
+    "path": "/api/v2/ops/edge-status",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsOverview": {
+    "operationId": "getOpsOverview",
+    "method": "GET",
+    "path": "/api/v2/ops/overview",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsPayload": {
+    "operationId": "getOpsPayload",
+    "method": "GET",
+    "path": "/api/v2/ops/payload",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsRequestContextCache": {
+    "operationId": "getOpsRequestContextCache",
+    "method": "GET",
+    "path": "/api/v2/ops/request-context-cache",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsRouteLatency": {
+    "operationId": "getOpsRouteLatency",
+    "method": "GET",
+    "path": "/api/v2/ops/route-latency",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsRum": {
+    "operationId": "getOpsRum",
+    "method": "GET",
+    "path": "/api/v2/ops/rum",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsServiceErrors": {
+    "operationId": "getOpsServiceErrors",
+    "method": "GET",
+    "path": "/api/v2/ops/service-errors",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsSlowQueryFingerprints": {
+    "operationId": "getOpsSlowQueryFingerprints",
+    "method": "GET",
+    "path": "/api/v2/ops/slow-query-fingerprints",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
   "getPatientAllergies": {
     "operationId": "getPatientAllergies",
     "method": "GET",
@@ -3243,6 +3419,17 @@ export function createGeneratedClient(request) {
     getNotifications: createOperation(request, operations.getNotifications),
     getNursingAlerts: createOperation(request, operations.getNursingAlerts),
     getNursingTasks: createOperation(request, operations.getNursingTasks),
+    getOpsClinicalBudgets: createOperation(request, operations.getOpsClinicalBudgets),
+    getOpsDbPool: createOperation(request, operations.getOpsDbPool),
+    getOpsDeploys: createOperation(request, operations.getOpsDeploys),
+    getOpsEdgeStatus: createOperation(request, operations.getOpsEdgeStatus),
+    getOpsOverview: createOperation(request, operations.getOpsOverview),
+    getOpsPayload: createOperation(request, operations.getOpsPayload),
+    getOpsRequestContextCache: createOperation(request, operations.getOpsRequestContextCache),
+    getOpsRouteLatency: createOperation(request, operations.getOpsRouteLatency),
+    getOpsRum: createOperation(request, operations.getOpsRum),
+    getOpsServiceErrors: createOperation(request, operations.getOpsServiceErrors),
+    getOpsSlowQueryFingerprints: createOperation(request, operations.getOpsSlowQueryFingerprints),
     getPatientAllergies: createOperation(request, operations.getPatientAllergies),
     getPatientById: createOperation(request, operations.getPatientById),
     getPatientChartEntries: createOperation(request, operations.getPatientChartEntries),
