@@ -1616,6 +1616,47 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": false
   },
+  "getSchedulingAvailability": {
+    "operationId": "getSchedulingAvailability",
+    "method": "GET",
+    "path": "/api/v2/scheduling/availability",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "start_date",
+      "end_date",
+      "clinic_id",
+      "service_id",
+      "practitioner_user_id",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getSchedulingServices": {
+    "operationId": "getSchedulingServices",
+    "method": "GET",
+    "path": "/api/v2/scheduling/services",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit"
+    ],
+    "hasBody": false
+  },
+  "getSchedulingSessions": {
+    "operationId": "getSchedulingSessions",
+    "method": "GET",
+    "path": "/api/v2/scheduling/sessions",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "date",
+      "clinic_id",
+      "service_id",
+      "practitioner_user_id"
+    ],
+    "hasBody": false
+  },
   "getStaffDirectory": {
     "operationId": "getStaffDirectory",
     "method": "GET",
@@ -3084,6 +3125,58 @@ export const operations = {
     "queryParamNames": [],
     "hasBody": true
   },
+  "postSchedulingAppointmentArrive": {
+    "operationId": "postSchedulingAppointmentArrive",
+    "method": "POST",
+    "path": "/api/v2/scheduling/appointments/{id}/arrive",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingAppointmentBook": {
+    "operationId": "postSchedulingAppointmentBook",
+    "method": "POST",
+    "path": "/api/v2/scheduling/appointments/book",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingExceptions": {
+    "operationId": "postSchedulingExceptions",
+    "method": "POST",
+    "path": "/api/v2/scheduling/exceptions",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingServices": {
+    "operationId": "postSchedulingServices",
+    "method": "POST",
+    "path": "/api/v2/scheduling/services",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingSessionCancel": {
+    "operationId": "postSchedulingSessionCancel",
+    "method": "POST",
+    "path": "/api/v2/scheduling/sessions/{id}/cancel",
+    "pathParamNames": [
+      "id"
+    ],
+    "queryParamNames": [],
+    "hasBody": true
+  },
+  "postSchedulingSessions": {
+    "operationId": "postSchedulingSessions",
+    "method": "POST",
+    "path": "/api/v2/scheduling/sessions",
+    "pathParamNames": [],
+    "queryParamNames": [],
+    "hasBody": true
+  },
   "postSearchOmni": {
     "operationId": "postSearchOmni",
     "method": "POST",
@@ -3503,6 +3596,9 @@ export function createGeneratedClient(request) {
     getReferrals: createOperation(request, operations.getReferrals),
     getReferralSlaDashboard: createOperation(request, operations.getReferralSlaDashboard),
     getReferralSlaState: createOperation(request, operations.getReferralSlaState),
+    getSchedulingAvailability: createOperation(request, operations.getSchedulingAvailability),
+    getSchedulingServices: createOperation(request, operations.getSchedulingServices),
+    getSchedulingSessions: createOperation(request, operations.getSchedulingSessions),
     getStaffDirectory: createOperation(request, operations.getStaffDirectory),
     getStockBatches: createOperation(request, operations.getStockBatches),
     getStockMovements: createOperation(request, operations.getStockMovements),
@@ -3659,6 +3755,12 @@ export function createGeneratedClient(request) {
     postReferralDecline: createOperation(request, operations.postReferralDecline),
     postReferrals: createOperation(request, operations.postReferrals),
     postReferralSchedule: createOperation(request, operations.postReferralSchedule),
+    postSchedulingAppointmentArrive: createOperation(request, operations.postSchedulingAppointmentArrive),
+    postSchedulingAppointmentBook: createOperation(request, operations.postSchedulingAppointmentBook),
+    postSchedulingExceptions: createOperation(request, operations.postSchedulingExceptions),
+    postSchedulingServices: createOperation(request, operations.postSchedulingServices),
+    postSchedulingSessionCancel: createOperation(request, operations.postSchedulingSessionCancel),
+    postSchedulingSessions: createOperation(request, operations.postSchedulingSessions),
     postSearchOmni: createOperation(request, operations.postSearchOmni),
     postStockBatches: createOperation(request, operations.postStockBatches),
     postStockRequisitionApprove: createOperation(request, operations.postStockRequisitionApprove),

@@ -140,6 +140,24 @@ function normalizeV2AppointmentPayload(data = {}) {
   return payload;
 }
 
+function normalizeV2SchedulingBookingPayload(data = {}) {
+  const payload = normalizeV2AppointmentPayload(data);
+  const sessionId = data.session_id || data.clinic_session_id || data.clinic_session;
+  const serviceId = data.service_id || data.appointment_type_id || data.appointment_type;
+  if (sessionId) {
+    payload.session_id = sessionId;
+    delete payload.clinic_session_id;
+  }
+  if (serviceId) {
+    payload.service_id = serviceId;
+    delete payload.appointment_type_id;
+  }
+  if (data.manual_booking_reason) {
+    payload.manual_booking_reason = data.manual_booking_reason;
+  }
+  return payload;
+}
+
 function adaptV2Appointment(appointment) {
   if (!appointment) {
     return appointment;
@@ -272,6 +290,34 @@ function getV2AppointmentListQuery(params = {}) {
   return query;
 }
 
+function getV2AvailabilityQuery(params = {}) {
+  const startDate = params.start_date || params.date;
+  if (!startDate) {
+    throw new Error('Start date is required to load Rust V2 scheduling availability.');
+  }
+  const query = {
+    start_date: String(startDate).slice(0, 10),
+    limit: normalizeV2Limit(params, 100),
+  };
+  const endDate = params.end_date;
+  if (endDate) {
+    query.end_date = String(endDate).slice(0, 10);
+  }
+  const clinicId = params.clinic_id || params.clinic;
+  if (clinicId) {
+    query.clinic_id = clinicId;
+  }
+  const serviceId = params.service_id || params.appointment_type_id || params.appointment_type;
+  if (serviceId) {
+    query.service_id = serviceId;
+  }
+  const practitionerUserId = params.practitioner_user_id || params.practitioner_id || params.practitioner;
+  if (practitionerUserId) {
+    query.practitioner_user_id = practitionerUserId;
+  }
+  return query;
+}
+
 function unsupportedInRustV2(message) {
   return new Error(message);
 }
@@ -399,6 +445,57 @@ export const appointmentsApi = {
   createAppointment: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
+        const response = await v2Request(
+          {
+            method: 'POST',
+            path: '/api/v2/scheduling/appointments/book',
+            body: normalizeV2SchedulingBookingPayload(data),
+            signal: options.signal || data?.signal,
+          },
+        );
+        return adaptV2Appointment(response?.data?.appointment);
+      }
+
+      return await apiClient.post('/appointments/appointments/', data);
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create appointment'));
+      }
+      // Extract field-level validation errors for better user feedback
+      if (error.data && typeof error.data === 'object') {
+        const fieldErrors = [];
+        const fieldNameMap = {
+          'patient': 'Patient',
+          'practitioner': 'Doctor',
+          'appointment_type': 'Appointment type',
+          'start_time': 'Start time',
+          'end_time': 'End time',
+          'slot': 'Time slot',
+        };
+
+        for (const [field, messages] of Object.entries(error.data)) {
+          const fieldName = fieldNameMap[field] || field;
+          const message = Array.isArray(messages) ? messages[0] : messages;
+          fieldErrors.push(`${fieldName}: ${message}`);
+        }
+
+        if (fieldErrors.length > 0) {
+          throw new Error(fieldErrors.join('\n'));
+        }
+      }
+      throw new Error(handleApiError(error, 'Failed to create appointment'));
+    }
+  },
+
+  /**
+   * Create a new appointment using the legacy direct appointment contract.
+   * @param {Object} data - Appointment data
+   * @returns {Promise<Object>} Created appointment data
+   */
+  createDirectAppointment: async (data, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
         const response = await v2Api.postAppointments(
           normalizeV2AppointmentPayload(data),
           { signal: options.signal || data?.signal },
@@ -493,7 +590,13 @@ export const appointmentsApi = {
   getAvailableSlots: async (params = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        return buildLocalAvailabilitySlots(params);
+        const response = await v2Request({
+          method: 'GET',
+          path: '/api/v2/scheduling/availability',
+          query: getV2AvailabilityQuery(params),
+          signal: params.signal,
+        });
+        return response?.data?.slots || [];
       }
 
       const queryString = new URLSearchParams(queryParamsWithoutSignal(params)).toString();
@@ -813,7 +916,7 @@ export const appointmentsApi = {
   previewSlots: async (data) => {
     try {
       if (isRustV2ApiMode()) {
-        return { slots: buildLocalAvailabilitySlots(data) };
+        return { slots: [] };
       }
 
       return await apiClient.post('/appointments/availability-rules/preview_slots/', data);
@@ -927,37 +1030,3 @@ export const appointmentsApi = {
     }
   },
 };
-
-function buildLocalAvailabilitySlots(params = {}) {
-  const startDate = params.start_date || params.date || new Date().toISOString().slice(0, 10);
-  const endDate = params.end_date || startDate;
-  const startDay = new Date(`${startDate}T00:00:00`);
-  const requestedEndDay = new Date(`${endDate}T00:00:00`);
-  const maxEndDay = new Date(startDay);
-  maxEndDay.setDate(maxEndDay.getDate() + 45);
-  const endDay = requestedEndDay < maxEndDay ? requestedEndDay : maxEndDay;
-  const slots = [];
-
-  for (let day = new Date(startDay); day <= endDay; day.setDate(day.getDate() + 1)) {
-    for (let hour = 8; hour < 16; hour += 1) {
-      for (const minute of [0, 30]) {
-        const slotStart = new Date(day);
-        slotStart.setHours(hour, minute, 0, 0);
-        const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
-        const id = [
-          params.practitioner_id || params.clinic_id || 'v2',
-          slotStart.toISOString(),
-        ].join(':');
-        slots.push({
-          id,
-          start: slotStart.toISOString(),
-          end: slotEnd.toISOString(),
-          status: 'free',
-          capacity: { max: 1, remaining: 1 },
-        });
-      }
-    }
-  }
-
-  return slots;
-}

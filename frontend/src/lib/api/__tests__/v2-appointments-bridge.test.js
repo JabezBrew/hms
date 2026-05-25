@@ -161,19 +161,21 @@ describe('Rust V2 appointments bridge', () => {
       new Response(
         JSON.stringify({
           data: {
-            id: 'appointment-2',
-            patient_id: 'patient-2',
-            patient_code: 'MRN-MAIN-2026-000002',
-            patient_display_name: 'Kojo Boateng',
-            starts_at: '2026-05-12T10:00:00Z',
-            ends_at: '2026-05-12T10:30:00Z',
-            status: 'scheduled',
-            clinic_session_id: 'session-1',
-            appointment_type_id: 'type-review',
-            practitioner_user_id: 'practitioner-1',
-            appointment_type_name: 'Review',
-            clinic_id: 'clinic-1',
-            created_at: '2026-05-11T08:30:00Z',
+            appointment: {
+              id: 'appointment-2',
+              patient_id: 'patient-2',
+              patient_code: 'MRN-MAIN-2026-000002',
+              patient_display_name: 'Kojo Boateng',
+              starts_at: '2026-05-12T10:00:00Z',
+              ends_at: '2026-05-12T10:30:00Z',
+              status: 'scheduled',
+              clinic_session_id: 'session-1',
+              appointment_type_id: 'type-review',
+              practitioner_user_id: 'practitioner-1',
+              appointment_type_name: 'Review',
+              clinic_id: 'clinic-1',
+              created_at: '2026-05-11T08:30:00Z',
+            },
           },
           meta: {},
         }),
@@ -196,21 +198,20 @@ describe('Rust V2 appointments bridge', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v2/appointments',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          patient_id: 'patient-2',
-          starts_at: '2026-05-12T10:00:00Z',
-          ends_at: '2026-05-12T10:30:00Z',
-          clinic_id: 'clinic-1',
-          clinic_session_id: 'session-1',
-          appointment_type_id: 'type-review',
-          practitioner_user_id: 'practitioner-1',
-          overbook_reason: 'Consultant approved urgent review',
-        }),
-      }),
+      'http://localhost:8080/api/v2/scheduling/appointments/book',
+      expect.objectContaining({ method: 'POST' }),
     );
+    const [, requestOptions] = globalThis.fetch.mock.calls[0];
+    expect(JSON.parse(requestOptions.body)).toEqual({
+      patient_id: 'patient-2',
+      starts_at: '2026-05-12T10:00:00Z',
+      ends_at: '2026-05-12T10:30:00Z',
+      clinic_id: 'clinic-1',
+      session_id: 'session-1',
+      service_id: 'type-review',
+      practitioner_user_id: 'practitioner-1',
+      overbook_reason: 'Consultant approved urgent review',
+    });
     expect(response).toMatchObject({
       id: 'appointment-2',
       patient_name: 'Kojo Boateng',
@@ -238,7 +239,10 @@ describe('Rust V2 appointments bridge', () => {
 
     globalThis.fetch
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ data: scheduledAppointment, meta: {} }), {
+        new Response(JSON.stringify({
+          data: { appointment: scheduledAppointment },
+          meta: {},
+        }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -299,7 +303,7 @@ describe('Rust V2 appointments bridge', () => {
 
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       1,
-      'http://localhost:8080/api/v2/appointments',
+      'http://localhost:8080/api/v2/scheduling/appointments/book',
       expect.objectContaining({ method: 'POST', signal }),
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
@@ -518,16 +522,50 @@ describe('Rust V2 appointments bridge', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('builds local Rust V2 availability across the requested calendar range', async () => {
+  it('loads Rust V2 availability from the scheduling contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            slots: [
+              {
+                id: 'session-1:2026-05-16T08:00:00Z',
+                session_id: 'session-1',
+                session_name: 'General OPD',
+                clinic_id: 'clinic-1',
+                start: '2026-05-16T08:00:00Z',
+                end: '2026-05-16T12:00:00Z',
+                status: 'free',
+                capacity: { max: 20, booked: 4, remaining: 16, overbook_remaining: 0 },
+              },
+            ],
+          },
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
     const slots = await appointmentsApi.getAvailableSlots({
       clinic_id: 'clinic-1',
+      appointment_type_id: 'type-general',
       start_date: '2026-05-01',
       end_date: '2026-05-31',
     });
 
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(slots.some((slot) => slot.start.startsWith('2026-05-16T'))).toBe(true);
-    expect(slots.every((slot) => slot.status === 'free')).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/scheduling/availability?start_date=2026-05-01&limit=100&end_date=2026-05-31&clinic_id=clinic-1&service_id=type-general',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({
+      session_id: 'session-1',
+      status: 'free',
+      capacity: { remaining: 16 },
+    });
   });
 
   it('preserves AbortError from Rust appointment list calls', async () => {

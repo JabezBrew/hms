@@ -513,6 +513,18 @@
         ],
         "type": "object"
       },
+      "ArriveAppointmentRequest": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "AssignTriageRequest": {
         "properties": {
           "assigned_to_user_id": {
@@ -817,6 +829,141 @@
         ],
         "type": "string"
       },
+      "AvailabilityQuery": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_date"
+        ],
+        "type": "object"
+      },
+      "AvailabilityResponse": {
+        "properties": {
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/AvailabilitySlot"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "slots"
+        ],
+        "type": "object"
+      },
+      "AvailabilitySlot": {
+        "properties": {
+          "capacity": {
+            "$ref": "#/components/schemas/SlotCapacity"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BookableSessionMode"
+          },
+          "owner_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_type": {
+            "$ref": "#/components/schemas/BookableUnitType"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "session_name": {
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "session_name",
+          "owner_type",
+          "mode",
+          "start",
+          "end",
+          "status",
+          "capacity"
+        ],
+        "type": "object"
+      },
       "BedListItem": {
         "properties": {
           "bed_code": {
@@ -1077,6 +1224,285 @@
         ],
         "type": "string"
       },
+      "BookAppointmentRequest": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "manual_booking_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overbook_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patient_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "starts_at",
+          "ends_at"
+        ],
+        "type": "object"
+      },
+      "BookAppointmentResponse": {
+        "properties": {
+          "appointment": {
+            "$ref": "#/components/schemas/AppointmentListItem"
+          }
+        },
+        "required": [
+          "appointment"
+        ],
+        "type": "object"
+      },
+      "BookableServiceListItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "default_duration_minutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "default_duration_minutes",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "BookableSessionListItem": {
+        "properties": {
+          "allow_overbooking": {
+            "type": "boolean"
+          },
+          "booked_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BookableSessionMode"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overbook_limit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "overbook_remaining": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "owner_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_type": {
+            "$ref": "#/components/schemas/BookableUnitType"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remaining_capacity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slot_minutes": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner_type",
+          "name",
+          "mode",
+          "starts_at",
+          "ends_at",
+          "capacity",
+          "booked_count",
+          "remaining_capacity",
+          "allow_overbooking",
+          "overbook_limit",
+          "overbook_remaining",
+          "is_active",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "BookableSessionListQuery": {
+        "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "BookableSessionMode": {
+        "enum": [
+          "fixed_slot",
+          "capacity_block"
+        ],
+        "type": "string"
+      },
+      "BookableUnitType": {
+        "enum": [
+          "facility",
+          "practitioner",
+          "team",
+          "clinic",
+          "service",
+          "department",
+          "resource"
+        ],
+        "type": "string"
+      },
       "BreakGlassCategory": {
         "enum": [
           "life_threatening_emergency",
@@ -1318,6 +1744,17 @@
         "type": "object"
       },
       "CancelAppointmentRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "CancelBookableSessionRequest": {
         "properties": {
           "reason": {
             "type": "string"
@@ -2560,6 +2997,119 @@
         },
         "required": [
           "bed_code"
+        ],
+        "type": "object"
+      },
+      "CreateBookableServiceRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "default_duration_minutes": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateBookableSessionRequest": {
+        "properties": {
+          "allow_overbooking": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "allowed_service_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BookableSessionMode"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overbook_limit": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "owner_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_type": {
+            "$ref": "#/components/schemas/BookableUnitType"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slot_minutes": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_type",
+          "name",
+          "mode",
+          "starts_at",
+          "ends_at",
+          "capacity"
         ],
         "type": "object"
       },
@@ -5838,6 +6388,180 @@
                 "name",
                 "rule_type",
                 "active"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_BookableServiceListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "default_duration_minutes": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "default_duration_minutes",
+                "is_active",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {},
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ListResponse_BookableSessionListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "allow_overbooking": {
+                  "type": "boolean"
+                },
+                "booked_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "capacity": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "clinic_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "ends_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "mode": {
+                  "$ref": "#/components/schemas/BookableSessionMode"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "overbook_limit": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "overbook_remaining": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "owner_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "owner_type": {
+                  "$ref": "#/components/schemas/BookableUnitType"
+                },
+                "practitioner_user_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "remaining_capacity": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "service_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "slot_minutes": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "starts_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "owner_type",
+                "name",
+                "mode",
+                "starts_at",
+                "ends_at",
+                "capacity",
+                "booked_count",
+                "remaining_capacity",
+                "allow_overbooking",
+                "overbook_limit",
+                "overbook_remaining",
+                "is_active",
+                "created_at"
               ],
               "type": "object"
             },
@@ -11850,6 +12574,30 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_AvailabilityResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/AvailabilitySlot"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "slots"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_BedListItem": {
         "properties": {
           "data": {
@@ -12050,6 +12798,187 @@
               "name",
               "rule_type",
               "active"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_BookAppointmentResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "appointment": {
+                "$ref": "#/components/schemas/AppointmentListItem"
+              }
+            },
+            "required": [
+              "appointment"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_BookableServiceListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "default_duration_minutes": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "default_duration_minutes",
+              "is_active",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ObjectResponse_BookableSessionListItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "allow_overbooking": {
+                "type": "boolean"
+              },
+              "booked_count": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "capacity": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "clinic_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "ends_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/BookableSessionMode"
+              },
+              "name": {
+                "type": "string"
+              },
+              "overbook_limit": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "overbook_remaining": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "owner_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "owner_type": {
+                "$ref": "#/components/schemas/BookableUnitType"
+              },
+              "practitioner_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "remaining_capacity": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "service_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "slot_minutes": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "starts_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "owner_type",
+              "name",
+              "mode",
+              "starts_at",
+              "ends_at",
+              "capacity",
+              "booked_count",
+              "remaining_capacity",
+              "allow_overbooking",
+              "overbook_limit",
+              "overbook_remaining",
+              "is_active",
+              "created_at"
             ],
             "type": "object"
           },
@@ -16694,6 +17623,61 @@
         ],
         "type": "object"
       },
+      "ObjectResponse_SchedulingExceptionItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "ends_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "practitioner_user_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "session_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "starts_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "starts_at",
+              "ends_at",
+              "reason",
+              "created_at"
+            ],
+            "type": "object"
+          },
+          "meta": {}
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "type": "object"
+      },
       "ObjectResponse_SpecimenListItem": {
         "properties": {
           "data": {
@@ -21234,6 +22218,105 @@
         ],
         "type": "object"
       },
+      "SchedulingExceptionItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "starts_at",
+          "ends_at",
+          "reason",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "SchedulingExceptionRequest": {
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "SchedulingListQuery": {
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "SearchIndexState": {
         "enum": [
           "ready",
@@ -21440,6 +22523,33 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "SlotCapacity": {
+        "properties": {
+          "booked": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "overbook_remaining": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "remaining": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max",
+          "booked",
+          "remaining",
+          "overbook_remaining"
+        ],
+        "type": "object"
       },
       "SpecimenListItem": {
         "properties": {
@@ -45094,6 +46204,763 @@
         ]
       }
     },
+    "/api/v2/scheduling/appointments/book": {
+      "post": {
+        "operationId": "postSchedulingAppointmentBook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookAppointmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BookAppointmentResponse"
+                }
+              }
+            },
+            "description": "Appointment booked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid booking request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Appointment could not be booked"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/appointments/{id}/arrive": {
+      "post": {
+        "operationId": "postSchedulingAppointmentArrive",
+        "parameters": [
+          {
+            "description": "Appointment id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArriveAppointmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_VisitListItem"
+                }
+              }
+            },
+            "description": "Appointment arrival checked in"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid arrival request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Appointment not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/availability": {
+      "get": {
+        "operationId": "getSchedulingAvailability",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "practitioner_user_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_AvailabilityResponse"
+                }
+              }
+            },
+            "description": "Backend-authoritative scheduling availability"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid availability request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/exceptions": {
+      "post": {
+        "operationId": "postSchedulingExceptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchedulingExceptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_SchedulingExceptionItem"
+                }
+              }
+            },
+            "description": "Scheduling exception created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid exception request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/services": {
+      "get": {
+        "operationId": "getSchedulingServices",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_BookableServiceListItem"
+                }
+              }
+            },
+            "description": "Bookable services"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      },
+      "post": {
+        "operationId": "postSchedulingServices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBookableServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BookableServiceListItem"
+                }
+              }
+            },
+            "description": "Bookable service created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid service request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/sessions": {
+      "get": {
+        "operationId": "getSchedulingSessions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "practitioner_user_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_BookableSessionListItem"
+                }
+              }
+            },
+            "description": "Bookable sessions"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      },
+      "post": {
+        "operationId": "postSchedulingSessions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBookableSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BookableSessionListItem"
+                }
+              }
+            },
+            "description": "Bookable session created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid session request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
+    "/api/v2/scheduling/sessions/{id}/cancel": {
+      "post": {
+        "operationId": "postSchedulingSessionCancel",
+        "parameters": [
+          {
+            "description": "Bookable session id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelBookableSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectResponse_BookableSessionListItem"
+                }
+              }
+            },
+            "description": "Bookable session cancelled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid session request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bookable session not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "scheduling"
+        ]
+      }
+    },
     "/api/v2/search/omni": {
       "post": {
         "operationId": "postSearchOmni",
@@ -47569,6 +49436,10 @@
     {
       "description": "PHI-safe realtime subscription manifests and websocket channels",
       "name": "realtime"
+    },
+    {
+      "description": "Bookable Session and Appointment Book workflows",
+      "name": "scheduling"
     },
     {
       "description": "Fast access-scoped OmniSearch projection workflows",

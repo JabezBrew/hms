@@ -40,6 +40,7 @@ import {
 const DoctorAvailabilityCalendar = ({
   clinicId,
   practitionerId,
+  serviceId,
   onSlotSelect,
 }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -67,9 +68,12 @@ const DoctorAvailabilityCalendar = ({
     } else if (hasClinic) {
       params.clinic_id = clinicId;
     }
+    if (serviceId) {
+      params.service_id = serviceId;
+    }
 
     return params;
-  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId]);
+  }, [calendarEnd, calendarStart, clinicId, hasClinic, hasPractitioner, practitionerId, serviceId]);
 
   // Fetch slots with server-side filtering by practitioner or clinic
   const { data: slotsData, isLoading: slotsLoading } = useAvailableSlots(dateRangeParams, {
@@ -164,11 +168,13 @@ const DoctorAvailabilityCalendar = ({
     }
   };
 
-  const selectedDateSlots = selectedDate
-    ? (availabilityMap[format(selectedDate, 'yyyy-MM-dd')] || [])
-    : [];
-
-  selectedDateSlots.sort((a, b) => new Date(a.start) - new Date(b.start));
+  const selectedDateSlots = useMemo(() => {
+    if (!selectedDate) {
+      return [];
+    }
+    return [...(availabilityMap[format(selectedDate, 'yyyy-MM-dd')] || [])]
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+  }, [availabilityMap, selectedDate]);
 
   const capacitySummary = useMemo(() => {
     let totalMax = 0;

@@ -12,6 +12,7 @@ pub mod observability;
 pub mod ops;
 pub mod patients;
 pub mod referrals;
+pub mod scheduling;
 pub mod search;
 pub mod system;
 pub mod ward;

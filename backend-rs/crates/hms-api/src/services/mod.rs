@@ -9,4 +9,5 @@ pub mod laboratory;
 pub mod ops;
 pub mod patients;
 pub mod referrals;
+pub mod scheduling;
 pub mod ward;

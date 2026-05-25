@@ -2196,37 +2196,38 @@ async fn validate_session_booking_excluding(
             }
         }
     }
-    if let Some(appointment_type_id) = appointment.appointment_type_id {
-        let constrained_count: i64 = sqlx::query_scalar(
+    let constrained_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM clinic_session_appointment_types
+        WHERE facility_id = $1
+          AND clinic_session_id = $2
+        "#,
+    )
+    .bind(appointment.facility_id)
+    .bind(session.id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if constrained_count > 0 {
+        let Some(appointment_type_id) = appointment.appointment_type_id else {
+            anyhow::bail!("appointment type is required for this session");
+        };
+        let allowed: Option<Uuid> = sqlx::query_scalar(
             r#"
-            SELECT COUNT(*)
+            SELECT appointment_type_id
             FROM clinic_session_appointment_types
             WHERE facility_id = $1
               AND clinic_session_id = $2
+              AND appointment_type_id = $3
             "#,
         )
         .bind(appointment.facility_id)
         .bind(session.id)
-        .fetch_one(&mut **transaction)
+        .bind(appointment_type_id)
+        .fetch_optional(&mut **transaction)
         .await?;
-        if constrained_count > 0 {
-            let allowed: Option<Uuid> = sqlx::query_scalar(
-                r#"
-                SELECT appointment_type_id
-                FROM clinic_session_appointment_types
-                WHERE facility_id = $1
-                  AND clinic_session_id = $2
-                  AND appointment_type_id = $3
-                "#,
-            )
-            .bind(appointment.facility_id)
-            .bind(session.id)
-            .bind(appointment_type_id)
-            .fetch_optional(&mut **transaction)
-            .await?;
-            if allowed.is_none() {
-                anyhow::bail!("appointment type is not allowed in this session");
-            }
+        if allowed.is_none() {
+            anyhow::bail!("appointment type is not allowed in this session");
         }
     }
 
@@ -2258,25 +2259,46 @@ async fn validate_session_booking_excluding(
         anyhow::bail!("appointment overlaps blocked time");
     }
 
-    let active_overlap_count: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*)
-        FROM appointments
-        WHERE facility_id = $1
-          AND clinic_session_id = $2
-          AND status IN ('scheduled', 'checked_in')
-          AND starts_at < $4
-          AND ends_at > $3
-          AND ($5::uuid IS NULL OR id <> $5)
-        "#,
-    )
-    .bind(appointment.facility_id)
-    .bind(session.id)
-    .bind(appointment.starts_at)
-    .bind(appointment.ends_at)
-    .bind(excluding_appointment_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+    let active_overlap_count: i64 = match session.mode {
+        ClinicSessionMode::CapacityBlock => {
+            sqlx::query_scalar(
+                r#"
+            SELECT COUNT(*)
+            FROM appointments
+            WHERE facility_id = $1
+              AND clinic_session_id = $2
+              AND status IN ('scheduled', 'checked_in')
+              AND ($3::uuid IS NULL OR id <> $3)
+            "#,
+            )
+            .bind(appointment.facility_id)
+            .bind(session.id)
+            .bind(excluding_appointment_id)
+            .fetch_one(&mut **transaction)
+            .await?
+        }
+        ClinicSessionMode::FixedSlot => {
+            sqlx::query_scalar(
+                r#"
+            SELECT COUNT(*)
+            FROM appointments
+            WHERE facility_id = $1
+              AND clinic_session_id = $2
+              AND status IN ('scheduled', 'checked_in')
+              AND starts_at < $4
+              AND ends_at > $3
+              AND ($5::uuid IS NULL OR id <> $5)
+            "#,
+            )
+            .bind(appointment.facility_id)
+            .bind(session.id)
+            .bind(appointment.starts_at)
+            .bind(appointment.ends_at)
+            .bind(excluding_appointment_id)
+            .fetch_one(&mut **transaction)
+            .await?
+        }
+    };
 
     if active_overlap_count < i64::from(session.capacity) {
         return Ok(());
@@ -2293,7 +2315,7 @@ async fn validate_session_booking_excluding(
     if reason.is_none() {
         anyhow::bail!("overbooking reason is required");
     }
-    let allowed_total = i64::from(session.capacity + session.overbook_limit);
+    let allowed_total = i64::from(session.capacity) + i64::from(session.overbook_limit);
     if active_overlap_count >= allowed_total {
         anyhow::bail!("clinic session overbook limit is full");
     }

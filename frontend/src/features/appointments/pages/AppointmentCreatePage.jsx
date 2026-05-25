@@ -292,6 +292,7 @@ const AppointmentCreatePage = () => {
         patient: data.patientId,
         clinic: data.clinicId,
         appointment_type: data.appointmentTypeId,
+        clinic_session: selectedSlot.session_id,
         start_time: selectedSlot.start,
         end_time: selectedSlot.end,
         reason: data.description,
@@ -819,6 +820,7 @@ const AppointmentCreatePage = () => {
                           <DoctorAvailabilityCalendar
                             clinicId={watchClinicId}
                             practitionerId={requiresPractitioner ? watchPractitionerId : undefined}
+                            serviceId={watchAppointmentTypeId}
                             onSlotSelect={handleSlotSelect}
                           />
                         </FormControl>

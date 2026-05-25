@@ -11,5 +11,6 @@ pub mod inventory;
 pub mod laboratory;
 pub mod patients;
 pub mod referrals;
+pub mod scheduling;
 pub mod search;
 pub mod ward;

@@ -21,6 +21,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::inventory::routes())
         .merge(routes::billing::routes())
         .merge(routes::referrals::routes())
+        .merge(routes::scheduling::routes())
         .merge(routes::admin::routes())
         .merge(routes::dashboard::routes())
         .merge(routes::search::routes())
