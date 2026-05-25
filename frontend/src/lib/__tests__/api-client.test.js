@@ -144,8 +144,8 @@ describe('apiClient runtime config integration', () => {
           type: 'api',
           name: 'duration',
           route: '/patients/:id/chronicle',
-          method: 'get',
-          status: '200',
+          status: '2xx',
+          facility_safe: '_unknown',
         },
       ],
     });

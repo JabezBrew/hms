@@ -14,7 +14,7 @@ pub use hms_api::config::Config;
 use hms_api::extractors::RequestContext;
 use hms_api::middleware::request_id;
 use hms_api::state::AppState;
-pub use hms_domain::deployment::DeploymentProfile;
+pub use hms_domain::deployment::{DeploymentProfile, PermissionCode};
 pub use jsonwebtoken::{encode, EncodingKey, Header};
 pub use serde_json::{json, Value};
 use std::convert::Infallible;
@@ -296,7 +296,7 @@ pub(crate) async fn enroll_test_passkey(app: &TestApp, user_id: Uuid) {
             id: Uuid::new_v4(),
             user_id,
             facility_id: Uuid::from_u128(hms_db::provision::FACILITY_ID),
-            credential_id: format!("test-passkey-{user_id}"),
+            credential_id: format!("test-passkey-{user_id}-{}", Uuid::new_v4()),
             passkey: json!({ "test_credential": true }),
             label: Some("Contract test passkey".to_owned()),
         },
@@ -307,6 +307,36 @@ pub(crate) async fn enroll_test_passkey(app: &TestApp, user_id: Uuid) {
 
 pub(crate) async fn enroll_owner_test_passkey(app: &TestApp) {
     enroll_test_passkey(app, Uuid::from_u128(hms_db::provision::OWNER_USER_ID)).await;
+}
+
+pub(crate) async fn grant_test_permission(
+    app: &TestApp,
+    user_id: Uuid,
+    permission: PermissionCode,
+) {
+    let pool = hms_db::connect(app._database.database_url())
+        .await
+        .expect("test database connects for permission grant");
+    let permission_code = hms_db::codec::encode(permission).expect("permission encodes");
+    sqlx::query(
+        r#"
+        INSERT INTO user_permissions (user_id, permission_code)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, permission_code) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(&permission_code)
+    .execute(&pool)
+    .await
+    .expect("test permission grant inserts");
+    sqlx::query(
+        "UPDATE users SET permission_version = permission_version + 1, updated_at = now() WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("test permission version updates");
 }
 
 pub(crate) async fn login_with_password(

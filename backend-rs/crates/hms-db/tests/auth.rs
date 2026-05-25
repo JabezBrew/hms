@@ -1,9 +1,44 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use hms_db::auth::NewRefreshSession;
 use hms_db::provision::{provision_baseline, BaselineProvisioning};
 use hms_domain::auth::{PatientDataVisibility, UpdateAuthProfileRequest};
 use hms_domain::deployment::{DeploymentProfile, FeatureKey, PermissionCode};
 use uuid::Uuid;
+
+async fn insert_test_refresh_session(
+    pool: &hms_db::PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+) -> Uuid {
+    let (session_version, permission_version) = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT session_version, permission_version FROM users WHERE id = $1 AND facility_id = $2",
+    )
+    .bind(user_id)
+    .bind(facility_id)
+    .fetch_one(pool)
+    .await
+    .expect("user auth versions exist");
+    let session_id = Uuid::new_v4();
+    hms_db::auth::insert_refresh_session(
+        pool,
+        &NewRefreshSession {
+            token_hash: format!("test-token-{session_id}"),
+            session_id,
+            session_family_id: session_id,
+            rotated_from_session_id: None,
+            user_id,
+            facility_id,
+            session_version,
+            permission_version_at_issue: permission_version,
+            csrf_token_hash: format!("test-csrf-{session_id}"),
+            expires_at: Utc::now() + Duration::hours(1),
+            device_label: Some("Auth contract".to_owned()),
+        },
+    )
+    .await
+    .expect("test refresh session inserts");
+    session_id
+}
 
 #[tokio::test]
 async fn request_context_facts_are_loaded_in_one_scoped_query() {
@@ -32,12 +67,14 @@ async fn request_context_facts_are_loaded_in_one_scoped_query() {
     .fetch_one(&pool)
     .await
     .expect("owner exists");
+    let session_id = insert_test_refresh_session(&pool, owner_id, facility_id).await;
 
     let (facts, observed_queries) = hms_observability::with_request_query_counter(async {
         hms_db::auth::request_context_facts(
             &pool,
             owner_id,
             facility_id,
+            session_id,
             DeploymentProfile::Hospital,
         )
         .await
@@ -71,10 +108,31 @@ async fn request_context_facts_are_loaded_in_one_scoped_query() {
         &pool,
         owner_id,
         Uuid::new_v4(),
+        session_id,
         DeploymentProfile::Hospital,
     )
     .await
     .expect("cross-facility request context query succeeds")
+    .is_none());
+
+    hms_db::auth::revoke_user_session(
+        &pool,
+        facility_id,
+        owner_id,
+        session_id,
+        "contract_test_revoked",
+    )
+    .await
+    .expect("session revokes");
+    assert!(hms_db::auth::request_context_facts(
+        &pool,
+        owner_id,
+        facility_id,
+        session_id,
+        DeploymentProfile::Hospital,
+    )
+    .await
+    .expect("revoked-session request context query succeeds")
     .is_none());
 }
 
@@ -127,6 +185,33 @@ async fn auth_user_for_facility_is_single_query_and_scoped() {
             .expect("cross-facility auth user query succeeds")
             .is_none()
     );
+
+    let session_id = insert_test_refresh_session(&pool, owner_id, facility_id).await;
+    let scoped_session_user =
+        hms_db::auth::user_by_id_for_facility_session(&pool, owner_id, facility_id, session_id)
+            .await
+            .expect("session-scoped auth user query succeeds")
+            .expect("session-scoped owner user exists");
+    assert_eq!(scoped_session_user.id, owner_id);
+
+    hms_db::auth::revoke_user_session(
+        &pool,
+        facility_id,
+        owner_id,
+        session_id,
+        "contract_test_revoked",
+    )
+    .await
+    .expect("session revokes");
+    assert!(hms_db::auth::user_by_id_for_facility_session(
+        &pool,
+        owner_id,
+        facility_id,
+        session_id
+    )
+    .await
+    .expect("revoked session auth user query succeeds")
+    .is_none());
 }
 
 #[tokio::test]

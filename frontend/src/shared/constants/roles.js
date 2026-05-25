@@ -24,6 +24,7 @@ export const ADMIN_CAPABILITIES = Object.freeze({
   ROSTER_VIEW: 'admin.roster.view',
   ROSTER_MANAGE: 'admin.roster.manage',
   AUDIT_VIEW: 'admin.audit.view',
+  SYSTEM_OPS_VIEW: 'system.ops.view',
   FEATURE_ENTITLEMENTS_MANAGE: 'admin.feature_entitlements.manage',
 })
 

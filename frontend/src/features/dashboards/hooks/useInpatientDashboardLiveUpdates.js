@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { InpatientDashboardWebSocket } from '@/lib/websocket';
 import { dashboardKeys } from '@/hooks/useDashboardQueries';
+import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -93,8 +94,8 @@ export function useInpatientDashboardLiveUpdates(options = {}) {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
-    ws.on('dashboard.invalidate', ({ dashboard, facility_code }) => {
-      if (dashboard !== 'inpatient') {
+    const handleDashboardEvent = ({ dashboard, facility_code, ...event }) => {
+      if (dashboard && dashboard !== 'inpatient') {
         return;
       }
       const eventFacility = normalizeFacilityCode(facility_code);
@@ -102,8 +103,22 @@ export function useInpatientDashboardLiveUpdates(options = {}) {
       if (eventFacility && currentFacility && eventFacility !== currentFacility) {
         return;
       }
+      const delta = { ...event, dashboard };
+      if (
+        patchDashboardProjectionFreshness(
+          queryClient,
+          dashboardKeys.inpatient(),
+          delta,
+          'inpatient',
+        )
+      ) {
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: dashboardKeys.inpatient() });
-    });
+    };
+
+    ws.on('dashboard.invalidate', handleDashboardEvent);
+    ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 

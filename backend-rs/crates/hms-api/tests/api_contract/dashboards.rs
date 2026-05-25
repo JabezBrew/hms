@@ -35,14 +35,16 @@ async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() 
     assert_eq!(snapshot.status(), StatusCode::OK);
     let snapshot_body = json_body(snapshot).await;
     assert_eq!(snapshot_body["data"]["deployment_profile"], "hospital");
-    let metric_keys: Vec<_> = snapshot_body["data"]["metrics"]
-        .as_array()
-        .expect("metrics are array")
-        .iter()
-        .filter_map(|metric| metric["key"].as_str())
-        .collect();
-    assert!(metric_keys.contains(&"active_patients"));
+    assert!(snapshot_body["data"]["metrics"].is_array());
     assert!(snapshot_body["data"]["navigation"]["groups"].is_array());
+    assert!(snapshot_body["meta"]["generated_at"].is_null());
+    assert_eq!(snapshot_body["meta"]["is_stale"], true);
+    assert_eq!(snapshot_body["meta"]["refresh_queued"], true);
+    assert_eq!(
+        snapshot_body["meta"]["ttl_seconds"],
+        hms_db::dashboard::DASHBOARD_PROJECTION_TTL_SECONDS
+    );
+    assert!(!snapshot_body.to_string().contains("P-10001"));
 
     let capacity = app
         .clone()
@@ -142,6 +144,7 @@ async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() 
     assert!(read_body["data"]["read_at"].is_string());
 
     let subscriptions = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -163,8 +166,34 @@ async fn dashboards_notifications_and_realtime_are_profile_aware_and_phi_safe() 
     assert!(channel_names
         .iter()
         .any(|name| name.ends_with(":dashboard")));
+    assert!(channel_names
+        .iter()
+        .any(|name| name.ends_with(":ward_board")));
+    assert!(channel_names
+        .iter()
+        .any(|name| name.ends_with(":laboratory")));
     let facility_id = Uuid::from_u128(hms_db::provision::FACILITY_ID).to_string();
     assert!(channel_names
         .iter()
         .all(|name| !name.contains(&facility_id)));
+    assert!(!subscriptions_body.to_string().contains("P-10001"));
+    assert!(!subscriptions_body.to_string().contains("patient"));
+
+    let limited_subscriptions = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/realtime/subscriptions")
+                .header(AUTHORIZATION, format!("Bearer {limited_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("limited subscriptions list succeeds");
+    assert_eq!(limited_subscriptions.status(), StatusCode::OK);
+    let limited_body = json_body(limited_subscriptions).await;
+    assert!(limited_body["data"]
+        .as_array()
+        .expect("limited subscriptions are array")
+        .is_empty());
 }

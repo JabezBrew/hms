@@ -1,12 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { SIDEBARS } from '@/app/routes/routeTypes'
 import { ROLES } from '@/shared/constants/roles'
 import { resolveSidebarSections, SidebarRenderer } from '../sidebar'
 
+const opsHostMock = vi.hoisted(() => ({ allowed: true }))
+
+vi.mock('@/features/ops/host', () => ({
+  isOpsDashboardHost: vi.fn(() => opsHostMock.allowed),
+}))
+
 beforeEach(() => {
+  opsHostMock.allowed = true
   window.matchMedia = vi.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
@@ -15,6 +22,10 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   }))
+})
+
+afterEach(() => {
+  cleanup()
 })
 
 function renderSidebar({
@@ -167,6 +178,42 @@ describe('dynamic sidebar', () => {
 
     expect(screen.getByRole('link', { name: /Organization/i })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Audit Logs/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the ops dashboard only to users with the system ops capability', () => {
+    renderSidebar({
+      sidebar: SIDEBARS.ADMIN,
+      user: { role: ROLES.ADMIN },
+      route: '/admin/organization',
+    })
+
+    expect(screen.queryByRole('link', { name: /Ops Dashboard/i })).not.toBeInTheDocument()
+
+    renderSidebar({
+      sidebar: SIDEBARS.ADMIN,
+      user: {
+        role: ROLES.ADMIN,
+        adminAccess: { capabilities: ['system.ops.view'] },
+      },
+      route: '/system/ops',
+    })
+
+    expect(screen.getByRole('link', { name: /Ops Dashboard/i })).toHaveAttribute('href', '/system/ops')
+  })
+
+  it('hides the ops dashboard on non-ops hosts even with the system ops capability', () => {
+    opsHostMock.allowed = false
+
+    renderSidebar({
+      sidebar: SIDEBARS.ADMIN,
+      user: {
+        role: ROLES.ADMIN,
+        adminAccess: { capabilities: ['system.ops.view'] },
+      },
+      route: '/system/ops',
+    })
+
+    expect(screen.queryByRole('link', { name: /Ops Dashboard/i })).not.toBeInTheDocument()
   })
 
   it('hides feature-gated entries until feature flags are known', () => {

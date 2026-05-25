@@ -108,6 +108,8 @@ pub struct RealtimeSubscription {
 pub enum RealtimeChannelKind {
     Dashboard,
     Notifications,
+    WardBoard,
+    Laboratory,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]

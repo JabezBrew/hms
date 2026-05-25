@@ -6,7 +6,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn dashboard_snapshot_reuses_fresh_cache_without_write() {
+async fn dashboard_projection_read_is_one_query_and_does_not_refresh_fresh_projection() {
     let database =
         hms_db::test_support::TestDatabase::create().expect("test database is available");
     let pool = hms_db::connect(database.database_url())
@@ -28,14 +28,13 @@ async fn dashboard_snapshot_reuses_fresh_cache_without_write() {
     let navigation =
         deployment_capabilities(DeploymentProfile::Hospital, facility_id, "HMS").navigation;
 
-    let first = hms_db::dashboard::dashboard_snapshot(
+    let refreshed = hms_db::dashboard::refresh_dashboard_projection(
         &pool,
         facility_id,
         DeploymentProfile::Hospital,
-        navigation.clone(),
     )
     .await
-    .expect("first dashboard snapshot is generated");
+    .expect("dashboard projection refreshes");
     let first_updated_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
         "SELECT updated_at FROM dashboard_snapshots WHERE facility_id = $1 AND snapshot_key = 'operations'",
     )
@@ -46,14 +45,11 @@ async fn dashboard_snapshot_reuses_fresh_cache_without_write() {
 
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    let second = hms_db::dashboard::dashboard_snapshot(
-        &pool,
-        facility_id,
-        DeploymentProfile::Hospital,
-        navigation,
-    )
-    .await
-    .expect("fresh dashboard snapshot is reused");
+    let (read, observed_queries) = hms_observability::with_request_query_counter(async {
+        hms_db::dashboard::read_dashboard_projection(&pool, facility_id, navigation).await
+    })
+    .await;
+    let read = read.expect("fresh dashboard projection reads");
     let second_updated_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
         "SELECT updated_at FROM dashboard_snapshots WHERE facility_id = $1 AND snapshot_key = 'operations'",
     )
@@ -62,9 +58,110 @@ async fn dashboard_snapshot_reuses_fresh_cache_without_write() {
     .await
     .expect("snapshot updated_at can be read again");
 
-    assert_eq!(first.id, second.id);
-    assert_eq!(first.generated_at, second.generated_at);
+    let snapshot = read.snapshot.expect("fresh projection is present");
+    assert_eq!(observed_queries, 1);
+    assert!(!read.is_stale);
+    assert_eq!(read.generated_at, Some(refreshed.generated_at));
+    assert_eq!(refreshed.id, snapshot.id);
+    assert_eq!(refreshed.generated_at, snapshot.generated_at);
     assert_eq!(first_updated_at, second_updated_at);
+    let queued_refresh_count: i64 = sqlx::query_scalar(
+        "SELECT count(*)::bigint FROM jobs WHERE kind = $1 AND status IN ('queued', 'running')",
+    )
+    .bind(hms_db::dashboard::DASHBOARD_REFRESH_JOB_KIND)
+    .fetch_one(&pool)
+    .await
+    .expect("queued refresh count loads");
+    assert_eq!(queued_refresh_count, 0);
+}
+
+#[tokio::test]
+async fn stale_dashboard_projection_queues_one_refresh_without_snapshot_write() {
+    let database =
+        hms_db::test_support::TestDatabase::create().expect("test database is available");
+    let pool = hms_db::connect(database.database_url())
+        .await
+        .expect("database connects");
+
+    hms_db::migrate::run(&pool).await.expect("migrations apply");
+    provision_baseline(
+        &pool,
+        &BaselineProvisioning::hms_local(DeploymentProfile::Hospital),
+    )
+    .await
+    .expect("baseline provisions");
+
+    let facility_id = hms_db::facilities::facility_id_by_code(&pool, "HMS")
+        .await
+        .expect("facility query succeeds")
+        .expect("facility exists");
+    let navigation =
+        deployment_capabilities(DeploymentProfile::Hospital, facility_id, "HMS").navigation;
+    hms_db::dashboard::refresh_dashboard_projection(
+        &pool,
+        facility_id,
+        DeploymentProfile::Hospital,
+    )
+    .await
+    .expect("dashboard projection refreshes");
+    sqlx::query(
+        "UPDATE dashboard_snapshots
+         SET generated_at = now() - INTERVAL '31 seconds'
+         WHERE facility_id = $1 AND snapshot_key = 'operations'",
+    )
+    .bind(facility_id)
+    .execute(&pool)
+    .await
+    .expect("projection is aged");
+    let aged_updated_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "SELECT updated_at FROM dashboard_snapshots WHERE facility_id = $1 AND snapshot_key = 'operations'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("snapshot updated_at can be read");
+
+    let read = hms_db::dashboard::read_dashboard_projection(&pool, facility_id, navigation)
+        .await
+        .expect("stale dashboard projection reads");
+    assert!(read.snapshot.is_some());
+    assert!(read.is_stale);
+
+    let first_queue = hms_db::dashboard::queue_dashboard_projection_refresh(
+        &pool,
+        facility_id,
+        DeploymentProfile::Hospital,
+    )
+    .await
+    .expect("first refresh queues");
+    let second_queue = hms_db::dashboard::queue_dashboard_projection_refresh(
+        &pool,
+        facility_id,
+        DeploymentProfile::Hospital,
+    )
+    .await
+    .expect("duplicate refresh is deduped");
+    let queued_refresh_count: i64 = sqlx::query_scalar(
+        "SELECT count(*)::bigint FROM jobs WHERE kind = $1 AND status = 'queued'",
+    )
+    .bind(hms_db::dashboard::DASHBOARD_REFRESH_JOB_KIND)
+    .fetch_one(&pool)
+    .await
+    .expect("queued refresh count loads");
+    let current_updated_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "SELECT updated_at FROM dashboard_snapshots WHERE facility_id = $1 AND snapshot_key = 'operations'",
+    )
+    .bind(facility_id)
+    .fetch_one(&pool)
+    .await
+    .expect("snapshot updated_at can be read again");
+
+    assert!(first_queue.queued);
+    assert!(first_queue.inserted);
+    assert!(second_queue.queued);
+    assert!(!second_queue.inserted);
+    assert_eq!(queued_refresh_count, 1);
+    assert_eq!(aged_updated_at, current_updated_at);
 }
 
 #[tokio::test]

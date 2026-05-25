@@ -142,6 +142,73 @@ async fn patient_list_records_stable_query_metrics_without_phi_labels() {
 }
 
 #[tokio::test]
+async fn patient_chronicle_startup_is_shaped_bounded_and_query_budgeted() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/patients?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("patient list succeeds");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = json_body(list_response).await;
+    let patient_id = list_body["data"][0]["id"]
+        .as_str()
+        .expect("patient id exists");
+
+    let (response, observed_queries) = hms_observability::with_request_query_counter(async {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/api/v2/patients/{patient_id}/chronicle?limit=20"))
+                    .header(AUTHORIZATION, auth_header)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+    })
+    .await;
+    let response = response.expect("chronicle startup succeeds");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        observed_queries <= 3,
+        "Chronicle startup should stay within the request-context, patient, and shaped-read budget; observed {observed_queries}"
+    );
+
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body reads");
+    assert!(
+        bytes.len() <= 150 * 1024,
+        "Chronicle startup payload was {} bytes, above the 150KiB first-view budget",
+        bytes.len()
+    );
+    let body: Value = serde_json::from_slice(&bytes).expect("response body is json");
+
+    assert_eq!(body["data"]["identity"]["id"], patient_id);
+    assert!(body["data"]["active_context"].is_object());
+    assert!(body["data"]["care_team"].is_array());
+    assert!(body["data"]["summaries"]["problems"].is_array());
+    assert!(body["data"]["summaries"]["allergies"].is_array());
+    assert!(body["data"]["summaries"]["medications"].is_array());
+    assert!(body["data"]["summaries"]["labs"].is_array());
+    assert!(body["data"]["timeline"]["results"].is_null());
+    assert!(body["data"]["timeline"]["data"].is_array());
+    assert_eq!(body["data"]["timeline"]["page"]["limit"], 20);
+    assert_eq!(body["data"]["permissions"]["can_view_chronicle"], true);
+}
+
+#[tokio::test]
 async fn patient_validation_rules_are_available_from_v2_contract() {
     let app = app().await;
     let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { ReceptionDashboardWebSocket } from '@/lib/websocket';
 import { dashboardKeys } from '@/hooks/useDashboardQueries';
+import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -93,8 +94,8 @@ export function useReceptionDashboardLiveUpdates(options = {}) {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
-    ws.on('dashboard.invalidate', ({ dashboard, facility_code }) => {
-      if (dashboard !== 'reception') {
+    const handleDashboardEvent = ({ dashboard, facility_code, ...event }) => {
+      if (dashboard && dashboard !== 'reception') {
         return;
       }
       const eventFacility = normalizeFacilityCode(facility_code);
@@ -102,8 +103,22 @@ export function useReceptionDashboardLiveUpdates(options = {}) {
       if (eventFacility && currentFacility && eventFacility !== currentFacility) {
         return;
       }
+      const delta = { ...event, dashboard };
+      if (
+        patchDashboardProjectionFreshness(
+          queryClient,
+          dashboardKeys.receptionist(),
+          delta,
+          'reception',
+        )
+      ) {
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: dashboardKeys.receptionist() });
-    });
+    };
+
+    ws.on('dashboard.invalidate', handleDashboardEvent);
+    ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 

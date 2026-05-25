@@ -19,7 +19,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::{issue_access_token, verify_access_token, AccessClaims};
-use crate::config::Config;
+use crate::config::{Config, OpsAuthMode, OpsPrometheusConfig};
+use crate::ops_auth::{CloudflareAccessError, CloudflareAccessIdentity, CloudflareAccessVerifier};
 use crate::passwords::hash_password;
 
 #[derive(Clone)]
@@ -34,6 +35,7 @@ struct AppStateInner {
     pool: hms_db::PgPool,
     auth_pool: hms_db::PgPool,
     auth_cache: AuthCache,
+    cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
 const AUTH_FACT_CACHE_TTL: Duration = Duration::from_secs(5);
@@ -42,6 +44,7 @@ const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct AuthCacheKey {
     user_id: Uuid,
+    session_id: Uuid,
     facility_id: Uuid,
     session_version: i64,
     permission_version: i64,
@@ -49,29 +52,21 @@ struct AuthCacheKey {
 }
 
 impl AuthCacheKey {
-    fn from_claims(claims: &AccessClaims, facility_id: Uuid) -> Self {
+    fn from_claims(claims: &AccessClaims) -> Self {
         Self {
             user_id: claims.sub,
-            facility_id,
+            session_id: claims.session_id,
+            facility_id: claims.facility_id,
             session_version: claims.session_version,
             permission_version: claims.permission_version,
             active_profile: claims.active_profile.clone(),
         }
     }
 
-    fn from_auth_user(user: &AuthUser) -> Option<Self> {
+    fn from_user_account(user: &UserAccount, session_id: Uuid) -> Option<Self> {
         Some(Self {
             user_id: user.id,
-            facility_id: user.facility_id,
-            session_version: user.session_version,
-            permission_version: user.permission_version,
-            active_profile: deployment_profile_claim_value(user.active_profile)?,
-        })
-    }
-
-    fn from_user_account(user: &UserAccount) -> Option<Self> {
-        Some(Self {
-            user_id: user.id,
+            session_id,
             facility_id: user.facility_id,
             session_version: user.session_version,
             permission_version: user.permission_version,
@@ -118,6 +113,23 @@ impl AuthCache {
         }
         if let Ok(mut contexts) = self.request_contexts.write() {
             contexts.retain(|key, _| key.facility_id != facility_id || key.user_id != user_id);
+        }
+    }
+
+    fn remove_session(&self, facility_id: Uuid, user_id: Uuid, session_id: Uuid) {
+        if let Ok(mut users) = self.users.write() {
+            users.retain(|key, _| {
+                key.facility_id != facility_id
+                    || key.user_id != user_id
+                    || key.session_id != session_id
+            });
+        }
+        if let Ok(mut contexts) = self.request_contexts.write() {
+            contexts.retain(|key, _| {
+                key.facility_id != facility_id
+                    || key.user_id != user_id
+                    || key.session_id != session_id
+            });
         }
     }
 
@@ -245,6 +257,14 @@ impl AppState {
                 .context("failed to rebuild OmniSearch index")?;
         }
 
+        let cloudflare_access = if config.ops_auth_mode.allows_cloudflare_access() {
+            Some(CloudflareAccessVerifier::new(
+                config.cloudflare_access.clone(),
+            )?)
+        } else {
+            None
+        };
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 config,
@@ -253,6 +273,7 @@ impl AppState {
                 pool,
                 auth_pool,
                 auth_cache: AuthCache::default(),
+                cloudflare_access,
             }),
         })
     }
@@ -269,6 +290,10 @@ impl AppState {
         self.inner.pool.num_idle()
     }
 
+    pub fn postgres_pool_max_connections(&self) -> u32 {
+        self.inner.config.database_max_connections
+    }
+
     pub fn auth_postgres_pool_size(&self) -> u32 {
         self.inner.auth_pool.size()
     }
@@ -277,8 +302,32 @@ impl AppState {
         self.inner.auth_pool.num_idle()
     }
 
+    pub fn auth_postgres_pool_max_connections(&self) -> u32 {
+        auth_pool_max_connections(self.inner.config.database_max_connections)
+    }
+
     pub fn rum_enabled(&self) -> bool {
         self.inner.config.rum_enabled
+    }
+
+    pub fn ops_auth_mode(&self) -> OpsAuthMode {
+        self.inner.config.ops_auth_mode
+    }
+
+    pub fn ops_prometheus_config(&self) -> &OpsPrometheusConfig {
+        &self.inner.config.ops_prometheus
+    }
+
+    pub async fn verify_cloudflare_access_operator(
+        &self,
+        token: &str,
+    ) -> Result<CloudflareAccessIdentity, CloudflareAccessError> {
+        let verifier = self
+            .inner
+            .cloudflare_access
+            .as_ref()
+            .ok_or(CloudflareAccessError::Misconfigured)?;
+        verifier.verify(token).await
     }
 
     pub async fn readiness_snapshot(&self) -> ReadinessSnapshot {
@@ -323,6 +372,17 @@ impl AppState {
 
     pub fn invalidate_auth_cache_for_user(&self, facility_id: Uuid, user_id: Uuid) {
         self.inner.auth_cache.remove_user(facility_id, user_id);
+    }
+
+    pub fn invalidate_auth_cache_for_session(
+        &self,
+        facility_id: Uuid,
+        user_id: Uuid,
+        session_id: Uuid,
+    ) {
+        self.inner
+            .auth_cache
+            .remove_session(facility_id, user_id, session_id);
     }
 
     pub fn invalidate_auth_cache_for_facility(&self, facility_id: Uuid) {
@@ -378,14 +438,23 @@ impl AppState {
     }
 
     pub async fn auth_user_for_claims(&self, claims: &AccessClaims) -> Result<Option<AuthUser>> {
-        let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
+        if claims.facility_id != self.facility_id() {
+            return Ok(None);
+        }
+
+        let cache_key = AuthCacheKey::from_claims(claims);
         if let Some(user) = self.inner.auth_cache.get_user(&cache_key) {
             return Ok(Some(user));
         }
 
-        let user = self
-            .auth_user_for_facility(claims.sub, self.facility_id())
-            .await?;
+        let user = hms_db::auth::user_by_id_for_facility_session(
+            &self.inner.auth_pool,
+            claims.sub,
+            self.facility_id(),
+            claims.session_id,
+        )
+        .await?
+        .map(|user| user.to_auth_user());
         if let Some(user) = &user {
             if auth_user_matches_claims(user, claims) {
                 self.inner.auth_cache.put_user(cache_key, user.clone());
@@ -398,11 +467,13 @@ impl AppState {
         &self,
         user_id: Uuid,
         facility_id: Uuid,
+        session_id: Uuid,
     ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
         hms_db::auth::request_context_facts(
             &self.inner.auth_pool,
             user_id,
             facility_id,
+            session_id,
             self.inner.config.deployment_profile,
         )
         .await
@@ -411,15 +482,30 @@ impl AppState {
     pub async fn request_context_facts_for_claims(
         &self,
         claims: &AccessClaims,
+        route_pattern: &str,
     ) -> Result<Option<hms_db::auth::RequestContextAuthFacts>> {
-        let cache_key = AuthCacheKey::from_claims(claims, self.facility_id());
+        let facility_safe = self.inner.config.facility_code.as_str();
+        if claims.facility_id != self.facility_id() {
+            hms_observability::record_request_context_cache_miss(route_pattern, facility_safe);
+            return Ok(None);
+        }
+
+        let cache_key = AuthCacheKey::from_claims(claims);
         if let Some(facts) = self.inner.auth_cache.get_request_context(&cache_key) {
+            hms_observability::record_request_context_cache_hit(route_pattern, facility_safe);
             return Ok(Some(facts));
         }
 
+        hms_observability::record_request_context_cache_miss(route_pattern, facility_safe);
+        let started_at = Instant::now();
         let facts = self
-            .request_context_facts(claims.sub, self.facility_id())
+            .request_context_facts(claims.sub, self.facility_id(), claims.session_id)
             .await?;
+        hms_observability::record_request_context_hydration_db_time(
+            route_pattern,
+            facility_safe,
+            started_at.elapsed(),
+        );
         if let Some(facts) = &facts {
             if auth_user_matches_claims(&facts.user, claims) {
                 self.inner
@@ -462,11 +548,6 @@ impl AppState {
             hms_db::auth::update_user_profile(&self.inner.pool, facility_id, user_id, payload)
                 .await?
                 .map(|user| user.to_auth_user());
-        if let Some(user) = &user {
-            if let Some(cache_key) = AuthCacheKey::from_auth_user(user) {
-                self.inner.auth_cache.put_user(cache_key, user.clone());
-            }
-        }
         Ok(user)
     }
 
@@ -524,6 +605,7 @@ impl AppState {
                 "refresh_token_reuse_detected",
             )
             .await?;
+            self.invalidate_auth_cache_for_user(old_session.facility_id, old_session.user_id);
             warn!(
                 session_family_id = %old_session.session_family_id,
                 "revoked refresh-session family after refresh token reuse"
@@ -559,6 +641,11 @@ impl AppState {
         if !revoked {
             return Ok(None);
         }
+        self.invalidate_auth_cache_for_session(
+            old_session.facility_id,
+            old_session.user_id,
+            old_session.session_id,
+        );
 
         self.issue_session_for_user(
             &user,
@@ -572,13 +659,24 @@ impl AppState {
     pub async fn logout(&self, refresh_token: &str, csrf_token: &str) -> Result<()> {
         let token_hash = hash_refresh_token(refresh_token);
         let csrf_token_hash = hash_refresh_token(csrf_token);
-        let _ = hms_db::auth::revoke_refresh_session(
+        let session =
+            hms_db::auth::refresh_session_by_token_hash(&self.inner.pool, &token_hash).await?;
+        let revoked = hms_db::auth::revoke_refresh_session(
             &self.inner.pool,
             &token_hash,
             &csrf_token_hash,
             "logout",
         )
         .await?;
+        if revoked {
+            if let Some(session) = session {
+                self.invalidate_auth_cache_for_session(
+                    session.facility_id,
+                    session.user_id,
+                    session.session_id,
+                );
+            }
+        }
         Ok(())
     }
 
@@ -780,14 +878,18 @@ impl AppState {
         if facility_id != self.facility_id() {
             return Ok(false);
         }
-        hms_db::auth::revoke_user_session(
+        let revoked = hms_db::auth::revoke_user_session(
             &self.inner.pool,
             facility_id,
             user_id,
             session_id,
             "user_revoked",
         )
-        .await
+        .await?;
+        if revoked {
+            self.invalidate_auth_cache_for_session(facility_id, user_id, session_id);
+        }
+        Ok(revoked)
     }
 
     pub async fn revoke_other_auth_sessions(
@@ -799,14 +901,18 @@ impl AppState {
         if facility_id != self.facility_id() {
             return Ok(0);
         }
-        hms_db::auth::revoke_other_user_sessions(
+        let revoked = hms_db::auth::revoke_other_user_sessions(
             &self.inner.pool,
             facility_id,
             user_id,
             current_session_id,
             "user_revoked_others",
         )
-        .await
+        .await?;
+        if revoked > 0 {
+            self.invalidate_auth_cache_for_user(facility_id, user_id);
+        }
+        Ok(revoked)
     }
 
     pub async fn deployment_capabilities(&self) -> Result<DeploymentCapabilities> {
@@ -874,7 +980,7 @@ impl AppState {
         .context("failed to issue access token")?;
 
         let auth_user = user.to_auth_user();
-        if let Some(cache_key) = AuthCacheKey::from_user_account(user) {
+        if let Some(cache_key) = AuthCacheKey::from_user_account(user, session_id) {
             self.inner.auth_cache.put_user(cache_key, auth_user.clone());
         }
 

@@ -59,7 +59,11 @@ describe('Rust V2 dashboard bridge', () => {
             ],
             navigation: { groups: [] },
           },
-          meta: {},
+          meta: {
+            generated_at: '2026-05-12T03:26:23Z',
+            is_stale: false,
+            refresh_queued: false,
+          },
         }),
         {
           status: 200,
@@ -100,6 +104,8 @@ describe('Rust V2 dashboard bridge', () => {
       action_queue_top: [],
       meta: {
         generated_at: '2026-05-12T03:26:23Z',
+        stale: false,
+        refresh_queued: false,
       },
     });
   });
@@ -118,6 +124,39 @@ describe('Rust V2 dashboard bridge', () => {
         critical_alerts: [],
         overdue_medications: [],
       },
+    });
+  });
+
+  it('keeps null projection freshness timestamps when the Rust snapshot is a queued miss', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: '00000000-0000-0000-0000-000000000000',
+            deployment_profile: 'hospital',
+            generated_at: '1970-01-01T00:00:00Z',
+            metrics: [],
+            navigation: { groups: [] },
+          },
+          meta: {
+            generated_at: null,
+            is_stale: true,
+            refresh_queued: true,
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    const response = await dashboardsApi.getAdminDashboardV2({ window: 'today' });
+
+    expect(response.meta).toMatchObject({
+      generated_at: null,
+      stale: true,
+      refresh_queued: true,
     });
   });
 

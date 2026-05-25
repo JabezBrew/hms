@@ -51,7 +51,12 @@ vi.mock('../react-query', () => ({
   },
 }))
 
+vi.mock('../cockpit-cache', () => ({
+  clearAllCockpitCaches: vi.fn(() => Promise.resolve(true)),
+}))
+
 import { authApi } from '../api/auth'
+import { clearAllCockpitCaches } from '../cockpit-cache'
 import { notifications } from '../notifications'
 import { queryClient } from '../react-query'
 
@@ -195,6 +200,7 @@ describe('AuthProvider', () => {
 
       expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
       expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'session-expired' })
       expect(notifications.success).not.toHaveBeenCalled()
     })
 
@@ -221,6 +227,7 @@ describe('AuthProvider', () => {
       })
 
       expect(authApi.logout).toHaveBeenCalledTimes(1)
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'session-expired' })
       expect(screen.getByTestId('isAuthenticated').textContent).toBe('false')
     })
   })
@@ -469,6 +476,7 @@ describe('AuthProvider', () => {
       expect(localStorageMock.removeItem).toHaveBeenCalledWith(AUTH_STORAGE.sessionStartTime)
       expect(localStorageMock.removeItem).toHaveBeenCalledWith(AUTH_STORAGE.refreshTokenIssuedAt)
       expect(queryClient.clear).toHaveBeenCalled()
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'logout' })
       expect(notifications.success).toHaveBeenCalledWith('Logged out successfully')
     })
 
@@ -499,6 +507,7 @@ describe('AuthProvider', () => {
       })
 
       expect(authApi.logout).not.toHaveBeenCalled()
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'logout' })
       expect(result.current.isAuthenticated).toBe(false)
     })
 
@@ -571,7 +580,77 @@ describe('AuthProvider', () => {
 
       expect(authApi.logout).toHaveBeenCalledTimes(1)
       expect(notifications.success).toHaveBeenCalledTimes(1)
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'logout' })
       expect(result.current.isAuthenticated).toBe(false)
+    })
+
+    it('clears cockpit cache on facility switch', async () => {
+      const storedUser = {
+        id: 'user-123',
+        email: 'test@test.com',
+        role: 'doctor',
+        facilityCode: 'HMS',
+      }
+
+      localStorageMock.store[AUTH_STORAGE.user] = JSON.stringify(storedUser)
+      localStorageMock.store[AUTH_STORAGE.sessionStartTime] = Date.now().toString()
+      localStorageMock.store[AUTH_STORAGE.refreshTokenIssuedAt] = Date.now().toString()
+      mockPerformTokenRefresh.mockResolvedValue('access-token-123')
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+        expect(result.current.isAuthenticated).toBe(true)
+      })
+
+      clearAllCockpitCaches.mockClear()
+
+      act(() => {
+        result.current.setFacilityCode('SATELLITE')
+      })
+
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'facility-change' })
+    })
+
+    it('clears cockpit cache when the authenticated role changes', async () => {
+      authApi.login
+        .mockResolvedValueOnce({
+          access: 'access-token-123',
+          user: {
+            id: 'user-123',
+            email: 'test@test.com',
+            user_type: 'nurse',
+            facility_code: 'HMS',
+          },
+        })
+        .mockResolvedValueOnce({
+          access: 'access-token-456',
+          user: {
+            id: 'user-123',
+            email: 'test@test.com',
+            user_type: 'doctor',
+            facility_code: 'HMS',
+          },
+        })
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
+
+      await act(async () => {
+        await result.current.login('test@test.com', 'password123', 'HMS')
+      })
+
+      clearAllCockpitCaches.mockClear()
+
+      await act(async () => {
+        await result.current.login('test@test.com', 'password123', 'HMS')
+      })
+
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'role-change' })
     })
   })
 
@@ -706,6 +785,7 @@ describe('AuthProvider', () => {
 
       expect(token).toBe(null)
       expect(mockPerformTokenRefresh).not.toHaveBeenCalled()
+      expect(clearAllCockpitCaches).toHaveBeenCalledWith({ reason: 'session-expired' })
       expect(notifications.info).toHaveBeenCalledWith('Your session has expired. Please log in again.')
     })
   })

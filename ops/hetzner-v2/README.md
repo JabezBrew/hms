@@ -89,6 +89,120 @@ The Rust API exposes PHI-safe Prometheus text at `/api/v2/metrics` on the
 container network. Caddy returns `404` for that path publicly, so scrape it from
 inside the VPS network or through a private monitoring sidecar.
 
+The V2 Compose stack includes a private Prometheus service that scrapes the
+Rust API inside Docker at `hms-api:8080/api/v2/metrics`. It has no published
+host port and must not be routed through Caddy:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml up -d prometheus
+```
+
+Grafana is included only as an engineer fallback/debug console. It binds to
+`127.0.0.1:${GRAFANA_LOCAL_PORT:-3001}` on the VPS, uses the private
+Prometheus datasource, and must be opened through SSH tunneling:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml up -d grafana
+ssh -L 3001:127.0.0.1:3001 hms-staging
+```
+
+Then visit `http://127.0.0.1:3001` and sign in with
+`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from the private `.env` file.
+Generate a unique Grafana password per client VPS; do not commit it.
+
+The public Caddy edge can reserve an ops host for the custom HMS Ops dashboard.
+Leave `OPS_DOMAIN=localhost` until DNS is ready. The preferred production setup
+is Cloudflare Access in front of a dedicated hostname such as
+`ops.<client-domain>`, with the DNS record proxied through Cloudflare. The ops
+host proxies only `/api/v2/ops/*` to `hms-api`, redirects `/` to `/system/ops`,
+and serves the React ops dashboard for everything else. Other `/api/v2/*` paths
+on the ops host return `404`. The client hospital host also returns `404` for
+`/system/ops` and `/api/v2/ops/*`; those paths are reserved for `OPS_DOMAIN`.
+
+For Cloudflare Access:
+
+1. Put the domain zone on Cloudflare DNS, or Cloudflare Access will not sit in
+   front of the hostname on the free plan.
+2. Create a proxied DNS record for the ops hostname, for example
+   `ops.staging.thehms.systems`, pointing to this VPS or to the existing staging
+   hostname.
+3. In Cloudflare Zero Trust, create a self-hosted Access application for the ops
+   hostname and allow only the operator emails.
+4. Copy the application Audience (AUD) tag and set the private `.env` values:
+
+```bash
+OPS_DOMAIN=ops.staging.thehms.systems
+HMS_OPS_AUTH_MODE=cloudflare_access
+HMS_CLOUDFLARE_ACCESS_TEAM_DOMAIN=https://<team-name>.cloudflareaccess.com
+HMS_CLOUDFLARE_ACCESS_AUD=<cloudflare-access-aud-tag>
+HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS=jabezbrew3@gmail.com,jabezbrew79@gmail.com
+HMS_OPS_OPERATOR_EMAILS=
+```
+
+Cloudflare injects `Cf-Access-Jwt-Assertion` after login. `hms-api` validates
+that JWT against the Cloudflare Access signing keys and the configured AUD
+before it serves `/api/v2/ops/*`, so operators do not need to be HMS facility
+users. `HMS_OPS_OPERATOR_EMAILS` is now a legacy/hybrid fallback for the
+`hms_permission` auth mode only. Do not point this route at Grafana or
+Prometheus.
+
+Postgres is started with `pg_stat_statements` preloaded for staging and
+production diagnostics. Existing databases still need the extension enabled
+once after the Postgres container has restarted with the preload setting:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml exec -T db \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"'
+```
+
+Verify it privately from the VPS:
+
+```bash
+docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml exec -T db \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT queryid, calls, total_exec_time, mean_exec_time, rows FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;"'
+```
+
+Do not expose Postgres, `/api/v2/metrics`, Prometheus, or Grafana publicly.
+For a Grafana slow-query table, use a private Postgres datasource or a private
+postgres-exporter custom query; group by `queryid` and never display SQL text in
+public screenshots. The operational SQL for private runbooks is:
+
+```sql
+SELECT queryid,
+       calls,
+       round(total_exec_time::numeric, 2) AS total_exec_ms,
+       round(mean_exec_time::numeric, 2) AS mean_exec_ms,
+       rows
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 20;
+```
+
+Useful private Grafana PromQL panels:
+
+```promql
+# Slow clinical routes p99
+histogram_quantile(0.99, sum by (route_pattern, le) (
+  rate(hms_api_route_request_duration_seconds_bucket{route_pattern=~"/api/v2/(patients/:id/chronicle|dashboards/.*|wards/board)"}[$__rate_interval])
+))
+
+# DB pool pressure
+1 - (hms_api_postgres_pool_idle / clamp_min(hms_api_postgres_pool_size, 1))
+
+# Browser API latency p95 by safe route
+histogram_quantile(0.95, sum by (route_pattern, le) (
+  rate(hms_browser_api_request_duration_seconds_bucket[$__rate_interval])
+))
+
+# Dashboard p95/p99
+histogram_quantile(0.95, sum by (route_pattern, le) (rate(hms_dashboard_read_seconds_bucket[$__rate_interval])))
+histogram_quantile(0.99, sum by (route_pattern, le) (rate(hms_dashboard_read_seconds_bucket[$__rate_interval])))
+
+# Chronicle p95/p99
+histogram_quantile(0.95, sum by (route_pattern, le) (rate(hms_chronicle_read_seconds_bucket[$__rate_interval])))
+histogram_quantile(0.99, sum by (route_pattern, le) (rate(hms_chronicle_read_seconds_bucket[$__rate_interval])))
+```
+
 ## Backups and Restore
 
 Production deploys require encrypted off-server restic backups. Fill these

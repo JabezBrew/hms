@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use axum::extract::FromRequestParts;
+use axum::extract::{FromRequestParts, MatchedPath};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use chrono::{DateTime, Utc};
@@ -13,8 +13,10 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::auth::AccessClaims;
+use crate::config::OpsAuthMode;
 use crate::error::ApiError;
 use crate::middleware::request_id::{current_request_id, RequestId};
+use crate::ops_auth::{CloudflareAccessError, OpsOperator, CF_ACCESS_JWT_HEADER};
 use crate::state::AppState;
 
 const SLOW_REQUEST_CONTEXT_THRESHOLD: Duration = Duration::from_millis(75);
@@ -70,6 +72,66 @@ impl FromRequestParts<AppState> for AuthenticatedSession {
     }
 }
 
+#[async_trait]
+impl FromRequestParts<AppState> for OpsOperator {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        match state.ops_auth_mode() {
+            OpsAuthMode::HmsPermission => Ok(OpsOperator::Hms(
+                resolve_request_context(parts, state).await?,
+            )),
+            OpsAuthMode::CloudflareAccess => resolve_cloudflare_ops_operator(parts, state).await,
+            OpsAuthMode::Hybrid => {
+                if parts.headers.contains_key(CF_ACCESS_JWT_HEADER) {
+                    resolve_cloudflare_ops_operator(parts, state).await
+                } else {
+                    Ok(OpsOperator::Hms(
+                        resolve_request_context(parts, state).await?,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+async fn resolve_cloudflare_ops_operator(
+    parts: &Parts,
+    state: &AppState,
+) -> Result<OpsOperator, ApiError> {
+    let token = parts
+        .headers
+        .get(CF_ACCESS_JWT_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(ApiError::unauthorized)?;
+    let identity = state
+        .verify_cloudflare_access_operator(token)
+        .await
+        .map_err(cloudflare_access_error)?;
+    Ok(OpsOperator::CloudflareAccess(identity))
+}
+
+fn cloudflare_access_error(error: CloudflareAccessError) -> ApiError {
+    match error {
+        CloudflareAccessError::EmailNotAllowed => ApiError::forbidden(
+            "ops_operator_not_allowed",
+            "This operator is not allowed to access the ops dashboard.",
+        ),
+        CloudflareAccessError::Misconfigured => ApiError::forbidden(
+            "ops_access_misconfigured",
+            "Ops dashboard access is not configured.",
+        ),
+        CloudflareAccessError::KeyFetchFailed | CloudflareAccessError::InvalidToken => {
+            ApiError::unauthorized()
+        }
+    }
+}
+
 async fn resolve_request_context(
     parts: &Parts,
     state: &AppState,
@@ -86,8 +148,9 @@ async fn resolve_request_context(
     let claims_elapsed = claims_started_at.elapsed();
 
     let facts_started_at = Instant::now();
+    let route_pattern = route_pattern(parts);
     let context_facts = state
-        .request_context_facts_for_claims(&claims)
+        .request_context_facts_for_claims(&claims, &route_pattern)
         .await
         .map_err(|_| ApiError::unauthorized())?
         .ok_or_else(ApiError::unauthorized)?;
@@ -163,6 +226,14 @@ fn access_claims(parts: &Parts, state: &AppState) -> Result<AccessClaims, ApiErr
     state
         .verify_access_token(token)
         .map_err(|_| ApiError::unauthorized())
+}
+
+fn route_pattern(parts: &Parts) -> String {
+    parts
+        .extensions
+        .get::<MatchedPath>()
+        .map(|matched_path| matched_path.as_str().to_owned())
+        .unwrap_or_else(|| "_unknown".to_owned())
 }
 
 fn reject_stale_claims(user: &AuthUser, claims: &AccessClaims) -> Result<(), ApiError> {

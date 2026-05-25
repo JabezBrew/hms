@@ -48,6 +48,10 @@ async fn openapi_contains_foundation_paths() {
         "/api/v2/health/ready",
         "/api/v2/metrics",
         "/api/v2/observability/rum",
+        "/api/v2/ops/overview",
+        "/api/v2/ops/performance",
+        "/api/v2/ops/database",
+        "/api/v2/ops/frontend",
         "/api/v2/auth/login",
         "/api/v2/auth/refresh",
         "/api/v2/auth/logout",
@@ -368,11 +372,11 @@ async fn rum_ingest_records_phi_safe_browser_metrics() {
 
     let metrics = text_body(api_get(app, &owner, "/api/v2/metrics").await).await;
     assert!(metrics.contains("hms_browser_rum_events_total"));
-    assert!(metrics.contains("type=\"api\""));
-    assert!(metrics.contains("name=\"duration\""));
-    assert!(metrics.contains("route=\"/patients/:id/chronicle\""));
-    assert!(metrics.contains("method=\"POST\""));
+    assert!(metrics.contains("route_pattern=\"/patients/:id/chronicle\""));
+    assert!(metrics.contains("status_bucket=\"2xx\""));
+    assert!(metrics.contains("facility_safe=\"HMS\""));
     assert!(metrics.contains("hms_browser_rum_duration_seconds_bucket"));
+    assert!(metrics.contains("hms_browser_api_request_duration_seconds_bucket"));
     assert!(!metrics.contains("Ama"));
     assert!(!metrics.contains("Mensah"));
 }

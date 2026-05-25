@@ -322,8 +322,41 @@ pub async fn user_by_id_for_facility(
     user_id: Uuid,
     facility_id: Uuid,
 ) -> anyhow::Result<Option<UserAccount>> {
-    let row = hms_observability::observe_db_query(
+    user_by_id_for_facility_with_session(
+        pool,
+        user_id,
+        facility_id,
+        None,
         "auth.user_by_id_for_facility",
+    )
+    .await
+}
+
+pub async fn user_by_id_for_facility_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+    session_id: Uuid,
+) -> anyhow::Result<Option<UserAccount>> {
+    user_by_id_for_facility_with_session(
+        pool,
+        user_id,
+        facility_id,
+        Some(session_id),
+        "auth.user_by_id_for_facility_session",
+    )
+    .await
+}
+
+async fn user_by_id_for_facility_with_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    facility_id: Uuid,
+    session_id: Option<Uuid>,
+    query_name: &'static str,
+) -> anyhow::Result<Option<UserAccount>> {
+    let row = hms_observability::observe_db_query(
+        query_name,
         sqlx::query_as::<_, UserRow>(
             r#"
         SELECT users.id,
@@ -376,10 +409,25 @@ pub async fn user_by_id_for_facility(
           AND users.facility_id = $2
           AND users.is_active = TRUE
           AND facilities.is_active = TRUE
+          AND (
+              $3::uuid IS NULL
+              OR EXISTS (
+                  SELECT 1
+                  FROM refresh_sessions
+                  WHERE refresh_sessions.session_id = $3
+                    AND refresh_sessions.user_id = users.id
+                    AND refresh_sessions.facility_id = users.facility_id
+                    AND refresh_sessions.session_version = users.session_version
+                    AND refresh_sessions.permission_version_at_issue = users.permission_version
+                    AND refresh_sessions.revoked_at IS NULL
+                    AND refresh_sessions.expires_at > now()
+              )
+          )
         "#,
         )
         .bind(user_id)
         .bind(facility_id)
+        .bind(session_id)
         .fetch_optional(pool),
     )
     .await?;
@@ -435,6 +483,7 @@ pub async fn request_context_facts(
     pool: &PgPool,
     user_id: Uuid,
     facility_id: Uuid,
+    session_id: Uuid,
     fallback_profile: DeploymentProfile,
 ) -> anyhow::Result<Option<RequestContextAuthFacts>> {
     let row = hms_observability::observe_db_query(
@@ -566,10 +615,22 @@ pub async fn request_context_facts(
               AND users.facility_id = $2
               AND users.is_active = TRUE
               AND facilities.is_active = TRUE
+              AND EXISTS (
+                  SELECT 1
+                  FROM refresh_sessions
+                  WHERE refresh_sessions.session_id = $3
+                    AND refresh_sessions.user_id = users.id
+                    AND refresh_sessions.facility_id = users.facility_id
+                    AND refresh_sessions.session_version = users.session_version
+                    AND refresh_sessions.permission_version_at_issue = users.permission_version
+                    AND refresh_sessions.revoked_at IS NULL
+                    AND refresh_sessions.expires_at > now()
+              )
             "#,
         )
         .bind(user_id)
         .bind(facility_id)
+        .bind(session_id)
         .fetch_optional(pool),
     )
     .await?;

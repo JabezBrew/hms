@@ -171,6 +171,10 @@ if [ "$SKIP_PULL" != "true" ]; then
   git pull --ff-only
 fi
 
+HMS_BUILD_SHA="${HMS_BUILD_SHA:-$(git rev-parse --short=12 HEAD 2>/dev/null || true)}"
+HMS_DEPLOYED_AT="${HMS_DEPLOYED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
+export HMS_BUILD_SHA HMS_DEPLOYED_AT
+
 step 'Validating Compose configuration'
 compose config -q
 

@@ -17,6 +17,16 @@ x-rust-image: &rust-image
     HMS_JWT_SECRET: ${HMS_JWT_SECRET:?set HMS_JWT_SECRET in ops/hetzner-v2/.env}
     HMS_COOKIE_SECURE: "true"
     HMS_RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
+    HMS_OPS_AUTH_MODE: ${HMS_OPS_AUTH_MODE:-hms_permission}
+    HMS_OPS_PROMETHEUS_ENABLED: ${HMS_OPS_PROMETHEUS_ENABLED:-false}
+    HMS_OPS_PROMETHEUS_URL: ${HMS_OPS_PROMETHEUS_URL:-}
+    HMS_OPS_PROMETHEUS_TIMEOUT_MS: ${HMS_OPS_PROMETHEUS_TIMEOUT_MS:-1500}
+    HMS_CLOUDFLARE_ACCESS_TEAM_DOMAIN: ${HMS_CLOUDFLARE_ACCESS_TEAM_DOMAIN:-}
+    HMS_CLOUDFLARE_ACCESS_AUD: ${HMS_CLOUDFLARE_ACCESS_AUD:-}
+    HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS: ${HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS:-}
+    HMS_BUILD_SHA: ${HMS_BUILD_SHA:-}
+    HMS_DEPLOYED_AT: ${HMS_DEPLOYED_AT:-}
+    HMS_IMAGE_TAG: ${VERSION:-latest}
     HMS_AUTO_MIGRATE: "false"
     HMS_PROVISION_BASELINE: "false"
     RUST_LOG: ${RUST_LOG:-hms_api=info,hms_worker=info,hms_db=info}
@@ -36,6 +46,8 @@ services:
     image: caddy:2-alpine
     environment:
       CLIENT_DOMAIN: ${CLIENT_DOMAIN:?set CLIENT_DOMAIN in ops/hetzner-v2/.env}
+      OPS_DOMAIN: ${OPS_DOMAIN:-localhost}
+      OPS_DASHBOARD_UPSTREAM: ${OPS_DASHBOARD_UPSTREAM:-frontend:80}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in ops/hetzner-v2/.env}
     ports:
       - "80:80"
@@ -81,6 +93,7 @@ services:
       DEFAULT_FACILITY_CODE: ${HMS_FACILITY_CODE:?set HMS_FACILITY_CODE in ops/hetzner-v2/.env}
       MULTI_FACILITY_MODE: ${MULTI_FACILITY_MODE:-false}
       RUM_ENABLED: ${HMS_RUM_ENABLED:-false}
+      OPS_DASHBOARD_HOSTS: ${OPS_DOMAIN:-localhost}
     expose:
       - "80"
     networks:
@@ -159,6 +172,65 @@ services:
     mem_limit: 384m
     cpus: 0.50
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}
+      - --web.listen-address=0.0.0.0:9090
+    expose:
+      - "9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      hms-api:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-CHANGE_ME_before_starting_grafana}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SERVER_HTTP_ADDR: 0.0.0.0
+      GF_SERVER_HTTP_PORT: "3000"
+    ports:
+      - "127.0.0.1:${GRAFANA_LOCAL_PORT:-3001}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - internal
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
   hms-migrator:
     <<: *rust-image
     command: ["hms-migrator"]
@@ -172,6 +244,7 @@ services:
       HMS_BOOTSTRAP_ADMIN_NAME: ${HMS_BOOTSTRAP_ADMIN_NAME:-HMS Administrator}
       HMS_BOOTSTRAP_ADMIN_PASSWORD: ${HMS_BOOTSTRAP_ADMIN_PASSWORD:?set HMS_BOOTSTRAP_ADMIN_PASSWORD in ops/hetzner-v2/.env}
       HMS_SEED_DEMO_DATA: ${HMS_SEED_DEMO_DATA:-false}
+      HMS_OPS_OPERATOR_EMAILS: ${HMS_OPS_OPERATOR_EMAILS:-}
     depends_on:
       db:
         condition: service_healthy
@@ -201,6 +274,14 @@ services:
       - checkpoint_completion_target=0.9
       - -c
       - wal_compression=on
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=${PG_STAT_STATEMENTS_MAX:-10000}
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
       - -c
       - log_min_duration_statement=500
     volumes:
@@ -309,3 +390,5 @@ volumes:
   caddy_config:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:

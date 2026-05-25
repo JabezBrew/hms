@@ -660,6 +660,7 @@ pub async fn webauthn_registration_verify(
     )
     .await
     .map_err(|_| ApiError::bad_request("webauthn_verify_failed", "Passkey verification failed."))?;
+    state.invalidate_auth_cache_for_user(user.facility_id, user.id);
 
     Ok(Json(object(WebAuthnVerifyResponse { verified: true })))
 }
@@ -819,6 +820,7 @@ pub async fn generate_recovery_codes(
                 "Recovery codes could not be generated.",
             )
         })?;
+    state.invalidate_auth_cache_for_user(user.facility_id, user.id);
 
     Ok(Json(object(RecoveryCodeGenerateResponse { codes })))
 }

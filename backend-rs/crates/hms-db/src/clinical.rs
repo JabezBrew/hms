@@ -11,6 +11,7 @@ use hms_domain::clinical::{
 use hms_domain::patients::{PatientDetail, PatientRecord};
 use hms_observability::observe_db_query;
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -221,6 +222,102 @@ struct ChronicleSectionsRow {
     allergies: JsonValue,
     prescriptions: JsonValue,
     chart_entries: JsonValue,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ChronicleTimelineFilters {
+    pub entry_type: Option<String>,
+    pub search: Option<String>,
+    pub encounter_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ChronicleEncounterRead {
+    pub id: Uuid,
+    pub patient_id: Uuid,
+    pub encounter_type: String,
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ChronicleAdmissionRead {
+    pub admission_id: Uuid,
+    pub patient_id: Uuid,
+    pub ward_id: Uuid,
+    pub ward_name: String,
+    pub bed_id: Option<Uuid>,
+    pub bed_code: Option<String>,
+    pub status: String,
+    pub admitted_at: DateTime<Utc>,
+    pub discharged_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ChronicleCareTeamMemberRead {
+    pub assignment_id: Uuid,
+    pub encounter_id: Uuid,
+    pub user_id: Uuid,
+    pub display_name: String,
+    pub role: String,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ChronicleLabResultRead {
+    pub id: Uuid,
+    pub order_id: Uuid,
+    pub specimen_id: Uuid,
+    pub patient_id: Uuid,
+    pub patient_code: String,
+    pub test_id: Uuid,
+    pub test_name: String,
+    pub value: String,
+    pub unit: Option<String>,
+    pub status: String,
+    pub entered_at: DateTime<Utc>,
+    pub verified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, FromRow)]
+pub struct ChronicleTimelineEntryRead {
+    pub entry_id: Uuid,
+    pub entry_type: String,
+    pub occurred_at: DateTime<Utc>,
+    pub encounter_id: Option<Uuid>,
+    pub title: String,
+    pub summary: Option<String>,
+    pub data: JsonValue,
+}
+
+#[derive(Clone, Debug)]
+pub struct PatientChronicleStartupRead {
+    pub active_encounter: Option<ChronicleEncounterRead>,
+    pub active_admission: Option<ChronicleAdmissionRead>,
+    pub care_team: Vec<ChronicleCareTeamMemberRead>,
+    pub notes: Vec<ClinicalNoteListItem>,
+    pub problems: Vec<ProblemListItem>,
+    pub allergies: Vec<AllergyListItem>,
+    pub prescriptions: Vec<PrescriptionListItem>,
+    pub chart_entries: Vec<ChartEntryListItem>,
+    pub lab_results: Vec<ChronicleLabResultRead>,
+    pub timeline_entries: Vec<ChronicleTimelineEntryRead>,
+}
+
+#[derive(Clone, Debug, FromRow)]
+struct ChronicleStartupRow {
+    active_encounter: JsonValue,
+    active_admission: JsonValue,
+    care_team: JsonValue,
+    notes: JsonValue,
+    problems: JsonValue,
+    allergies: JsonValue,
+    prescriptions: JsonValue,
+    chart_entries: JsonValue,
+    lab_results: JsonValue,
+    timeline_entries: JsonValue,
 }
 
 pub async fn list_note_templates(
@@ -1133,6 +1230,97 @@ pub async fn patient_chronicle_summary_for_patient(
     })
 }
 
+pub async fn patient_chronicle_startup_for_patient(
+    pool: &PgPool,
+    patient: &PatientRecord,
+    summary_limit: i64,
+    timeline_limit: i64,
+    cursor: Option<ClinicalCursor>,
+    filters: ChronicleTimelineFilters,
+) -> anyhow::Result<PatientChronicleStartupRead> {
+    let summary_limit = summary_limit.clamp(1, 20);
+    let timeline_limit = timeline_limit.clamp(1, 101);
+    let cursor_occurred_at = cursor.as_ref().map(|cursor| cursor.occurred_at);
+    let cursor_id = cursor.as_ref().map(|cursor| cursor.id);
+    let search_pattern = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"));
+
+    let row = observe_db_query(
+        "clinical.patient_chronicle.startup",
+        sqlx::query_as::<_, ChronicleStartupRow>(CHRONICLE_STARTUP_SQL)
+            .bind(patient.facility_id)
+            .bind(patient.id)
+            .bind(summary_limit)
+            .bind(timeline_limit)
+            .bind(cursor_occurred_at)
+            .bind(cursor_id)
+            .bind(filters.entry_type)
+            .bind(search_pattern)
+            .bind(filters.encounter_id)
+            .fetch_one(pool),
+    )
+    .await?;
+
+    Ok(PatientChronicleStartupRead {
+        active_encounter: decode_optional_chronicle_value(
+            row.active_encounter,
+            "active_encounter",
+        )?,
+        active_admission: decode_optional_chronicle_value(
+            row.active_admission,
+            "active_admission",
+        )?,
+        care_team: decode_chronicle_section(row.care_team, "care_team")?,
+        notes: decode_chronicle_section(row.notes, "notes")?,
+        problems: decode_chronicle_section(row.problems, "problems")?,
+        allergies: decode_chronicle_section(row.allergies, "allergies")?,
+        prescriptions: decode_chronicle_section(row.prescriptions, "prescriptions")?,
+        chart_entries: decode_chronicle_section(row.chart_entries, "chart_entries")?,
+        lab_results: decode_chronicle_section(row.lab_results, "lab_results")?,
+        timeline_entries: decode_chronicle_section(row.timeline_entries, "timeline_entries")?,
+    })
+}
+
+pub async fn patient_chronicle_timeline(
+    pool: &PgPool,
+    facility_id: Uuid,
+    patient_id: Uuid,
+    cursor: Option<ClinicalCursor>,
+    limit: i64,
+    filters: ChronicleTimelineFilters,
+) -> anyhow::Result<Vec<ChronicleTimelineEntryRead>> {
+    let limit = limit.clamp(1, 101);
+    let cursor_occurred_at = cursor.as_ref().map(|cursor| cursor.occurred_at);
+    let cursor_id = cursor.as_ref().map(|cursor| cursor.id);
+    let search_pattern = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"));
+
+    let rows = observe_db_query(
+        "clinical.patient_chronicle.timeline",
+        sqlx::query_as::<_, ChronicleTimelineEntryRead>(CHRONICLE_TIMELINE_SQL)
+            .bind(facility_id)
+            .bind(patient_id)
+            .bind(limit)
+            .bind(cursor_occurred_at)
+            .bind(cursor_id)
+            .bind(filters.entry_type)
+            .bind(search_pattern)
+            .bind(filters.encounter_id)
+            .fetch_all(pool),
+    )
+    .await?;
+
+    Ok(rows)
+}
+
 async fn patient_chronicle_sections(
     pool: &PgPool,
     facility_id: Uuid,
@@ -1205,12 +1393,472 @@ async fn patient_chronicle_sections(
     Ok(row)
 }
 
+const CHRONICLE_STARTUP_SQL: &str = r#"
+WITH active_encounter AS (
+  SELECT id, patient_id, encounter_type, status, started_at, ended_at
+  FROM encounters
+  WHERE facility_id = $1
+    AND patient_id = $2
+    AND status = 'in_progress'
+  ORDER BY started_at DESC, id DESC
+  LIMIT 1
+),
+active_admission AS (
+  SELECT admission_cases.id AS admission_id,
+         admission_cases.patient_id,
+         admission_cases.ward_id,
+         wards.name AS ward_name,
+         admission_cases.bed_id,
+         beds.bed_code,
+         admission_cases.status,
+         admission_cases.admitted_at,
+         admission_cases.discharged_at
+  FROM admission_cases
+  JOIN wards
+    ON wards.id = admission_cases.ward_id
+   AND wards.facility_id = admission_cases.facility_id
+  LEFT JOIN beds
+    ON beds.id = admission_cases.bed_id
+   AND beds.facility_id = admission_cases.facility_id
+  WHERE admission_cases.facility_id = $1
+    AND admission_cases.patient_id = $2
+    AND admission_cases.status IN ('admitted', 'discharge_pending')
+  ORDER BY admission_cases.admitted_at DESC, admission_cases.id DESC
+  LIMIT 1
+),
+care_team AS (
+  SELECT assignments.id AS assignment_id,
+         assignments.encounter_id,
+         assignments.user_id,
+         users.display_name,
+         assignments.role,
+         assignments.is_active,
+         assignments.created_at
+  FROM encounter_care_team_assignments assignments
+  JOIN active_encounter ON active_encounter.id = assignments.encounter_id
+  JOIN users ON users.id = assignments.user_id
+  WHERE assignments.is_active = TRUE
+  ORDER BY assignments.created_at ASC, assignments.id ASC
+  LIMIT 10
+),
+timeline_entries AS (
+  SELECT entries.entry_id,
+         entries.entry_type,
+         entries.occurred_at,
+         entries.encounter_id,
+         entries.title,
+         entries.summary,
+         entries.data
+  FROM (
+    SELECT clinical_notes.id AS entry_id,
+           CASE
+             WHEN clinical_notes.note_type IN (
+               'progress_note',
+               'soap_note',
+               'nursing_note',
+               'admission_note',
+               'discharge_note',
+               'consult_note',
+               'procedure'
+             )
+             THEN clinical_notes.note_type
+             ELSE 'progress_note'
+           END AS entry_type,
+           'note' AS entry_category,
+           clinical_notes.updated_at AS occurred_at,
+           clinical_notes.encounter_id,
+           clinical_notes.title,
+           concat_ws(' · ', clinical_notes.note_type, clinical_notes.status) AS summary,
+           jsonb_build_object(
+             'note_type', clinical_notes.note_type,
+             'status', clinical_notes.status,
+             'version', clinical_notes.version
+           ) AS data
+    FROM clinical_notes
+    WHERE clinical_notes.facility_id = $1
+      AND clinical_notes.patient_id = $2
+
+    UNION ALL
+
+    SELECT prescriptions.id AS entry_id,
+           'prescription' AS entry_type,
+           'prescription' AS entry_category,
+           prescriptions.prescribed_at AS occurred_at,
+           NULL::uuid AS encounter_id,
+           prescriptions.medication_name AS title,
+           concat_ws(' ', prescriptions.dose, prescriptions.frequency, prescriptions.status) AS summary,
+           jsonb_build_object(
+             'medication_name', prescriptions.medication_name,
+             'dose', prescriptions.dose,
+             'dosage', prescriptions.dose,
+             'frequency', prescriptions.frequency,
+             'frequency_display', prescriptions.frequency,
+             'status', prescriptions.status
+           ) AS data
+    FROM prescriptions
+    WHERE prescriptions.facility_id = $1
+      AND prescriptions.patient_id = $2
+
+    UNION ALL
+
+    SELECT chart_entries.id AS entry_id,
+           'vitals' AS entry_type,
+           'vitals' AS entry_category,
+           chart_entries.measured_at AS occurred_at,
+           NULL::uuid AS encounter_id,
+           chart_entries.entry_type AS title,
+           concat_ws(' ', chart_entries.value, chart_entries.unit) AS summary,
+           CASE chart_entries.entry_type
+             WHEN 'temperature' THEN jsonb_build_object('temperature', chart_entries.value)
+             WHEN 'pulse' THEN jsonb_build_object('heart_rate', chart_entries.value)
+             WHEN 'respiratory_rate' THEN jsonb_build_object('respiratory_rate', chart_entries.value)
+             WHEN 'blood_pressure' THEN jsonb_build_object('blood_pressure', chart_entries.value)
+             WHEN 'oxygen_saturation' THEN jsonb_build_object('oxygen_saturation', chart_entries.value, 'spo2', chart_entries.value)
+             ELSE jsonb_build_object(
+               'entry_type', chart_entries.entry_type,
+               'value', chart_entries.value,
+               'unit', chart_entries.unit
+             )
+           END AS data
+    FROM chart_entries
+    WHERE chart_entries.facility_id = $1
+      AND chart_entries.patient_id = $2
+
+    UNION ALL
+
+    SELECT lab_results.id AS entry_id,
+           'lab_result' AS entry_type,
+           'lab_result' AS entry_category,
+           lab_results.entered_at AS occurred_at,
+           NULL::uuid AS encounter_id,
+           lab_tests.name AS title,
+           concat_ws(' ', lab_results.value, lab_results.unit, lab_results.status) AS summary,
+           jsonb_build_object(
+             'order_id', lab_results.order_id,
+             'specimen_id', lab_results.specimen_id,
+             'test_id', lab_results.test_id,
+             'test_name', lab_tests.name,
+             'value', lab_results.value,
+             'unit', lab_results.unit,
+             'status', lab_results.status,
+             'verified_at', lab_results.verified_at
+           ) AS data
+    FROM lab_results
+    JOIN lab_tests
+      ON lab_tests.id = lab_results.test_id
+     AND lab_tests.facility_id = lab_results.facility_id
+    WHERE lab_results.facility_id = $1
+      AND lab_results.patient_id = $2
+
+    UNION ALL
+
+    SELECT patient_problems.id AS entry_id,
+           'problem' AS entry_type,
+           'problem' AS entry_category,
+           patient_problems.created_at AS occurred_at,
+           NULL::uuid AS encounter_id,
+           patient_problems.label AS title,
+           patient_problems.status AS summary,
+           jsonb_build_object(
+             'label', patient_problems.label,
+             'status', patient_problems.status,
+             'onset_date', patient_problems.onset_date
+           ) AS data
+    FROM patient_problems
+    WHERE patient_problems.facility_id = $1
+      AND patient_problems.patient_id = $2
+
+    UNION ALL
+
+    SELECT patient_allergies.id AS entry_id,
+           'allergy' AS entry_type,
+           'allergy' AS entry_category,
+           patient_allergies.created_at AS occurred_at,
+           NULL::uuid AS encounter_id,
+           patient_allergies.substance AS title,
+           concat_ws(' · ', patient_allergies.severity, patient_allergies.status) AS summary,
+           jsonb_build_object(
+             'substance', patient_allergies.substance,
+             'reaction', patient_allergies.reaction,
+             'severity', patient_allergies.severity,
+             'status', patient_allergies.status
+           ) AS data
+    FROM patient_allergies
+    WHERE patient_allergies.facility_id = $1
+      AND patient_allergies.patient_id = $2
+  ) entries
+  WHERE ($5::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($5::timestamptz, $6::uuid))
+    AND ($7::text IS NULL OR entries.entry_category = $7)
+    AND ($8::text IS NULL OR entries.title ILIKE $8 OR entries.summary ILIKE $8)
+    AND ($9::uuid IS NULL OR entries.encounter_id = $9)
+  ORDER BY entries.occurred_at DESC, entries.entry_id DESC
+  LIMIT $4
+)
+SELECT
+  COALESCE((SELECT to_jsonb(active_encounter) FROM active_encounter), 'null'::jsonb) AS active_encounter,
+  COALESCE((SELECT to_jsonb(active_admission) FROM active_admission), 'null'::jsonb) AS active_admission,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(care_team) ORDER BY care_team.created_at ASC, care_team.assignment_id ASC)
+    FROM care_team
+  ), '[]'::jsonb) AS care_team,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(notes) ORDER BY notes.updated_at DESC, notes.id DESC)
+    FROM (
+      SELECT id, patient_id, note_type, title, status, version, updated_at
+      FROM clinical_notes
+      WHERE facility_id = $1 AND patient_id = $2
+      ORDER BY updated_at DESC, id DESC
+      LIMIT $3
+    ) notes
+  ), '[]'::jsonb) AS notes,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(problems) ORDER BY problems.created_at DESC, problems.id DESC)
+    FROM (
+      SELECT id, patient_id, label, status, onset_date, created_at
+      FROM patient_problems
+      WHERE facility_id = $1 AND patient_id = $2
+      ORDER BY created_at DESC, id DESC
+      LIMIT $3
+    ) problems
+  ), '[]'::jsonb) AS problems,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(allergies) ORDER BY allergies.created_at DESC, allergies.id DESC)
+    FROM (
+      SELECT id, patient_id, substance, reaction, severity, status, created_at
+      FROM patient_allergies
+      WHERE facility_id = $1 AND patient_id = $2
+      ORDER BY created_at DESC, id DESC
+      LIMIT $3
+    ) allergies
+  ), '[]'::jsonb) AS allergies,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(prescriptions) ORDER BY prescriptions.prescribed_at DESC, prescriptions.id DESC)
+    FROM (
+      SELECT id, patient_id, medication_name, dose, frequency, status, prescribed_at
+      FROM prescriptions
+      WHERE facility_id = $1 AND patient_id = $2
+      ORDER BY prescribed_at DESC, id DESC
+      LIMIT $3
+    ) prescriptions
+  ), '[]'::jsonb) AS prescriptions,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(chart_entries) ORDER BY chart_entries.measured_at DESC, chart_entries.id DESC)
+    FROM (
+      SELECT id, patient_id, entry_type, measured_at, value, unit
+      FROM chart_entries
+      WHERE facility_id = $1 AND patient_id = $2
+      ORDER BY measured_at DESC, id DESC
+      LIMIT $3
+    ) chart_entries
+  ), '[]'::jsonb) AS chart_entries,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(labs) ORDER BY labs.entered_at DESC, labs.id DESC)
+    FROM (
+      SELECT lab_results.id,
+             lab_results.order_id,
+             lab_results.specimen_id,
+             lab_results.patient_id,
+             patients.patient_code,
+             lab_results.test_id,
+             lab_tests.name AS test_name,
+             lab_results.value,
+             lab_results.unit,
+             lab_results.status,
+             lab_results.entered_at,
+             lab_results.verified_at
+      FROM lab_results
+      JOIN patients
+        ON patients.id = lab_results.patient_id
+       AND patients.facility_id = lab_results.facility_id
+      JOIN lab_tests
+        ON lab_tests.id = lab_results.test_id
+       AND lab_tests.facility_id = lab_results.facility_id
+      WHERE lab_results.facility_id = $1 AND lab_results.patient_id = $2
+      ORDER BY lab_results.entered_at DESC, lab_results.id DESC
+      LIMIT $3
+    ) labs
+  ), '[]'::jsonb) AS lab_results,
+  COALESCE((
+    SELECT jsonb_agg(to_jsonb(timeline_entries) ORDER BY timeline_entries.occurred_at DESC, timeline_entries.entry_id DESC)
+    FROM timeline_entries
+  ), '[]'::jsonb) AS timeline_entries
+"#;
+
+const CHRONICLE_TIMELINE_SQL: &str = r#"
+SELECT entries.entry_id,
+       entries.entry_type,
+       entries.occurred_at,
+       entries.encounter_id,
+       entries.title,
+       entries.summary,
+       entries.data
+FROM (
+  SELECT clinical_notes.id AS entry_id,
+         CASE
+           WHEN clinical_notes.note_type IN (
+             'progress_note',
+             'soap_note',
+             'nursing_note',
+             'admission_note',
+             'discharge_note',
+             'consult_note',
+             'procedure'
+           )
+           THEN clinical_notes.note_type
+           ELSE 'progress_note'
+         END AS entry_type,
+         'note' AS entry_category,
+         clinical_notes.updated_at AS occurred_at,
+         clinical_notes.encounter_id,
+         clinical_notes.title,
+         concat_ws(' · ', clinical_notes.note_type, clinical_notes.status) AS summary,
+         jsonb_build_object(
+           'note_type', clinical_notes.note_type,
+           'status', clinical_notes.status,
+           'version', clinical_notes.version
+         ) AS data
+  FROM clinical_notes
+  WHERE clinical_notes.facility_id = $1
+    AND clinical_notes.patient_id = $2
+
+  UNION ALL
+
+  SELECT prescriptions.id AS entry_id,
+         'prescription' AS entry_type,
+         'prescription' AS entry_category,
+         prescriptions.prescribed_at AS occurred_at,
+         NULL::uuid AS encounter_id,
+         prescriptions.medication_name AS title,
+         concat_ws(' ', prescriptions.dose, prescriptions.frequency, prescriptions.status) AS summary,
+         jsonb_build_object(
+           'medication_name', prescriptions.medication_name,
+           'dose', prescriptions.dose,
+           'dosage', prescriptions.dose,
+           'frequency', prescriptions.frequency,
+           'frequency_display', prescriptions.frequency,
+           'status', prescriptions.status
+         ) AS data
+  FROM prescriptions
+  WHERE prescriptions.facility_id = $1
+    AND prescriptions.patient_id = $2
+
+  UNION ALL
+
+  SELECT chart_entries.id AS entry_id,
+         'vitals' AS entry_type,
+         'vitals' AS entry_category,
+         chart_entries.measured_at AS occurred_at,
+         NULL::uuid AS encounter_id,
+         chart_entries.entry_type AS title,
+         concat_ws(' ', chart_entries.value, chart_entries.unit) AS summary,
+         CASE chart_entries.entry_type
+           WHEN 'temperature' THEN jsonb_build_object('temperature', chart_entries.value)
+           WHEN 'pulse' THEN jsonb_build_object('heart_rate', chart_entries.value)
+           WHEN 'respiratory_rate' THEN jsonb_build_object('respiratory_rate', chart_entries.value)
+           WHEN 'blood_pressure' THEN jsonb_build_object('blood_pressure', chart_entries.value)
+           WHEN 'oxygen_saturation' THEN jsonb_build_object('oxygen_saturation', chart_entries.value, 'spo2', chart_entries.value)
+           ELSE jsonb_build_object(
+             'entry_type', chart_entries.entry_type,
+             'value', chart_entries.value,
+             'unit', chart_entries.unit
+           )
+         END AS data
+  FROM chart_entries
+  WHERE chart_entries.facility_id = $1
+    AND chart_entries.patient_id = $2
+
+  UNION ALL
+
+  SELECT lab_results.id AS entry_id,
+         'lab_result' AS entry_type,
+         'lab_result' AS entry_category,
+         lab_results.entered_at AS occurred_at,
+         NULL::uuid AS encounter_id,
+         lab_tests.name AS title,
+         concat_ws(' ', lab_results.value, lab_results.unit, lab_results.status) AS summary,
+         jsonb_build_object(
+           'order_id', lab_results.order_id,
+           'specimen_id', lab_results.specimen_id,
+           'test_id', lab_results.test_id,
+           'test_name', lab_tests.name,
+           'value', lab_results.value,
+           'unit', lab_results.unit,
+           'status', lab_results.status,
+           'verified_at', lab_results.verified_at
+         ) AS data
+  FROM lab_results
+  JOIN lab_tests
+    ON lab_tests.id = lab_results.test_id
+   AND lab_tests.facility_id = lab_results.facility_id
+  WHERE lab_results.facility_id = $1
+    AND lab_results.patient_id = $2
+
+  UNION ALL
+
+  SELECT patient_problems.id AS entry_id,
+         'problem' AS entry_type,
+         'problem' AS entry_category,
+         patient_problems.created_at AS occurred_at,
+         NULL::uuid AS encounter_id,
+         patient_problems.label AS title,
+         patient_problems.status AS summary,
+         jsonb_build_object(
+           'label', patient_problems.label,
+           'status', patient_problems.status,
+           'onset_date', patient_problems.onset_date
+         ) AS data
+  FROM patient_problems
+  WHERE patient_problems.facility_id = $1
+    AND patient_problems.patient_id = $2
+
+  UNION ALL
+
+  SELECT patient_allergies.id AS entry_id,
+         'allergy' AS entry_type,
+         'allergy' AS entry_category,
+         patient_allergies.created_at AS occurred_at,
+         NULL::uuid AS encounter_id,
+         patient_allergies.substance AS title,
+         concat_ws(' · ', patient_allergies.severity, patient_allergies.status) AS summary,
+         jsonb_build_object(
+           'substance', patient_allergies.substance,
+           'reaction', patient_allergies.reaction,
+           'severity', patient_allergies.severity,
+           'status', patient_allergies.status
+         ) AS data
+  FROM patient_allergies
+  WHERE patient_allergies.facility_id = $1
+    AND patient_allergies.patient_id = $2
+) entries
+WHERE ($4::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($4::timestamptz, $5::uuid))
+  AND ($6::text IS NULL OR entries.entry_category = $6)
+  AND ($7::text IS NULL OR entries.title ILIKE $7 OR entries.summary ILIKE $7)
+  AND ($8::uuid IS NULL OR entries.encounter_id = $8)
+ORDER BY entries.occurred_at DESC, entries.entry_id DESC
+LIMIT $3
+"#;
+
 fn decode_chronicle_section<T>(value: JsonValue, section: &'static str) -> anyhow::Result<Vec<T>>
 where
     T: DeserializeOwned,
 {
     serde_json::from_value(value)
         .with_context(|| format!("patient Chronicle section {section} could not be decoded"))
+}
+
+fn decode_optional_chronicle_value<T>(
+    value: JsonValue,
+    section: &'static str,
+) -> anyhow::Result<Option<T>>
+where
+    T: DeserializeOwned,
+{
+    if value.is_null() {
+        return Ok(None);
+    }
+    serde_json::from_value(value)
+        .map(Some)
+        .with_context(|| format!("patient Chronicle value {section} could not be decoded"))
 }
 
 fn patient_table_query(

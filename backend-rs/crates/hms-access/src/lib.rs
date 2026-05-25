@@ -637,6 +637,14 @@ pub fn require_feature_entitlement_access(
     .map_err(|_| AccessError::AdminAuthorityAccessDenied)
 }
 
+pub fn require_ops_dashboard_access(
+    ctx: &RequestContext,
+    facility_id: Uuid,
+) -> Result<(), AccessError> {
+    require_feature(ctx, FeatureKey::Admin)?;
+    require_facility_permission(ctx, facility_id, PermissionCode::SystemOpsView)
+}
+
 pub fn require_staff_access(ctx: &RequestContext, facility_id: Uuid) -> Result<(), AccessError> {
     require_feature(ctx, FeatureKey::Admin).map_err(|_| AccessError::AdminAuthorityAccessDenied)?;
     require_facility_permission(ctx, facility_id, PermissionCode::AdminStaffManage)

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { NurseDashboardWebSocket } from '@/lib/websocket';
+import { patchDashboardProjectionFreshness } from './realtimePatchesLiveUpdates';
 
 function normalizeFacilityCode(value) {
   return value ? String(value).trim().toUpperCase() : null;
@@ -100,8 +101,8 @@ export function useNurseDashboardLiveUpdates(options = {}) {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
-    ws.on('dashboard.invalidate', ({ dashboard, facility_code, ward_scope }) => {
-      if (dashboard !== 'nurse') {
+    const handleDashboardEvent = ({ dashboard, facility_code, ward_scope, ...event }) => {
+      if (dashboard && dashboard !== 'nurse') {
         return;
       }
       const eventFacility = normalizeFacilityCode(facility_code);
@@ -119,8 +120,15 @@ export function useNurseDashboardLiveUpdates(options = {}) {
         return;
       }
 
+      const delta = { ...event, dashboard };
+      if (patchDashboardProjectionFreshness(queryClient, ['dashboards', 'nurse'], delta, 'nurse')) {
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['dashboards', 'nurse'] });
-    });
+    };
+
+    ws.on('dashboard.invalidate', handleDashboardEvent);
+    ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 

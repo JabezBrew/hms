@@ -21,6 +21,10 @@ async fn deployment_capabilities_are_permission_gated() {
     let body = json_body(response).await;
     assert_eq!(body["data"]["deployment_profile"], "hospital");
     assert_eq!(body["data"]["features"]["patients"], true);
+    assert!(!body["data"]["permissions"]
+        .as_array()
+        .expect("permissions are listed")
+        .contains(&json!("system.ops.view")));
 
     let (limited_token, _, _) = login(app.clone(), "limited@hms.local").await;
     let denied = app

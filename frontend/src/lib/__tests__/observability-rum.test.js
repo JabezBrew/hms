@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetRumForTests,
+  configureRumAuth,
   flushRum,
   initBrowserRum,
   recordApiTiming,
@@ -33,6 +34,7 @@ describe('browser RUM observability', () => {
     expect(scrubRouteLabel('/patients/PAT-928374/chronicle?tab=labs')).toBe('/patients/:id/chronicle');
     expect(scrubRouteLabel('/wards/admissions/550e8400-e29b-41d4-a716-446655440000')).toBe('/wards/admissions/:id');
     expect(scrubRouteLabel('/billing/invoices/12345/payments')).toBe('/billing/invoices/:id/payments');
+    expect(scrubRouteLabel('/patients/ama-mensah/chronicle')).toBe('/patients/:id/chronicle');
   });
 
   it('stays disabled by default', () => {
@@ -56,6 +58,7 @@ describe('browser RUM observability', () => {
       rumEnabled: true,
     };
     globalThis.navigator.sendBeacon = vi.fn(() => false);
+    configureRumAuth({ getFacilityCode: () => 'HMS' });
 
     recordApiTiming({
       endpoint: '/patients/PAT-928374/chronicle?tab=labs',
@@ -75,8 +78,8 @@ describe('browser RUM observability', () => {
           type: 'api',
           name: 'duration',
           route: '/patients/:id/chronicle',
-          method: 'get',
-          status: '200',
+          status: '2xx',
+          facility_safe: 'HMS',
           value: 43,
         },
       ],

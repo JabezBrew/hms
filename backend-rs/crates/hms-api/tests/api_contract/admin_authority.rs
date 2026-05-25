@@ -324,6 +324,42 @@ async fn admin_authority_workflows_are_permission_scoped_and_audited() {
         .expect("authority appointment create succeeds");
     assert_eq!(appointment.status(), StatusCode::OK);
 
+    let unsupported_ops_assignment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/admin/permission-assignments")
+                .header(AUTHORIZATION, format!("Bearer {owner_token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "grantee_user_id": limited_id,
+                        "permission_code": "system.ops.view",
+                        "scope_type": "facility",
+                        "scope_id": null,
+                        "starts_at": null,
+                        "ends_at": null,
+                        "reason_code": "ops_dashboard_platform_boundary_test"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("unsupported ops permission assignment request succeeds");
+    let unsupported_ops_status = unsupported_ops_assignment.status();
+    let unsupported_ops_body = json_body(unsupported_ops_assignment).await;
+    assert_eq!(
+        unsupported_ops_status,
+        StatusCode::BAD_REQUEST,
+        "{unsupported_ops_body}"
+    );
+    assert_eq!(
+        unsupported_ops_body["error"]["code"],
+        "unsupported_permission"
+    );
+
     let assignment = app
         .clone()
         .oneshot(

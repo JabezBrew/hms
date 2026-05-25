@@ -12,25 +12,36 @@ import { queryClient } from './lib/react-query'
 import { BreadcrumbProvider } from './components/layout/PageBreadcrumb'
 import { Skeleton } from './components/ui/skeleton'
 import { PageLoader } from './shared/components/page/PageState'
+import { isStandaloneOpsDashboardHost } from './features/ops/host'
 
 const AuthenticatedApp = lazy(() => import('./app/AuthenticatedApp'))
+const OpsDashboardApp = lazy(() => import('./app/OpsDashboardApp'))
 const PublicAuthApp = lazy(() => import('./app/PublicAuthApp'))
 const PasswordChangeRequiredApp = lazy(() => import('./app/PasswordChangeRequiredApp'))
 
 // Main app content with routes
 function AppContent() {
   const { isAuthenticated, loading, passwordChangeRequired } = useAuth()
-  const appState = loading
-    ? 'booting'
-    : !isAuthenticated
-      ? 'public'
-      : passwordChangeRequired
-        ? 'password-change-required'
-        : 'authenticated'
+  const isOpsHost = isStandaloneOpsDashboardHost()
+  const appState = isOpsHost
+    ? 'ops'
+    : loading
+      ? 'booting'
+      : !isAuthenticated
+        ? 'public'
+        : passwordChangeRequired
+          ? 'password-change-required'
+          : 'authenticated'
 
   let content
 
-  if (loading) {
+  if (isOpsHost) {
+    content = (
+      <Suspense fallback={<PageLoader />}>
+        <OpsDashboardApp />
+      </Suspense>
+    )
+  } else if (loading) {
     content = (
       <div className="flex min-h-screen flex-col">
         {/* Skeleton for header */}

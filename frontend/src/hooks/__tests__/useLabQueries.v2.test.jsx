@@ -3,6 +3,8 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  labKeys,
+  patchLabOrderStatusSummary,
   useLabOrder,
   useLabPanel,
   useLabResult,
@@ -73,5 +75,48 @@ describe('useLabQueries Rust V2 behavior', () => {
     expect(laboratoryApi.getLabResult).toHaveBeenCalledWith('result-1', {
       signal: expect.any(AbortSignal),
     });
+  });
+
+  it('patches lab order status summaries without broad list invalidation', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    const orderedKey = labKeys.ordersPaginatedList({ status: 'ordered' });
+    const completedKey = labKeys.ordersPaginatedList({ status: 'completed' });
+    queryClient.setQueryData(labKeys.order('order-1'), {
+      id: 'order-1',
+      status: 'ordered',
+      status_display: 'Ordered',
+    });
+    queryClient.setQueryData(orderedKey, {
+      count: 1,
+      results: [{ id: 'order-1', status: 'ordered', status_display: 'Ordered' }],
+    });
+    queryClient.setQueryData(completedKey, {
+      count: 0,
+      results: [],
+    });
+
+    const patched = patchLabOrderStatusSummary(queryClient, {
+      id: 'order-1',
+      status: 'completed',
+      status_display: 'Completed',
+      patient_mrn: 'P-10001',
+    });
+
+    expect(patched).toBe(true);
+    expect(queryClient.getQueryData(labKeys.order('order-1'))).toMatchObject({
+      id: 'order-1',
+      status: 'completed',
+      status_display: 'Completed',
+    });
+    expect(queryClient.getQueryData(orderedKey)).toMatchObject({
+      count: 0,
+      results: [],
+    });
+    expect(JSON.stringify(queryClient.getQueryData(labKeys.order('order-1')))).not.toContain('P-10001');
   });
 });

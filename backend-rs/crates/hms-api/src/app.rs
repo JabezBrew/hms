@@ -25,6 +25,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::dashboard::routes())
         .merge(routes::search::routes())
         .merge(routes::observability::routes())
+        .merge(routes::ops::routes())
         .route("/api/v2/metrics", get(crate::handlers::health::metrics))
         .route("/api/v2/openapi.json", get(openapi_handler))
         .route_layer(middleware::from_fn(telemetry::layer))

@@ -30,6 +30,17 @@ function metricValue(snapshot, key) {
   return Number(metric?.value || 0);
 }
 
+function projectionMeta(response, snapshot = {}) {
+  const meta = response?.meta || {};
+  const hasGeneratedAt = Object.prototype.hasOwnProperty.call(meta, 'generated_at');
+  return {
+    deployment_profile: snapshot.deployment_profile || null,
+    generated_at: hasGeneratedAt ? meta.generated_at : (snapshot.generated_at ?? null),
+    stale: Boolean(meta.is_stale ?? meta.stale ?? false),
+    refresh_queued: Boolean(meta.refresh_queued ?? false),
+  };
+}
+
 function makeSectionSummary(status = 'normal') {
   return {
     status,
@@ -90,11 +101,7 @@ function adaptV2SnapshotToAdminSummary(response) {
     action_queue_top: [],
     metrics: snapshot.metrics || [],
     navigation: snapshot.navigation || { groups: [] },
-    meta: {
-      deployment_profile: snapshot.deployment_profile || null,
-      generated_at: snapshot.generated_at || null,
-      stale: false,
-    },
+    meta: projectionMeta(response, snapshot),
   };
 }
 
@@ -116,10 +123,7 @@ function adaptV2SnapshotToMyWork(response, params = {}) {
     upcoming: [],
     completed: [],
     metrics: snapshot.metrics || [],
-    meta: {
-      deployment_profile: snapshot.deployment_profile || null,
-      generated_at: snapshot.generated_at || null,
-    },
+    meta: projectionMeta(response, snapshot),
   };
 }
 

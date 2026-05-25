@@ -164,6 +164,65 @@ async fn request_context_extractor_resolves_policy_state_before_handler() {
     let cached_response = cached_response.expect("cached request context probe succeeds");
     assert_eq!(cached_response.status(), StatusCode::OK);
     assert_eq!(cached_observed_queries, 0);
+
+    let metrics = hms_observability::prometheus_metrics();
+    assert!(metrics.contains("hms_request_context_cache_hits_total"));
+    assert!(metrics.contains("hms_request_context_cache_misses_total"));
+    assert!(metrics.contains("hms_request_context_hydration_db_seconds"));
+    assert!(metrics.contains("route_pattern=\"/__test/request-context\""));
+    assert!(metrics.contains("facility_safe=\"HMS\""));
+}
+
+#[tokio::test]
+async fn logout_invalidates_warmed_request_context_cache_for_session() {
+    let app = app_with_request_context_probe().await;
+    let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let warmed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/__test/request-context")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("warm request context succeeds");
+    assert_eq!(warmed.status(), StatusCode::OK);
+
+    let logout_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/logout")
+                .header(COOKIE, cookie)
+                .header("x-hms-csrf", csrf_token)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("logout request succeeds");
+    assert_eq!(logout_response.status(), StatusCode::OK);
+
+    let (rejected, observed_queries) = hms_observability::with_request_query_counter(async {
+        app.oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/__test/request-context")
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+    })
+    .await;
+    let rejected = rejected.expect("revoked-session request completes");
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(observed_queries, 1);
 }
 
 #[tokio::test]
@@ -387,7 +446,7 @@ async fn auth_sessions_can_be_listed_and_revoked_by_owner() {
         Some("Safari on macOS"),
     )
     .await;
-    let (_, other_cookie, other_csrf) = login_with_password_and_device(
+    let (other_access_token, other_cookie, other_csrf) = login_with_password_and_device(
         app.clone(),
         "owner@hms.local",
         "ChangeMe123!",
@@ -450,6 +509,20 @@ async fn auth_sessions_can_be_listed_and_revoked_by_owner() {
     assert_eq!(revoke_response.status(), StatusCode::OK);
     let revoke_body = json_body(revoke_response).await;
     assert_eq!(revoke_body["data"]["revoked"], true);
+
+    let rejected_other_access = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, format!("Bearer {other_access_token}"))
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("revoked access-token request succeeds");
+    assert_eq!(rejected_other_access.status(), StatusCode::UNAUTHORIZED);
 
     let rejected_other_refresh = app
         .clone()

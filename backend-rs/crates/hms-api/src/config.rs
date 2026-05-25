@@ -5,6 +5,56 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use hms_domain::deployment::DeploymentProfile;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpsAuthMode {
+    HmsPermission,
+    CloudflareAccess,
+    Hybrid,
+}
+
+impl OpsAuthMode {
+    pub fn allows_hms_permission(self) -> bool {
+        matches!(self, Self::HmsPermission | Self::Hybrid)
+    }
+
+    pub fn allows_cloudflare_access(self) -> bool {
+        matches!(self, Self::CloudflareAccess | Self::Hybrid)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CloudflareAccessConfig {
+    pub team_domain: Option<String>,
+    pub audience: Option<String>,
+    pub allowed_emails: Vec<String>,
+    pub test_secret: Option<String>,
+}
+
+impl CloudflareAccessConfig {
+    pub fn certs_url(&self) -> Option<String> {
+        self.team_domain
+            .as_ref()
+            .map(|team_domain| format!("{team_domain}/cdn-cgi/access/certs"))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct OpsPrometheusConfig {
+    pub enabled: bool,
+    pub url: Option<String>,
+    pub timeout: Duration,
+}
+
+impl Default for OpsPrometheusConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            url: None,
+            timeout: Duration::from_millis(1500),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub environment: String,
@@ -22,6 +72,9 @@ pub struct Config {
     pub provision_baseline: bool,
     pub search_index_rebuild_on_start: bool,
     pub rum_enabled: bool,
+    pub ops_auth_mode: OpsAuthMode,
+    pub cloudflare_access: CloudflareAccessConfig,
+    pub ops_prometheus: OpsPrometheusConfig,
 }
 
 impl Config {
@@ -79,6 +132,33 @@ impl Config {
             Ok(value) => parse_bool(&value, "HMS_RUM_ENABLED")?,
             Err(_) => false,
         };
+        let ops_auth_mode = match env::var("HMS_OPS_AUTH_MODE") {
+            Ok(value) => parse_ops_auth_mode(&value)?,
+            Err(_) => OpsAuthMode::HmsPermission,
+        };
+        let cloudflare_access = CloudflareAccessConfig {
+            team_domain: env_optional("HMS_CLOUDFLARE_ACCESS_TEAM_DOMAIN")
+                .map(normalize_cloudflare_team_domain),
+            audience: env_optional("HMS_CLOUDFLARE_ACCESS_AUD"),
+            allowed_emails: env_optional("HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS")
+                .map(|value| parse_email_list(&value))
+                .unwrap_or_default(),
+            test_secret: env_optional("HMS_CLOUDFLARE_ACCESS_TEST_SECRET"),
+        };
+        validate_ops_auth(&environment, ops_auth_mode, &cloudflare_access)?;
+        let ops_prometheus = OpsPrometheusConfig {
+            enabled: match env::var("HMS_OPS_PROMETHEUS_ENABLED") {
+                Ok(value) => parse_bool(&value, "HMS_OPS_PROMETHEUS_ENABLED")?,
+                Err(_) => false,
+            },
+            url: env_optional("HMS_OPS_PROMETHEUS_URL"),
+            timeout: match env::var("HMS_OPS_PROMETHEUS_TIMEOUT_MS") {
+                Ok(value) => {
+                    Duration::from_millis(parse_u64(&value, "HMS_OPS_PROMETHEUS_TIMEOUT_MS")?)
+                }
+                Err(_) => OpsPrometheusConfig::default().timeout,
+            },
+        };
 
         Ok(Self {
             environment,
@@ -96,6 +176,9 @@ impl Config {
             provision_baseline,
             search_index_rebuild_on_start,
             rum_enabled,
+            ops_auth_mode,
+            cloudflare_access,
+            ops_prometheus,
         })
     }
 
@@ -116,8 +199,18 @@ impl Config {
             provision_baseline: true,
             search_index_rebuild_on_start: true,
             rum_enabled: false,
+            ops_auth_mode: OpsAuthMode::HmsPermission,
+            cloudflare_access: CloudflareAccessConfig::default(),
+            ops_prometheus: OpsPrometheusConfig::default(),
         }
     }
+}
+
+fn env_optional(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 fn parse_u32(value: &str, name: &str) -> anyhow::Result<u32> {
@@ -131,12 +224,77 @@ fn parse_u32(value: &str, name: &str) -> anyhow::Result<u32> {
     Ok(parsed)
 }
 
+fn parse_u64(value: &str, name: &str) -> anyhow::Result<u64> {
+    let parsed = value
+        .trim()
+        .parse::<u64>()
+        .with_context(|| format!("{name} must be an integer"))?;
+    if parsed == 0 {
+        bail!("{name} must be greater than zero");
+    }
+    Ok(parsed)
+}
+
 fn parse_bool(value: &str, name: &str) -> anyhow::Result<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" => Ok(true),
         "0" | "false" | "no" | "off" => Ok(false),
         _ => bail!("{name} must be a boolean"),
     }
+}
+
+fn parse_ops_auth_mode(value: &str) -> anyhow::Result<OpsAuthMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "hms" | "hms_permission" | "hms-permission" => Ok(OpsAuthMode::HmsPermission),
+        "cloudflare" | "cloudflare_access" | "cloudflare-access" => {
+            Ok(OpsAuthMode::CloudflareAccess)
+        }
+        "hybrid" => Ok(OpsAuthMode::Hybrid),
+        _ => bail!("HMS_OPS_AUTH_MODE must be hms_permission, cloudflare_access, or hybrid"),
+    }
+}
+
+fn normalize_cloudflare_team_domain(value: String) -> String {
+    let trimmed = value.trim().trim_end_matches('/').to_owned();
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(&trimmed);
+    format!("https://{without_scheme}")
+}
+
+fn parse_email_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|email| email.trim().to_ascii_lowercase())
+        .filter(|email| !email.is_empty())
+        .collect()
+}
+
+fn validate_ops_auth(
+    environment: &str,
+    mode: OpsAuthMode,
+    cloudflare: &CloudflareAccessConfig,
+) -> anyhow::Result<()> {
+    if environment != "test" && cloudflare.test_secret.is_some() {
+        bail!("HMS_CLOUDFLARE_ACCESS_TEST_SECRET is only allowed in tests");
+    }
+
+    if !mode.allows_cloudflare_access() {
+        return Ok(());
+    }
+
+    if cloudflare.team_domain.is_none() {
+        bail!("HMS_CLOUDFLARE_ACCESS_TEAM_DOMAIN is required for Cloudflare ops auth");
+    }
+    if cloudflare.audience.is_none() {
+        bail!("HMS_CLOUDFLARE_ACCESS_AUD is required for Cloudflare ops auth");
+    }
+    if cloudflare.allowed_emails.is_empty() {
+        bail!("HMS_CLOUDFLARE_ACCESS_ALLOWED_EMAILS is required for Cloudflare ops auth");
+    }
+
+    Ok(())
 }
 
 fn parse_deployment_profile(value: &str) -> anyhow::Result<DeploymentProfile> {

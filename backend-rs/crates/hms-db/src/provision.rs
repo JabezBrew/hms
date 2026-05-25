@@ -77,6 +77,7 @@ pub struct BaselineProvisioning {
     pub owner_display_name: String,
     pub owner_password: String,
     pub seed_demo_patients: bool,
+    pub ops_operator_emails: Vec<String>,
 }
 
 impl BaselineProvisioning {
@@ -90,6 +91,7 @@ impl BaselineProvisioning {
             owner_display_name: "HMS Owner".to_owned(),
             owner_password: "ChangeMe123!".to_owned(),
             seed_demo_patients: true,
+            ops_operator_emails: Vec::new(),
         }
     }
 
@@ -121,6 +123,7 @@ pub async fn provision_baseline(
     seed_inventory_baseline(pool, baseline).await?;
     seed_billing_baseline(pool, baseline).await?;
     seed_users(pool, baseline).await?;
+    seed_ops_operator_permissions(pool, baseline).await?;
     seed_admin_authority_baseline(pool, baseline).await?;
     seed_notifications(pool, baseline).await?;
     seed_patient_validation_rules(pool, baseline).await?;
@@ -901,6 +904,57 @@ async fn seed_users(pool: &PgPool, baseline: &BaselineProvisioning) -> anyhow::R
         },
     )
     .await?;
+
+    Ok(())
+}
+
+async fn seed_ops_operator_permissions(
+    pool: &PgPool,
+    baseline: &BaselineProvisioning,
+) -> anyhow::Result<()> {
+    let permission_code = codec::encode(PermissionCode::SystemOpsView)?;
+
+    for email in baseline
+        .ops_operator_emails
+        .iter()
+        .map(|email| email.trim())
+        .filter(|email| !email.is_empty())
+    {
+        let user_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE facility_id = $1 AND lower(email) = lower($2) AND is_active = TRUE",
+        )
+        .bind(baseline.facility_id)
+        .bind(email)
+        .fetch_optional(pool)
+        .await?;
+
+        let Some(user_id) = user_id else {
+            anyhow::bail!(
+                "HMS_OPS_OPERATOR_EMAILS includes {email}, but no active user exists in this facility"
+            );
+        };
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO user_permissions (user_id, permission_code)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id, permission_code) DO NOTHING
+            "#,
+        )
+        .bind(user_id)
+        .bind(&permission_code)
+        .execute(pool)
+        .await?;
+
+        if result.rows_affected() > 0 {
+            sqlx::query(
+                "UPDATE users SET permission_version = permission_version + 1, updated_at = now() WHERE id = $1",
+            )
+            .bind(user_id)
+            .execute(pool)
+            .await?;
+        }
+    }
 
     Ok(())
 }

@@ -11,6 +11,7 @@ pub mod facilities;
 pub mod inventory;
 pub mod laboratory;
 pub mod migrate;
+pub mod ops;
 pub mod patients;
 pub mod pool;
 pub mod provision;
