@@ -186,10 +186,24 @@ function v2AppointmentSchedulePayload(data = {}) {
   if (!startsAt || !endsAt) {
     throw new Error('Appointment start and end times are required for Rust V2 scheduling.');
   }
-  return {
+  const schedulePayload = {
     starts_at: startsAt,
     ends_at: endsAt,
   };
+  const optionalFields = {
+    session_id: payload.session_id || payload.clinic_session_id || payload.clinic_session,
+    service_id: payload.service_id || payload.appointment_type_id || payload.appointment_type,
+    clinic_id: payload.clinic_id || payload.clinic,
+    practitioner_user_id: payload.practitioner_user_id || payload.practitioner,
+    overbook_reason: payload.overbook_reason,
+    manual_booking_reason: payload.manual_booking_reason,
+  };
+  for (const [key, value] of Object.entries(optionalFields)) {
+    if (value !== undefined && value !== null && value !== '') {
+      schedulePayload[key] = value;
+    }
+  }
+  return schedulePayload;
 }
 
 function unsupportedInRustV2(message) {

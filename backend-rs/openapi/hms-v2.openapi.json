@@ -21590,9 +21590,49 @@
       },
       "PromoteClinicWaitlistEntryRequest": {
         "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "ends_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "manual_booking_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overbook_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "starts_at": {
             "format": "date-time",
@@ -22203,9 +22243,49 @@
       },
       "ScheduleReferralAppointmentRequest": {
         "properties": {
+          "clinic_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "ends_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "manual_booking_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overbook_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "practitioner_user_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "starts_at": {
             "format": "date-time",

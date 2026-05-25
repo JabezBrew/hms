@@ -298,6 +298,9 @@ describe('Rust V2 referrals bridge', () => {
     const scheduled = await referralsApi.scheduleReferral('referral-1', {
       starts_at: '2026-05-20T09:00:00Z',
       ends_at: '2026-05-20T09:30:00Z',
+      clinic_session: 'session-1',
+      appointment_type: 'type-general',
+      clinic: 'clinic-1',
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -307,6 +310,9 @@ describe('Rust V2 referrals bridge', () => {
         body: JSON.stringify({
           starts_at: '2026-05-20T09:00:00Z',
           ends_at: '2026-05-20T09:30:00Z',
+          session_id: 'session-1',
+          service_id: 'type-general',
+          clinic_id: 'clinic-1',
         }),
       }),
     );
@@ -449,6 +455,9 @@ describe('Rust V2 referrals bridge', () => {
     const promoted = await referralsApi.promoteClinicWaitlistEntry('wait-1', {
       starts_at: '2026-05-21T10:00:00Z',
       ends_at: '2026-05-21T10:30:00Z',
+      session_id: 'session-2',
+      service_id: 'type-general',
+      clinic_id: 'clinic-1',
     });
     const cancelled = await referralsApi.cancelClinicWaitlistEntry('wait-2', {
       reason: 'Patient unavailable',
@@ -497,6 +506,9 @@ describe('Rust V2 referrals bridge', () => {
         body: JSON.stringify({
           starts_at: '2026-05-21T10:00:00Z',
           ends_at: '2026-05-21T10:30:00Z',
+          session_id: 'session-2',
+          service_id: 'type-general',
+          clinic_id: 'clinic-1',
         }),
       }),
     );

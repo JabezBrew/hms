@@ -25,6 +25,110 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
         .expect("patient id exists")
         .to_owned();
 
+    let services = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/scheduling/services?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("scheduling services load");
+    assert_eq!(services.status(), StatusCode::OK);
+    let services_body = json_body(services).await;
+    let service_id = services_body["data"][0]["id"]
+        .as_str()
+        .expect("service id exists")
+        .to_owned();
+
+    let clinics = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/clinics?limit=1")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("clinics load");
+    assert_eq!(clinics.status(), StatusCode::OK);
+    let clinics_body = json_body(clinics).await;
+    let clinic_id = clinics_body["data"][0]["id"]
+        .as_str()
+        .expect("clinic id exists")
+        .to_owned();
+
+    let referral_session_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "owner_type": "clinic",
+                        "owner_id": clinic_id,
+                        "name": "Referral scheduling block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-05-20T09:00:00Z",
+                        "ends_at": "2026-05-20T10:00:00Z",
+                        "capacity": 1,
+                        "allowed_service_ids": [service_id]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("referral scheduling session create succeeds");
+    assert_eq!(referral_session_response.status(), StatusCode::OK);
+    let referral_session_body = json_body(referral_session_response).await;
+    let referral_session_id = referral_session_body["data"]["id"]
+        .as_str()
+        .expect("referral session id exists")
+        .to_owned();
+
+    let waitlist_session_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "owner_type": "clinic",
+                        "owner_id": clinic_id,
+                        "name": "Waitlist promotion block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-05-21T10:00:00Z",
+                        "ends_at": "2026-05-21T11:00:00Z",
+                        "capacity": 1,
+                        "allowed_service_ids": [service_id]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("waitlist scheduling session create succeeds");
+    assert_eq!(waitlist_session_response.status(), StatusCode::OK);
+    let waitlist_session_body = json_body(waitlist_session_response).await;
+    let waitlist_session_id = waitlist_session_body["data"]["id"]
+        .as_str()
+        .expect("waitlist session id exists")
+        .to_owned();
+
     let referral_response = app
         .clone()
         .oneshot(
@@ -104,7 +208,7 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
     let schedule_referral_id = schedule_referral_body["data"]["id"]
         .as_str()
         .expect("schedule referral id exists");
-    let scheduled_response = app
+    let direct_referral_schedule_without_reason = app
         .clone()
         .oneshot(
             Request::builder()
@@ -122,12 +226,60 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
                 .expect("request builds"),
         )
         .await
+        .expect("direct referral schedule without reason is handled");
+    assert_eq!(
+        direct_referral_schedule_without_reason.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let scheduled_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/v2/referrals/{schedule_referral_id}/schedule"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "starts_at": "2026-05-20T09:00:00Z",
+                        "ends_at": "2026-05-20T09:30:00Z",
+                        "session_id": referral_session_id,
+                        "service_id": service_id,
+                        "clinic_id": clinic_id
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
         .expect("referral schedule succeeds");
     assert_eq!(scheduled_response.status(), StatusCode::OK);
     let scheduled_body = json_body(scheduled_response).await;
     assert_eq!(scheduled_body["data"]["status"], "scheduled");
     assert!(scheduled_body["data"]["scheduled_appointment_id"].is_string());
     assert!(scheduled_body["data"]["scheduled_at"].is_string());
+    let scheduled_appointment_id = scheduled_body["data"]["scheduled_appointment_id"]
+        .as_str()
+        .expect("scheduled appointment id exists");
+    let scheduled_appointment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/appointments/{scheduled_appointment_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("scheduled appointment detail succeeds");
+    assert_eq!(scheduled_appointment_response.status(), StatusCode::OK);
+    let scheduled_appointment_body = json_body(scheduled_appointment_response).await;
+    assert_eq!(
+        scheduled_appointment_body["data"]["clinic_session_id"],
+        referral_session_id
+    );
 
     let detail_response = app
         .clone()
@@ -313,7 +465,10 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
                 .body(Body::from(
                     json!({
                         "starts_at": "2026-05-21T10:00:00Z",
-                        "ends_at": "2026-05-21T10:30:00Z"
+                        "ends_at": "2026-05-21T10:30:00Z",
+                        "session_id": waitlist_session_id,
+                        "service_id": service_id,
+                        "clinic_id": clinic_id
                     })
                     .to_string(),
                 ))
@@ -325,6 +480,27 @@ async fn referrals_sla_and_clinic_waitlist_are_patient_access_scoped() {
     let promote_body = json_body(promote_response).await;
     assert_eq!(promote_body["data"]["status"], "promoted");
     assert!(promote_body["data"]["scheduled_appointment_id"].is_string());
+    let waitlist_appointment_id = promote_body["data"]["scheduled_appointment_id"]
+        .as_str()
+        .expect("waitlist appointment id exists");
+    let waitlist_appointment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/appointments/{waitlist_appointment_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("waitlist appointment detail succeeds");
+    assert_eq!(waitlist_appointment_response.status(), StatusCode::OK);
+    let waitlist_appointment_body = json_body(waitlist_appointment_response).await;
+    assert_eq!(
+        waitlist_appointment_body["data"]["clinic_session_id"],
+        waitlist_session_id
+    );
 
     let cancel_waitlist_response = app
         .clone()

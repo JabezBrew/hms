@@ -102,12 +102,24 @@ pub struct OfferNextClinicWaitlistEntryRequest {
 pub struct ScheduleReferralAppointmentRequest {
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
+    pub session_id: Option<Uuid>,
+    pub service_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub overbook_reason: Option<String>,
+    pub manual_booking_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct PromoteClinicWaitlistEntryRequest {
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
+    pub session_id: Option<Uuid>,
+    pub service_id: Option<Uuid>,
+    pub clinic_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+    pub overbook_reason: Option<String>,
+    pub manual_booking_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

@@ -1,17 +1,17 @@
 use chrono::{DateTime, Utc};
 use hms_access::require_patient_demographics_access;
-use hms_db::care::NewAppointment;
 use hms_db::referrals::{NewClinicWaitlistEntry, NewReferral, ReferralCursor};
 use hms_domain::care::CursorListQuery;
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use hms_domain::referrals::{
     AcceptReferralRequest, CancelClinicWaitlistEntryRequest, ClinicWaitlistEntryListItem,
-    CompleteReferralRequest, CreateClinicWaitlistEntryRequest, CreateReferralRequest,
-    DeclineReferralRequest, OfferNextClinicWaitlistEntryRequest, PromoteClinicWaitlistEntryRequest,
-    ReferralListItem, ReferralListQuery, ReferralPriority, ReferralSlaDashboard, ReferralSlaState,
-    ScheduleReferralAppointmentRequest,
+    ClinicWaitlistStatus, CompleteReferralRequest, CreateClinicWaitlistEntryRequest,
+    CreateReferralRequest, DeclineReferralRequest, OfferNextClinicWaitlistEntryRequest,
+    PromoteClinicWaitlistEntryRequest, ReferralListItem, ReferralListQuery, ReferralPriority,
+    ReferralSlaDashboard, ReferralSlaState, ReferralStatus, ScheduleReferralAppointmentRequest,
 };
+use hms_domain::scheduling::BookAppointmentRequest;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -195,30 +195,37 @@ impl ReferralsService {
         require_appointment_manage(ctx, self.facility_id())?;
         validate_appointment_window(payload.starts_at, payload.ends_at)?;
         let existing = load_referral_for_access(&self.state, ctx, id).await?;
-        let appointment = hms_db::care::create_appointment(
-            self.pool(),
-            NewAppointment {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id: existing.patient_id,
-                starts_at: payload.starts_at,
-                ends_at: payload.ends_at,
-                created_by_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_create_failed",
-                "Appointment could not be created for this referral.",
+        if !matches!(
+            existing.status,
+            ReferralStatus::Sent | ReferralStatus::Accepted
+        ) {
+            return Err(ApiError::conflict(
+                "referral_schedule_failed",
+                "Only sent or accepted referrals can be scheduled.",
+            ));
+        }
+        let appointment_id = self
+            .book_scheduling_appointment(
+                ctx,
+                existing.patient_id,
+                SchedulingAppointmentPayload {
+                    starts_at: payload.starts_at,
+                    ends_at: payload.ends_at,
+                    session_id: payload.session_id,
+                    service_id: payload.service_id,
+                    clinic_id: payload.clinic_id,
+                    practitioner_user_id: payload.practitioner_user_id,
+                    overbook_reason: payload.overbook_reason,
+                    manual_booking_reason: payload.manual_booking_reason,
+                },
             )
-        })?;
+            .await?;
 
         let referral = hms_db::referrals::schedule_referral_appointment(
             self.pool(),
             self.facility_id(),
             id,
-            appointment.id,
+            appointment_id,
             ctx.user_id,
             Some(ctx.request_id.clone()),
         )
@@ -384,30 +391,37 @@ impl ReferralsService {
                     )
                 })?;
         let _patient = load_patient_for_access(&self.state, ctx, entry.patient_id).await?;
-        let appointment = hms_db::care::create_appointment(
-            self.pool(),
-            NewAppointment {
-                id: Uuid::new_v4(),
-                facility_id: self.facility_id(),
-                patient_id: entry.patient_id,
-                starts_at: payload.starts_at,
-                ends_at: payload.ends_at,
-                created_by_user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| {
-            ApiError::conflict(
-                "appointment_create_failed",
-                "Appointment could not be created for this waitlist entry.",
+        if !matches!(
+            entry.status,
+            ClinicWaitlistStatus::Waiting | ClinicWaitlistStatus::Offered
+        ) {
+            return Err(ApiError::conflict(
+                "clinic_waitlist_promote_failed",
+                "Only waiting or offered entries can be promoted.",
+            ));
+        }
+        let appointment_id = self
+            .book_scheduling_appointment(
+                ctx,
+                entry.patient_id,
+                SchedulingAppointmentPayload {
+                    starts_at: payload.starts_at,
+                    ends_at: payload.ends_at,
+                    session_id: payload.session_id,
+                    service_id: payload.service_id,
+                    clinic_id: payload.clinic_id,
+                    practitioner_user_id: payload.practitioner_user_id,
+                    overbook_reason: payload.overbook_reason,
+                    manual_booking_reason: payload.manual_booking_reason,
+                },
             )
-        })?;
+            .await?;
 
         let entry = hms_db::referrals::promote_clinic_waitlist_entry(
             self.pool(),
             self.facility_id(),
             id,
-            appointment.id,
+            appointment_id,
             ctx.user_id,
             Some(ctx.request_id.clone()),
         )
@@ -426,6 +440,34 @@ impl ReferralsService {
         })?;
 
         Ok(object(entry))
+    }
+
+    async fn book_scheduling_appointment(
+        &self,
+        ctx: &hms_access::RequestContext,
+        patient_id: Uuid,
+        payload: SchedulingAppointmentPayload,
+    ) -> Result<Uuid, ApiError> {
+        let response = self
+            .state
+            .scheduling_service()
+            .book_appointment(
+                ctx,
+                BookAppointmentRequest {
+                    patient_id,
+                    service_id: payload.service_id,
+                    session_id: payload.session_id,
+                    clinic_id: payload.clinic_id,
+                    practitioner_user_id: payload.practitioner_user_id,
+                    starts_at: payload.starts_at,
+                    ends_at: payload.ends_at,
+                    overbook_reason: payload.overbook_reason,
+                    manual_booking_reason: payload.manual_booking_reason,
+                },
+            )
+            .await?;
+
+        Ok(response.data.appointment.id)
     }
 
     pub async fn cancel_clinic_waitlist_entry(
@@ -476,6 +518,17 @@ impl ReferralsService {
 
         Ok(object(entry))
     }
+}
+
+struct SchedulingAppointmentPayload {
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
+    session_id: Option<Uuid>,
+    service_id: Option<Uuid>,
+    clinic_id: Option<Uuid>,
+    practitioner_user_id: Option<Uuid>,
+    overbook_reason: Option<String>,
+    manual_booking_reason: Option<String>,
 }
 
 impl AppState {
