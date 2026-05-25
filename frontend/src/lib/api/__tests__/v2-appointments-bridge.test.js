@@ -318,12 +318,7 @@ describe('Rust V2 appointments bridge', () => {
     );
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       4,
-      'http://localhost:8080/api/v2/appointments/appointment-1',
-      expect.objectContaining({ method: 'GET', signal }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      5,
-      'http://localhost:8080/api/v2/visits/check-in',
+      'http://localhost:8080/api/v2/scheduling/appointments/appointment-1/arrive',
       expect.objectContaining({ method: 'POST', signal }),
     );
   });
@@ -374,66 +369,36 @@ describe('Rust V2 appointments bridge', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('checks in appointments through the Rust visit check-in contract', async () => {
-    globalThis.fetch
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: 'appointment-1',
-              patient_id: 'patient-1',
-              patient_code: 'MRN-MAIN-2026-000001',
-              patient_display_name: 'Ama Mensah',
-              starts_at: '2026-05-12T09:00:00Z',
-              ends_at: '2026-05-12T09:30:00Z',
-              status: 'scheduled',
-              created_at: '2026-05-11T08:00:00Z',
-            },
-            meta: {},
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
+  it('checks in appointments through the Rust scheduling arrival contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'visit-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            patient_display_name: 'Ama Mensah',
+            appointment_id: 'appointment-1',
+            clinic_id: null,
+            status: 'waiting',
+            checked_in_at: '2026-05-12T08:55:00Z',
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: 'visit-1',
-              patient_id: 'patient-1',
-              patient_code: 'MRN-MAIN-2026-000001',
-              patient_display_name: 'Ama Mensah',
-              appointment_id: 'appointment-1',
-              clinic_id: null,
-              status: 'waiting',
-              checked_in_at: '2026-05-12T08:55:00Z',
-            },
-            meta: {},
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-      );
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
 
     const response = await appointmentsApi.checkInAppointment('appointment-1');
 
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      1,
-      'http://localhost:8080/api/v2/appointments/appointment-1',
-      expect.objectContaining({ method: 'GET' }),
-    );
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:8080/api/v2/visits/check-in',
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/scheduling/appointments/appointment-1/arrive',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          patient_id: 'patient-1',
-          appointment_id: 'appointment-1',
           clinic_id: null,
         }),
       }),
@@ -447,61 +412,36 @@ describe('Rust V2 appointments bridge', () => {
     });
   });
 
-  it('maps arrived status updates to the Rust visit check-in contract', async () => {
-    globalThis.fetch
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: 'appointment-1',
-              patient_id: 'patient-1',
-              patient_code: 'MRN-MAIN-2026-000001',
-              patient_display_name: 'Ama Mensah',
-              starts_at: '2026-05-12T09:00:00Z',
-              ends_at: '2026-05-12T09:30:00Z',
-              status: 'scheduled',
-              created_at: '2026-05-11T08:00:00Z',
-            },
-            meta: {},
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
+  it('maps arrived status updates to the Rust scheduling arrival contract', async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'visit-1',
+            patient_id: 'patient-1',
+            patient_code: 'MRN-MAIN-2026-000001',
+            patient_display_name: 'Ama Mensah',
+            appointment_id: 'appointment-1',
+            clinic_id: null,
+            status: 'waiting',
+            checked_in_at: '2026-05-12T08:55:00Z',
           },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            data: {
-              id: 'visit-1',
-              patient_id: 'patient-1',
-              patient_code: 'MRN-MAIN-2026-000001',
-              patient_display_name: 'Ama Mensah',
-              appointment_id: 'appointment-1',
-              clinic_id: null,
-              status: 'waiting',
-              checked_in_at: '2026-05-12T08:55:00Z',
-            },
-            meta: {},
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-      );
+          meta: {},
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
 
     const response = await appointmentsApi.updateAppointmentStatus('appointment-1', 'arrived');
 
-    expect(globalThis.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:8080/api/v2/visits/check-in',
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/v2/scheduling/appointments/appointment-1/arrive',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          patient_id: 'patient-1',
-          appointment_id: 'appointment-1',
           clinic_id: null,
         }),
       }),

@@ -719,17 +719,9 @@ export const appointmentsApi = {
   checkInAppointment: async (id, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
-        const appointmentResponse = await v2Api.getAppointmentById(
+        const response = await v2Api.postSchedulingAppointmentArrive(
           { id },
-          { signal: options.signal },
-        );
-        const appointment = appointmentResponse?.data;
-        const response = await v2Api.postVisitCheckIn(
-          {
-            patient_id: appointment?.patient_id,
-            appointment_id: id,
-            clinic_id: null,
-          },
+          { clinic_id: options.clinic_id || options.clinicId || null },
           { signal: options.signal },
         );
         return adaptV2VisitCheckIn(response?.data);
