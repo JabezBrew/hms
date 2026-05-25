@@ -665,6 +665,32 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
     assert_eq!(arrival_body["data"]["appointment_id"], appointment_id);
     assert_eq!(arrival_body["data"]["status"], "waiting");
 
+    let duplicate_arrival = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/scheduling/appointments/{appointment_id}/arrive"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "clinic_id": clinic_id }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("duplicate arrival succeeds");
+    assert_eq!(duplicate_arrival.status(), StatusCode::OK);
+    let duplicate_arrival_body = json_body(duplicate_arrival).await;
+    assert_eq!(
+        duplicate_arrival_body["data"]["id"],
+        arrival_body["data"]["id"]
+    );
+    assert_eq!(
+        duplicate_arrival_body["data"]["appointment_id"],
+        appointment_id
+    );
+
     let appointment_after_arrival = app
         .clone()
         .oneshot(

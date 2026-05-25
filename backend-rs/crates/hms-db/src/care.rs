@@ -1386,6 +1386,9 @@ pub async fn check_in_visit(pool: &PgPool, visit: NewVisit) -> anyhow::Result<Vi
                 created_by_user_id
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (facility_id, appointment_id)
+            WHERE appointment_id IS NOT NULL
+            DO UPDATE SET updated_at = visits.updated_at
             RETURNING id,
                       patient_id,
                       appointment_id,
