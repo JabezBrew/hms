@@ -1018,7 +1018,7 @@ export const usePatientMonitoring = (wardId = null, page = 1, pageSize = 20) => 
       params.append('page_size', normalizedPageSize.toString());
 
       // Use getWithPagination to get the full paginated response, not just results
-      const data = await apiClient.getWithPagination(`/nursing/monitoring/dashboard/?${params.toString()}`);
+      const data = await apiClient.getWithPagination(`/nursing/monitoring/dashboard/?${params.toString()}`, { signal });
 
       // Handle both array and paginated object responses
       if (!data) {
@@ -1403,7 +1403,7 @@ export const useActiveAlerts = () => {
       }
 
       // Use getWithPagination to avoid auto-extraction of results
-      const data = await apiClient.getWithPagination('/nursing/alerts/active/');
+      const data = await apiClient.getWithPagination('/nursing/alerts/active/', { signal });
 
       // Ensure we always return an array
       if (!data) {
@@ -1527,7 +1527,7 @@ export const useMedicationAdministrationHistory = (filters = {}, options = {}) =
       params.append('page', String(page));
       params.append('page_size', String(page_size));
 
-      const response = await apiClient.getWithPagination(`/nursing/medications/?${params.toString()}`);
+      const response = await apiClient.getWithPagination(`/nursing/medications/?${params.toString()}`, { signal });
 
       if (Array.isArray(response)) {
         return {
@@ -1711,7 +1711,7 @@ export const usePatientMAR = (patientId, date = null) => {
       const params = new URLSearchParams();
       params.append('patient', patientId);
       if (date) params.append('date', date);
-      const response = await apiClient.getWithPagination(`/nursing/medications/patient_mar/?${params.toString()}`);
+      const response = await apiClient.getWithPagination(`/nursing/medications/patient_mar/?${params.toString()}`, { signal });
       return response;
     },
     enabled: !!patientId,

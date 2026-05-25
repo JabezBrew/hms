@@ -2,6 +2,13 @@
 
 Status: Agent 0 baseline report for the first Rust V2 performance wave.
 
+Current-tree note, 2026-05-25: the historical gaps below for route-level
+payload-size metrics and DB pool-wait metrics have since been closed in code,
+and the maintained Rust V2 reporter now enforces payload, pool-wait, and
+slow-SQL budgets when Prometheus snapshots are supplied. The accepted stress
+artifact is still preserved as the 2026-05-20 baseline and still needs
+regeneration for a dashboard trend and larger seeded data profiles.
+
 This report uses only the maintained Rust V2 load harness:
 
 - Load script: `tests/load/k6-rust-v2-realistic.js`

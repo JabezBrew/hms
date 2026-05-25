@@ -224,7 +224,7 @@ const fetchAuditLogs = async (filters = {}, page = 1, pageSize = 35, options = {
   if (filters.ordering) params.append('ordering', filters.ordering);
 
   // Use getWithPagination to get full response including count, next, previous
-  return apiClient.getWithPagination(`/admin/audit-logs/?${params.toString()}`);
+  return apiClient.getWithPagination(`/admin/audit-logs/?${params.toString()}`, { signal: options.signal });
 };
 
 /**

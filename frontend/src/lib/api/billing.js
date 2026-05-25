@@ -474,7 +474,7 @@ export const billingApi = {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/invoices/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: options.signal || params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch invoices');
@@ -691,7 +691,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payment-intents/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch payment intents'));
     }
@@ -726,7 +726,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/settlements/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch settlement batches'));
     }
@@ -761,7 +761,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/settlements/${batchId}/lines/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch settlement lines'));
     }
@@ -792,7 +792,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/cash-sessions/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch cash sessions');
@@ -961,7 +961,7 @@ export const billingApi = {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/claims/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch claims');
@@ -1035,7 +1035,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/batches/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch NHIS claim batches');
@@ -1109,7 +1109,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/exports/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch NHIS export jobs'));
     }
@@ -1147,7 +1147,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/remittances/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch remittance imports');
@@ -1185,7 +1185,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/remittances/${jobId}/lines/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch remittance lines'));
     }
@@ -1258,7 +1258,7 @@ export const billingApi = {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payments/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch payments');
@@ -1344,7 +1344,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/service-categories/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch service categories');
@@ -1480,7 +1480,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/payer-service-codes/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch payer service codes'));
     }
@@ -1530,7 +1530,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/nhis/mapping-imports/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch mapping import jobs'));
     }
@@ -1622,7 +1622,7 @@ export const billingApi = {
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/billing-rules/${queryString ? `?${queryString}` : ''}`;
       // Use getWithPagination to preserve count, next, previous metadata
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isRustV2ApiMode()) {
         rethrowV2Error(error, 'Failed to fetch billing rules');
@@ -1809,7 +1809,7 @@ export const billingApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/billing/patient-insurances/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch patient insurances'));
     }

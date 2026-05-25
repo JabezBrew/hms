@@ -941,7 +941,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/items/${id}/movements/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -1087,7 +1087,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/movements/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -1332,7 +1332,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/requisitions/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -1537,7 +1537,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/purchase-orders/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -1695,7 +1695,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/grns/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -2233,7 +2233,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/transfer-requests/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -2391,7 +2391,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-registers/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -2447,7 +2447,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-registers/${id}/entries/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -2613,7 +2613,7 @@ export const inventoryApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/inventory/controlled-discrepancies/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: params.signal });
     } catch (error) {
       throw new Error(handleApiError(error, 'Failed to fetch discrepancies'));
     }

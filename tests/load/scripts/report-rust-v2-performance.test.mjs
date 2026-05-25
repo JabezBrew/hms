@@ -59,6 +59,36 @@ test('report fails when the auth freshness query reappears', () => {
   assert.match(report.failures.join('\n'), /auth_invalidation_versions count 1 exceeded budget 0/);
 });
 
+test('report fails when route payload p99 exceeds the budget', () => {
+  const fixture = createFixture({ payloadUpperBoundBytes: 262_144 });
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 1);
+  assert.equal(report.status, 'fail');
+  assert.match(report.failures.join('\n'), /Auth\/me payload p9[59] .* exceeded budget/);
+});
+
+test('report fails when DB pool wait p99 exceeds the budget', () => {
+  const fixture = createFixture({ poolWaitUpperBoundSeconds: 0.05 });
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 1);
+  assert.equal(report.status, 'fail');
+  assert.match(report.failures.join('\n'), /Auth\/me DB pool wait p9[59] .* exceeded budget/);
+});
+
+test('report fails when route slow SQL exceeds the budget', () => {
+  const fixture = createFixture({ slowQueries: 1 });
+  const result = runReport(fixture);
+  const report = readReport(fixture);
+
+  assert.equal(result.status, 1);
+  assert.equal(report.status, 'fail');
+  assert.match(report.failures.join('\n'), /Auth\/me slow SQL\/query request ratio/);
+});
+
 test('runner still writes a report when k6 exits nonzero', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hms-perf-runner-'));
   const fakeBin = path.join(dir, 'bin');
@@ -94,7 +124,13 @@ process.exit(99);
   assert.ok(fs.existsSync(path.join(outDir, 'report.json')));
 });
 
-function createFixture({ p99 = 45, authVersionQueries = 0 } = {}) {
+function createFixture({
+  p99 = 45,
+  authVersionQueries = 0,
+  payloadUpperBoundBytes = 4096,
+  poolWaitUpperBoundSeconds = 0.001,
+  slowQueries = 0,
+} = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hms-perf-report-'));
   const baselinePath = path.join(dir, 'baseline.json');
   const summaryPath = path.join(dir, 'summary.json');
@@ -128,6 +164,11 @@ function createFixture({ p99 = 45, authVersionQueries = 0 } = {}) {
           route: '/api/v2/auth/me',
           status: '200',
           p99_ms_budget: 75,
+          payload_p95_bytes_budget: 8192,
+          payload_p99_bytes_budget: 16384,
+          db_pool_wait_p95_ms_budget: 5,
+          db_pool_wait_p99_ms_budget: 25,
+          slow_queries_per_request_max: 0,
           observed_p99_ms: 45,
           db_queries_per_request_max: 0,
         },
@@ -169,6 +210,9 @@ function createFixture({ p99 = 45, authVersionQueries = 0 } = {}) {
       authRequests: 100,
       authDbQueries: 0,
       authVersionQueries,
+      payloadUpperBoundBytes,
+      poolWaitUpperBoundSeconds,
+      slowQueries,
     })
   );
 
@@ -195,15 +239,39 @@ function readReport(fixture) {
   return JSON.parse(fs.readFileSync(fixture.reportPath, 'utf8'));
 }
 
-function prometheusText({ authRequests, authDbQueries, authVersionQueries }) {
+function prometheusText({
+  authRequests,
+  authDbQueries,
+  authVersionQueries,
+  payloadUpperBoundBytes = 4096,
+  poolWaitUpperBoundSeconds = 0.001,
+  slowQueries = 0,
+}) {
   return `hms_api_http_requests_total{method="GET",route="/api/v2/auth/me",status="200"} ${authRequests}
 hms_api_http_db_query_count_sum{method="GET",route="/api/v2/auth/me",status="200"} ${authDbQueries}
 hms_db_query_duration_seconds_count{query="auth.user_auth_versions_for_facility"} ${authVersionQueries}
+${histogramText('hms_api_response_payload_bytes', payloadUpperBoundBytes, authRequests)}
+${histogramText('hms_db_pool_wait_seconds', poolWaitUpperBoundSeconds, authRequests)}
+hms_db_slow_query_total{route_pattern="/api/v2/auth/me",status_bucket="2xx",facility_safe="HMS"} ${slowQueries}
 hms_api_postgres_pool_size 10
 hms_api_postgres_pool_idle 10
 hms_api_auth_postgres_pool_size 4
 hms_api_auth_postgres_pool_idle 4
 `;
+}
+
+function histogramText(metricName, upperBound, count) {
+  const bounds = metricName === 'hms_api_response_payload_bytes'
+    ? [1024, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+    : [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5];
+  const lines = bounds.map((bound) => {
+    const bucketCount = bound >= upperBound ? count : 0;
+    return `${metricName}_bucket{route_pattern="/api/v2/auth/me",status_bucket="2xx",facility_safe="HMS",le="${bound}"} ${bucketCount}`;
+  });
+  lines.push(`${metricName}_bucket{route_pattern="/api/v2/auth/me",status_bucket="2xx",facility_safe="HMS",le="+Inf"} ${count}`);
+  lines.push(`${metricName}_sum{route_pattern="/api/v2/auth/me",status_bucket="2xx",facility_safe="HMS"} ${upperBound * count}`);
+  lines.push(`${metricName}_count{route_pattern="/api/v2/auth/me",status_bucket="2xx",facility_safe="HMS"} ${count}`);
+  return lines.join('\n');
 }
 
 function fullSummary() {

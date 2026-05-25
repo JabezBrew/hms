@@ -231,7 +231,7 @@ export const encountersApi = {
 
       const queryString = new URLSearchParams(params).toString();
       const endpoint = `/encounters/${queryString ? `?${queryString}` : ''}`;
-      return await apiClient.getWithPagination(endpoint);
+      return await apiClient.getWithPagination(endpoint, { signal: options.signal || params.signal });
     } catch (error) {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {

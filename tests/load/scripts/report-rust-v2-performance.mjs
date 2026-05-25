@@ -74,7 +74,21 @@ function buildReport(input) {
   );
   const pool = summarizePool(input.baseline, input.metricsAfter, failures, warnings, incompletes);
   const guards = summarizeQueryGuards(input.baseline, input.metricsBefore, input.metricsAfter, failures, warnings, incompletes);
-  const status = reportStatus({ failures, warnings, incompletes, latency, server, pool, guards });
+  const payload = summarizePayloadMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures, incompletes);
+  const poolWait = summarizePoolWaitMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures);
+  const slowSql = summarizeSlowSqlMetrics(input.baseline, input.metricsBefore, input.metricsAfter, server, failures, incompletes);
+  const status = reportStatus({
+    failures,
+    warnings,
+    incompletes,
+    latency,
+    server,
+    pool,
+    guards,
+    payload,
+    poolWait,
+    slowSql,
+  });
 
   return {
     schema_version: 1,
@@ -103,13 +117,16 @@ function buildReport(input) {
     server,
     pool,
     guards,
+    payload,
+    pool_wait: poolWait,
+    slow_sql: slowSql,
     warnings,
     incomplete: incompletes,
     failures,
   };
 }
 
-function reportStatus({ failures, warnings, incompletes, latency, server, pool, guards }) {
+function reportStatus({ failures, warnings, incompletes, latency, server, pool, guards, payload, poolWait, slowSql }) {
   if (failures.length > 0) return 'fail';
   if (incompletes.length > 0) return 'incomplete';
   if (
@@ -118,6 +135,9 @@ function reportStatus({ failures, warnings, incompletes, latency, server, pool, 
     || server.surfaces?.some((row) => row.status === 'warn')
     || pool.checks?.some((row) => row.status === 'warn')
     || guards.checks?.some((row) => row.status === 'warn')
+    || payload.rows?.some((row) => row.status === 'warn')
+    || poolWait.rows?.some((row) => row.status === 'warn')
+    || slowSql.rows?.some((row) => row.status === 'warn')
   ) {
     return 'warn';
   }
@@ -369,6 +389,152 @@ function summarizeQueryGuards(baseline, before, after, failures, warnings, incom
   };
 }
 
+function summarizePayloadMetrics(baseline, before, after, server, failures, incompletes) {
+  const rows = [];
+  if (!after) return { available: false, rows };
+
+  for (const surface of baseline.surfaces || []) {
+    const p95Budget = numeric(surface.payload_p95_bytes_budget);
+    const p99Budget = numeric(surface.payload_p99_bytes_budget);
+    if (p95Budget === null && p99Budget === null) continue;
+
+    const routes = surface.routes || [surface.route];
+    const histogram = histogramDelta(
+      before,
+      after,
+      'hms_api_response_payload_bytes',
+      'route_pattern',
+      routes,
+      { status_bucket: statusBucketForSurface(surface) }
+    );
+    const p95 = histogram.count > 0 ? histogramQuantile(0.95, histogram.buckets) : null;
+    const p99 = histogram.count > 0 ? histogramQuantile(0.99, histogram.buckets) : null;
+    let status = 'pass';
+    let note = '';
+
+    if (histogram.count === 0 && serverRequestCount(server, surface.id) > 0) {
+      status = 'incomplete';
+      note = 'no response payload histogram samples found for matching route requests';
+      incompletes.push(`${surface.label}: ${note}`);
+    } else if (p95Budget !== null && p95 !== null && p95 > p95Budget) {
+      status = 'fail';
+      failures.push(`${surface.label} payload p95 ${formatBytes(p95)} exceeded budget ${formatBytes(p95Budget)}`);
+    } else if (p99Budget !== null && p99 !== null && p99 > p99Budget) {
+      status = 'fail';
+      failures.push(`${surface.label} payload p99 ${formatBytes(p99)} exceeded budget ${formatBytes(p99Budget)}`);
+    }
+
+    rows.push({
+      id: surface.id,
+      label: surface.label,
+      routes,
+      samples: histogram.count,
+      p95_bytes: p95,
+      p99_bytes: p99,
+      budget_p95_bytes: p95Budget,
+      budget_p99_bytes: p99Budget,
+      status,
+      note,
+    });
+  }
+
+  return { available: true, rows };
+}
+
+function summarizePoolWaitMetrics(baseline, before, after, server, failures) {
+  const rows = [];
+  if (!after) return { available: false, rows };
+
+  for (const surface of baseline.surfaces || []) {
+    const p95Budget = numeric(surface.db_pool_wait_p95_ms_budget);
+    const p99Budget = numeric(surface.db_pool_wait_p99_ms_budget);
+    if (p95Budget === null && p99Budget === null) continue;
+
+    const routes = surface.routes || [surface.route];
+    const histogram = histogramDelta(
+      before,
+      after,
+      'hms_db_pool_wait_seconds',
+      'route_pattern',
+      routes,
+      { status_bucket: statusBucketForSurface(surface) }
+    );
+    const p95 = histogram.count > 0 ? histogramQuantile(0.95, histogram.buckets) * 1000 : 0;
+    const p99 = histogram.count > 0 ? histogramQuantile(0.99, histogram.buckets) * 1000 : 0;
+    let status = 'pass';
+
+    if (p95Budget !== null && p95 > p95Budget) {
+      status = 'fail';
+      failures.push(`${surface.label} DB pool wait p95 ${formatMs(p95)} exceeded budget ${formatMs(p95Budget)}`);
+    } else if (p99Budget !== null && p99 > p99Budget) {
+      status = 'fail';
+      failures.push(`${surface.label} DB pool wait p99 ${formatMs(p99)} exceeded budget ${formatMs(p99Budget)}`);
+    }
+
+    rows.push({
+      id: surface.id,
+      label: surface.label,
+      routes,
+      samples: histogram.count,
+      route_requests: serverRequestCount(server, surface.id),
+      p95_ms: p95,
+      p99_ms: p99,
+      budget_p95_ms: p95Budget,
+      budget_p99_ms: p99Budget,
+      status,
+    });
+  }
+
+  return { available: true, rows };
+}
+
+function summarizeSlowSqlMetrics(baseline, before, after, server, failures, incompletes) {
+  const rows = [];
+  if (!after) return { available: false, rows };
+
+  for (const surface of baseline.surfaces || []) {
+    const budget = numeric(surface.slow_queries_per_request_max);
+    if (budget === null) continue;
+
+    const routes = surface.routes || [surface.route];
+    const slowQueries = sumMetricDeltaByRoutes(
+      before,
+      after,
+      'hms_db_slow_query_total',
+      'route_pattern',
+      routes,
+      { status_bucket: statusBucketForSurface(surface) }
+    );
+    const requestCount = serverRequestCount(server, surface.id);
+    const perRequest = requestCount > 0 ? slowQueries / requestCount : null;
+    let status = 'pass';
+    let note = '';
+
+    if (perRequest === null) {
+      status = 'incomplete';
+      note = 'no matching server route requests found';
+      incompletes.push(`${surface.label}: ${note}`);
+    } else if (perRequest > budget) {
+      status = 'fail';
+      failures.push(`${surface.label} slow SQL/query request ratio ${formatNumber(perRequest)} exceeded budget ${formatNumber(budget)}`);
+    }
+
+    rows.push({
+      id: surface.id,
+      label: surface.label,
+      routes,
+      route_requests: requestCount,
+      slow_queries: slowQueries,
+      slow_queries_per_request: perRequest,
+      budget_slow_queries_per_request: budget,
+      status,
+      note,
+    });
+  }
+
+  return { available: true, rows };
+}
+
 function addPoolCheck(checks, failures, incompletes, label, size, idle, used, minIdle, maxUsed) {
   if (size === null || idle === null || used === null) {
     checks.push({ pool: label, status: 'missing', size, idle, used_ratio: used });
@@ -404,6 +570,80 @@ function sumQueryCounterDelta(before, after, query, warnings) {
   return counterDelta(before, after, 'hms_db_query_duration_seconds_count', { query }, warnings);
 }
 
+function sumMetricDeltaByRoutes(before, after, metricName, routeLabel, routes, labels) {
+  let total = 0;
+  for (const route of routes) {
+    total += metricDeltaByPartialLabels(before, after, metricName, {
+      ...labels,
+      [routeLabel]: route,
+    });
+  }
+  return total;
+}
+
+function metricDeltaByPartialLabels(before, after, metricName, labels) {
+  const afterValue = sumMatchingSamples(after, metricName, labels);
+  if (!before) return afterValue;
+  const beforeValue = sumMatchingSamples(before, metricName, labels);
+  const delta = afterValue - beforeValue;
+  return delta < 0 ? afterValue : delta;
+}
+
+function histogramDelta(before, after, metricName, routeLabel, routes, labels) {
+  const buckets = new Map();
+  for (const route of routes) {
+    const selector = { ...labels, [routeLabel]: route };
+    const afterBuckets = histogramBuckets(after, metricName, selector);
+    const beforeBuckets = before ? histogramBuckets(before, metricName, selector) : new Map();
+    const bounds = new Set([...afterBuckets.keys(), ...beforeBuckets.keys()]);
+    for (const bound of bounds) {
+      const afterValue = afterBuckets.get(bound) || 0;
+      const beforeValue = beforeBuckets.get(bound) || 0;
+      const delta = afterValue - beforeValue;
+      buckets.set(bound, (buckets.get(bound) || 0) + (delta < 0 ? afterValue : delta));
+    }
+  }
+
+  const sorted = [...buckets.entries()]
+    .map(([upperBound, count]) => ({ upperBound, count }))
+    .sort((left, right) => left.upperBound - right.upperBound);
+  const count = sorted.length > 0 ? sorted[sorted.length - 1].count : 0;
+  return { buckets: sorted, count };
+}
+
+function histogramBuckets(metrics, metricName, labels) {
+  const buckets = new Map();
+  const samples = metrics?.get(`${metricName}_bucket`) || [];
+  for (const sample of samples) {
+    if (!labelsMatchPartial(sample.labels, labels)) continue;
+    const upperBound = prometheusLe(sample.labels.le);
+    buckets.set(upperBound, (buckets.get(upperBound) || 0) + sample.value);
+  }
+  return buckets;
+}
+
+function histogramQuantile(quantile, buckets) {
+  if (buckets.length === 0) return null;
+  const total = buckets[buckets.length - 1].count;
+  if (total <= 0) return 0;
+
+  const target = total * quantile;
+  let previousCount = 0;
+  let previousBound = 0;
+  for (const bucket of buckets) {
+    if (bucket.count >= target) {
+      if (!Number.isFinite(bucket.upperBound)) return previousBound;
+      const bucketCount = bucket.count - previousCount;
+      if (bucketCount <= 0) return bucket.upperBound;
+      const position = (target - previousCount) / bucketCount;
+      return previousBound + (bucket.upperBound - previousBound) * position;
+    }
+    previousCount = bucket.count;
+    previousBound = Number.isFinite(bucket.upperBound) ? bucket.upperBound : previousBound;
+  }
+  return buckets[buckets.length - 1].upperBound;
+}
+
 function counterDelta(before, after, metricName, labels, warnings) {
   const afterValue = metricValue(after, metricName, labels);
   if (afterValue === null) return 0;
@@ -426,6 +666,13 @@ function metricValue(metrics, metricName, labels) {
   return null;
 }
 
+function sumMatchingSamples(metrics, metricName, labels) {
+  if (!metrics) return 0;
+  return (metrics.get(metricName) || [])
+    .filter((sample) => labelsMatchPartial(sample.labels, labels))
+    .reduce((sum, sample) => sum + sample.value, 0);
+}
+
 function gauge(metrics, name) {
   const samples = metrics.get(name) || [];
   return samples.length > 0 ? samples[0].value : null;
@@ -441,6 +688,33 @@ function labelsMatch(actual, expected) {
     if (actual[key] !== String(value)) return false;
   }
   return true;
+}
+
+function labelsMatchPartial(actual, expected) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (actual[key] !== String(value)) return false;
+  }
+  return true;
+}
+
+function prometheusLe(value) {
+  if (value === '+Inf' || value === 'Inf') return Infinity;
+  return Number(value);
+}
+
+function statusBucketForSurface(surface) {
+  if (surface.status_bucket) return surface.status_bucket;
+  const status = String(surface.status || '');
+  if (status.startsWith('2')) return '2xx';
+  if (status.startsWith('3')) return '3xx';
+  if (status.startsWith('4')) return '4xx';
+  if (status.startsWith('5')) return '5xx';
+  return 'unknown';
+}
+
+function serverRequestCount(server, surfaceId) {
+  const row = server.surfaces?.find((surface) => surface.id === surfaceId);
+  return numeric(row?.requests) ?? 0;
 }
 
 function parsePrometheus(text) {
@@ -575,6 +849,56 @@ function printReport(report) {
     ));
   }
 
+  if (report.payload.available && report.payload.rows.length > 0) {
+    lines.push('');
+    lines.push('Route payload budgets');
+    lines.push(table(
+      ['Surface', 'Samples', 'p95', 'p99', 'Budget p95', 'Budget p99', 'Status'],
+      report.payload.rows.map((row) => [
+        row.label,
+        formatNumber(row.samples),
+        row.p95_bytes === null ? 'n/a' : formatBytes(row.p95_bytes),
+        row.p99_bytes === null ? 'n/a' : formatBytes(row.p99_bytes),
+        row.budget_p95_bytes === null ? 'n/a' : formatBytes(row.budget_p95_bytes),
+        row.budget_p99_bytes === null ? 'n/a' : formatBytes(row.budget_p99_bytes),
+        row.status,
+      ])
+    ));
+  }
+
+  if (report.pool_wait.available && report.pool_wait.rows.length > 0) {
+    lines.push('');
+    lines.push('DB pool wait budgets');
+    lines.push(table(
+      ['Surface', 'Samples', 'p95', 'p99', 'Budget p95', 'Budget p99', 'Status'],
+      report.pool_wait.rows.map((row) => [
+        row.label,
+        formatNumber(row.samples),
+        formatMs(row.p95_ms),
+        formatMs(row.p99_ms),
+        row.budget_p95_ms === null ? 'n/a' : formatMs(row.budget_p95_ms),
+        row.budget_p99_ms === null ? 'n/a' : formatMs(row.budget_p99_ms),
+        row.status,
+      ])
+    ));
+  }
+
+  if (report.slow_sql.available && report.slow_sql.rows.length > 0) {
+    lines.push('');
+    lines.push('Slow SQL budgets');
+    lines.push(table(
+      ['Surface', 'Requests', 'Slow queries', 'Slow/request', 'Budget', 'Status'],
+      report.slow_sql.rows.map((row) => [
+        row.label,
+        formatNumber(row.route_requests),
+        formatNumber(row.slow_queries),
+        row.slow_queries_per_request === null ? 'n/a' : formatNumber(row.slow_queries_per_request),
+        row.budget_slow_queries_per_request === null ? 'n/a' : formatNumber(row.budget_slow_queries_per_request),
+        row.status,
+      ])
+    ));
+  }
+
   if (report.warnings.length > 0) {
     lines.push('');
     lines.push('Warnings');
@@ -664,6 +988,13 @@ function formatMs(value) {
 function formatPercent(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return 'n/a';
   return `${formatNumber(value * 100)}%`;
+}
+
+function formatBytes(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'n/a';
+  if (Math.abs(value) >= 1024 * 1024) return `${formatNumber(value / (1024 * 1024))} MiB`;
+  if (Math.abs(value) >= 1024) return `${formatNumber(value / 1024)} KiB`;
+  return `${formatNumber(value)} B`;
 }
 
 function formatNumber(value) {
