@@ -11,6 +11,7 @@ import {
 describe('browser RUM observability', () => {
   const originalFetch = globalThis.fetch;
   const originalSendBeacon = globalThis.navigator.sendBeacon;
+  const originalPerformanceObserver = globalThis.PerformanceObserver;
   const originalRuntimeConfig = globalThis.window.__HMS_RUNTIME_CONFIG__;
 
   beforeEach(() => {
@@ -26,7 +27,9 @@ describe('browser RUM observability', () => {
     vi.unstubAllEnvs();
     globalThis.fetch = originalFetch;
     globalThis.navigator.sendBeacon = originalSendBeacon;
+    globalThis.PerformanceObserver = originalPerformanceObserver;
     globalThis.window.__HMS_RUNTIME_CONFIG__ = originalRuntimeConfig;
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -105,5 +108,41 @@ describe('browser RUM observability', () => {
 
     const [url] = globalThis.fetch.mock.calls[0];
     expect(url).toBe('https://api.example.com/api/v2/observability/rum');
+  });
+
+  it('captures long tasks as PHI-safe web vital events', () => {
+    globalThis.window.__HMS_RUNTIME_CONFIG__ = {
+      apiBaseUrl: 'https://api.example.com/api',
+      rumEnabled: true,
+    };
+    globalThis.navigator.sendBeacon = vi.fn(() => false);
+    let observerCallback;
+    class FakePerformanceObserver {
+      static supportedEntryTypes = ['longtask'];
+
+      constructor(callback) {
+        observerCallback = callback;
+      }
+
+      observe() {}
+    }
+    vi.stubGlobal('PerformanceObserver', FakePerformanceObserver);
+
+    expect(initBrowserRum()).toBe(true);
+    observerCallback({
+      getEntries: () => [{ duration: 127.4 }],
+    });
+    expect(flushRum()).toBe(true);
+
+    const [, request] = globalThis.fetch.mock.calls[0];
+    const payload = JSON.parse(request.body);
+    expect(payload.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'web-vital',
+        name: 'long-task',
+        route: '/',
+        value: 127,
+      }),
+    ]));
   });
 });

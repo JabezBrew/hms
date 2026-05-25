@@ -309,6 +309,9 @@ export function initBrowserRum() {
       enqueue({ type: 'web-vital', name: 'inp', value: entry.duration });
     }
   });
+  observeEntryType('longtask', (entry) => {
+    enqueue({ type: 'web-vital', name: 'long-task', value: entry.duration });
+  });
 
   globalThis?.window?.addEventListener?.('pagehide', () => flushRum());
   globalThis?.window?.addEventListener?.('visibilitychange', () => {

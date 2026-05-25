@@ -38,7 +38,7 @@ struct AppStateInner {
     cloudflare_access: Option<CloudflareAccessVerifier>,
 }
 
-const AUTH_FACT_CACHE_TTL: Duration = Duration::from_secs(5);
+const REQUEST_CONTEXT_CACHE_TTL: Duration = Duration::from_secs(5);
 const AUTH_FACT_CACHE_MAX_ENTRIES: usize = 1024;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -92,8 +92,8 @@ impl AuthCache {
         cache_get(&self.users, key)
     }
 
-    fn put_user(&self, key: AuthCacheKey, user: AuthUser) {
-        cache_put(&self.users, key, user);
+    fn put_user(&self, key: AuthCacheKey, user: AuthUser, ttl: Duration) {
+        cache_put(&self.users, key, user, ttl);
     }
 
     fn get_request_context(
@@ -104,7 +104,12 @@ impl AuthCache {
     }
 
     fn put_request_context(&self, key: AuthCacheKey, facts: hms_db::auth::RequestContextAuthFacts) {
-        cache_put(&self.request_contexts, key, facts);
+        cache_put(
+            &self.request_contexts,
+            key,
+            facts,
+            REQUEST_CONTEXT_CACHE_TTL,
+        );
     }
 
     fn remove_user(&self, facility_id: Uuid, user_id: Uuid) {
@@ -157,6 +162,7 @@ fn cache_put<T>(
     cache: &RwLock<HashMap<AuthCacheKey, CachedAuthValue<T>>>,
     key: AuthCacheKey,
     value: T,
+    ttl: Duration,
 ) {
     let Ok(mut cache) = cache.write() else {
         return;
@@ -172,7 +178,7 @@ fn cache_put<T>(
         key,
         CachedAuthValue {
             value,
-            expires_at: now + AUTH_FACT_CACHE_TTL,
+            expires_at: now + ttl,
         },
     );
 }
@@ -457,7 +463,11 @@ impl AppState {
         .map(|user| user.to_auth_user());
         if let Some(user) = &user {
             if auth_user_matches_claims(user, claims) {
-                self.inner.auth_cache.put_user(cache_key, user.clone());
+                self.inner.auth_cache.put_user(
+                    cache_key,
+                    user.clone(),
+                    self.inner.config.access_token_ttl,
+                );
             }
         }
         Ok(user)
@@ -511,9 +521,11 @@ impl AppState {
                 self.inner
                     .auth_cache
                     .put_request_context(cache_key.clone(), facts.clone());
-                self.inner
-                    .auth_cache
-                    .put_user(cache_key, facts.user.clone());
+                self.inner.auth_cache.put_user(
+                    cache_key,
+                    facts.user.clone(),
+                    self.inner.config.access_token_ttl,
+                );
             }
         }
         Ok(facts)
@@ -981,7 +993,11 @@ impl AppState {
 
         let auth_user = user.to_auth_user();
         if let Some(cache_key) = AuthCacheKey::from_user_account(user, session_id) {
-            self.inner.auth_cache.put_user(cache_key, auth_user.clone());
+            self.inner.auth_cache.put_user(
+                cache_key,
+                auth_user.clone(),
+                self.inner.config.access_token_ttl,
+            );
         }
 
         Ok(Some(LoginOutcome {

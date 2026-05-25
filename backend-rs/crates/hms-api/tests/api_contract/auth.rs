@@ -226,6 +226,94 @@ async fn logout_invalidates_warmed_request_context_cache_for_session() {
 }
 
 #[tokio::test]
+async fn auth_me_user_cache_outlives_request_context_cache_without_db_hydration() {
+    let app = app().await;
+    let (access_token, _, _) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let warmed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("warm auth/me request succeeds");
+    assert_eq!(warmed.status(), StatusCode::OK);
+
+    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+
+    let (cached, observed_queries) = hms_observability::with_request_query_counter(async {
+        app.oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+    })
+    .await;
+    let cached = cached.expect("cached auth/me request succeeds");
+    assert_eq!(cached.status(), StatusCode::OK);
+    assert_eq!(observed_queries, 0);
+}
+
+#[tokio::test]
+async fn logout_invalidates_warmed_auth_me_user_cache_for_session() {
+    let app = app().await;
+    let (access_token, cookie, csrf_token) = login(app.clone(), "owner@hms.local").await;
+    let auth_header = format!("Bearer {access_token}");
+
+    let warmed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("warm auth/me request succeeds");
+    assert_eq!(warmed.status(), StatusCode::OK);
+
+    let logout_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/auth/logout")
+                .header(COOKIE, cookie)
+                .header("x-hms-csrf", csrf_token)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("logout request succeeds");
+    assert_eq!(logout_response.status(), StatusCode::OK);
+
+    let rejected = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/v2/auth/me")
+                .header(AUTHORIZATION, auth_header)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("revoked auth/me request completes");
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn request_context_rejects_stale_permission_versions() {
     let app = app().await;
     enroll_owner_test_passkey(&app).await;
