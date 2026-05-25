@@ -11,9 +11,9 @@ use hms_domain::patients::PatientRecord;
 use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
-    BookableSessionListQuery, CancelBookableSessionRequest, CreateBookableServiceRequest,
-    CreateBookableSessionRequest, SchedulingExceptionItem, SchedulingExceptionListQuery,
-    SchedulingExceptionRequest, SchedulingListQuery,
+    BookableSessionListQuery, BookableUnitType, CancelBookableSessionRequest,
+    CreateBookableServiceRequest, CreateBookableSessionRequest, SchedulingExceptionItem,
+    SchedulingExceptionListQuery, SchedulingExceptionRequest, SchedulingListQuery,
 };
 use uuid::Uuid;
 
@@ -150,6 +150,7 @@ impl SchedulingService {
     ) -> Result<ObjectResponse<BookableSessionListItem>, ApiError> {
         require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
         validate_time_range(payload.starts_at, payload.ends_at, "invalid_session")?;
+        self.validate_session_targets(&payload).await?;
         let allowed_service_ids = payload.allowed_service_ids.unwrap_or_default();
         for service_id in &allowed_service_ids {
             let service_exists = hms_db::scheduling::bookable_service_exists(
@@ -361,6 +362,7 @@ impl SchedulingService {
     ) -> Result<ObjectResponse<SchedulingExceptionItem>, ApiError> {
         require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
         validate_time_range(payload.starts_at, payload.ends_at, "invalid_exception")?;
+        self.validate_exception_target(&payload).await?;
         let exception = hms_db::scheduling::create_exception(
             self.pool(),
             NewSchedulingException {
@@ -459,6 +461,183 @@ impl SchedulingService {
             )
         })?;
         Ok(object(visit))
+    }
+
+    async fn validate_session_targets(
+        &self,
+        payload: &CreateBookableSessionRequest,
+    ) -> Result<(), ApiError> {
+        if let Some(clinic_id) = payload.clinic_id {
+            self.ensure_active_clinic(clinic_id, "clinic_not_found")
+                .await?;
+        }
+        if let Some(practitioner_user_id) = payload.practitioner_user_id {
+            self.ensure_active_user(practitioner_user_id, "practitioner_not_found")
+                .await?;
+        }
+
+        match payload.owner_type {
+            BookableUnitType::Facility => {
+                if let Some(owner_id) = payload.owner_id {
+                    if owner_id != self.facility_id() {
+                        return Err(ApiError::bad_request(
+                            "invalid_session_owner",
+                            "Facility-owned sessions must use the current facility as owner.",
+                        ));
+                    }
+                }
+            }
+            BookableUnitType::Clinic => {
+                let clinic_id = payload.clinic_id.ok_or_else(|| {
+                    ApiError::bad_request(
+                        "invalid_session_owner",
+                        "Clinic-owned sessions require a clinic.",
+                    )
+                })?;
+                if let Some(owner_id) = payload.owner_id {
+                    if owner_id != clinic_id {
+                        return Err(ApiError::bad_request(
+                            "invalid_session_owner",
+                            "Clinic-owned session owner must match the selected clinic.",
+                        ));
+                    }
+                }
+            }
+            BookableUnitType::Practitioner => {
+                let practitioner_user_id = payload.practitioner_user_id.ok_or_else(|| {
+                    ApiError::bad_request(
+                        "invalid_session_owner",
+                        "Practitioner-owned sessions require a practitioner.",
+                    )
+                })?;
+                if let Some(owner_id) = payload.owner_id {
+                    if owner_id != practitioner_user_id {
+                        return Err(ApiError::bad_request(
+                            "invalid_session_owner",
+                            "Practitioner-owned session owner must match the selected practitioner.",
+                        ));
+                    }
+                }
+            }
+            BookableUnitType::Service => {
+                if let Some(owner_id) = payload.owner_id {
+                    self.ensure_bookable_service(owner_id, "bookable_service_not_found")
+                        .await?;
+                }
+            }
+            BookableUnitType::Team | BookableUnitType::Department | BookableUnitType::Resource => {}
+        }
+
+        Ok(())
+    }
+
+    async fn validate_exception_target(
+        &self,
+        payload: &SchedulingExceptionRequest,
+    ) -> Result<(), ApiError> {
+        match (payload.session_id, payload.practitioner_user_id) {
+            (Some(session_id), None) => {
+                self.ensure_active_session(session_id, "bookable_session_not_found")
+                    .await
+            }
+            (None, Some(practitioner_user_id)) => {
+                self.ensure_active_user(practitioner_user_id, "practitioner_not_found")
+                    .await
+            }
+            _ => Err(ApiError::bad_request(
+                "invalid_exception_scope",
+                "Scheduling exceptions must target exactly one session or practitioner.",
+            )),
+        }
+    }
+
+    async fn ensure_active_clinic(
+        &self,
+        clinic_id: Uuid,
+        code: &'static str,
+    ) -> Result<(), ApiError> {
+        let clinic = hms_db::care::get_clinic(self.pool(), self.facility_id(), clinic_id)
+            .await
+            .map_err(|_| {
+                ApiError::conflict("clinic_lookup_failed", "Clinic could not be verified.")
+            })?
+            .filter(|clinic| clinic.is_active);
+        if clinic.is_none() {
+            return Err(ApiError::bad_request(
+                code,
+                "Clinic was not found in this facility.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn ensure_active_user(&self, user_id: Uuid, code: &'static str) -> Result<(), ApiError> {
+        let exists =
+            hms_db::auth::user_by_id_for_facility(self.pool(), user_id, self.facility_id())
+                .await
+                .map_err(|_| {
+                    ApiError::conflict("user_lookup_failed", "User could not be verified.")
+                })?
+                .is_some();
+        if !exists {
+            return Err(ApiError::bad_request(
+                code,
+                "User was not found in this facility.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn ensure_bookable_service(
+        &self,
+        service_id: Uuid,
+        code: &'static str,
+    ) -> Result<(), ApiError> {
+        let exists = hms_db::scheduling::bookable_service_exists(
+            self.pool(),
+            self.facility_id(),
+            service_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_service_lookup_failed",
+                "Bookable service could not be verified.",
+            )
+        })?;
+        if !exists {
+            return Err(ApiError::bad_request(
+                code,
+                "Bookable service was not found in this facility.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn ensure_active_session(
+        &self,
+        session_id: Uuid,
+        code: &'static str,
+    ) -> Result<(), ApiError> {
+        let exists = hms_db::scheduling::bookable_session_exists(
+            self.pool(),
+            self.facility_id(),
+            session_id,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_session_lookup_failed",
+                "Bookable session could not be verified.",
+            )
+        })?;
+        if !exists {
+            return Err(ApiError::bad_request(
+                code,
+                "Bookable session was not found in this facility.",
+            ));
+        }
+        Ok(())
     }
 }
 

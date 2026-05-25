@@ -65,6 +65,34 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
         .as_str()
         .expect("clinic id exists");
 
+    let unknown_clinic_id = Uuid::new_v4();
+    let invalid_session_clinic = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": unknown_clinic_id,
+                        "owner_type": "clinic",
+                        "owner_id": unknown_clinic_id,
+                        "name": "Unknown clinic block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-06-01T08:00:00Z",
+                        "ends_at": "2026-06-01T12:00:00Z",
+                        "capacity": 1
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("unknown clinic session is handled");
+    assert_eq!(invalid_session_clinic.status(), StatusCode::BAD_REQUEST);
+
     let unknown_service_id = Uuid::new_v4();
     let invalid_session_service = app
         .clone()
@@ -294,6 +322,40 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
     );
 
     let practitioner_user_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+    let unknown_practitioner_user_id = Uuid::new_v4();
+    let invalid_session_practitioner = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "service_code": "general",
+                        "practitioner_user_id": unknown_practitioner_user_id,
+                        "owner_type": "practitioner",
+                        "owner_id": unknown_practitioner_user_id,
+                        "name": "Unknown practitioner block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-06-04T08:00:00Z",
+                        "ends_at": "2026-06-04T12:00:00Z",
+                        "capacity": 1,
+                        "allowed_service_ids": [service_id]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("unknown practitioner session is handled");
+    assert_eq!(
+        invalid_session_practitioner.status(),
+        StatusCode::BAD_REQUEST
+    );
+
     let practitioner_session = app
         .clone()
         .oneshot(
@@ -327,6 +389,51 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
     let practitioner_session_id = practitioner_session_body["data"]["id"]
         .as_str()
         .expect("practitioner session id exists");
+
+    let invalid_exception_scope = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/exceptions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "starts_at": "2026-06-04T09:00:00Z",
+                        "ends_at": "2026-06-04T10:00:00Z",
+                        "reason": "Missing exception target"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("missing exception target is handled");
+    assert_eq!(invalid_exception_scope.status(), StatusCode::BAD_REQUEST);
+
+    let invalid_exception_session = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/exceptions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "session_id": Uuid::new_v4(),
+                        "starts_at": "2026-06-04T09:00:00Z",
+                        "ends_at": "2026-06-04T10:00:00Z",
+                        "reason": "Unknown session"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("unknown session exception is handled");
+    assert_eq!(invalid_exception_session.status(), StatusCode::BAD_REQUEST);
 
     let exception = app
         .clone()
