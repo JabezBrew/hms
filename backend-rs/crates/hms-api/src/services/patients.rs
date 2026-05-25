@@ -745,6 +745,7 @@ fn normalize_chronicle_entry_filter(value: Option<&str>) -> Result<Option<String
         "lab" | "labs" | "lab_result" | "laboratory" => Some("lab_result"),
         "problem" | "problems" => Some("problem"),
         "allergy" | "allergies" => Some("allergy"),
+        "ward_round" | "ward_rounds" => Some("ward_round"),
         _ => {
             return Err(ApiError::bad_request(
                 "invalid_chronicle_filter",

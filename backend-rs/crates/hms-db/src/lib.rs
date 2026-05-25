@@ -21,5 +21,6 @@ pub mod search;
 pub mod test_support;
 pub mod transactions;
 pub mod ward;
+pub mod ward_rounds;
 
 pub use pool::{connect, PgPool};

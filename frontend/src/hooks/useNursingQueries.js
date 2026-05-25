@@ -163,6 +163,8 @@ function adaptV2NursingTask(item = {}) {
   const patientName = item.patient_display_name || item.patient_name || 'Unknown Patient';
   const dueAt = item.due_at || item.scheduled_time || null;
   const taskType = item.task_type || 'observation';
+  const taskTitle = item.title || item.description || `${taskType.replaceAll('_', ' ')} task`;
+  const taskInstruction = item.instruction || item.instructions || '';
   return {
     ...item,
     admission: item.admission_case_id,
@@ -173,7 +175,9 @@ function adaptV2NursingTask(item = {}) {
     patient_code: item.patient_code || '',
     patient_name: patientName,
     patient_display_name: patientName,
-    description: item.description || `${taskType.replaceAll('_', ' ')} task`,
+    description: taskInstruction ? `${taskTitle}: ${taskInstruction}` : taskTitle,
+    title: item.title || taskTitle,
+    instruction: taskInstruction,
     task_type: taskType,
     status: legacyTaskStatus(item.status),
     due_at: dueAt,
@@ -390,11 +394,15 @@ function normalizeV2TaskPayload(data = {}) {
   }
 
   const assignedTo = data.assigned_to_user_id || data.assigned_to || null;
+  const title = String(data.title || data.description || '').trim();
+  const instruction = String(data.instruction || data.instructions || data.description || '').trim();
   return {
     admission_case_id: admissionCaseId,
     task_type: requireRustTaskType(data.task_type),
     due_at: new Date(dueAt).toISOString(),
     assigned_to_user_id: assignedTo || null,
+    title: title || null,
+    instruction: instruction || null,
   };
 }
 

@@ -1,7 +1,8 @@
-use axum::routing::get;
+use axum::routing::{get, patch, post};
 use axum::Router;
 
 use crate::handlers::patients;
+use crate::handlers::ward_rounds;
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -29,6 +30,30 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/v2/patients/:id/chronicle/print",
             get(patients::get_patient_chronicle_print),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/current",
+            get(ward_rounds::current),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds",
+            post(ward_rounds::create),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/:round_id",
+            get(ward_rounds::get).patch(ward_rounds::update),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/:round_id/actions",
+            post(ward_rounds::create_action),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/:round_id/actions/:action_id",
+            patch(ward_rounds::update_action).delete(ward_rounds::delete_action),
+        )
+        .route(
+            "/api/v2/patients/:patient_id/chronicle/ward-rounds/:round_id/commit",
+            post(ward_rounds::commit),
         )
         .route(
             "/api/v2/patients/:id/break-glass",

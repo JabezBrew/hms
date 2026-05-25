@@ -342,6 +342,8 @@ pub struct NursingTaskListItem {
     pub patient_code: String,
     pub patient_display_name: String,
     pub task_type: NursingTaskType,
+    pub title: Option<String>,
+    pub instruction: Option<String>,
     pub status: NursingTaskStatus,
     pub due_at: DateTime<Utc>,
 }
@@ -352,6 +354,8 @@ pub struct CreateNursingTaskRequest {
     pub task_type: NursingTaskType,
     pub due_at: DateTime<Utc>,
     pub assigned_to_user_id: Option<Uuid>,
+    pub title: Option<String>,
+    pub instruction: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

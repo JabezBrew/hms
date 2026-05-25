@@ -17,6 +17,8 @@ pub struct NewNursingTask {
     pub patient_id: Uuid,
     pub ward_id: Uuid,
     pub task_type: NursingTaskType,
+    pub title: Option<String>,
+    pub instruction: Option<String>,
     pub due_at: DateTime<Utc>,
     pub assigned_to_user_id: Option<Uuid>,
     pub actor_user_id: Uuid,
@@ -30,6 +32,8 @@ struct NursingTaskRow {
     patient_code: String,
     patient_display_name: String,
     task_type: String,
+    title: Option<String>,
+    instruction: Option<String>,
     status: String,
     due_at: DateTime<Utc>,
 }
@@ -76,12 +80,14 @@ pub async fn create_nursing_task(
             patient_id,
             ward_id,
             task_type,
+            title,
+            instruction,
             status,
             due_at,
             assigned_to_user_id,
             created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
         )
         .bind(task.id)
@@ -90,6 +96,8 @@ pub async fn create_nursing_task(
         .bind(task.patient_id)
         .bind(task.ward_id)
         .bind(codec::encode(task.task_type)?)
+        .bind(task.title)
+        .bind(task.instruction)
         .bind(codec::encode(NursingTaskStatus::Open)?)
         .bind(task.due_at)
         .bind(task.assigned_to_user_id)
@@ -170,6 +178,8 @@ fn nursing_task_query() -> QueryBuilder<'static, Postgres> {
                patients.patient_code,
                patients.first_name || ' ' || patients.last_name AS patient_display_name,
                nursing_tasks.task_type,
+               nursing_tasks.title,
+               nursing_tasks.instruction,
                nursing_tasks.status,
                nursing_tasks.due_at
         FROM nursing_tasks
@@ -216,6 +226,8 @@ fn nursing_task_from_row(row: NursingTaskRow) -> anyhow::Result<NursingTaskListI
         patient_code: row.patient_code,
         patient_display_name: row.patient_display_name,
         task_type: codec::decode(&row.task_type)?,
+        title: row.title,
+        instruction: row.instruction,
         status: codec::decode(&row.status)?,
         due_at: row.due_at,
     })

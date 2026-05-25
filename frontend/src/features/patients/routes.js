@@ -74,7 +74,6 @@ export const patientRoutes = [
     component: PatientPage,
     roles: ROLE_GROUPS.CLINICAL,
     features: ['wards'],
-    rustV2Supported: false,
     layout: ROUTE_LAYOUTS.APP,
     sidebar: SIDEBARS.PATIENT_WORKSPACE,
     title: 'Ward Round | Hospital Management System',

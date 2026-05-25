@@ -1586,6 +1586,46 @@ timeline_entries AS (
     FROM patient_allergies
     WHERE patient_allergies.facility_id = $1
       AND patient_allergies.patient_id = $2
+
+    UNION ALL
+
+    SELECT ward_rounds.id AS entry_id,
+           'ward_round' AS entry_type,
+           'ward_round' AS entry_category,
+           ward_rounds.signed_at AS occurred_at,
+           NULL::uuid AS encounter_id,
+           'Ward Round' AS title,
+           concat_ws(' · ', 'signed', count(ward_round_actions.id)::text || ' actions') AS summary,
+           jsonb_build_object(
+             'status', ward_rounds.status,
+             'version', ward_rounds.version,
+             'action_counts', jsonb_build_object(
+               'prescriptions', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'prescription'),
+               'lab_orders', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'lab_order'),
+               'nursing_tasks', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'nursing_task'),
+               'discharge_requests', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'discharge_request')
+             ),
+             'created_artifacts', COALESCE((
+               SELECT jsonb_agg(
+                 jsonb_build_object(
+                   'resource_type', links.resource_type,
+                   'resource_id', links.resource_id,
+                   'title', links.title
+                 )
+                 ORDER BY links.created_at ASC, links.id ASC
+               )
+               FROM ward_round_artifact_links links
+               WHERE links.ward_round_id = ward_rounds.id
+             ), '[]'::jsonb)
+           ) AS data
+    FROM ward_rounds
+    LEFT JOIN ward_round_actions
+      ON ward_round_actions.ward_round_id = ward_rounds.id
+    WHERE ward_rounds.facility_id = $1
+      AND ward_rounds.patient_id = $2
+      AND ward_rounds.status = 'committed'
+      AND ward_rounds.signed_at IS NOT NULL
+    GROUP BY ward_rounds.id, ward_rounds.status, ward_rounds.version, ward_rounds.signed_at
   ) entries
   WHERE ($5::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($5::timestamptz, $6::uuid))
     AND ($7::text IS NULL OR entries.entry_category = $7)
@@ -1829,6 +1869,46 @@ FROM (
   FROM patient_allergies
   WHERE patient_allergies.facility_id = $1
     AND patient_allergies.patient_id = $2
+
+  UNION ALL
+
+  SELECT ward_rounds.id AS entry_id,
+         'ward_round' AS entry_type,
+         'ward_round' AS entry_category,
+         ward_rounds.signed_at AS occurred_at,
+         NULL::uuid AS encounter_id,
+         'Ward Round' AS title,
+         concat_ws(' · ', 'signed', count(ward_round_actions.id)::text || ' actions') AS summary,
+         jsonb_build_object(
+           'status', ward_rounds.status,
+           'version', ward_rounds.version,
+           'action_counts', jsonb_build_object(
+             'prescriptions', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'prescription'),
+             'lab_orders', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'lab_order'),
+             'nursing_tasks', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'nursing_task'),
+             'discharge_requests', count(ward_round_actions.id) FILTER (WHERE ward_round_actions.action_type = 'discharge_request')
+           ),
+           'created_artifacts', COALESCE((
+             SELECT jsonb_agg(
+               jsonb_build_object(
+                 'resource_type', links.resource_type,
+                 'resource_id', links.resource_id,
+                 'title', links.title
+               )
+               ORDER BY links.created_at ASC, links.id ASC
+             )
+             FROM ward_round_artifact_links links
+             WHERE links.ward_round_id = ward_rounds.id
+           ), '[]'::jsonb)
+         ) AS data
+  FROM ward_rounds
+  LEFT JOIN ward_round_actions
+    ON ward_round_actions.ward_round_id = ward_rounds.id
+  WHERE ward_rounds.facility_id = $1
+    AND ward_rounds.patient_id = $2
+    AND ward_rounds.status = 'committed'
+    AND ward_rounds.signed_at IS NOT NULL
+  GROUP BY ward_rounds.id, ward_rounds.status, ward_rounds.version, ward_rounds.signed_at
 ) entries
 WHERE ($4::timestamptz IS NULL OR (entries.occurred_at, entries.entry_id) < ($4::timestamptz, $5::uuid))
   AND ($6::text IS NULL OR entries.entry_category = $6)

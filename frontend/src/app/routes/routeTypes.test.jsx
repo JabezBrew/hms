@@ -181,7 +181,7 @@ describe('featureRoutes', () => {
     }
     expect(routesByPath.get('/workflows/ward-round')?.rustV2Supported).toBe(false)
     expect(routesByPath.get('/workflows/discharge')?.rustV2Supported).toBe(false)
-    expect(routesByPath.get('/patients/:id/ward-round')?.rustV2Supported).toBe(false)
+    expect(routesByPath.get('/patients/:id/ward-round')?.rustV2Supported).toBeUndefined()
   })
 
   it('validates capabilities metadata when present', () => {

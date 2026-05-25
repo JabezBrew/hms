@@ -14,3 +14,4 @@ pub mod referrals;
 pub mod scheduling;
 pub mod search;
 pub mod ward;
+pub mod ward_rounds;

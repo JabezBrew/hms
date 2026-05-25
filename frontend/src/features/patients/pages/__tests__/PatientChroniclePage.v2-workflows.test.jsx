@@ -181,6 +181,14 @@ vi.mock('@/features/patients/components/ChronicleWorkspaceHost', () => ({
   },
 }))
 
+vi.mock('@/features/patients/chronicle/ward-round/WardRoundMode', () => ({
+  default: ({ admission }) => (
+    <div data-testid="ward-round-mode">
+      Ward Round Mode {admission ? 'with admission' : 'without admission'}
+    </div>
+  ),
+}))
+
 vi.mock('@/components/chronicle/ClinicalSummarySidebar', () => ({
   default: () => <div>Clinical summary</div>,
 }))
@@ -236,6 +244,7 @@ function renderPage(initialEntry = '/patients/patient-1') {
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
             <Route path="/patients/:id" element={<PatientChroniclePage />} />
+            <Route path="/patients/:id/ward-round" element={<PatientChroniclePage defaultAction="ward_round" />} />
           </Routes>
         </MemoryRouter>
       </SidebarProvider>
@@ -308,12 +317,12 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     delete window.__HMS_RUNTIME_CONFIG__
   })
 
-  it('does not expose standalone ward-round or discharge workflow actions in Rust V2 mode', () => {
+  it('exposes Ward Round mode but not standalone discharge workflow actions in Rust V2 mode', () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
     renderPage()
 
-    expect(screen.getByTestId('ward-round-action')).toHaveTextContent('false')
+    expect(screen.getByTestId('ward-round-action')).toHaveTextContent('true')
     expect(screen.getByTestId('discharge-action')).toHaveTextContent('false')
   })
 
@@ -403,14 +412,35 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     )
   })
 
-  it('does not auto-open the unsupported ward-round workflow from URL actions in Rust V2 mode', async () => {
+  it('renders Ward Round as Chronicle mode from URL actions without opening the legacy slide-over', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
 
     renderPage('/patients/patient-1?action=ward_round')
 
     await waitFor(() => {
+      expect(screen.getByTestId('ward-round-mode')).toHaveTextContent('Ward Round Mode')
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
     })
+  })
+
+  it('renders canonical Ward Round mode inside the Chronicle frame without the timeline', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+
+    renderPage('/patients/patient-1?mode=ward-round')
+
+    expect(screen.getByText('Clinical summary')).toBeInTheDocument()
+    expect(await screen.findByTestId('ward-round-mode')).toBeInTheDocument()
+    expect(screen.queryByText('Clinical Chronicle')).not.toBeInTheDocument()
+    expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
+  })
+
+  it('renders the legacy alias as the same Ward Round Chronicle mode in Rust V2 mode', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+
+    renderPage('/patients/patient-1/ward-round')
+
+    expect(await screen.findByTestId('ward-round-mode')).toHaveTextContent('with admission')
+    expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
   })
 
   it('does not expose unsupported break-glass access in Rust V2 mode', () => {
@@ -424,7 +454,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(screen.getByText(/break-glass access is not available in rust v2/i)).toBeInTheDocument()
   })
 
-  it('keeps legacy ward-round workflow actions available outside Rust V2 mode', async () => {
+  it('uses Ward Round Chronicle mode outside Rust V2 mode instead of the legacy workflow slide-over', async () => {
     window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'django' }
 
     renderPage('/patients/patient-1?action=ward_round')
@@ -433,7 +463,8 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     expect(screen.getByTestId('ward-round-action')).toHaveTextContent('true')
     expect(screen.getByTestId('discharge-action')).toHaveTextContent('true')
     await waitFor(() => {
-      expect(screen.getByTestId('active-workspace')).toHaveTextContent('wardRound')
+      expect(screen.getByTestId('ward-round-mode')).toBeInTheDocument()
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
     })
   })
 })

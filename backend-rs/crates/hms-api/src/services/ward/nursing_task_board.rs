@@ -72,6 +72,8 @@ impl NursingTaskBoardService {
                 patient_id: admission.patient_id,
                 ward_id: admission.ward_id,
                 task_type: payload.task_type,
+                title: payload.title,
+                instruction: payload.instruction,
                 due_at: payload.due_at,
                 assigned_to_user_id: payload.assigned_to_user_id,
                 actor_user_id: ctx.user_id,

@@ -14,7 +14,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list.js';
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   usePatient,
@@ -72,6 +72,8 @@ import { useSystemCapabilities } from "@/hooks/useSystemQueries";
 import { isRustV2ApiMode } from "@/lib/api/v2/runtime";
 
 import { useDebounce } from "@/hooks/use-debounce";
+
+const WardRoundMode = lazy(() => import('@/features/patients/chronicle/ward-round/WardRoundMode'))
 const DISCHARGE_CASE_ROLES = new Set([
   'admin',
   'doctor',
@@ -193,6 +195,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
   const referralIdParam = searchParams.get('referral_id');
   const admissionParam = searchParams.get('admission');
   const visitParam = searchParams.get(CHRONICLE_VISIT_PARAM);
+  const chronicleModeParam = searchParams.get('mode');
+  const isWardRoundMode = chronicleModeParam === 'ward-round' || defaultAction === 'ward_round';
   const clearQueryParams = useCallback(() => {
     const nextSearch = stripTransientChronicleParams(location.search);
     if (nextSearch !== location.search) {
@@ -287,6 +291,16 @@ const PatientChroniclePage = ({ defaultAction }) => {
     prefetchWorkspaceForOpen(workspaceId);
     slideOvers.open(workspaceId);
   }, [prefetchWorkspaceForOpen, slideOvers]);
+  const openWardRoundMode = useCallback(() => {
+    const nextSearchParams = new URLSearchParams(location.search);
+    nextSearchParams.set('mode', 'ward-round');
+    nextSearchParams.delete('action');
+    nextSearchParams.delete('wardRound');
+    navigate({
+      pathname: `/patients/${id}`,
+      search: `?${nextSearchParams.toString()}`,
+    });
+  }, [id, location.search, navigate]);
 
   useEffect(() => {
     const action = actionParam || defaultAction;
@@ -295,14 +309,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
       // Clear the query params after opening
       if (actionParam) clearQueryParams();
     } else if (action === 'ward_round' || wardRoundParam === 'true') {
-      if (!canUseStandaloneClinicalWorkflows) {
-        toast.error('Ward-round workflow is not available in Rust V2 mode yet.');
-        if (actionParam || wardRoundParam) clearQueryParams();
-        return;
+      if (actionParam || wardRoundParam) {
+        openWardRoundMode();
       }
-      openChronicleWorkspace('wardRound');
-      // Clear the query params after opening
-      if (actionParam || wardRoundParam) clearQueryParams();
     } else if (action === 'consultation' || consultationParam === 'true') {
       openChronicleWorkspace('consultation');
       // Clear the query params after opening
@@ -358,6 +367,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     patient,
     canUseStandaloneClinicalWorkflows,
     openChronicleWorkspace,
+    openWardRoundMode,
     clearQueryParams,
   ]);
 
@@ -441,15 +451,25 @@ const PatientChroniclePage = ({ defaultAction }) => {
     )) || null;
   }, [encounters]);
 
+  const chronicleActiveAdmission = useMemo(() => {
+    if (rustV2ActiveAdmission) {
+      return rustV2ActiveAdmission;
+    }
+    if (
+      activeEncounter
+      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(activeEncounter))
+    ) {
+      return activeEncounter;
+    }
+    return null;
+  }, [activeEncounter, rustV2ActiveAdmission]);
+
   const enabledFeatures = deploymentCapabilities?.features;
   const hasWardBoardContext = Boolean(
     patient?.local_data?.current_admission_id
     || patient?.current_admission_id
     || rustV2ActiveAdmissionId
-    || (
-      activeEncounter
-      && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(getEncounterKind(activeEncounter))
-    )
+    || chronicleActiveAdmission
   );
   const canOpenWardBoard = hasWardBoardContext
     && enabledFeatures?.ward_task_board === true
@@ -681,7 +701,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     && !chronicleTimelineParams.encounterId
     && chronicleContext?.timeline;
   const rustTimelineQuery = usePatientChronicleTimeline(id, chronicleTimelineParams, {
-    enabled: rustV2Mode && canFetchClinical && !!resolvedVisitScope && !!chronicleContext && !canSeedRustTimeline,
+    enabled: !isWardRoundMode && rustV2Mode && canFetchClinical && !!resolvedVisitScope && !!chronicleContext && !canSeedRustTimeline,
     initialPage: canSeedRustTimeline ? chronicleContext.timeline : undefined,
   });
   const legacyTimelineQuery = usePatientTimeline(id, {
@@ -689,7 +709,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     search: chronicleTimelineParams.search,
     pageSize: chronicleTimelineParams.limit,
     encounterId: chronicleTimelineParams.encounterId,
-    enabled: !rustV2Mode && canFetchClinical && !!resolvedVisitScope,
+    enabled: !isWardRoundMode && !rustV2Mode && canFetchClinical && !!resolvedVisitScope,
   });
   const activeTimelineQuery = rustV2Mode ? rustTimelineQuery : legacyTimelineQuery;
   const {
@@ -1064,12 +1084,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     openChronicleWorkspace('fluids');
   }, [openChronicleWorkspace]);
   const handleStartWardRound = useCallback(() => {
-    if (!canUseStandaloneClinicalWorkflows) {
-      toast.error('Ward-round workflow is not available in Rust V2 mode yet.');
-      return;
-    }
-    openChronicleWorkspace('wardRound');
-  }, [canUseStandaloneClinicalWorkflows, openChronicleWorkspace]);
+    openWardRoundMode();
+  }, [openWardRoundMode]);
   const handleStartDischarge = useCallback(() => {
     const admissionId = patient?.local_data?.current_admission_id
       || patient?.current_admission_id
@@ -1541,12 +1557,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
           onViewTreatmentSheet={handleViewTreatmentSheet}
           onViewMedicationHistory={handleViewMedicationHistory}
           onRecordFluids={handleRecordFluids}
-          onStartWardRound={canUseStandaloneClinicalWorkflows ? handleStartWardRound : undefined}
+          onStartWardRound={handleStartWardRound}
           onStartDischarge={canUseStandaloneClinicalWorkflows ? handleStartDischarge : undefined}
           onManageInsurance={handleManageInsurance}
           onPrintSummary={handlePrintSummary}
           insurance={patientInsurance}
-          activeAdmission={activeEncounter && ['inpatient', 'admission', 'emergency', 'hospitalization'].includes(activeEncounter.encounter_type?.toLowerCase()) ? activeEncounter : null}
+          activeAdmission={chronicleActiveAdmission}
         />
 
         {canOpenWardBoard && (
@@ -1602,8 +1618,28 @@ const PatientChroniclePage = ({ defaultAction }) => {
               onViewFluidTrends={() => handleViewTrends('fluids')}
             />
           </div>
-          {/* Timeline Chronicle */}
+          {/* Timeline Chronicle or single-page Chronicle mode */}
           <main className="flex-1 p-6 transition-all duration-300">
+          {isWardRoundMode ? (
+            <Suspense fallback={(
+              <div className="mx-auto max-w-4xl space-y-4">
+                <Skeleton className="h-28 w-full rounded-lg" />
+                <Skeleton className="h-64 w-full rounded-lg" />
+              </div>
+            )}>
+              <WardRoundMode
+                patientId={patientLocalId || id}
+                patient={patientForChronicle}
+                admission={chronicleActiveAdmission}
+                encounter={activeEncounter}
+                chronicleContext={chronicleContext}
+                latestVitals={latestVitals}
+                labResults={labResults}
+                medications={medications}
+                onCommitted={refreshData}
+              />
+            </Suspense>
+          ) : (
           <div className="min-w-0 max-w-4xl mx-auto">
             {/* Timeline Header with Search and Filters */}
             <div className="mb-6 space-y-4">
@@ -2025,6 +2061,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               )}
             </div>
           </div>
+          )}
           </main>
 
           <ChronicleWorkspaceHost

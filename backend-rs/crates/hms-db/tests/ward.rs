@@ -1211,6 +1211,8 @@ async fn nursing_observations_alerts_fluids_and_stock_requests_are_facility_scop
             patient_id,
             ward_id,
             task_type: NursingTaskType::Observation,
+            title: None,
+            instruction: None,
             due_at: chrono::Utc::now(),
             assigned_to_user_id: Some(owner_id),
             actor_user_id: owner_id,

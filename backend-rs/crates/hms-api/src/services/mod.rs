@@ -11,3 +11,4 @@ pub mod patients;
 pub mod referrals;
 pub mod scheduling;
 pub mod ward;
+pub mod ward_rounds;
