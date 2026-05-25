@@ -2,8 +2,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use hms_access::require_patient_demographics_access;
 use hms_db::care::NewVisit;
 use hms_db::scheduling::{
-    AvailabilityFilters, NewBookableService, NewBookableSession, NewSchedulingException,
-    SchedulingCursor, SessionFilters,
+    AvailabilityFilters, ExceptionFilters, NewBookableService, NewBookableSession,
+    NewSchedulingException, SchedulingCursor, SessionFilters,
 };
 use hms_domain::care::VisitListItem;
 use hms_domain::deployment::PermissionCode;
@@ -12,8 +12,8 @@ use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
     BookableSessionListQuery, CancelBookableSessionRequest, CreateBookableServiceRequest,
-    CreateBookableSessionRequest, SchedulingExceptionItem, SchedulingExceptionRequest,
-    SchedulingListQuery,
+    CreateBookableSessionRequest, SchedulingExceptionItem, SchedulingExceptionListQuery,
+    SchedulingExceptionRequest, SchedulingListQuery,
 };
 use uuid::Uuid;
 
@@ -384,6 +384,42 @@ impl SchedulingService {
         Ok(object(exception))
     }
 
+    pub async fn list_exceptions(
+        &self,
+        ctx: &hms_access::RequestContext,
+        query: SchedulingExceptionListQuery,
+    ) -> Result<ListResponse<SchedulingExceptionItem>, ApiError> {
+        require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentView)?;
+        let (cursor, page_size) = page_request(SchedulingListQuery {
+            cursor: query.cursor,
+            limit: query.limit,
+        })?;
+        let (starts_at, ends_before) = optional_date_range(query.start_date, query.end_date)?;
+        let rows = hms_db::scheduling::list_exceptions(
+            self.pool(),
+            self.facility_id(),
+            cursor,
+            ExceptionFilters {
+                starts_at,
+                ends_before,
+                session_id: query.session_id,
+                practitioner_user_id: query.practitioner_user_id,
+            },
+            page_size as i64 + 1,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "scheduling_exception_list_failed",
+                "Scheduling exceptions could not be loaded.",
+            )
+        })?;
+
+        Ok(page_response(rows, page_size, |item| {
+            encode_cursor(item.starts_at, item.id)
+        }))
+    }
+
     pub async fn arrive_appointment(
         &self,
         ctx: &hms_access::RequestContext,
@@ -558,6 +594,23 @@ fn availability_range(
         .expect("valid availability end date")
         .and_utc();
     Ok((starts_at, ends_before))
+}
+
+fn optional_date_range(
+    start_date: Option<NaiveDate>,
+    end_date: Option<NaiveDate>,
+) -> Result<(Option<DateTime<Utc>>, Option<DateTime<Utc>>), ApiError> {
+    let Some(start_date) = start_date else {
+        if end_date.is_some() {
+            return Err(ApiError::bad_request(
+                "invalid_exception_range",
+                "Exception start date is required when end date is provided.",
+            ));
+        }
+        return Ok((None, None));
+    };
+    let (starts_at, ends_before) = availability_range(start_date, end_date)?;
+    Ok((Some(starts_at), Some(ends_before)))
 }
 
 fn page_request(query: SchedulingListQuery) -> Result<(Option<SchedulingCursor>, u8), ApiError> {

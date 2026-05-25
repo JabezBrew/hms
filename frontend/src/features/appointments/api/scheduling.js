@@ -92,6 +92,25 @@ export const schedulingApi = {
     }
   },
 
+  listExceptions: async (params = {}, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.getSchedulingExceptions({
+          query: queryWithoutSignal(params),
+          signal: options.signal || params.signal,
+        });
+        return dataList(response);
+      }
+      return [];
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to load scheduling exceptions'));
+      }
+      throw new Error(handleApiError(error, 'Failed to load blocked times'));
+    }
+  },
+
   createSession: async (data, options = {}) => {
     try {
       if (isRustV2ApiMode()) {
@@ -106,6 +125,22 @@ export const schedulingApi = {
       rethrowAbortError(error);
       if (isRustV2ApiMode()) {
         throw new Error(handleV2ApiError(error, 'Failed to create bookable session'));
+      }
+      throw error;
+    }
+  },
+
+  createException: async (data, options = {}) => {
+    try {
+      if (isRustV2ApiMode()) {
+        const response = await v2Api.postSchedulingExceptions(data, options);
+        return response?.data;
+      }
+      throw new Error('Scheduling exceptions are only available on Rust V2.');
+    } catch (error) {
+      rethrowAbortError(error);
+      if (isRustV2ApiMode()) {
+        throw new Error(handleV2ApiError(error, 'Failed to create scheduling exception'));
       }
       throw error;
     }

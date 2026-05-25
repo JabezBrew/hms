@@ -5,8 +5,8 @@ use hms_domain::scheduling::{
     ArriveAppointmentRequest, AvailabilityQuery, AvailabilityResponse, BookAppointmentRequest,
     BookAppointmentResponse, BookableServiceListItem, BookableSessionListItem,
     BookableSessionListQuery, CancelBookableSessionRequest, CreateBookableServiceRequest,
-    CreateBookableSessionRequest, SchedulingExceptionItem, SchedulingExceptionRequest,
-    SchedulingListQuery,
+    CreateBookableSessionRequest, SchedulingExceptionItem, SchedulingExceptionListQuery,
+    SchedulingExceptionRequest, SchedulingListQuery,
 };
 use uuid::Uuid;
 
@@ -229,6 +229,33 @@ pub async fn create_exception(
         state
             .scheduling_service()
             .create_exception(&user, payload)
+            .await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/scheduling/exceptions",
+    operation_id = "getSchedulingExceptions",
+    tag = "scheduling",
+    security(("bearerAuth" = [])),
+    params(SchedulingExceptionListQuery),
+    responses(
+        (status = 200, description = "Scheduling exceptions", body = ListResponse<SchedulingExceptionItem>),
+        (status = 400, description = "Invalid exception query", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_exceptions(
+    State(state): State<AppState>,
+    RequestContext(user): RequestContext,
+    Query(query): Query<SchedulingExceptionListQuery>,
+) -> Result<Json<ListResponse<SchedulingExceptionItem>>, ApiError> {
+    Ok(Json(
+        state
+            .scheduling_service()
+            .list_exceptions(&user, query)
             .await?,
     ))
 }

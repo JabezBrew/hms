@@ -10,6 +10,7 @@ export const schedulingKeys = {
   ...baseKeys,
   services: (params = {}) => [...baseKeys.all, 'services', params],
   sessions: (params = {}) => [...baseKeys.all, 'sessions', params],
+  exceptions: (params = {}) => [...baseKeys.all, 'exceptions', params],
 };
 
 export function useSchedulingServices(params = {}, options = {}) {
@@ -32,10 +33,31 @@ export function useSchedulingSessions(params = {}, options = {}) {
   });
 }
 
+export function useSchedulingExceptions(params = {}, options = {}) {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: schedulingKeys.exceptions(params),
+    queryFn: ({ signal }) => schedulingApi.listExceptions({ ...params, signal }),
+    enabled,
+    staleTime: 15 * 1000,
+  });
+}
+
 export function useCreateSchedulingSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => schedulingApi.createSession(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
+      queryClient.invalidateQueries({ queryKey: availabilitySlotsKey });
+    },
+  });
+}
+
+export function useCreateSchedulingException() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => schedulingApi.createException(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
       queryClient.invalidateQueries({ queryKey: availabilitySlotsKey });

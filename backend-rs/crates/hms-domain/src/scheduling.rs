@@ -165,6 +165,16 @@ pub struct SchedulingExceptionRequest {
     pub reason: String,
 }
 
+#[derive(Clone, Debug, Deserialize, IntoParams, Serialize, ToSchema)]
+pub struct SchedulingExceptionListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u8>,
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
+    pub session_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct SchedulingExceptionItem {
     pub id: Uuid,

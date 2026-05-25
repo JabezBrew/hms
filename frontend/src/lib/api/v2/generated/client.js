@@ -1631,6 +1631,21 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getSchedulingExceptions": {
+    "operationId": "getSchedulingExceptions",
+    "method": "GET",
+    "path": "/api/v2/scheduling/exceptions",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "cursor",
+      "limit",
+      "start_date",
+      "end_date",
+      "session_id",
+      "practitioner_user_id"
+    ],
+    "hasBody": false
+  },
   "getSchedulingServices": {
     "operationId": "getSchedulingServices",
     "method": "GET",
@@ -3597,6 +3612,7 @@ export function createGeneratedClient(request) {
     getReferralSlaDashboard: createOperation(request, operations.getReferralSlaDashboard),
     getReferralSlaState: createOperation(request, operations.getReferralSlaState),
     getSchedulingAvailability: createOperation(request, operations.getSchedulingAvailability),
+    getSchedulingExceptions: createOperation(request, operations.getSchedulingExceptions),
     getSchedulingServices: createOperation(request, operations.getSchedulingServices),
     getSchedulingSessions: createOperation(request, operations.getSchedulingSessions),
     getStaffDirectory: createOperation(request, operations.getStaffDirectory),

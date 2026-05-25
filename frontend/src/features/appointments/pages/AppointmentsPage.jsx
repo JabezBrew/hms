@@ -1,5 +1,6 @@
 import Calendar from 'lucide-react/dist/esm/icons/calendar.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
+import CircleOff from 'lucide-react/dist/esm/icons/circle-off.js';
 import ListChecks from 'lucide-react/dist/esm/icons/list-checks.js';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
@@ -13,7 +14,9 @@ import { cn } from '@/lib/utils';
 import AppointmentList from '@/features/appointments/components/AppointmentList';
 import AppointmentTypeManager from '@/features/appointments/components/AppointmentTypeManager';
 import {
+  useCreateSchedulingException,
   useCreateSchedulingSession,
+  useSchedulingExceptions,
   useSchedulingServices,
   useSchedulingSessions,
 } from '@/features/appointments/hooks';
@@ -44,6 +47,14 @@ const initialSessionForm = () => ({
   slot_minutes: 30,
   allow_overbooking: false,
   overbook_limit: 0,
+});
+
+const initialExceptionForm = () => ({
+  session_id: '',
+  date: todayIso(),
+  start_time: '08:00',
+  end_time: '12:00',
+  reason: '',
 });
 
 const sessionTimeFormatter = new Intl.DateTimeFormat('en', {
@@ -150,11 +161,282 @@ function SessionRows({ sessions, emptyTitle }) {
   );
 }
 
+function ExceptionRows({ exceptions, sessionsById }) {
+  if (!exceptions?.length) {
+    return (
+      <PageState
+        variant="empty"
+        title="No exceptions for this day"
+        description="Blocked time and unavailable sessions will appear here."
+        fullHeight={false}
+        className="min-h-0 rounded-md border border-dashed border-border bg-card/40 py-10"
+      />
+    );
+  }
+
+  return (
+    <div className="divide-y divide-border rounded-md border border-border bg-card">
+      {exceptions.map((exception) => {
+        const session = sessionsById.get(exception.session_id);
+        return (
+          <div key={exception.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {session?.name || 'Practitioner unavailable'}
+                </h3>
+                <Badge className="badge-chronicle-amber font-mono text-[11px]">
+                  exception
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {formatDateTime(exception.starts_at)} - {formatDateTime(exception.ends_at)}
+              </p>
+            </div>
+            <p className="max-w-md text-sm text-muted-foreground lg:text-right">
+              {exception.reason}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SessionForm({
+  form,
+  clinics,
+  services,
+  servicesLoading,
+  createSession,
+  onField,
+  onSubmit,
+}) {
+  return (
+    <form onSubmit={onSubmit} className="rounded-md border border-border bg-card p-4">
+      <div className="grid gap-4 lg:grid-cols-4">
+        <div className="lg:col-span-2">
+          <Label htmlFor="session-name">Session name</Label>
+          <Input
+            id="session-name"
+            value={form.name}
+            onChange={(event) => onField('name', event.target.value)}
+            placeholder="Antenatal clinic morning"
+          />
+        </div>
+        <div>
+          <Label htmlFor="session-clinic">Clinic</Label>
+          <select
+            id="session-clinic"
+            value={form.clinic_id}
+            onChange={(event) => onField('clinic_id', event.target.value)}
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Select clinic</option>
+            {clinics.map((clinic) => (
+              <option key={clinic.id} value={clinic.id}>
+                {clinic.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor="session-service">Service</Label>
+          <select
+            id="session-service"
+            value={form.service_id}
+            onChange={(event) => onField('service_id', event.target.value)}
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={servicesLoading}
+          >
+            <option value="">Any service</option>
+            {services.map((service) => (
+              <option key={service.id} value={service.id}>
+                {service.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor="session-date">Date</Label>
+          <Input
+            id="session-date"
+            type="date"
+            value={form.date}
+            onChange={(event) => onField('date', event.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="session-start">Start</Label>
+          <Input
+            id="session-start"
+            type="time"
+            value={form.start_time}
+            onChange={(event) => onField('start_time', event.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="session-end">End</Label>
+          <Input
+            id="session-end"
+            type="time"
+            value={form.end_time}
+            onChange={(event) => onField('end_time', event.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="session-capacity">Capacity</Label>
+          <Input
+            id="session-capacity"
+            type="number"
+            min="1"
+            value={form.capacity}
+            onChange={(event) => onField('capacity', event.target.value)}
+          />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button type="submit" disabled={createSession.isPending} className="gap-2">
+          <Plus className="size-4" />
+          Create Session
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function WaitlistRows({ entries, isLoading, onBook }) {
+  if (isLoading) {
+    return (
+      <PageState
+        variant="loading"
+        fullHeight={false}
+        className="min-h-0 rounded-md border border-border"
+      />
+    );
+  }
+
+  if (!entries.length) {
+    return (
+      <PageState
+        variant="empty"
+        title="No active waitlist entries"
+        description="Accepted demand will appear here before promotion."
+        fullHeight={false}
+        className="min-h-0 rounded-md border border-dashed border-border bg-card/40 py-10"
+      />
+    );
+  }
+
+  return (
+    <div className="divide-y divide-border rounded-md border border-border bg-card">
+      {entries.map((entry) => (
+        <div key={entry.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-foreground">
+                {entry.patient_name || 'Unknown patient'}
+              </h3>
+              <Badge className="badge-chronicle-amber font-mono text-[11px]">
+                {entry.priority}
+              </Badge>
+              <Badge variant="outline" className="font-mono text-[11px]">
+                {entry.status}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {entry.service} · {entry.patient_mrn || 'No MRN'}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => onBook(entry.patient_id)}>
+            Book
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExceptionForm({
+  form,
+  sessions,
+  createException,
+  onField,
+  onSubmit,
+}) {
+  return (
+    <form onSubmit={onSubmit} className="rounded-md border border-border bg-card p-4">
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-2">
+          <Label htmlFor="exception-session">Session</Label>
+          <select
+            id="exception-session"
+            value={form.session_id}
+            onChange={(event) => onField('session_id', event.target.value)}
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Select session</option>
+            {sessions.map((session) => (
+              <option key={session.id} value={session.id}>
+                {session.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor="exception-date">Date</Label>
+          <Input
+            id="exception-date"
+            type="date"
+            value={form.date}
+            onChange={(event) => onField('date', event.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="exception-start">Start</Label>
+          <Input
+            id="exception-start"
+            type="time"
+            value={form.start_time}
+            onChange={(event) => onField('start_time', event.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="exception-end">End</Label>
+          <Input
+            id="exception-end"
+            type="time"
+            value={form.end_time}
+            onChange={(event) => onField('end_time', event.target.value)}
+          />
+        </div>
+        <div className="lg:col-span-4">
+          <Label htmlFor="exception-reason">Reason</Label>
+          <Input
+            id="exception-reason"
+            value={form.reason}
+            onChange={(event) => onField('reason', event.target.value)}
+            placeholder="Public holiday, room unavailable, practitioner absence"
+          />
+        </div>
+        <div className="flex items-end justify-end">
+          <Button type="submit" disabled={createException.isPending} className="w-full gap-2 lg:w-auto">
+            <CircleOff className="size-4" />
+            Block Time
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 const AppointmentsPage = () => {
   const navigate = useNavigate();
   const [view, setView] = useState('today');
   const [sessionForm, setSessionForm] = useState(initialSessionForm);
+  const [exceptionForm, setExceptionForm] = useState(initialExceptionForm);
   const createSession = useCreateSchedulingSession();
+  const createException = useCreateSchedulingException();
 
   const pageMeta = usePageMeta({
     title: 'Schedule | Hospital Management System',
@@ -173,6 +455,11 @@ const AppointmentsPage = () => {
     date: today,
     limit: 50,
   });
+  const { data: exceptions = [], isLoading: exceptionsLoading } = useSchedulingExceptions({
+    start_date: today,
+    end_date: today,
+    limit: 50,
+  });
   const { data: waitlist = [], isLoading: waitlistLoading } = useClinicWaitlist({ page_size: 50 });
   const { data: clinics = [] } = useQuery({
     queryKey: keyWith('clinics', 'scheduling-options'),
@@ -188,9 +475,17 @@ const AppointmentsPage = () => {
     () => sessions.reduce((total, session) => total + Math.max(0, session.remaining_capacity || 0), 0),
     [sessions],
   );
+  const sessionsById = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
+  );
 
   const handleSessionField = (field, value) => {
     setSessionForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleExceptionField = (field, value) => {
+    setExceptionForm((current) => ({ ...current, [field]: value }));
   };
 
   const handleCreateSession = async (event) => {
@@ -216,6 +511,33 @@ const AppointmentsPage = () => {
     } catch (error) {
       toast.error('Session was not created', {
         description: error.message || 'Please check the session details.',
+      });
+    }
+  };
+
+  const handleCreateException = async (event) => {
+    event.preventDefault();
+    if (!exceptionForm.session_id) {
+      toast.error('Session is required');
+      return;
+    }
+    if (!exceptionForm.reason.trim()) {
+      toast.error('Exception reason is required');
+      return;
+    }
+
+    try {
+      await createException.mutateAsync({
+        session_id: exceptionForm.session_id,
+        starts_at: toUtcIso(exceptionForm.date, exceptionForm.start_time),
+        ends_at: toUtcIso(exceptionForm.date, exceptionForm.end_time),
+        reason: exceptionForm.reason,
+      });
+      toast.success('Exception created');
+      setExceptionForm(initialExceptionForm());
+    } catch (error) {
+      toast.error('Exception was not created', {
+        description: error.message || 'Please check the blocked time.',
       });
     }
   };
@@ -261,6 +583,10 @@ const AppointmentsPage = () => {
               <ListChecks className="size-4" />
               Waitlist
             </TabsTrigger>
+            <TabsTrigger value="exceptions" className="gap-2 rounded-sm px-4 py-2 font-mono text-xs">
+              <CircleOff className="size-4" />
+              Exceptions
+            </TabsTrigger>
             <TabsTrigger value="services" className="gap-2 rounded-sm px-4 py-2 font-mono text-xs">
               <Settings className="size-4" />
               Services
@@ -280,98 +606,15 @@ const AppointmentsPage = () => {
           </TabsContent>
 
           <TabsContent value="sessions" className="animate-chronicle-enter space-y-6 pt-6">
-            <form
+            <SessionForm
+              form={sessionForm}
+              clinics={clinics}
+              services={services}
+              servicesLoading={servicesLoading}
+              createSession={createSession}
+              onField={handleSessionField}
               onSubmit={handleCreateSession}
-              className="rounded-md border border-border bg-card p-4"
-            >
-              <div className="grid gap-4 lg:grid-cols-4">
-                <div className="lg:col-span-2">
-                  <Label htmlFor="session-name">Session name</Label>
-                  <Input
-                    id="session-name"
-                    value={sessionForm.name}
-                    onChange={(event) => handleSessionField('name', event.target.value)}
-                    placeholder="Antenatal clinic morning"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="session-clinic">Clinic</Label>
-                  <select
-                    id="session-clinic"
-                    value={sessionForm.clinic_id}
-                    onChange={(event) => handleSessionField('clinic_id', event.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Select clinic</option>
-                    {clinics.map((clinic) => (
-                      <option key={clinic.id} value={clinic.id}>
-                        {clinic.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="session-service">Service</Label>
-                  <select
-                    id="session-service"
-                    value={sessionForm.service_id}
-                    onChange={(event) => handleSessionField('service_id', event.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    disabled={servicesLoading}
-                  >
-                    <option value="">Any service</option>
-                    {services.map((service) => (
-                      <option key={service.id} value={service.id}>
-                        {service.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="session-date">Date</Label>
-                  <Input
-                    id="session-date"
-                    type="date"
-                    value={sessionForm.date}
-                    onChange={(event) => handleSessionField('date', event.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="session-start">Start</Label>
-                  <Input
-                    id="session-start"
-                    type="time"
-                    value={sessionForm.start_time}
-                    onChange={(event) => handleSessionField('start_time', event.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="session-end">End</Label>
-                  <Input
-                    id="session-end"
-                    type="time"
-                    value={sessionForm.end_time}
-                    onChange={(event) => handleSessionField('end_time', event.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="session-capacity">Capacity</Label>
-                  <Input
-                    id="session-capacity"
-                    type="number"
-                    min="1"
-                    value={sessionForm.capacity}
-                    onChange={(event) => handleSessionField('capacity', event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button type="submit" disabled={createSession.isPending} className="gap-2">
-                  <Plus className="size-4" />
-                  Create Session
-                </Button>
-              </div>
-            </form>
+            />
 
             {sessionsLoading ? (
               <PageState variant="loading" fullHeight={false} className="min-h-0 rounded-md border border-border" />
@@ -381,46 +624,26 @@ const AppointmentsPage = () => {
           </TabsContent>
 
           <TabsContent value="waitlist" className="animate-chronicle-enter pt-6">
-            {waitlistLoading ? (
+            <WaitlistRows
+              entries={activeWaitlist}
+              isLoading={waitlistLoading}
+              onBook={(patientId) => navigate(`/appointments/create?patient=${patientId}`)}
+            />
+          </TabsContent>
+
+          <TabsContent value="exceptions" className="animate-chronicle-enter space-y-6 pt-6">
+            <ExceptionForm
+              form={exceptionForm}
+              sessions={sessions}
+              createException={createException}
+              onField={handleExceptionField}
+              onSubmit={handleCreateException}
+            />
+
+            {exceptionsLoading ? (
               <PageState variant="loading" fullHeight={false} className="min-h-0 rounded-md border border-border" />
-            ) : activeWaitlist.length ? (
-              <div className="divide-y divide-border rounded-md border border-border bg-card">
-                {activeWaitlist.map((entry) => (
-                  <div key={entry.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-semibold text-foreground">
-                          {entry.patient_name || 'Unknown patient'}
-                        </h3>
-                        <Badge className="badge-chronicle-amber font-mono text-[11px]">
-                          {entry.priority}
-                        </Badge>
-                        <Badge variant="outline" className="font-mono text-[11px]">
-                          {entry.status}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {entry.service} · {entry.patient_mrn || 'No MRN'}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => navigate(`/appointments/create?patient=${entry.patient_id}`)}
-                    >
-                      Book
-                    </Button>
-                  </div>
-                ))}
-              </div>
             ) : (
-              <PageState
-                variant="empty"
-                title="No active waitlist entries"
-                description="Accepted demand will appear here before promotion."
-                fullHeight={false}
-                className="min-h-0 rounded-md border border-dashed border-border bg-card/40 py-10"
-              />
+              <ExceptionRows exceptions={exceptions} sessionsById={sessionsById} />
             )}
           </TabsContent>
 

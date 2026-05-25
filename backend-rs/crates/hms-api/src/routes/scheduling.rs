@@ -28,7 +28,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v2/scheduling/exceptions",
-            post(scheduling::create_exception),
+            get(scheduling::list_exceptions).post(scheduling::create_exception),
         )
         .route(
             "/api/v2/scheduling/appointments/:id/arrive",

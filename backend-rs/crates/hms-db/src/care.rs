@@ -815,6 +815,11 @@ pub async fn create_booked_appointment(
     } else {
         default_clinic_id(pool, appointment.facility_id).await?
     };
+    let practitioner_user_id = appointment.practitioner_user_id.or_else(|| {
+        session
+            .as_ref()
+            .and_then(|session| session.practitioner_user_id)
+    });
 
     if let Some(session) = &session {
         validate_session_booking(&mut transaction, session, &appointment).await?;
@@ -886,7 +891,7 @@ pub async fn create_booked_appointment(
     .bind(clinic_id)
     .bind(appointment.clinic_session_id)
     .bind(appointment.appointment_type_id)
-    .bind(appointment.practitioner_user_id)
+    .bind(practitioner_user_id)
     .bind(appointment.series_id)
     .bind(appointment.starts_at)
     .bind(appointment.ends_at)
@@ -2252,7 +2257,11 @@ async fn validate_session_booking_excluding(
     .bind(appointment.starts_at)
     .bind(appointment.ends_at)
     .bind(session.id)
-    .bind(appointment.practitioner_user_id)
+    .bind(
+        appointment
+            .practitioner_user_id
+            .or(session.practitioner_user_id),
+    )
     .fetch_optional(&mut **transaction)
     .await?;
     if blocked_exists.is_some() {

@@ -35,6 +35,14 @@ pub struct AvailabilityFilters {
     pub limit: i64,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ExceptionFilters {
+    pub starts_at: Option<DateTime<Utc>>,
+    pub ends_before: Option<DateTime<Utc>>,
+    pub session_id: Option<Uuid>,
+    pub practitioner_user_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NewBookableService {
     pub id: Uuid,
@@ -508,6 +516,62 @@ pub async fn create_exception(
     .await?;
 
     Ok(exception_from_row(row))
+}
+
+pub async fn list_exceptions(
+    pool: &PgPool,
+    facility_id: Uuid,
+    cursor: Option<SchedulingCursor>,
+    filters: ExceptionFilters,
+    limit: i64,
+) -> anyhow::Result<Vec<SchedulingExceptionItem>> {
+    let mut query = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT id,
+               clinic_session_id,
+               practitioner_user_id,
+               starts_at,
+               ends_at,
+               reason,
+               created_at
+        FROM appointment_blocked_times
+        WHERE facility_id =
+        "#,
+    );
+    query.push_bind(facility_id);
+
+    if let Some(starts_at) = filters.starts_at {
+        query.push(" AND ends_at > ");
+        query.push_bind(starts_at);
+    }
+    if let Some(ends_before) = filters.ends_before {
+        query.push(" AND starts_at < ");
+        query.push_bind(ends_before);
+    }
+    if let Some(session_id) = filters.session_id {
+        query.push(" AND clinic_session_id = ");
+        query.push_bind(session_id);
+    }
+    if let Some(practitioner_user_id) = filters.practitioner_user_id {
+        query.push(" AND practitioner_user_id = ");
+        query.push_bind(practitioner_user_id);
+    }
+    if let Some(cursor) = cursor {
+        query.push(" AND (starts_at, id) > (");
+        query.push_bind(cursor.occurred_at);
+        query.push(", ");
+        query.push_bind(cursor.id);
+        query.push(")");
+    }
+
+    query.push(" ORDER BY starts_at ASC, id ASC LIMIT ");
+    query.push_bind(limit);
+
+    let rows = query
+        .build_query_as::<ExceptionWindowRow>()
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(exception_from_row).collect())
 }
 
 pub async fn bookable_service_exists(

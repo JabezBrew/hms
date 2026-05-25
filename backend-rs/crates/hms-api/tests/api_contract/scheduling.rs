@@ -165,15 +165,14 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
         .expect("availability succeeds");
     assert_eq!(availability.status(), StatusCode::OK);
     let availability_body = json_body(availability).await;
-    assert_eq!(
-        availability_body["data"]["slots"][0]["session_id"],
-        session_id
-    );
-    assert_eq!(availability_body["data"]["slots"][0]["status"], "free");
-    assert_eq!(
-        availability_body["data"]["slots"][0]["capacity"]["remaining"],
-        1
-    );
+    let session_slot = availability_body["data"]["slots"]
+        .as_array()
+        .expect("availability slots are an array")
+        .iter()
+        .find(|slot| slot["session_id"] == session_id)
+        .expect("created session slot is returned");
+    assert_eq!(session_slot["status"], "free");
+    assert_eq!(session_slot["capacity"]["remaining"], 1);
 
     let constrained_session_without_service = app
         .clone()
@@ -292,6 +291,174 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
     assert_eq!(
         overbooked_body["data"]["appointment"]["overbook_reason"],
         "Clinician approved urgent review"
+    );
+
+    let practitioner_user_id = Uuid::from_u128(hms_db::provision::OWNER_USER_ID);
+    let practitioner_session = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "service_code": "general",
+                        "practitioner_user_id": practitioner_user_id,
+                        "owner_type": "practitioner",
+                        "owner_id": practitioner_user_id,
+                        "name": "Practitioner exception block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-06-04T08:00:00Z",
+                        "ends_at": "2026-06-04T12:00:00Z",
+                        "capacity": 1,
+                        "allowed_service_ids": [service_id]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner session create succeeds");
+    assert_eq!(practitioner_session.status(), StatusCode::OK);
+    let practitioner_session_body = json_body(practitioner_session).await;
+    let practitioner_session_id = practitioner_session_body["data"]["id"]
+        .as_str()
+        .expect("practitioner session id exists");
+
+    let exception = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/exceptions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "practitioner_user_id": practitioner_user_id,
+                        "starts_at": "2026-06-04T09:00:00Z",
+                        "ends_at": "2026-06-04T10:00:00Z",
+                        "reason": "Practitioner unavailable"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("exception create succeeds");
+    assert_eq!(exception.status(), StatusCode::OK);
+    let exception_body = json_body(exception).await;
+    let exception_id = exception_body["data"]["id"]
+        .as_str()
+        .expect("exception id exists");
+
+    let exception_list = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/scheduling/exceptions?start_date=2026-06-04&end_date=2026-06-04&practitioner_user_id={practitioner_user_id}&limit=10"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("exception list succeeds");
+    assert_eq!(exception_list.status(), StatusCode::OK);
+    let exception_list_body = json_body(exception_list).await;
+    let listed_exception = exception_list_body["data"]
+        .as_array()
+        .expect("exception data is an array")
+        .iter()
+        .find(|item| item["id"] == exception_id)
+        .expect("created exception is listed");
+    assert_eq!(listed_exception["reason"], "Practitioner unavailable");
+
+    let unavailable = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!(
+                    "/api/v2/scheduling/availability?start_date=2026-06-04&practitioner_user_id={practitioner_user_id}&limit=20"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("exception availability succeeds");
+    assert_eq!(unavailable.status(), StatusCode::OK);
+    let unavailable_body = json_body(unavailable).await;
+    let practitioner_slot = unavailable_body["data"]["slots"]
+        .as_array()
+        .expect("availability slots are an array")
+        .iter()
+        .find(|slot| slot["session_id"] == practitioner_session_id)
+        .expect("practitioner session slot is returned");
+    assert_eq!(practitioner_slot["status"], "busy-unavailable");
+
+    let practitioner_exception_booking = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/appointments/book")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "service_id": service_id,
+                        "session_id": practitioner_session_id,
+                        "clinic_id": clinic_id,
+                        "starts_at": "2026-06-04T09:15:00Z",
+                        "ends_at": "2026-06-04T09:45:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner exception booking denial succeeds");
+    assert_eq!(
+        practitioner_exception_booking.status(),
+        StatusCode::CONFLICT
+    );
+
+    let practitioner_appointment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/appointments/book")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "service_id": service_id,
+                        "session_id": practitioner_session_id,
+                        "clinic_id": clinic_id,
+                        "starts_at": "2026-06-04T10:15:00Z",
+                        "ends_at": "2026-06-04T10:45:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("practitioner session booking succeeds");
+    assert_eq!(practitioner_appointment.status(), StatusCode::OK);
+    let practitioner_appointment_body = json_body(practitioner_appointment).await;
+    assert_eq!(
+        practitioner_appointment_body["data"]["appointment"]["practitioner_user_id"],
+        practitioner_user_id.to_string()
     );
 
     let manual_without_reason = app
