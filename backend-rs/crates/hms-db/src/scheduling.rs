@@ -847,6 +847,32 @@ pub async fn bookable_session_exists(
     Ok(exists)
 }
 
+pub async fn active_organization_unit_exists(
+    pool: &PgPool,
+    facility_id: Uuid,
+    unit_id: Uuid,
+    unit_type: &str,
+) -> anyhow::Result<bool> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM organization_units
+            WHERE facility_id = $1
+              AND id = $2
+              AND unit_type = $3
+              AND is_active = TRUE
+        )
+        "#,
+    )
+    .bind(facility_id)
+    .bind(unit_id)
+    .bind(unit_type)
+    .fetch_one(pool)
+    .await?;
+    Ok(exists)
+}
+
 pub async fn record_manual_booking_history(
     pool: &PgPool,
     facility_id: Uuid,

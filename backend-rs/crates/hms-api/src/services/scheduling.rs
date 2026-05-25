@@ -670,12 +670,30 @@ impl SchedulingService {
                 }
             }
             BookableUnitType::Service => {
-                if let Some(owner_id) = owner_id {
-                    self.ensure_bookable_service(owner_id, "bookable_service_not_found")
-                        .await?;
-                }
+                let service_id = owner_id.ok_or_else(|| {
+                    ApiError::bad_request(
+                        "invalid_session_owner",
+                        "Service-owned sessions require a bookable service owner.",
+                    )
+                })?;
+                self.ensure_bookable_service(service_id, "bookable_service_not_found")
+                    .await?;
             }
-            BookableUnitType::Team | BookableUnitType::Department | BookableUnitType::Resource => {}
+            BookableUnitType::Department => {
+                let department_id = owner_id.ok_or_else(|| {
+                    ApiError::bad_request(
+                        "invalid_session_owner",
+                        "Department-owned sessions require a department owner.",
+                    )
+                })?;
+                self.ensure_active_department(department_id).await?;
+            }
+            BookableUnitType::Team | BookableUnitType::Resource => {
+                return Err(ApiError::bad_request(
+                    "unsupported_session_owner",
+                    "Team and resource-owned sessions require a configured bookable-unit registry.",
+                ));
+            }
         }
 
         Ok(())
@@ -793,6 +811,29 @@ impl SchedulingService {
             return Err(ApiError::bad_request(
                 code,
                 "Bookable session was not found in this facility.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn ensure_active_department(&self, department_id: Uuid) -> Result<(), ApiError> {
+        let exists = hms_db::scheduling::active_organization_unit_exists(
+            self.pool(),
+            self.facility_id(),
+            department_id,
+            "department",
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "department_lookup_failed",
+                "Department owner could not be verified.",
+            )
+        })?;
+        if !exists {
+            return Err(ApiError::bad_request(
+                "department_not_found",
+                "Department owner was not found in this facility.",
             ));
         }
         Ok(())

@@ -151,6 +151,60 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
         .expect("invalid session service is handled");
     assert_eq!(invalid_session_service.status(), StatusCode::BAD_REQUEST);
 
+    let unsupported_resource_owner = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "owner_type": "resource",
+                        "owner_id": Uuid::new_v4(),
+                        "name": "Unregistered resource block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-06-01T08:00:00Z",
+                        "ends_at": "2026-06-01T12:00:00Z",
+                        "capacity": 1
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("unsupported resource owner is handled");
+    assert_eq!(unsupported_resource_owner.status(), StatusCode::BAD_REQUEST);
+
+    let service_owner_without_service = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "owner_type": "service",
+                        "name": "Missing service owner block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-06-01T08:00:00Z",
+                        "ends_at": "2026-06-01T12:00:00Z",
+                        "capacity": 1
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("missing service owner is handled");
+    assert_eq!(
+        service_owner_without_service.status(),
+        StatusCode::BAD_REQUEST
+    );
+
     let template = app
         .clone()
         .oneshot(
