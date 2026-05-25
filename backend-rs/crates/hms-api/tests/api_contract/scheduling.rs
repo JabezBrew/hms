@@ -841,6 +841,160 @@ async fn scheduling_sessions_are_backend_authoritative_and_arrivals_create_visit
         .expect("manual booking succeeds");
     assert_eq!(manual.status(), StatusCode::OK);
 
+    let cancellable_session = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/sessions")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "clinic_id": clinic_id,
+                        "service_code": "general",
+                        "owner_type": "clinic",
+                        "owner_id": clinic_id,
+                        "name": "Session cancellation block",
+                        "mode": "capacity_block",
+                        "starts_at": "2026-06-05T08:00:00Z",
+                        "ends_at": "2026-06-05T12:00:00Z",
+                        "capacity": 2,
+                        "allowed_service_ids": [service_id]
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancellable session create succeeds");
+    assert_eq!(cancellable_session.status(), StatusCode::OK);
+    let cancellable_session_body = json_body(cancellable_session).await;
+    let cancellable_session_id = cancellable_session_body["data"]["id"]
+        .as_str()
+        .expect("cancellable session id exists");
+
+    let cancellable_appointment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/appointments/book")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "service_id": service_id,
+                        "session_id": cancellable_session_id,
+                        "clinic_id": clinic_id,
+                        "starts_at": "2026-06-05T08:00:00Z",
+                        "ends_at": "2026-06-05T08:30:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancellable appointment booking succeeds");
+    assert_eq!(cancellable_appointment.status(), StatusCode::OK);
+    let cancellable_appointment_body = json_body(cancellable_appointment).await;
+    let cancellable_appointment_id = cancellable_appointment_body["data"]["appointment"]["id"]
+        .as_str()
+        .expect("cancellable appointment id exists");
+
+    let cancelled_session = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/scheduling/sessions/{cancellable_session_id}/cancel"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "reason": "Clinic closed for emergency maintenance"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("session cancellation succeeds");
+    assert_eq!(cancelled_session.status(), StatusCode::OK);
+    let cancelled_session_body = json_body(cancelled_session).await;
+    assert_eq!(cancelled_session_body["data"]["is_active"], false);
+
+    let appointment_after_session_cancel = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v2/appointments/{cancellable_appointment_id}"))
+                .header(AUTHORIZATION, auth_header.clone())
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled session appointment detail succeeds");
+    assert_eq!(appointment_after_session_cancel.status(), StatusCode::OK);
+    let appointment_after_session_cancel_body = json_body(appointment_after_session_cancel).await;
+    assert_eq!(
+        appointment_after_session_cancel_body["data"]["status"],
+        "cancelled"
+    );
+    assert_eq!(
+        appointment_after_session_cancel_body["data"]["cancellation_reason"],
+        "Clinic closed for emergency maintenance"
+    );
+
+    let booking_into_cancelled_session = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v2/scheduling/appointments/book")
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "patient_id": patient_id,
+                        "service_id": service_id,
+                        "session_id": cancellable_session_id,
+                        "clinic_id": clinic_id,
+                        "starts_at": "2026-06-05T09:00:00Z",
+                        "ends_at": "2026-06-05T09:30:00Z"
+                    })
+                    .to_string(),
+                ))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled session booking denial succeeds");
+    assert_eq!(
+        booking_into_cancelled_session.status(),
+        StatusCode::CONFLICT
+    );
+
+    let cancelled_appointment_arrival = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "/api/v2/scheduling/appointments/{cancellable_appointment_id}/arrive"
+                ))
+                .header(AUTHORIZATION, auth_header.clone())
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "clinic_id": clinic_id }).to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("cancelled appointment arrival denial succeeds");
+    assert_eq!(cancelled_appointment_arrival.status(), StatusCode::CONFLICT);
+
     let arrival = app
         .clone()
         .oneshot(

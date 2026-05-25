@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Days, NaiveDate, NaiveTime, Utc};
-use hms_domain::care::AppointmentListItem;
+use hms_domain::care::{AppointmentListItem, AppointmentStatus};
 use hms_domain::scheduling::{
     AvailabilitySlot, BookableServiceListItem, BookableSessionListItem, BookableSessionMode,
     BookableSessionTemplateListItem, BookableUnitType, GenerateBookableSessionsResponse,
@@ -592,7 +592,15 @@ pub async fn cancel_bookable_session(
     pool: &PgPool,
     facility_id: Uuid,
     session_id: Uuid,
+    actor_user_id: Uuid,
+    reason: &str,
 ) -> anyhow::Result<Option<BookableSessionListItem>> {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        anyhow::bail!("session cancellation reason is required");
+    }
+
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query_as::<_, BookableSessionRow>(
         r#"
         WITH updated AS (
@@ -643,9 +651,51 @@ pub async fn cancel_bookable_session(
     )
     .bind(facility_id)
     .bind(session_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?;
 
+    if row.is_some() {
+        sqlx::query(
+            r#"
+            WITH cancelled AS (
+                UPDATE appointments
+                SET status = $3,
+                    cancellation_reason = $4,
+                    cancelled_at = now(),
+                    cancelled_by_user_id = $5,
+                    updated_at = now()
+                WHERE facility_id = $1
+                  AND clinic_session_id = $2
+                  AND status = 'scheduled'
+                RETURNING id
+            )
+            INSERT INTO appointment_history (
+                id,
+                facility_id,
+                appointment_id,
+                event_type,
+                actor_user_id,
+                reason
+            )
+            SELECT gen_random_uuid(),
+                   $1,
+                   cancelled.id,
+                   'cancelled',
+                   $5,
+                   $4
+            FROM cancelled
+            "#,
+        )
+        .bind(facility_id)
+        .bind(session_id)
+        .bind(codec::encode(AppointmentStatus::Cancelled)?)
+        .bind(reason)
+        .bind(actor_user_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    transaction.commit().await?;
     row.map(bookable_session_from_row).transpose()
 }
 

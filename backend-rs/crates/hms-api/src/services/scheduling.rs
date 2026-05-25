@@ -6,7 +6,7 @@ use hms_db::scheduling::{
     NewBookableSession, NewBookableSessionTemplate, NewSchedulingException, SchedulingCursor,
     SessionFilters, TemplateFilters,
 };
-use hms_domain::care::VisitListItem;
+use hms_domain::care::{AppointmentStatus, VisitListItem};
 use hms_domain::deployment::PermissionCode;
 use hms_domain::patients::PatientRecord;
 use hms_domain::scheduling::{
@@ -336,22 +336,27 @@ impl SchedulingService {
         payload: CancelBookableSessionRequest,
     ) -> Result<ObjectResponse<BookableSessionListItem>, ApiError> {
         require_workflow_access(ctx, self.facility_id(), PermissionCode::AppointmentManage)?;
-        let _reason = validate_required_reason(payload.reason, "invalid_session")?;
-        let session =
-            hms_db::scheduling::cancel_bookable_session(self.pool(), self.facility_id(), id)
-                .await
-                .map_err(|_| {
-                    ApiError::conflict(
-                        "bookable_session_cancel_failed",
-                        "Bookable session could not be cancelled.",
-                    )
-                })?
-                .ok_or_else(|| {
-                    ApiError::not_found(
-                        "bookable_session_not_found",
-                        "Bookable session was not found.",
-                    )
-                })?;
+        let reason = validate_required_reason(payload.reason, "invalid_session")?;
+        let session = hms_db::scheduling::cancel_bookable_session(
+            self.pool(),
+            self.facility_id(),
+            id,
+            ctx.user_id,
+            &reason,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::conflict(
+                "bookable_session_cancel_failed",
+                "Bookable session could not be cancelled.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "bookable_session_not_found",
+                "Bookable session was not found.",
+            )
+        })?;
         Ok(object(session))
     }
 
@@ -562,6 +567,15 @@ impl SchedulingService {
                 .ok_or_else(|| {
                     ApiError::not_found("appointment_not_found", "Appointment was not found.")
                 })?;
+        if !matches!(
+            appointment.status,
+            AppointmentStatus::Scheduled | AppointmentStatus::CheckedIn
+        ) {
+            return Err(ApiError::conflict(
+                "appointment_arrival_not_allowed",
+                "Only scheduled appointments can be checked in.",
+            ));
+        }
         let _patient = load_patient_for_access(&self.state, ctx, appointment.patient_id).await?;
         let visit = hms_db::care::check_in_visit(
             self.pool(),
