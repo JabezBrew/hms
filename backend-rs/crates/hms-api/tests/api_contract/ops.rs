@@ -6,8 +6,11 @@ const CF_TEST_SECRET: &str = "test-only-cloudflare-access-secret";
 const CF_TEST_ISSUER: &str = "https://hms-test.cloudflareaccess.com";
 const CF_TEST_AUD: &str = "test-cloudflare-access-audience";
 
-const IMPLEMENTED_OPS_ENDPOINTS: [&str; 11] = [
+const IMPLEMENTED_OPS_ENDPOINTS: [&str; 14] = [
     "/api/v2/ops/overview",
+    "/api/v2/ops/performance",
+    "/api/v2/ops/database",
+    "/api/v2/ops/frontend",
     "/api/v2/ops/route-latency",
     "/api/v2/ops/clinical-budgets",
     "/api/v2/ops/db-pool",

@@ -6,10 +6,10 @@ use crate::error::{ApiError, ApiErrorResponse};
 use crate::ops_auth::OpsOperator;
 use crate::response::ObjectResponse;
 use crate::services::ops::{
-    OpsClinicalBudgetSnapshot, OpsDashboardQuery, OpsDbPoolSnapshot, OpsDeploysSnapshot,
-    OpsEdgeStatusSnapshot, OpsOverviewSnapshot, OpsPayloadSnapshot, OpsRequestContextCacheSnapshot,
-    OpsRouteLatencySnapshot, OpsRumSnapshot, OpsService, OpsServiceErrorsSnapshot,
-    OpsSlowQueryFingerprintSnapshot,
+    OpsClinicalBudgetSnapshot, OpsDashboardQuery, OpsDatabaseSnapshot, OpsDbPoolSnapshot,
+    OpsDeploysSnapshot, OpsEdgeStatusSnapshot, OpsOverviewSnapshot, OpsPayloadSnapshot,
+    OpsPerformanceSnapshot, OpsRequestContextCacheSnapshot, OpsRouteLatencySnapshot,
+    OpsRumSnapshot, OpsService, OpsServiceErrorsSnapshot, OpsSlowQueryFingerprintSnapshot,
 };
 use crate::state::AppState;
 
@@ -40,6 +40,81 @@ pub async fn overview(
     let query = OpsService::parse_query(raw_query.as_deref())?;
     Ok(no_store(
         state.ops_service().overview(&operator, query).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/ops/performance",
+    operation_id = "getOpsPerformance",
+    tag = "ops",
+    params(OpsDashboardQuery),
+    security(("cloudflareAccess" = []), ("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Compatibility performance snapshot backed by focused ops services", body = ObjectResponse<OpsPerformanceSnapshot>),
+        (status = 400, body = ApiErrorResponse),
+        (status = 401, body = ApiErrorResponse),
+        (status = 403, body = ApiErrorResponse)
+    )
+)]
+pub async fn performance(
+    State(state): State<AppState>,
+    operator: OpsOperator,
+    RawQuery(raw_query): RawQuery,
+) -> Result<OpsResponse<OpsPerformanceSnapshot>, ApiError> {
+    let query = OpsService::parse_query(raw_query.as_deref())?;
+    Ok(no_store(
+        state.ops_service().performance(&operator, query).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/ops/database",
+    operation_id = "getOpsDatabase",
+    tag = "ops",
+    params(OpsDashboardQuery),
+    security(("cloudflareAccess" = []), ("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Compatibility database snapshot backed by focused ops services", body = ObjectResponse<OpsDatabaseSnapshot>),
+        (status = 400, body = ApiErrorResponse),
+        (status = 401, body = ApiErrorResponse),
+        (status = 403, body = ApiErrorResponse)
+    )
+)]
+pub async fn database(
+    State(state): State<AppState>,
+    operator: OpsOperator,
+    RawQuery(raw_query): RawQuery,
+) -> Result<OpsResponse<OpsDatabaseSnapshot>, ApiError> {
+    let query = OpsService::parse_query(raw_query.as_deref())?;
+    Ok(no_store(
+        state.ops_service().database(&operator, query).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v2/ops/frontend",
+    operation_id = "getOpsFrontend",
+    tag = "ops",
+    params(OpsDashboardQuery),
+    security(("cloudflareAccess" = []), ("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Compatibility frontend snapshot backed by the Browser RUM service", body = ObjectResponse<OpsRumSnapshot>),
+        (status = 400, body = ApiErrorResponse),
+        (status = 401, body = ApiErrorResponse),
+        (status = 403, body = ApiErrorResponse)
+    )
+)]
+pub async fn frontend(
+    State(state): State<AppState>,
+    operator: OpsOperator,
+    RawQuery(raw_query): RawQuery,
+) -> Result<OpsResponse<OpsRumSnapshot>, ApiError> {
+    let query = OpsService::parse_query(raw_query.as_deref())?;
+    Ok(no_store(
+        state.ops_service().frontend(&operator, query).await?,
     ))
 }
 

@@ -150,6 +150,22 @@ pub struct OpsOverviewSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct OpsPerformanceSnapshot {
+    pub route_latency: OpsRouteLatencySnapshot,
+    pub clinical_budgets: OpsClinicalBudgetSnapshot,
+    pub request_context_cache: OpsRequestContextCacheSnapshot,
+    pub payload: OpsPayloadSnapshot,
+    pub source: OpsSnapshotSource,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct OpsDatabaseSnapshot {
+    pub db_pool: OpsDbPoolSnapshot,
+    pub slow_query_fingerprints: OpsSlowQueryFingerprintSnapshot,
+    pub source: OpsSnapshotSource,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct OpsRouteLatencySnapshot {
     pub groups: OpsRouteLatencyGroups,
     pub source: OpsSnapshotSource,
@@ -439,6 +455,66 @@ impl OpsService {
         }))
     }
 
+    pub async fn performance(
+        &self,
+        operator: &OpsOperator,
+        query: OpsQueryParams,
+    ) -> Result<ObjectResponse<OpsPerformanceSnapshot>, ApiError> {
+        self.require_ops_access(operator)?;
+        let metrics = hms_observability::metrics_snapshot();
+        let historical = self
+            .prometheus_provider()
+            .summary_for_window(query.window.as_str())
+            .await;
+        let source = historical_or_fallback_source(&query, &historical);
+
+        Ok(object(OpsPerformanceSnapshot {
+            route_latency: route_latency_snapshot(&metrics, &historical, &query),
+            clinical_budgets: OpsClinicalBudgetSnapshot {
+                budgets: clinical_budgets_snapshot(&metrics, &historical, &query),
+                source: source.clone(),
+            },
+            request_context_cache: request_context_cache_snapshot(&metrics, &historical, &query),
+            payload: OpsPayloadSnapshot {
+                routes: payload_snapshot(&metrics, &historical, &query),
+                source: source.clone(),
+            },
+            source,
+        }))
+    }
+
+    pub async fn database(
+        &self,
+        operator: &OpsOperator,
+        query: OpsQueryParams,
+    ) -> Result<ObjectResponse<OpsDatabaseSnapshot>, ApiError> {
+        self.require_ops_access(operator)?;
+        let metrics = hms_observability::metrics_snapshot();
+        let historical = self
+            .prometheus_provider()
+            .summary_for_window(query.window.as_str())
+            .await;
+        let db_pool = self.db_pool_snapshot(&metrics, &historical, &query);
+        let source = db_pool.source.clone();
+        let slow_query_fingerprints = self
+            .slow_query_fingerprints_snapshot(&metrics, &query)
+            .await;
+
+        Ok(object(OpsDatabaseSnapshot {
+            db_pool,
+            slow_query_fingerprints,
+            source,
+        }))
+    }
+
+    pub async fn frontend(
+        &self,
+        operator: &OpsOperator,
+        query: OpsQueryParams,
+    ) -> Result<ObjectResponse<OpsRumSnapshot>, ApiError> {
+        self.rum(operator, query).await
+    }
+
     pub async fn route_latency(
         &self,
         operator: &OpsOperator,
@@ -544,14 +620,25 @@ impl OpsService {
     ) -> Result<ObjectResponse<OpsSlowQueryFingerprintSnapshot>, ApiError> {
         self.require_ops_access(operator)?;
         let metrics = hms_observability::metrics_snapshot();
+        Ok(object(
+            self.slow_query_fingerprints_snapshot(&metrics, &query)
+                .await,
+        ))
+    }
+
+    async fn slow_query_fingerprints_snapshot(
+        &self,
+        metrics: &hms_observability::MetricsSnapshot,
+        query: &OpsQueryParams,
+    ) -> OpsSlowQueryFingerprintSnapshot {
         let pg_stat_statements =
             hms_db::ops::pg_stat_statement_aggregates(self.state.db_pool()).await;
-        Ok(object(OpsSlowQueryFingerprintSnapshot {
-            fingerprints: slow_query_fingerprints(&metrics.db_query_fingerprints, &query),
+        OpsSlowQueryFingerprintSnapshot {
+            fingerprints: slow_query_fingerprints(&metrics.db_query_fingerprints, query),
             pg_stat_statements: pg_stat_statements_snapshot(pg_stat_statements, query.limit),
-            slow_queries_by_route: route_counters(&metrics.route_slow_queries, &query),
-            source: snapshot_source(&query, true, vec![prometheus_fallback_note()]),
-        }))
+            slow_queries_by_route: route_counters(&metrics.route_slow_queries, query),
+            source: snapshot_source(query, true, vec![prometheus_fallback_note()]),
+        }
     }
 
     pub async fn service_errors(

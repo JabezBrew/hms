@@ -1151,6 +1151,22 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getOpsDatabase": {
+    "operationId": "getOpsDatabase",
+    "method": "GET",
+    "path": "/api/v2/ops/database",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
   "getOpsDbPool": {
     "operationId": "getOpsDbPool",
     "method": "GET",
@@ -1199,6 +1215,22 @@ export const operations = {
     ],
     "hasBody": false
   },
+  "getOpsFrontend": {
+    "operationId": "getOpsFrontend",
+    "method": "GET",
+    "path": "/api/v2/ops/frontend",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
   "getOpsOverview": {
     "operationId": "getOpsOverview",
     "method": "GET",
@@ -1219,6 +1251,22 @@ export const operations = {
     "operationId": "getOpsPayload",
     "method": "GET",
     "path": "/api/v2/ops/payload",
+    "pathParamNames": [],
+    "queryParamNames": [
+      "window",
+      "limit",
+      "group",
+      "status",
+      "type",
+      "component",
+      "environment"
+    ],
+    "hasBody": false
+  },
+  "getOpsPerformance": {
+    "operationId": "getOpsPerformance",
+    "method": "GET",
+    "path": "/api/v2/ops/performance",
     "pathParamNames": [],
     "queryParamNames": [
       "window",
@@ -3420,11 +3468,14 @@ export function createGeneratedClient(request) {
     getNursingAlerts: createOperation(request, operations.getNursingAlerts),
     getNursingTasks: createOperation(request, operations.getNursingTasks),
     getOpsClinicalBudgets: createOperation(request, operations.getOpsClinicalBudgets),
+    getOpsDatabase: createOperation(request, operations.getOpsDatabase),
     getOpsDbPool: createOperation(request, operations.getOpsDbPool),
     getOpsDeploys: createOperation(request, operations.getOpsDeploys),
     getOpsEdgeStatus: createOperation(request, operations.getOpsEdgeStatus),
+    getOpsFrontend: createOperation(request, operations.getOpsFrontend),
     getOpsOverview: createOperation(request, operations.getOpsOverview),
     getOpsPayload: createOperation(request, operations.getOpsPayload),
+    getOpsPerformance: createOperation(request, operations.getOpsPerformance),
     getOpsRequestContextCache: createOperation(request, operations.getOpsRequestContextCache),
     getOpsRouteLatency: createOperation(request, operations.getOpsRouteLatency),
     getOpsRum: createOperation(request, operations.getOpsRum),

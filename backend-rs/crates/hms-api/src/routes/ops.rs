@@ -7,6 +7,9 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v2/ops/overview", get(ops::overview))
+        .route("/api/v2/ops/performance", get(ops::performance))
+        .route("/api/v2/ops/database", get(ops::database))
+        .route("/api/v2/ops/frontend", get(ops::frontend))
         .route("/api/v2/ops/route-latency", get(ops::route_latency))
         .route("/api/v2/ops/clinical-budgets", get(ops::clinical_budgets))
         .route("/api/v2/ops/db-pool", get(ops::db_pool))
