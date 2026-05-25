@@ -42,6 +42,7 @@ import DoctorAvailabilityCalendar from '@/features/appointments/components/Docto
 
 import { appointmentsApi } from '@/features/appointments/api';
 import { patientsApi } from '@/features/patients/api';
+import { referralsApi } from '@/features/referrals/api';
 import { staffApi } from '@/features/staff/api';
 import { clinicsApi } from '@/features/clinics/api';
 
@@ -81,6 +82,7 @@ const AppointmentCreatePage = () => {
       practitionerId: params.get('practitioner') || params.get('practitionerId') || '',
       appointmentTypeId: params.get('appointment_type') || params.get('appointmentTypeId') || '',
       slotId: params.get('slot') || params.get('slotId') || '',
+      waitlistId: params.get('waitlist') || params.get('waitlistId') || '',
       description: params.get('description') || '',
       comment: params.get('comment') || '',
       overbookReason: params.get('overbook_reason') || params.get('overbookReason') || '',
@@ -240,13 +242,8 @@ const AppointmentCreatePage = () => {
   }, [debouncedPatientQuery]);
 
   useEffect(() => {
-    if (!requiresPractitioner) {
-      setPractitioners([]);
-      return;
-    }
-
     const searchForPractitioners = async () => {
-      if (!debouncedPractitionerQuery || debouncedPractitionerQuery.length < 2) {
+      if (!requiresPractitioner || !debouncedPractitionerQuery || debouncedPractitionerQuery.length < 2) {
         return;
       }
 
@@ -264,25 +261,27 @@ const AppointmentCreatePage = () => {
     searchForPractitioners();
   }, [debouncedPractitionerQuery, requiresPractitioner]);
 
-  useEffect(() => {
+  const clearSelectedTime = () => {
     setSelectedSlot(null);
     form.setValue('slotId', '', { shouldDirty: true });
     form.setValue('overbookReason', '', { shouldDirty: true });
+  };
 
-    if (isPoolClinic) {
+  const handleClinicChange = (value, onChange) => {
+    onChange(value);
+    clearSelectedTime();
+
+    const nextClinic = clinics.find((clinic) => clinic.id === value);
+    if (nextClinic?.booking_mode === 'clinic_pool') {
       form.setValue('practitionerId', '', { shouldDirty: true });
+      setPractitioners([]);
     }
-  }, [form, watchClinicId, isPoolClinic]);
+  };
 
-  useEffect(() => {
-    if (!requiresPractitioner) {
-      return;
-    }
-
-    setSelectedSlot(null);
-    form.setValue('slotId', '', { shouldDirty: true });
-    form.setValue('overbookReason', '', { shouldDirty: true });
-  }, [form, watchPractitionerId, requiresPractitioner]);
+  const handlePractitionerChange = (value, onChange) => {
+    onChange(value);
+    clearSelectedTime();
+  };
 
   const handleSlotSelect = (slot) => {
     setSelectedSlot(slot);
@@ -293,6 +292,8 @@ const AppointmentCreatePage = () => {
   };
 
   const selectedSlotRequiresOverbook = slotRequiresOverbookReason(selectedSlot);
+  const waitlistEntryId = initialData.waitlistId || initialData.waitlist_id || '';
+  const isWaitlistPromotion = Boolean(waitlistEntryId);
 
   const onSubmit = async (data) => {
     if (!selectedSlot) {
@@ -318,8 +319,8 @@ const AppointmentCreatePage = () => {
         clinic: data.clinicId,
         appointment_type: data.appointmentTypeId,
         clinic_session: selectedSlot.session_id,
-        start_time: selectedSlot.start,
-        end_time: selectedSlot.end,
+        starts_at: selectedSlot.start,
+        ends_at: selectedSlot.end,
         reason: data.description,
         notes: data.comment,
       };
@@ -332,8 +333,22 @@ const AppointmentCreatePage = () => {
         appointmentData.overbook_reason = overbookReason;
       }
 
-      if (selectedClinic?.waitlist_enabled) {
+      if (selectedClinic?.waitlist_enabled && !isWaitlistPromotion) {
         appointmentData.auto_waitlist = true;
+      }
+
+      if (isWaitlistPromotion) {
+        const promotedEntry = await referralsApi.promoteClinicWaitlistEntry(
+          waitlistEntryId,
+          appointmentData,
+        );
+        toast.success('Waitlist entry promoted to appointment');
+        if (promotedEntry?.scheduled_appointment_id) {
+          navigate(`/appointments/${promotedEntry.scheduled_appointment_id}`);
+        } else {
+          navigate('/appointments');
+        }
+        return;
       }
 
       const result = await appointmentsApi.createAppointment(appointmentData);
@@ -487,13 +502,15 @@ const AppointmentCreatePage = () => {
                 onClick={() => navigate('/appointments')}
                 className="-ml-2 font-mono text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <ChevronLeft className="mr-1 size-4" />
                 Back
               </Button>
               <div className="h-6 w-px bg-border" />
               <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-primary" />
-                <h1 className="font-display text-lg text-foreground">Schedule Appointment</h1>
+                <Calendar className="size-5 text-primary" />
+                <h1 className="font-display text-lg text-foreground">
+                  {isWaitlistPromotion ? 'Promote Waitlist Entry' : 'Schedule Appointment'}
+                </h1>
               </div>
             </div>
 
@@ -519,10 +536,10 @@ const AppointmentCreatePage = () => {
             <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] h-full">
               <div className="border-r border-border bg-card/30 p-6 space-y-6 overflow-y-auto">
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    <User className="h-4 w-4 text-primary" />
+                  <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <User className="size-4 text-primary" />
                     Patient
-                  </label>
+                  </div>
                   <FormField
                     control={form.control}
                     name="patientId"
@@ -569,17 +586,17 @@ const AppointmentCreatePage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    <Building2 className="h-4 w-4 text-sky-500" />
+                  <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <Building2 className="size-4 text-sky-500" />
                     Clinic
-                  </label>
+                  </div>
                   <FormField
                     control={form.control}
                     name="clinicId"
                     render={({ field }) => (
                       <FormItem>
                         <Select
-                          onValueChange={field.onChange}
+                          onValueChange={(value) => handleClinicChange(value, field.onChange)}
                           value={field.value}
                           disabled={submitting}
                         >
@@ -624,10 +641,10 @@ const AppointmentCreatePage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    <Stethoscope className="h-4 w-4 text-emerald-500" />
+                  <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <Stethoscope className="size-4 text-emerald-500" />
                     Doctor
-                  </label>
+                  </div>
 
                   {isPoolClinic ? (
                     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
@@ -667,7 +684,7 @@ const AppointmentCreatePage = () => {
                                 };
                               }) : []}
                               value={field.value}
-                              onChange={field.onChange}
+                              onChange={(value) => handlePractitionerChange(value, field.onChange)}
                               onInputChange={setPractitionerSearchQuery}
                               placeholder={watchClinicId ? 'Search doctors...' : 'Select clinic first...'}
                               emptyMessage={isLoadingPractitioners ? 'Searching...' : 'No doctors found.'}
@@ -684,10 +701,10 @@ const AppointmentCreatePage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    <FileText className="h-4 w-4 text-amber-500" />
+                  <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <FileText className="size-4 text-amber-500" />
                     Appointment Type
-                  </label>
+                  </div>
                   <FormField
                     control={form.control}
                     name="appointmentTypeId"
@@ -763,9 +780,15 @@ const AppointmentCreatePage = () => {
                     name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Reason for Visit</label>
+                        <label
+                          htmlFor="appointment-description"
+                          className="font-mono text-xs uppercase tracking-wider text-muted-foreground"
+                        >
+                          Reason for Visit
+                        </label>
                         <FormControl>
                           <Textarea
+                            id="appointment-description"
                             placeholder="Brief description..."
                             className="resize-none h-16 text-sm"
                             {...field}
@@ -781,9 +804,15 @@ const AppointmentCreatePage = () => {
                     name="comment"
                     render={({ field }) => (
                       <FormItem>
-                        <label className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Additional Notes</label>
+                        <label
+                          htmlFor="appointment-comment"
+                          className="font-mono text-xs uppercase tracking-wider text-muted-foreground"
+                        >
+                          Additional Notes
+                        </label>
                         <FormControl>
                           <Textarea
+                            id="appointment-comment"
                             placeholder="Special instructions..."
                             className="resize-none h-16 text-sm"
                             {...field}
@@ -804,13 +833,13 @@ const AppointmentCreatePage = () => {
                   >
                     {submitting ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Scheduling...
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Scheduling
                       </>
                     ) : (
                       <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Schedule Appointment
+                        <CheckCircle className="mr-2 size-4" />
+                        {isWaitlistPromotion ? 'Promote to Appointment' : 'Schedule Appointment'}
                       </>
                     )}
                   </Button>
@@ -828,7 +857,7 @@ const AppointmentCreatePage = () => {
 
               <div className="p-6 overflow-y-auto bg-background">
                 <div className="flex items-center gap-2 mb-6">
-                  <Clock className="h-5 w-5 text-rose-500" />
+                  <Clock className="size-5 text-rose-500" />
                   <h2 className="font-display text-lg text-foreground">Select Date & Time</h2>
                 </div>
 
@@ -854,7 +883,7 @@ const AppointmentCreatePage = () => {
                 {!watchClinicId ? (
                   <div className="flex flex-col items-center justify-center py-24 text-center">
                     <div className="p-6 rounded-full bg-muted/50 mb-6">
-                      <Building2 className="h-12 w-12 text-muted-foreground/50" />
+                      <Building2 className="size-12 text-muted-foreground/50" />
                     </div>
                     <h3 className="text-xl font-medium text-foreground mb-2">Select a Clinic First</h3>
                     <p className="text-muted-foreground max-w-md">
@@ -864,7 +893,7 @@ const AppointmentCreatePage = () => {
                 ) : requiresPractitioner && !watchPractitionerId ? (
                   <div className="flex flex-col items-center justify-center py-24 text-center">
                     <div className="p-6 rounded-full bg-muted/50 mb-6">
-                      <Stethoscope className="h-12 w-12 text-muted-foreground/50" />
+                      <Stethoscope className="size-12 text-muted-foreground/50" />
                     </div>
                     <h3 className="text-xl font-medium text-foreground mb-2">Select a Doctor</h3>
                     <p className="text-muted-foreground max-w-md">

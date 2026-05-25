@@ -307,7 +307,7 @@ function SessionForm({
   );
 }
 
-function WaitlistRows({ entries, isLoading, onBook }) {
+function WaitlistRows({ entries, isLoading, onPromote }) {
   if (isLoading) {
     return (
       <PageState
@@ -350,8 +350,8 @@ function WaitlistRows({ entries, isLoading, onBook }) {
               {entry.service} · {entry.patient_mrn || 'No MRN'}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => onBook(entry.patient_id)}>
-            Book
+          <Button variant="outline" size="sm" onClick={() => onPromote(entry)}>
+            Promote
           </Button>
         </div>
       ))}
@@ -641,7 +641,16 @@ const AppointmentsPage = () => {
             <WaitlistRows
               entries={activeWaitlist}
               isLoading={waitlistLoading}
-              onBook={(patientId) => navigate(`/appointments/create?patient=${patientId}`)}
+              onPromote={(entry) => {
+                const params = new URLSearchParams({
+                  patient: entry.patient_id,
+                  waitlist: entry.id,
+                });
+                if (entry.service) {
+                  params.set('comment', `Waitlist service: ${entry.service}`);
+                }
+                navigate(`/appointments/create?${params.toString()}`);
+              }}
             />
           </TabsContent>
 
