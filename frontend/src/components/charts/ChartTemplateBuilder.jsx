@@ -387,34 +387,30 @@ const ChartTemplateBuilder = ({
         const existingFieldIds = new Set(existingTemplate.fields?.map((f) => f.id) || []);
         const currentFieldIds = new Set(fields.filter((f) => f.id).map((f) => f.id));
 
-        // Delete removed fields
-        for (const field of existingTemplate.fields || []) {
-          if (!currentFieldIds.has(field.id)) {
-            await deleteFieldMutation.mutateAsync({
-              templateId,
-              fieldId: field.id,
-            });
-          }
-        }
+        const removedFields = (existingTemplate.fields || []).filter((field) => !currentFieldIds.has(field.id));
+        await Promise.all(removedFields.map((field) => deleteFieldMutation.mutateAsync({
+          templateId,
+          fieldId: field.id,
+        })));
 
-        // Add new fields and update existing
-        for (const field of fields) {
+        const fieldMutations = fields.flatMap((field) => {
           if (field.id && existingFieldIds.has(field.id)) {
-            // Update existing field
-            await updateFieldMutation.mutateAsync({
+            return [updateFieldMutation.mutateAsync({
               templateId,
               fieldId: field.id,
               fieldData: field,
-            });
-          } else if (!field.id) {
-            // Add new field
-            const { temp_id, ...fieldData } = field;
-            await addFieldMutation.mutateAsync({
+            })];
+          }
+          if (!field.id) {
+            const { temp_id: _temp_id, ...fieldData } = field;
+            return [addFieldMutation.mutateAsync({
               templateId,
               fieldData,
-            });
+            })];
           }
-        }
+          return [];
+        });
+        await Promise.all(fieldMutations);
 
         // Reorder if needed
         const fieldIds = fields.filter((f) => f.id).map((f) => f.id);
@@ -431,9 +427,9 @@ const ChartTemplateBuilder = ({
         toast.success("Chart template updated");
       } else {
         // Create new template with fields
-        const result = await createMutation.mutateAsync({
+        await createMutation.mutateAsync({
           ...formData,
-          fields: fields.map(({ temp_id, ...field }) => field),
+          fields: fields.map(({ temp_id: _temp_id, ...field }) => field),
         });
 
         toast.success("Chart template created");

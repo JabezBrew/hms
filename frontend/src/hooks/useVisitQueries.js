@@ -13,8 +13,6 @@ import {
   invalidateOperationalDoctorDashboardQueries,
 } from '@/hooks/useDashboardQueries';
 import {
-  hasQueryPrefix,
-  invalidateQueriesMatching,
   invalidateQueryKeys,
 } from '@/shared/lib/queryInvalidation';
 
@@ -49,9 +47,6 @@ function getVisitMutationEncounterId(variables) {
 
 export function invalidateVisitMutationQueries(queryClient, encounterId) {
   const tasks = [
-    invalidateQueriesMatching(queryClient, (query) =>
-      hasQueryPrefix(query.queryKey, ['visits', 'waiting-room'])
-    ),
     invalidateOperationalDoctorDashboardQueries(queryClient),
     invalidateEncounterMutationQueries(queryClient, { encounterId }),
   ];
@@ -120,6 +115,7 @@ export function useVisitActions() {
     mutationFn: (encounterId) => visitsApi.addToWaiting(encounterId),
     onSuccess: (data, variables) => {
       toast.success('Patient added to waiting room');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -131,6 +127,7 @@ export function useVisitActions() {
     mutationFn: (encounterId) => visitsApi.call(encounterId),
     onSuccess: (data, variables) => {
       toast.success('Patient called');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -142,6 +139,7 @@ export function useVisitActions() {
     mutationFn: (encounterId) => visitsApi.startConsultation(encounterId),
     onSuccess: (data, variables) => {
       toast.success('Consultation started');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -153,6 +151,7 @@ export function useVisitActions() {
     mutationFn: (encounterId) => visitsApi.hold(encounterId),
     onSuccess: (data, variables) => {
       toast.success('Consultation on hold');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -164,6 +163,7 @@ export function useVisitActions() {
     mutationFn: (encounterId) => visitsApi.endConsultation(encounterId),
     onSuccess: (data, variables) => {
       toast.success('Consultation ended');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -175,6 +175,7 @@ export function useVisitActions() {
     mutationFn: ({ encounterId, force = false }) => visitsApi.checkout(encounterId, force),
     onSuccess: (data, variables) => {
       toast.success('Patient checked out');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -186,6 +187,7 @@ export function useVisitActions() {
     mutationFn: (encounterId) => visitsApi.noShow(encounterId),
     onSuccess: (data, variables) => {
       toast.success('Patient marked as no-show');
+      queryClient.invalidateQueries({ queryKey: visitKeys.all });
       void invalidateVisitQueries(variables);
     },
     onError: (error) => {
@@ -261,6 +263,7 @@ export function useTriageActions() {
     mutationFn: (data) => triageApi.create(data),
     onSuccess: () => {
       toast.success('Patient added to triage queue');
+      queryClient.invalidateQueries({ queryKey: triageKeys.all });
       invalidateTriageQueries();
     },
     onError: (error) => {
@@ -272,6 +275,7 @@ export function useTriageActions() {
     mutationFn: ({ id, priority, notes }) => triageApi.triage(id, { priority, notes }),
     onSuccess: () => {
       toast.success('Triage assessment saved');
+      queryClient.invalidateQueries({ queryKey: triageKeys.all });
       invalidateTriageQueries();
     },
     onError: (error) => {
@@ -283,6 +287,7 @@ export function useTriageActions() {
     mutationFn: ({ id, ...data }) => triageApi.assign(id, data),
     onSuccess: () => {
       toast.success('Patient assigned to clinic');
+      queryClient.invalidateQueries({ queryKey: triageKeys.all });
       invalidateTriageQueries();
       queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
     },
@@ -295,6 +300,7 @@ export function useTriageActions() {
     mutationFn: (id) => triageApi.cancel(id),
     onSuccess: () => {
       toast.success('Triage entry cancelled');
+      queryClient.invalidateQueries({ queryKey: triageKeys.all });
       invalidateTriageQueries();
     },
     onError: (error) => {

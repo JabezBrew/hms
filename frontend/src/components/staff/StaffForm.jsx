@@ -127,10 +127,18 @@ const StaffForm = ({ onSuccess }) => {
     const errors = form.formState.errors || {};
     const errorFields = Object.keys(errors);
 
+    const firstErrorByStep = new Map();
+    for (const field of errorFields) {
+      const step = staffFieldToStep[field];
+      if (step && !firstErrorByStep.has(step)) {
+        firstErrorByStep.set(step, field);
+      }
+    }
+
     for (const step of stepKeys) {
-      const fieldInStep = errorFields.find((field) => staffFieldToStep[field] === step);
-      if (fieldInStep) {
-        goToStep(step, fieldInStep);
+      const firstField = firstErrorByStep.get(step);
+      if (firstField) {
+        goToStep(step, firstField);
         return;
       }
     }

@@ -691,14 +691,14 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
             </h3>
 
 	            <div className="space-y-3">
-	              <div
+	              <button
+                  type="button"
+                  disabled={!patient.id}
 	                className={cn(
-	                  "group",
+	                  "group text-left disabled:cursor-default",
 	                  patient.id ? "cursor-pointer" : "cursor-default"
 	                )}
-	                onClick={() => {
-	                  if (patient.id) navigate(`/patients/${patient.id}`);
-	                }}
+	                onClick={() => navigate(`/patients/${patient.id}`)}
 	              >
 	                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
 	                  {patient.name}
@@ -708,7 +708,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 	                    View Chronicle →
 	                  </span>
 	                )}
-	              </div>
+	              </button>
 	            </div>
 	          </article>
 
@@ -720,14 +720,14 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
             </h3>
 
 	            <div className="space-y-3">
-	              <div
+	              <button
+                  type="button"
+                  disabled={!practitioner.id}
 	                className={cn(
-	                  "group",
+	                  "group text-left disabled:cursor-default",
 	                  practitioner.id ? "cursor-pointer" : "cursor-default"
 	                )}
-	                onClick={() => {
-	                  if (practitioner.id) navigate(`/practitioners/${practitioner.id}`);
-	                }}
+	                onClick={() => navigate(`/practitioners/${practitioner.id}`)}
 	              >
 	                <div className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
 	                  {practitioner.name}
@@ -737,7 +737,7 @@ const AppointmentDetail = ({ appointmentId, onBack }) => {
 	                    View Profile →
 	                  </span>
 	                )}
-	              </div>
+	              </button>
 	            </div>
 	          </article>
 

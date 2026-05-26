@@ -49,7 +49,7 @@ export default function WardDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin] = useState(() => getAuthJSON('user')?.role === 'admin');
   const { data: deploymentCapabilities } = useSystemCapabilities();
   const enabledFeatures = deploymentCapabilities?.features;
   const canOpenWardBoard = enabledFeatures?.ward_task_board === true
@@ -65,12 +65,6 @@ export default function WardDetailPage() {
     error,
     refetch
   } = useWard(wardId);
-
-  // Check if user is admin
-  useEffect(() => {
-    const user = getAuthJSON('user');
-    setIsAdmin(user?.role === 'admin');
-  }, []);
 
   // Show error toast if query fails
   useEffect(() => {

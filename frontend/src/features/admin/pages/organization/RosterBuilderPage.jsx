@@ -227,6 +227,16 @@ export default function RosterBuilderPage() {
       }
       entriesByTeamDutyType.get(key).push(entry);
     });
+    const entriesByDateTeam = new Map();
+    entries.forEach((entry) => {
+      if (!entry.team) return;
+      const key = `${entry.date}|${entry.team}`;
+      if (!entriesByDateTeam.has(key)) {
+        entriesByDateTeam.set(key, []);
+      }
+      entriesByDateTeam.get(key).push(entry);
+    });
+    const dutyTypeById = new Map(dutyTypes.map((dutyType) => [dutyType.id, dutyType]));
 
     // Run each rule
     validationRules.forEach((rule) => {
@@ -267,12 +277,17 @@ export default function RosterBuilderPage() {
               checkDate.setDate(checkDate.getDate() + d);
               const checkDateStr = checkDate.toISOString().split('T')[0];
 
-              const nextDayEntry = entries.find(
-                (e) =>
-                  e.date === checkDateStr &&
-                  e.team === entry.team &&
-                  (!rule.duty_type || e.duty_type === rule.duty_type)
-              );
+              const nextDayEntries = entriesByDateTeam.get(`${checkDateStr}|${entry.team}`) || [];
+              let nextDayEntry = nextDayEntries[0];
+              if (rule.duty_type) {
+                nextDayEntry = null;
+                for (const candidate of nextDayEntries) {
+                  if (candidate.duty_type === rule.duty_type) {
+                    nextDayEntry = candidate;
+                    break;
+                  }
+                }
+              }
               if (nextDayEntry) {
                 const teamName = teamById.get(entry.team)?.name || 'Team';
                 const nextDateFormatted = format(checkDate, 'EEE d');
@@ -373,6 +388,14 @@ export default function RosterBuilderPage() {
           const linkedEntries = entries.filter(
             (e) => e.team && linkedDutyTypes.includes(String(e.duty_type))
           );
+          const linkedEntriesByDateTeam = new Map();
+          linkedEntries.forEach((linkedEntry) => {
+            const key = `${linkedEntry.date}|${linkedEntry.team}`;
+            if (!linkedEntriesByDateTeam.has(key)) {
+              linkedEntriesByDateTeam.set(key, []);
+            }
+            linkedEntriesByDateTeam.get(key).push(linkedEntry);
+          });
 
           linkedEntries.forEach((entry) => {
             const entryDate = new Date(entry.date);
@@ -382,17 +405,19 @@ export default function RosterBuilderPage() {
               checkDate.setDate(checkDate.getDate() + d);
               const checkDateStr = checkDate.toISOString().split('T')[0];
 
-              const conflictEntry = linkedEntries.find(
-                (e) =>
-                  e.id !== entry.id &&
-                  e.date === checkDateStr &&
-                  e.team === entry.team
-              );
+              const conflictEntries = linkedEntriesByDateTeam.get(`${checkDateStr}|${entry.team}`) || [];
+              let conflictEntry = null;
+              for (const candidate of conflictEntries) {
+                if (candidate.id !== entry.id) {
+                  conflictEntry = candidate;
+                  break;
+                }
+              }
               if (conflictEntry) {
                 const teamName = teamById.get(entry.team)?.name || 'Team';
                 // Find duty type names for clearer message
-                const entryDutyName = dutyTypes.find(dt => dt.id === entry.duty_type)?.name || 'duty';
-                const conflictDutyName = dutyTypes.find(dt => dt.id === conflictEntry.duty_type)?.name || 'duty';
+                const entryDutyName = dutyTypeById.get(entry.duty_type)?.name || 'duty';
+                const conflictDutyName = dutyTypeById.get(conflictEntry.duty_type)?.name || 'duty';
                 const conflictDateFormatted = format(new Date(conflictEntry.date), 'EEE d');
                 addViolation(entry, `${teamName} also assigned to ${conflictDutyName} on ${conflictDateFormatted}`);
               }

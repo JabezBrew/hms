@@ -305,10 +305,11 @@ export function useDischargeWorkflow(patientId, admissionId) {
   }, [totalSteps]);
 
   const completeWorkflow = useCallback(async () => {
+    const stepIndexById = new Map(steps.map((step, index) => [step.id, index]));
     for (const step of steps) {
       const validation = validateStep(step.id, formData[step.id] || {});
       if (!validation.valid) {
-        setCurrentStep(steps.findIndex((item) => item.id === step.id) + 1);
+        setCurrentStep((stepIndexById.get(step.id) || 0) + 1);
         setValidationErrors(validation.errors);
         return null;
       }

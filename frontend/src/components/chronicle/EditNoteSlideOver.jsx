@@ -82,7 +82,9 @@ const EditNoteSlideOver = ({ open, onOpenChange, entry, onSuccess }) => {
   return createPortal(
     <>
       {/* Backdrop */}
-      <div
+      <button
+        type="button"
+        aria-label="Close edit note"
         className="fixed inset-0 z-[99] bg-black/50 animate-in fade-in duration-200"
         onClick={handleClose}
       />

@@ -177,18 +177,29 @@ export default function InvoiceChronicleCard({ patientId, className }) {
         return (
           <div className="space-y-2 mb-3">
             {previewInvoices.map((invoice) => (
-              <div
-                key={invoice.id}
-                className={cn(
-                  "flex items-center justify-between text-sm rounded-lg p-2 -mx-2 transition-colors",
-                  canManageBilling ? "cursor-pointer hover:bg-muted/30" : "cursor-default"
-                )}
-                onClick={() => {
-                  if (canManageBilling) {
-                    navigate(`/billing/invoices/${invoice.id}`);
-                  }
-                }}
-              >
+              canManageBilling ? (
+                <button
+                  type="button"
+                  key={invoice.id}
+                  className="flex w-full items-center justify-between text-sm rounded-lg p-2 -mx-2 transition-colors text-left hover:bg-muted/30"
+                  onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="size-3.5 text-muted-foreground flex-shrink-0" />
+                    <span className="font-mono text-xs text-primary truncate">
+                      {invoice.invoice_number}
+                    </span>
+                    <StatusBadge status={invoice.status} />
+                  </div>
+                  <span className="font-mono text-xs text-foreground">
+                    {formatCurrency(invoice.status === 'paid' ? invoice.total_amount : invoice.balance_due)}
+                  </span>
+                </button>
+              ) : (
+                <div
+                  key={invoice.id}
+                  className="flex items-center justify-between text-sm rounded-lg p-2 -mx-2 transition-colors"
+                >
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText className="size-3.5 text-muted-foreground flex-shrink-0" />
                   <span className="font-mono text-xs text-primary truncate">
@@ -199,7 +210,8 @@ export default function InvoiceChronicleCard({ patientId, className }) {
                 <span className="font-mono text-xs text-foreground">
                   {formatCurrency(invoice.status === 'paid' ? invoice.total_amount : invoice.balance_due)}
                 </span>
-              </div>
+                </div>
+              )
             ))}
           </div>
         );

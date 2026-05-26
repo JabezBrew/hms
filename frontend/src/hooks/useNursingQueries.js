@@ -2231,13 +2231,12 @@ export const useBulkDispenseSupply = () => {
 
       if (isRustV2ApiMode()) {
         try {
-          const results = [];
-          for (const requestId of requestIds) {
+          const results = await Promise.all(requestIds.map(async (requestId) => {
             const response = await v2Api.postWardStockRequestFulfill({ id: requestId }, {
               signal,
             });
-            results.push(adaptV2WardStockRequest(response?.data));
-          }
+            return adaptV2WardStockRequest(response?.data);
+          }));
           return {
             dispensed_count: results.length,
             results,

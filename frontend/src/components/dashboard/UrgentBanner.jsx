@@ -86,15 +86,19 @@ export default function UrgentBanner({
 
       {/* Items list */}
       <div className="space-y-2">
-        {items.map((item, index) => (
-          <div
+        {items.map((item, index) => {
+          const ItemElement = onItemClick ? 'button' : 'div';
+
+          return (
+          <ItemElement
             key={item.id || index}
+            type={onItemClick ? 'button' : undefined}
             className={cn(
-              'flex items-center justify-between p-3 rounded-lg bg-card/50 border border-border',
+              'flex w-full items-center justify-between p-3 rounded-lg bg-card/50 border border-border text-left',
               'hover:bg-card/80 transition-colors',
               onItemClick && 'cursor-pointer'
             )}
-            onClick={() => onItemClick?.(item)}
+            onClick={onItemClick ? () => onItemClick(item) : undefined}
           >
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
@@ -123,8 +127,9 @@ export default function UrgentBanner({
                 {item.badge}
               </span>
             )}
-          </div>
-        ))}
+          </ItemElement>
+          );
+        })}
       </div>
     </div>
   );

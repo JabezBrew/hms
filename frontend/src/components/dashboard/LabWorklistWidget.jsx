@@ -114,15 +114,17 @@ export default function LabWorklistWidget({ className }) {
               {statusStats.map((stat) => {
                 const Icon = stat.icon;
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={stat.label}
+                    disabled={stat.count <= 0}
                     className={cn(
-                      'p-4 rounded-lg border transition-all',
+                      'p-4 rounded-lg border transition-all text-left disabled:cursor-default',
                       stat.bgColor,
                       stat.borderColor,
                       stat.count > 0 && 'hover:shadow-md cursor-pointer'
                     )}
-                    onClick={stat.count > 0 ? handleViewWorklist : undefined}
+                    onClick={handleViewWorklist}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <Icon className={cn('size-4', stat.iconColor)} />
@@ -136,7 +138,7 @@ export default function LabWorklistWidget({ className }) {
                       </p>
                       <p className="text-xs text-stone-600">{stat.description}</p>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

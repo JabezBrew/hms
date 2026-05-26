@@ -141,10 +141,7 @@ export default function CreateClinicalNotePage() {
         }
       ];
 
-      // Create each template
-      for (const template of nursingTemplates) {
-        await createNoteTemplate.mutateAsync(template);
-      }
+      await Promise.all(nursingTemplates.map((template) => createNoteTemplate.mutateAsync(template)));
 
       toast.success('Default nursing templates created successfully');
     } catch (error) {

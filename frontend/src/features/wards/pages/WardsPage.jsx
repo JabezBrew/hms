@@ -6,7 +6,7 @@ import Users from 'lucide-react/dist/esm/icons/users.js';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { getAuthJSON } from '@/lib/auth-storage';
@@ -34,7 +34,7 @@ import { useListFilters } from '@/shared/hooks/useListFilters';
 export default function WardsPage() {
   const navigate = useNavigate();
   const { search, updateSearch } = useListFilters();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin] = useState(() => getAuthJSON('user')?.role === 'admin');
 
   const {
     data: wards = [],
@@ -48,11 +48,6 @@ export default function WardsPage() {
     title: 'Wards | Hospital Management System',
     breadcrumbs: [{ label: 'Wards', path: '/wards' }],
   });
-
-  useEffect(() => {
-    const user = getAuthJSON('user');
-    setIsAdmin(user?.role === 'admin');
-  }, []);
 
   // Calculate aggregate statistics
   const stats = useMemo(() => {

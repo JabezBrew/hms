@@ -1192,8 +1192,12 @@ const NotePreview = ({ entry }) => {
         }
         // If no preview field found, get first string value
         if (!preview) {
-          const firstStringVal = Object.values(value).find(v => typeof v === 'string');
-          if (firstStringVal) preview = firstStringVal.slice(0, 120);
+          for (const fieldValue of Object.values(value)) {
+            if (typeof fieldValue === 'string') {
+              preview = fieldValue.slice(0, 120);
+              break;
+            }
+          }
         }
       }
 

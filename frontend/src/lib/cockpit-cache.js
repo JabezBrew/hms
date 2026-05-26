@@ -359,27 +359,29 @@ async function enforceStorageBudget(adapter, budgetBytes, now) {
   let totalBytes = 0
   const activeRecords = []
 
+  const expiredRecords = []
   for (const record of records) {
     if (record.expiresAt <= now) {
-      await adapter.deleteRecord(record.id)
+      expiredRecords.push(record)
     } else {
       totalBytes += record.sizeBytes || 0
       activeRecords.push(record)
     }
   }
+  const recordsToDelete = [...expiredRecords]
 
-  if (totalBytes <= budgetBytes) {
-    return
-  }
-
-  activeRecords.sort((left, right) => (left.accessedAt || 0) - (right.accessedAt || 0))
-  for (const record of activeRecords) {
-    await adapter.deleteRecord(record.id)
-    totalBytes -= record.sizeBytes || 0
-    if (totalBytes <= budgetBytes) {
-      break
+  if (totalBytes > budgetBytes) {
+    activeRecords.sort((left, right) => (left.accessedAt || 0) - (right.accessedAt || 0))
+    for (const record of activeRecords) {
+      recordsToDelete.push(record)
+      totalBytes -= record.sizeBytes || 0
+      if (totalBytes <= budgetBytes) {
+        break
+      }
     }
   }
+
+  await Promise.all(recordsToDelete.map((record) => adapter.deleteRecord(record.id)))
 }
 
 function safeReason(reason) {

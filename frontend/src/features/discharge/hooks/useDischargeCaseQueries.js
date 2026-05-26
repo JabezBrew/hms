@@ -15,7 +15,6 @@ export const dischargeKeys = {
 }
 
 function invalidateDischargeQueries(queryClient, caseId, patientId) {
-  queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
   queryClient.invalidateQueries({ queryKey: wardKeys.admissions() })
   if (caseId) {
     queryClient.invalidateQueries({ queryKey: dischargeKeys.detail(caseId) })
@@ -57,6 +56,7 @@ export function useUpdateBillingCutoff() {
   return useMutation({
     mutationFn: ({ caseId, billingCutoffAt }) => dischargeApi.updateBillingCutoff(caseId, billingCutoffAt),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, variables.caseId, data?.patient)
       toast.success('Billing cutoff updated')
     },
@@ -71,6 +71,7 @@ export function useClearBilling() {
   return useMutation({
     mutationFn: ({ caseId }) => dischargeApi.clearBilling(caseId),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, variables.caseId, data?.patient)
       toast.success('Billing cleared')
     },
@@ -85,6 +86,7 @@ export function useFinalizeDischargeCase() {
   return useMutation({
     mutationFn: ({ caseId, data }) => dischargeApi.finalizeCase(caseId, data),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, variables.caseId, data?.patient)
       toast.success('Discharge finalized')
     },
@@ -99,6 +101,7 @@ export function useCancelDischargeCase() {
   return useMutation({
     mutationFn: ({ caseId, reason }) => dischargeApi.cancelCase(caseId, reason),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, variables.caseId, data?.patient)
       toast.success('Discharge cancelled')
     },
@@ -113,6 +116,7 @@ export function useReopenDischargeCase() {
   return useMutation({
     mutationFn: ({ caseId }) => dischargeApi.reopenCase(caseId),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, variables.caseId, data?.patient)
       toast.success('Discharge reopened')
     },
@@ -127,6 +131,7 @@ export function useCompleteDischargeTask() {
   return useMutation({
     mutationFn: ({ taskId, notes }) => dischargeApi.completeTask(taskId, notes),
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, data?.id, data?.patient)
       toast.success('Task completed')
     },
@@ -141,6 +146,7 @@ export function useAcknowledgeDischargeTask() {
   return useMutation({
     mutationFn: ({ taskId, notes }) => dischargeApi.acknowledgeTask(taskId, notes),
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: dischargeKeys.all })
       invalidateDischargeQueries(queryClient, data?.id, data?.patient)
       toast.success('Task acknowledged')
     },

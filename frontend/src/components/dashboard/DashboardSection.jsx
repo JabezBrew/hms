@@ -28,12 +28,14 @@ export default function DashboardSection({
     <section className={cn('mb-6 sm:mb-8', className)}>
       {/* Section header */}
       <div className="flex items-start justify-between mb-4 sm:mb-6">
-        <div
+        <button
+          type="button"
+          disabled={!collapsible}
           className={cn(
-            'flex-1',
+            'flex-1 text-left disabled:cursor-default',
             collapsible && 'cursor-pointer'
           )}
-          onClick={() => collapsible && setIsCollapsed(!isCollapsed)}
+          onClick={() => setIsCollapsed(!isCollapsed)}
         >
           <h2 className="font-heading text-xl sm:text-2xl font-semibold text-foreground mb-1">
             {title}
@@ -43,7 +45,7 @@ export default function DashboardSection({
               {subtitle}
             </p>
           )}
-        </div>
+        </button>
 
         {/* Actions */}
         {actions && (

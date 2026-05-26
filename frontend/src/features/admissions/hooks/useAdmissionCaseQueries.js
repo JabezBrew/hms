@@ -15,7 +15,6 @@ export const admissionCaseKeys = {
 }
 
 function invalidateAdmissionCaseQueries(queryClient, caseId, patientId, admissionId) {
-  queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
   queryClient.invalidateQueries({ queryKey: wardKeys.all })
   if (caseId) {
     queryClient.invalidateQueries({ queryKey: admissionCaseKeys.detail(caseId) })
@@ -60,6 +59,7 @@ export function useClearRegistration() {
   return useMutation({
     mutationFn: ({ caseId, notes }) => admissionsApi.clearRegistration(caseId, notes),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, variables.caseId, data?.patient, data?.admission_id)
       toast.success('Registration cleared')
     },
@@ -74,6 +74,7 @@ export function useClearFinancial() {
   return useMutation({
     mutationFn: ({ caseId, notes }) => admissionsApi.clearFinancial(caseId, notes),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, variables.caseId, data?.patient, data?.admission_id)
       toast.success('Financial clearance recorded')
     },
@@ -88,6 +89,7 @@ export function useReserveAdmissionBed() {
   return useMutation({
     mutationFn: ({ caseId, data }) => admissionsApi.reserveBed(caseId, data),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, variables.caseId, data?.patient, data?.admission_id)
       toast.success('Bed reserved')
     },
@@ -102,6 +104,7 @@ export function useActivateAdmissionCase() {
   return useMutation({
     mutationFn: ({ caseId, data }) => admissionsApi.activateCase(caseId, data),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, variables.caseId, data?.patient, data?.admission_id)
       toast.success('Patient admitted to ward')
     },
@@ -116,6 +119,7 @@ export function useCompleteAdmissionIntake() {
   return useMutation({
     mutationFn: ({ caseId }) => admissionsApi.completeIntake(caseId),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, variables.caseId, data?.patient, data?.admission_id)
       toast.success('Admission intake completed')
     },
@@ -130,6 +134,7 @@ export function useCancelAdmissionCase() {
   return useMutation({
     mutationFn: ({ caseId, notes }) => admissionsApi.cancelCase(caseId, notes),
     onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, variables.caseId, data?.patient, data?.admission_id)
       toast.success('Admission case cancelled')
     },
@@ -144,6 +149,7 @@ export function useCompleteAdmissionTask() {
   return useMutation({
     mutationFn: ({ taskId, notes }) => admissionsApi.completeTask(taskId, notes),
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, data?.id, data?.patient, data?.admission_id)
       toast.success('Task completed')
     },
@@ -158,6 +164,7 @@ export function useAcknowledgeAdmissionTask() {
   return useMutation({
     mutationFn: ({ taskId, notes }) => admissionsApi.acknowledgeTask(taskId, notes),
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: admissionCaseKeys.all })
       invalidateAdmissionCaseQueries(queryClient, data?.id, data?.patient, data?.admission_id)
       toast.success('Task acknowledged')
     },

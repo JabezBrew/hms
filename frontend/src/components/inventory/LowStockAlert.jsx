@@ -108,9 +108,10 @@ export function LowStockAlert({
       </CardHeader>
       <CardContent className="space-y-1">
         {displayItems.map((item) => (
-          <div
+          <button
+            type="button"
             key={item.id}
-            className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+            className="flex w-full items-center justify-between p-2 -mx-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors text-left"
             onClick={() => handleItemClick(item.id)}
           >
             <div className="min-w-0 flex-1">
@@ -129,7 +130,7 @@ export function LowStockAlert({
               reorderLevel={item.reorder_level}
               showQuantity={true}
             />
-          </div>
+          </button>
         ))}
         {items.length > limit && (
           <Button

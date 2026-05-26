@@ -118,10 +118,11 @@ export function ExpiringItemsWidget({
           const isExpired = daysLeft < 0;
 
           return (
-            <div
+            <button
+              type="button"
               key={item.id || index}
               className={cn(
-                'flex items-center justify-between py-2 px-2 -mx-2 rounded-lg cursor-pointer transition-colors',
+                'flex w-full items-center justify-between py-2 px-2 -mx-2 rounded-lg cursor-pointer transition-colors text-left',
                 isExpired ? 'bg-rose-500/10 hover:bg-rose-500/20' :
                 isUrgent ? 'hover:bg-rose-500/10' : 'hover:bg-muted/50'
               )}
@@ -146,7 +147,7 @@ export function ExpiringItemsWidget({
                   {format(parseISO(item.expiry_date), 'MMM d, yyyy')}
                 </span>
               </div>
-            </div>
+            </button>
           );
         })}
         {items.length > limit && (

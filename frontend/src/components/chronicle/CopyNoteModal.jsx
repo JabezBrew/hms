@@ -208,16 +208,16 @@ const CopyNoteModal = ({
                       className={cn(
                         "relative p-3 rounded-lg border transition-all",
                         hasData
-                          ? "cursor-pointer hover:border-primary/50"
+                          ? "hover:border-primary/50"
                           : "opacity-50 cursor-not-allowed",
                         isSelected
                           ? "border-primary bg-primary/5"
                           : "border-border bg-card/50"
                       )}
-                      onClick={() => hasData && toggleSection(section.name)}
                     >
                       <div className="flex items-start gap-3">
                         <Checkbox
+                          id={`copy-section-${section.name}`}
                           checked={isSelected}
                           disabled={!hasData}
                           className="mt-0.5"
@@ -226,6 +226,7 @@ const CopyNoteModal = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <Label
+                              htmlFor={`copy-section-${section.name}`}
                               className={cn(
                                 "font-medium text-sm cursor-pointer",
                                 !hasData && "text-muted-foreground"

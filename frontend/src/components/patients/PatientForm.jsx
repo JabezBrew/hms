@@ -537,10 +537,16 @@ const PatientForm = ({ patient, onSuccess }) => {
       emergency_contact_relationship: 'contact',
     };
     const errorFields = Object.keys(errors);
+    const firstErrorByStep = new Map();
+    for (const field of errorFields) {
+      const step = fieldToStep[field];
+      if (step && !firstErrorByStep.has(step)) {
+        firstErrorByStep.set(step, field);
+      }
+    }
     for (const step of order) {
-      const has = errorFields.some((f) => fieldToStep[f] === step);
-      if (has) {
-        const firstField = errorFields.find((f) => fieldToStep[f] === step);
+      const firstField = firstErrorByStep.get(step);
+      if (firstField) {
         goToStep(step, firstField);
         return;
       }
@@ -748,7 +754,6 @@ const PatientForm = ({ patient, onSuccess }) => {
     for (const k of stepKeys) {
       // Validate sequentially to avoid overlapping `form.trigger()` calls.
       // The first failing step will set field errors and we can route the user there.
-      // eslint-disable-next-line no-await-in-loop
       const ok = await validateStep(k);
       if (!ok) {
         goToFirstErrorStep();
