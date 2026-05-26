@@ -11,7 +11,7 @@ import Beaker from 'lucide-react/dist/esm/icons/beaker.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,12 +76,17 @@ const LabTechnicianDashboard = () => {
   const [specimenBarcode, setSpecimenBarcode] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
 
-  useEffect(() => {
+  const resetWorklistPages = () => {
     setOrderedPage(1);
     setCollectedPage(1);
     setProcessingPage(1);
     setVerifyPage(1);
-  }, [debouncedSearchQuery]);
+  };
+
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
+    resetWorklistPages();
+  };
 
   // API queries - Full lab workflow in one worklist: ordered → collected → processing
   // Include expand=tests to get full order_tests array with test details.
@@ -357,7 +362,7 @@ const LabTechnicianDashboard = () => {
           id="lab-search"
           placeholder="Search by patient name, MRN, or order number..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={handleSearchChange}
           className="pl-11 h-11 bg-card/50 border-border font-mono text-sm placeholder:text-muted-foreground"
         />
       </div>

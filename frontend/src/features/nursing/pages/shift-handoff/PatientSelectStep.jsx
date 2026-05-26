@@ -2,7 +2,6 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import User from 'lucide-react/dist/esm/icons/user.js';
 import Bed from 'lucide-react/dist/esm/icons/bed.js';
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
-import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

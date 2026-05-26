@@ -8,7 +8,6 @@ import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from '@/components/ui/search-bar';
 import format from 'date-fns/format';
-import { useDebounce } from '@/hooks/use-debounce';
 import DoctorAvailabilityCalendar from '@/components/appointments/DoctorAvailabilityCalendar';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -103,21 +102,15 @@ export function EncounterForm({ isEditing = false }) {
   const createEncounterMutation = useCreateEncounter();
   const updateEncounterMutation = useUpdateEncounter();
 
-  // Search state for patients
-  const [patientSearchQuery, setPatientSearchQuery] = useState("");
   const {
     data: patients = [],
     isLoading: isLoadingPatients,
-    searchTerm: patientSearchTerm,
     setSearchTerm: setPatientSearchTerm
   } = useSearchPatientsForEncounter();
 
-  // Search state for practitioners
-  const [practitionerSearchQuery, setPractitionerSearchQuery] = useState("");
   const {
     data: practitioners = [],
     isLoading: isLoadingPractitioners,
-    searchTerm: practitionerSearchTerm,
     setSearchTerm: setPractitionerSearchTerm
   } = useSearchPractitioners();
 
@@ -159,16 +152,15 @@ export function EncounterForm({ isEditing = false }) {
         admission_source: encounterData.admission_source || '',
       });
 
-      // Set patient and practitioner search queries to display names
       if (encounterData.patient_name) {
-        setPatientSearchQuery(encounterData.patient_name);
+        setPatientSearchTerm(encounterData.patient_name);
       }
 
       if (encounterData.practitioner_name) {
-        setPractitionerSearchQuery(encounterData.practitioner_name);
+        setPractitionerSearchTerm(encounterData.practitioner_name);
       }
     }
-  }, [isEditing, encounterData, form]);
+  }, [isEditing, encounterData, form, setPatientSearchTerm, setPractitionerSearchTerm]);
 
   // Set error state if encounter query fails
   useEffect(() => {
@@ -177,25 +169,6 @@ export function EncounterForm({ isEditing = false }) {
       console.error('Error loading encounter:', encounterError);
     }
   }, [isEncounterError, encounterError]);
-
-  // Update search terms when search queries change
-  useEffect(() => {
-    if (patientSearchQuery && patientSearchQuery.length >= 2) {
-      setPatientSearchTerm(patientSearchQuery);
-    } else if (isEditing && encounterData?.patient_name && patientSearchQuery === encounterData.patient_name) {
-      // In edit mode, trigger search with patient name to populate options
-      setPatientSearchTerm(encounterData.patient_name);
-    }
-  }, [patientSearchQuery, setPatientSearchTerm, isEditing, encounterData?.patient_name]);
-
-  useEffect(() => {
-    if (practitionerSearchQuery && practitionerSearchQuery.length >= 2) {
-      setPractitionerSearchTerm(practitionerSearchQuery);
-    } else if (isEditing && encounterData?.practitioner_name && practitionerSearchQuery === encounterData.practitioner_name) {
-      // In edit mode, trigger search with practitioner name to populate options
-      setPractitionerSearchTerm(encounterData.practitioner_name);
-    }
-  }, [practitionerSearchQuery, setPractitionerSearchTerm, isEditing, encounterData?.practitioner_name]);
 
   // Handle form submission
   const onSubmit = (data) => {
@@ -371,7 +344,7 @@ export function EncounterForm({ isEditing = false }) {
                         options={patientOptions}
                         value={field.value}
                         onChange={field.onChange}
-                        onInputChange={setPatientSearchQuery}
+                        onInputChange={setPatientSearchTerm}
                         placeholder="Search for a patient..."
                         emptyMessage={isLoadingPatients ? "Searching..." : "No patients found."}
                         searchPlaceholder="Search by name, MRN, or NHIS ID..."
@@ -466,7 +439,7 @@ export function EncounterForm({ isEditing = false }) {
                           options={practitionerOptions}
                           value={field.value}
                           onChange={field.onChange}
-                          onInputChange={setPractitionerSearchQuery}
+                          onInputChange={setPractitionerSearchTerm}
                           placeholder="Search for a practitioner..."
                           emptyMessage={isLoadingPractitioners ? "Searching..." : "No practitioners found."}
                           searchPlaceholder="Search by name, employee ID, or license number..."

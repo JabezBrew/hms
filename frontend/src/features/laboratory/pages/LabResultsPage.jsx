@@ -13,7 +13,7 @@ import Package from 'lucide-react/dist/esm/icons/package.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronUp from 'lucide-react/dist/esm/icons/chevron-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -139,10 +139,6 @@ export default function LabResultsPage() {
 
     return filters;
   }, [verificationFilter, activeTab, debouncedSearchQuery, page]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearchQuery, verificationFilter, activeTab]);
 
   // Fetch results
   const { data: resultsData, isLoading, isFetching, refetch } = usePaginatedLabResults(queryFilters);
@@ -598,6 +594,21 @@ export default function LabResultsPage() {
   };
 
   // Handle clear filters
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    setPage(1);
+  };
+
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
+    setPage(1);
+  };
+
+  const handleVerificationFilterChange = (value) => {
+    setVerificationFilter(value);
+    setPage(1);
+  };
+
   const handleClearFilters = () => {
     setSearchQuery("");
     setVerificationFilter("all");
@@ -649,7 +660,7 @@ export default function LabResultsPage() {
       </PageHeader>
 
       <LabToolbar className="py-3">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="h-auto bg-muted/50 p-1">
             <TabsTrigger
               value="all"
@@ -679,13 +690,13 @@ export default function LabResultsPage() {
             id="lab-results-search"
             placeholder="Search by patient name, MRN, order number, or test..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
           />
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Select
               value={verificationFilter}
-              onValueChange={setVerificationFilter}
+              onValueChange={handleVerificationFilterChange}
             >
               <SelectTrigger className="w-full font-mono text-sm sm:w-[180px]">
                 <SelectValue placeholder="Verification" />

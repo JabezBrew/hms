@@ -4,7 +4,7 @@ import CheckCircle2 from 'lucide-react/dist/esm/icons/circle-check.js';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
 import UserRound from 'lucide-react/dist/esm/icons/user-round.js';
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import format from 'date-fns/format';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -76,10 +76,6 @@ export default function LabOrdersPage() {
     const data = practitionersData?.results || practitionersData || [];
     return Array.isArray(data) ? data : [];
   }, [practitionersData]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearchQuery, statusFilter, priorityFilter, selectedDoctorFilter]);
 
   // Build query filters
   const queryFilters = useMemo(() => {
@@ -163,6 +159,26 @@ export default function LabOrdersPage() {
   ]), [stats]);
 
   // Event handlers
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
+    setPage(1);
+  };
+
+  const handleStatusFilterChange = (value) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
+
+  const handlePriorityFilterChange = (value) => {
+    setPriorityFilter(value);
+    setPage(1);
+  };
+
+  const handleDoctorFilterChange = (value) => {
+    setSelectedDoctorFilter(value);
+    setPage(1);
+  };
+
   const handleClearFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
@@ -376,12 +392,12 @@ export default function LabOrdersPage() {
             id="lab-orders-search"
             placeholder="Search by order number, patient name, or MRN..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
           />
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {isLabStaff && (
-              <Select value={selectedDoctorFilter} onValueChange={setSelectedDoctorFilter}>
+              <Select value={selectedDoctorFilter} onValueChange={handleDoctorFilterChange}>
                 <SelectTrigger className="w-full font-mono text-sm sm:w-[200px]">
                   <div className="flex items-center gap-2">
                     <UserRound className="size-4 text-muted-foreground" />
@@ -399,7 +415,7 @@ export default function LabOrdersPage() {
               </Select>
             )}
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
               <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -412,7 +428,7 @@ export default function LabOrdersPage() {
               </SelectContent>
             </Select>
 
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <Select value={priorityFilter} onValueChange={handlePriorityFilterChange}>
               <SelectTrigger className="w-full font-mono text-sm sm:w-[160px]">
                 <SelectValue placeholder="Priority" />
               </SelectTrigger>

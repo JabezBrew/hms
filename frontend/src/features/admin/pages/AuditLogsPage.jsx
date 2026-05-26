@@ -65,12 +65,6 @@ const AuditLogsPage = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Handle date range change - only called when both dates are selected or both cleared
-  const handleDateRangeChange = ({ from, to }) => {
-    setDateFrom(from);
-    setDateTo(to);
-  };
-
   // Build filters object
   const filters = useMemo(() => {
     const f = {};
@@ -110,12 +104,28 @@ const AuditLogsPage = () => {
   const totalCount = logsData?.count || allLogs.length;
   const pageSize = 35;
 
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filters]);
-
   // Handlers
+  const handleSearchChange = (event) => {
+    updateSearch(event.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleCategoryChange = (value) => {
+    setSelectedCategory(value);
+    setCurrentPage(1);
+  };
+
+  const handleActionChange = (value) => {
+    setSelectedAction(value);
+    setCurrentPage(1);
+  };
+
+  const handleDateRangeChange = ({ from, to }) => {
+    setDateFrom(from);
+    setDateTo(to);
+    setCurrentPage(1);
+  };
+
   const handleClearFilters = () => {
     updateSearch('');
     setSelectedCategory('all');
@@ -126,8 +136,8 @@ const AuditLogsPage = () => {
     setCurrentPage(1);
   };
 
-  const handleSortChange = (newSort) => {
-    setSortBy(newSort);
+  const handleSortChange = (nextSort) => {
+    setSortBy(nextSort);
     setCurrentPage(1);
   };
 
@@ -221,7 +231,7 @@ const AuditLogsPage = () => {
                 id="audit-search"
                 placeholder="Search logs by description, user, or resource..."
                 value={searchQuery}
-                onChange={(e) => updateSearch(e.target.value)}
+                onChange={handleSearchChange}
                 className="pl-10 font-mono text-sm bg-background"
               />
             </div>
@@ -229,7 +239,7 @@ const AuditLogsPage = () => {
             {/* Filters Row */}
             <div className="flex flex-wrap items-center gap-2">
               {/* Category Filter */}
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <Select value={selectedCategory} onValueChange={handleCategoryChange}>
                 <SelectTrigger className="w-full sm:w-[150px] font-mono text-xs h-9">
                   <Filter className="size-3.5 mr-2" />
                   <SelectValue placeholder="Category" />
@@ -245,7 +255,7 @@ const AuditLogsPage = () => {
               </Select>
 
               {/* Action Filter */}
-              <Select value={selectedAction} onValueChange={setSelectedAction}>
+              <Select value={selectedAction} onValueChange={handleActionChange}>
                 <SelectTrigger className="w-full sm:w-[150px] font-mono text-xs h-9">
                   <Activity className="size-3.5 mr-2" />
                   <SelectValue placeholder="Action" />

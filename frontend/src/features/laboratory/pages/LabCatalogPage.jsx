@@ -4,7 +4,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import FlaskConical from 'lucide-react/dist/esm/icons/flask-conical.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -139,10 +139,6 @@ const LabCatalogPage = () => {
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
-
-  useEffect(() => {
-    setPage(1);
-  }, [activeTab, debouncedSearchQuery, categoryFilter, statusFilter]);
 
   const catalogFilters = useMemo(() => {
     const filters = {
@@ -309,6 +305,26 @@ const LabCatalogPage = () => {
   };
 
   // Clear filters
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    setPage(1);
+  };
+
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
+    setPage(1);
+  };
+
+  const handleCategoryFilterChange = (value) => {
+    setCategoryFilter(value);
+    setPage(1);
+  };
+
+  const handleStatusFilterChange = (value) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
+
   const clearFilters = () => {
     setSearchQuery("");
     setCategoryFilter("all");
@@ -628,7 +644,7 @@ const LabCatalogPage = () => {
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <LabToolbar className="py-3">
           <TabsList className="h-auto bg-muted/50 p-1">
             <TabsTrigger value="tests" className="font-mono text-xs">
@@ -648,11 +664,11 @@ const LabCatalogPage = () => {
               id="lab-catalog-search"
               placeholder="Search by name, code, or description..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchChange}
             />
 
             {activeTab === "tests" && (
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <Select value={categoryFilter} onValueChange={handleCategoryFilterChange}>
                 <SelectTrigger className="w-full sm:w-[180px] font-mono text-sm">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
@@ -666,7 +682,7 @@ const LabCatalogPage = () => {
               </Select>
             )}
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
               <SelectTrigger className="w-full sm:w-[160px] font-mono text-sm">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>

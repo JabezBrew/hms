@@ -29,15 +29,36 @@ export function DateRangePicker({
   pickerClassName = "w-[130px] font-mono text-xs",
   separator = "to",
 }) {
+  const draftKey = `${from?.getTime?.() ?? "none"}:${to?.getTime?.() ?? "none"}`;
+
+  return (
+    <DateRangePickerDraft
+      key={draftKey}
+      from={from}
+      to={to}
+      onChange={onChange}
+      fromPlaceholder={fromPlaceholder}
+      toPlaceholder={toPlaceholder}
+      className={className}
+      pickerClassName={pickerClassName}
+      separator={separator}
+    />
+  );
+}
+
+function DateRangePickerDraft({
+  from,
+  to,
+  onChange,
+  fromPlaceholder,
+  toPlaceholder,
+  className,
+  pickerClassName,
+  separator,
+}) {
   // Internal state for pending selections
   const [pendingFrom, setPendingFrom] = React.useState(from);
   const [pendingTo, setPendingTo] = React.useState(to);
-
-  // Sync internal state with props when they change externally
-  React.useEffect(() => {
-    setPendingFrom(from);
-    setPendingTo(to);
-  }, [from, to]);
 
   const handleFromChange = (date) => {
     setPendingFrom(date);
