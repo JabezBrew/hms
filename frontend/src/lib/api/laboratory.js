@@ -233,7 +233,10 @@ function pickEntityId(value) {
 
 function pickEntityIds(value) {
   const items = Array.isArray(value) ? value : [];
-  return items.map(pickEntityId).filter(Boolean);
+  return items.flatMap((item) => {
+    const id = pickEntityId(item);
+    return id ? [id] : [];
+  });
 }
 
 function rustV2Unsupported(contractName) {

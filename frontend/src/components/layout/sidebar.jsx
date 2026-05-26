@@ -635,7 +635,10 @@ function resolveItem(entry, context) {
 
   const href = resolveHref(entry.href, context)
   const children = Array.isArray(entry.children)
-    ? entry.children.map((child) => resolveItem(child, context)).filter(Boolean)
+    ? entry.children.flatMap((child) => {
+      const resolvedChild = resolveItem(child, context)
+      return resolvedChild ? [resolvedChild] : []
+    })
     : null
 
   if (entry.children && children.length === 0) {
@@ -693,7 +696,10 @@ export function resolveSidebarSections({ sidebar, user, enabledFeatures, inboxCo
   const resolvedSections = baseSections
     .map((currentSection) => ({
       ...currentSection,
-      items: currentSection.items.map((currentItem) => resolveItem(currentItem, context)).filter(Boolean),
+      items: currentSection.items.flatMap((currentItem) => {
+        const resolvedItem = resolveItem(currentItem, context)
+        return resolvedItem ? [resolvedItem] : []
+      }),
     }))
     .filter((currentSection) => currentSection.items.length > 0)
 
@@ -704,7 +710,10 @@ export function resolveSidebarSections({ sidebar, user, enabledFeatures, inboxCo
   const shortcutSection = {
     key: 'shortcuts',
     label: 'Shortcuts',
-    items: shortcutItems.map((currentItem) => resolveItem(currentItem, context)).filter(Boolean),
+    items: shortcutItems.flatMap((currentItem) => {
+      const resolvedItem = resolveItem(currentItem, context)
+      return resolvedItem ? [resolvedItem] : []
+    }),
   }
 
   return dedupeSections([...resolvedSections, shortcutSection])

@@ -124,7 +124,7 @@ export function OccupancyTrendsPanel({ occupancyData, utilizationData, wards, se
                 </TableHeader>
                 <TableBody>
                   {wards.map(ward => {
-                    const wardData = occupancyData.map(d => d[ward.name]).filter(Boolean);
+                    const wardData = occupancyData.flatMap((d) => (d[ward.name] ? [d[ward.name]] : []));
                     const min = wardData.length > 0 ? Math.min(...wardData) : 0;
                     const max = wardData.length > 0 ? Math.max(...wardData) : 0;
                     const avg = wardData.length > 0 ? wardData.reduce((sum, val) => sum + val, 0) / wardData.length : 0;
@@ -141,10 +141,10 @@ export function OccupancyTrendsPanel({ occupancyData, utilizationData, wards, se
                   <TableRow>
                     <TableCell className="font-medium">Overall</TableCell>
                     <TableCell>
-                      {occupancyData.length > 0 ? Math.min(...occupancyData.map(d => d['Overall']).filter(Boolean)).toFixed(1) : '0.0'}%
+                      {occupancyData.length > 0 ? Math.min(...occupancyData.flatMap((d) => (d['Overall'] ? [d['Overall']] : []))).toFixed(1) : '0.0'}%
                     </TableCell>
                     <TableCell>
-                      {occupancyData.length > 0 ? Math.max(...occupancyData.map(d => d['Overall']).filter(Boolean)).toFixed(1) : '0.0'}%
+                      {occupancyData.length > 0 ? Math.max(...occupancyData.flatMap((d) => (d['Overall'] ? [d['Overall']] : []))).toFixed(1) : '0.0'}%
                     </TableCell>
                     <TableCell>
                       {occupancyData.length > 0 ? (occupancyData.reduce((sum, d) => sum + (d['Overall'] || 0), 0) / occupancyData.length).toFixed(1) : '0.0'}%

@@ -6,7 +6,10 @@ function normalizeHostname(value) {
 
 function normalizeHostList(value) {
   if (Array.isArray(value)) {
-    return value.map(normalizeHostname).filter(Boolean)
+    return value.flatMap((host) => {
+      const normalizedHost = normalizeHostname(host)
+      return normalizedHost ? [normalizedHost] : []
+    })
   }
 
   const normalized = String(value || '').trim()
@@ -16,8 +19,10 @@ function normalizeHostList(value) {
 
   return normalized
     .split(',')
-    .map(normalizeHostname)
-    .filter(Boolean)
+    .flatMap((host) => {
+      const normalizedHost = normalizeHostname(host)
+      return normalizedHost ? [normalizedHost] : []
+    })
 }
 
 function configuredOpsHosts() {

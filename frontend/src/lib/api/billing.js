@@ -251,7 +251,7 @@ async function getV2ServicesPage(params = {}, options = {}) {
 
 function v2ServiceCategoriesPage(catalogResponse, params = {}) {
   const search = String(params.search || '').trim().toLowerCase();
-  const categories = Array.from(new Set(v2List(catalogResponse).map((item) => item.service_kind).filter(Boolean)))
+  const categories = Array.from(new Set(v2List(catalogResponse).flatMap((item) => (item.service_kind ? [item.service_kind] : []))))
     .map((serviceKind) => ({
       id: serviceKind,
       name: titleCase(serviceKind) || 'Other',

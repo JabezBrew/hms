@@ -143,7 +143,10 @@ function adaptChronicleStartup(response) {
   const activeEncounter = adaptEncounter(data.active_context?.encounter || data.active_encounter)
   const activeAdmission = adaptAdmission(data.active_context?.admission || data.active_admission)
   const encounters = Array.isArray(data.encounters)
-    ? data.encounters.map(adaptEncounter).filter(Boolean)
+    ? data.encounters.flatMap((encounter) => {
+      const adaptedEncounter = adaptEncounter(encounter)
+      return adaptedEncounter ? [adaptedEncounter] : []
+    })
     : activeEncounter
       ? [activeEncounter]
       : []

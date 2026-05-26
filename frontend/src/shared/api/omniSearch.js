@@ -39,8 +39,10 @@ function normalizeTypes(types) {
     referral: 'referrals',
   }
   return types
-    .map((type) => String(type || '').trim().toLowerCase())
-    .filter(Boolean)
+    .flatMap((type) => {
+      const normalizedType = String(type || '').trim().toLowerCase()
+      return normalizedType ? [normalizedType] : []
+    })
     .map((type) => aliases[type] || type)
 }
 

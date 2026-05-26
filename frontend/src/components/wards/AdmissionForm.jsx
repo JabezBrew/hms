@@ -198,7 +198,7 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
   };
 
   // Format patient options for SearchBar
-  const patientOptions = Array.isArray(patients) ? patients.map(patient => {
+  const patientOptions = Array.isArray(patients) ? patients.flatMap(patient => {
     let name = "Unknown Patient";
     let id = "";
 
@@ -230,14 +230,14 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
     }
 
     // Only return options with valid IDs (check for null, undefined, empty string, or 0)
-    return (id && id !== '' && id !== 0) ? {
+    return (id && id !== '' && id !== 0) ? [{
       label: name,
       value: id
-    } : null;
-  }).filter(Boolean) : []; // Filter out null values
+    }] : [];
+  }) : []; // Filter out null values
 
   // Format practitioner options for SearchBar
-  const practitionerOptions = Array.isArray(practitioners) ? practitioners.map(practitioner => {
+  const practitionerOptions = Array.isArray(practitioners) ? practitioners.flatMap(practitioner => {
     let displayName = 'Unknown Practitioner';
     let id = null;
 
@@ -249,7 +249,7 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
     }
 
     // Skip if no valid ID (check for null, undefined, empty string, or 0)
-    if (!id || id === '' || id === 0) return null;
+    if (!id || id === '' || id === 0) return [];
 
     // Get display name from various possible structures
     if (practitioner.fhir_resource?.name?.[0]) {
@@ -273,11 +273,11 @@ export function AdmissionForm({ wardId = null, wardData = null }) {
       displayName = `${practitioner.user.full_name} - ${practitioner.specialization || 'Doctor'}`;
     }
 
-    return {
+    return [{
       label: displayName,
       value: id
-    };
-  }).filter(Boolean) : []; // Filter out null values
+    }];
+  }) : []; // Filter out null values
 
   return (
     <form onSubmit={handleSubmit}>

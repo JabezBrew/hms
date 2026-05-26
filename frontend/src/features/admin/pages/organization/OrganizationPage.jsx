@@ -473,7 +473,10 @@ export default function OrganizationPage() {
         node.code?.toLowerCase().includes(searchLower);
 
       const filteredChildren = node.children
-        ? node.children.map(filterNode).filter(Boolean)
+        ? node.children.flatMap((child) => {
+          const filteredChild = filterNode(child);
+          return filteredChild ? [filteredChild] : [];
+        })
         : [];
 
       if (matches || filteredChildren.length > 0) {
@@ -482,7 +485,10 @@ export default function OrganizationPage() {
       return null;
     };
 
-    return tree.map(filterNode).filter(Boolean);
+    return tree.flatMap((node) => {
+      const filteredNode = filterNode(node);
+      return filteredNode ? [filteredNode] : [];
+    });
   }, [tree, searchQuery]);
 
   // Expand all when searching

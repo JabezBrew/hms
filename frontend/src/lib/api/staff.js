@@ -171,7 +171,10 @@ function staffMatchesFilters(staff, filters = {}) {
     const requested = Array.isArray(filters.userTypes)
       ? filters.userTypes
       : String(filters.userTypes).split(',');
-    const normalized = requested.map((value) => String(value).trim().toLowerCase()).filter(Boolean);
+    const normalized = requested.flatMap((value) => {
+      const normalizedValue = String(value).trim().toLowerCase();
+      return normalizedValue ? [normalizedValue] : [];
+    });
     if (normalized.length > 0 && !normalized.includes(String(staff.user_type || '').toLowerCase())) {
       return false;
     }

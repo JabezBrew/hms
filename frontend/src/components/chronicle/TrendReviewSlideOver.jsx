@@ -141,15 +141,15 @@ export default function TrendReviewSlideOver({
 
   const formattedVitals = useMemo(() => (
     vitalsData
-      .map((entry) => {
+      .flatMap((entry) => {
         const recordedAt = entry.recorded_at ? new Date(entry.recorded_at) : null;
         const timestamp = recordedAt ? recordedAt.getTime() : Number.NaN;
 
         if (!Number.isFinite(timestamp)) {
-          return null;
+          return [];
         }
 
-        return {
+        return [{
           timestamp,
           time: format(recordedAt, 'HH:mm'),
           date: format(recordedAt, 'MMM d'),
@@ -160,9 +160,8 @@ export default function TrendReviewSlideOver({
           respiratoryRate: entry.respiratory_rate == null ? null : Number(entry.respiratory_rate),
           oxygenSaturation: entry.oxygen_saturation == null ? null : Number(entry.oxygen_saturation),
           painLevel: entry.pain_level == null ? null : Number(entry.pain_level),
-        };
+        }];
       })
-      .filter(Boolean)
       .sort((left, right) => left.timestamp - right.timestamp)
   ), [vitalsData]);
 
@@ -170,22 +169,21 @@ export default function TrendReviewSlideOver({
 
   const formattedFluidTrendData = useMemo(() => (
     fluidTrendData
-      .map((point) => {
+      .flatMap((point) => {
         const parsedDate = typeof point.date === 'string' ? parseISO(point.date) : new Date(point.date);
         const timestamp = parsedDate?.getTime?.() ?? Number.NaN;
 
         if (!Number.isFinite(timestamp)) {
-          return null;
+          return [];
         }
 
-        return {
+        return [{
           ...point,
           timestamp,
           dateLabel: format(parsedDate, 'MMM d'),
           fullDateLabel: format(parsedDate, 'MMM d, yyyy'),
-        };
+        }];
       })
-      .filter(Boolean)
       .sort((left, right) => left.timestamp - right.timestamp)
   ), [fluidTrendData]);
 

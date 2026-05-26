@@ -142,7 +142,10 @@ export function stringifyStepValue(value) {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value.trim()
   if (Array.isArray(value)) {
-    return value.map((item) => stringifyStepValue(item)).filter(Boolean).join('; ')
+    return value.flatMap((item) => {
+      const text = stringifyStepValue(item)
+      return text ? [text] : []
+    }).join('; ')
   }
   if (typeof value === 'object') {
     const lines = []

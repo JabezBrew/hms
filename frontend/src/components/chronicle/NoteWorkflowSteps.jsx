@@ -92,7 +92,10 @@ const extractAllergies = (patient) => {
   const localAllergies = patient?.local_data?.allergies;
   if (localAllergies) {
     if (typeof localAllergies === 'string') {
-      return localAllergies.split(',').map(a => a.trim()).filter(Boolean);
+      return localAllergies.split(',').flatMap((allergy) => {
+        const trimmed = allergy.trim();
+        return trimmed ? [trimmed] : [];
+      });
     }
     return localAllergies;
   }

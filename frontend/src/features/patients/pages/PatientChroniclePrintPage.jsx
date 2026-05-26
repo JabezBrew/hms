@@ -219,8 +219,10 @@ function compactValue(value) {
 function uniqueValues(values) {
   const seen = new Set();
   return values
-    .map((value) => compactValue(value))
-    .filter(Boolean)
+    .flatMap((value) => {
+      const compacted = compactValue(value);
+      return compacted ? [compacted] : [];
+    })
     .filter((value) => {
       const normalized = value.toLowerCase();
       if (seen.has(normalized)) return false;

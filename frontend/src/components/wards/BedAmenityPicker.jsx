@@ -95,8 +95,10 @@ export function BedAmenityPicker({
 
   const selectedCount = selectedAmenities.length;
   const selectedAmenitiesDetails = selectedAmenities
-    .map(id => getAmenityById(id))
-    .filter(Boolean);
+    .flatMap((id) => {
+      const amenity = getAmenityById(id);
+      return amenity ? [amenity] : [];
+    });
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
@@ -235,8 +237,10 @@ export function AmenityBadges({ amenityCodes = [], className }) {
   const { data: amenities = [] } = useAmenities({ is_active: true });
 
   const amenityDetails = amenityCodes
-    .map(code => amenities.find(a => a.code === code))
-    .filter(Boolean);
+    .flatMap((code) => {
+      const amenity = amenities.find(a => a.code === code);
+      return amenity ? [amenity] : [];
+    });
 
   if (amenityDetails.length === 0) return null;
 

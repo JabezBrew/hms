@@ -208,7 +208,10 @@ const PatientIdentityHero = ({
     if (localAllergies) {
       // If it's a string, convert to array
       if (typeof localAllergies === 'string') {
-        return localAllergies.split(',').map(a => a.trim()).filter(Boolean);
+        return localAllergies.split(',').flatMap((allergy) => {
+          const trimmed = allergy.trim();
+          return trimmed ? [trimmed] : [];
+        });
       }
       return localAllergies;
     }

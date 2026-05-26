@@ -160,7 +160,7 @@ const LabOrderForm = ({ open, onClose, patient, encounter, onOrderCreated }) => 
 
   // Get test categories for the category filter buttons
   const categories = tests.length > 0
-    ? [...new Set(tests.map((test) => test.category).filter(Boolean))]
+    ? [...new Set(tests.flatMap((test) => (test.category ? [test.category] : [])))]
     : [];
 
   // Check if we have search results to show combined view

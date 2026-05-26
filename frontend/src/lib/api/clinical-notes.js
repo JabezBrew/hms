@@ -480,7 +480,7 @@ export const clinicalNotesApi = {
     try {
       if (isRustV2ApiMode()) {
         const templates = await clinicalNotesApi.getNoteTemplates({}, options);
-        return [...new Set(templates.map((template) => template.note_type).filter(Boolean))];
+        return [...new Set(templates.flatMap((template) => (template.note_type ? [template.note_type] : [])))];
       }
       return await apiClient.get('/clinical-notes/templates/categories/', options);
     } catch (error) {
