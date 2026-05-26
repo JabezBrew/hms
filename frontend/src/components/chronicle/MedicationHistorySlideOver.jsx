@@ -4,7 +4,7 @@ import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import format from 'date-fns/format';
 
 import { Button } from '@/components/ui/button';
@@ -50,20 +50,20 @@ const MedicationHistorySlideOver = ({
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [previousOpen, setPreviousOpen] = useState(open);
+  const previousOpenRef = useRef(open);
   const pageScope = `${patientId || ''}:${statusFilter}`;
-  const [previousPageScope, setPreviousPageScope] = useState(pageScope);
+  const previousPageScopeRef = useRef(pageScope);
 
-  if (previousOpen !== open) {
-    setPreviousOpen(open);
+  if (previousOpenRef.current !== open) {
+    previousOpenRef.current = open;
     if (!open) {
       setStatusFilter('all');
       setPage(1);
     }
   }
 
-  if (previousPageScope !== pageScope) {
-    setPreviousPageScope(pageScope);
+  if (previousPageScopeRef.current !== pageScope) {
+    previousPageScopeRef.current = pageScope;
     if (page !== 1) {
       setPage(1);
     }

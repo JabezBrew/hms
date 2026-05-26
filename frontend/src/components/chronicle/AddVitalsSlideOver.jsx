@@ -6,7 +6,7 @@ import Wind from 'lucide-react/dist/esm/icons/wind.js';
 import Droplets from 'lucide-react/dist/esm/icons/droplets.js';
 import AlertCircle from 'lucide-react/dist/esm/icons/circle-alert.js';
 import Check from 'lucide-react/dist/esm/icons/check.js';
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,13 +54,13 @@ const AddVitalsSlideOver = ({
   const [formData, setFormData] = useState(EMPTY_VITALS_FORM);
 
   const [errors, setErrors] = useState({});
-  const [previousOpen, setPreviousOpen] = useState(open);
+  const previousOpenRef = useRef(open);
 
   // API mutation
   const createVitalsMutation = useCreateVitalSigns();
 
-  if (previousOpen !== open) {
-    setPreviousOpen(open);
+  if (previousOpenRef.current !== open) {
+    previousOpenRef.current = open;
     if (!open) {
       setFormData(EMPTY_VITALS_FORM);
       setErrors({});

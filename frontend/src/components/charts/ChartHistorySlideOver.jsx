@@ -5,7 +5,7 @@ import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
 import Clock from 'lucide-react/dist/esm/icons/clock.js';
 import History from 'lucide-react/dist/esm/icons/history.js';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import format from 'date-fns/format';
 
 import { Button } from '@/components/ui/button';
@@ -58,12 +58,12 @@ const ChartHistorySlideOver = ({
   const [page, setPage] = useState(1);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(initialAssignmentId);
   const [selectedTrendField, setSelectedTrendField] = useState('');
-  const [previousOpen, setPreviousOpen] = useState(open);
+  const previousOpenRef = useRef(open);
   const pageScope = `${patientId || ''}:${statusFilter}`;
-  const [previousPageScope, setPreviousPageScope] = useState(pageScope);
+  const previousPageScopeRef = useRef(pageScope);
 
-  if (previousOpen !== open) {
-    setPreviousOpen(open);
+  if (previousOpenRef.current !== open) {
+    previousOpenRef.current = open;
     if (open) {
       setSelectedAssignmentId(initialAssignmentId || null);
     } else {
@@ -74,8 +74,8 @@ const ChartHistorySlideOver = ({
     }
   }
 
-  if (previousPageScope !== pageScope) {
-    setPreviousPageScope(pageScope);
+  if (previousPageScopeRef.current !== pageScope) {
+    previousPageScopeRef.current = pageScope;
     if (page !== 1) {
       setPage(1);
     }
@@ -136,10 +136,10 @@ const ChartHistorySlideOver = ({
   }, [selectedAssignment?.template?.fields, selectedAssignmentId]);
 
   const trendResetToken = `${selectedAssignmentId || ''}:${defaultTrendField}`;
-  const [previousTrendResetToken, setPreviousTrendResetToken] = useState(trendResetToken);
+  const previousTrendResetTokenRef = useRef(trendResetToken);
 
-  if (previousTrendResetToken !== trendResetToken) {
-    setPreviousTrendResetToken(trendResetToken);
+  if (previousTrendResetTokenRef.current !== trendResetToken) {
+    previousTrendResetTokenRef.current = trendResetToken;
     setSelectedTrendField(defaultTrendField);
   }
 
