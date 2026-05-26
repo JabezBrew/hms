@@ -195,7 +195,7 @@ mod tests {
         ));
         assert!(demo_seed_is_forbidden(
             "PRODUCTION",
-            Some(DemoSeedProfile::Small)
+            Some(DemoSeedProfile::Staging)
         ));
         assert!(!demo_seed_is_forbidden("development", None));
         assert!(!demo_seed_is_forbidden(
