@@ -71,16 +71,17 @@ const AppointmentNotifications = () => {
           ) : (
             <div>
               {appointments.map((appointment) => (
-                <div
+                <button
+                  type="button"
                   key={appointment.id}
-                  className="p-4 hover:bg-muted cursor-pointer"
+                  className="w-full p-4 hover:bg-muted cursor-pointer text-left"
                   onClick={() => handleAppointmentClick(appointment.id)}
                 >
                   <div className="font-medium">{appointment.patientName}</div>
                   <div className="text-sm text-muted-foreground">
                     {appointment.type} - {appointment.startTime}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

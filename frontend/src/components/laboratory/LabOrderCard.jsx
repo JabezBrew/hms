@@ -64,11 +64,12 @@ const LabOrderCard = ({
   };
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
         "group relative bg-card/30 backdrop-blur-sm rounded-lg border border-border/50",
         "hover:bg-card/50 hover:border-border hover:shadow-md",
-        "transition-all duration-300 cursor-pointer",
+        "transition-all duration-300 cursor-pointer text-left w-full",
         "animate-chronicle-enter",
         className
       )}
@@ -164,7 +165,7 @@ const LabOrderCard = ({
       <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
         <ChevronRight className="size-5 text-muted-foreground" />
       </div>
-    </div>
+    </button>
   );
 };
 

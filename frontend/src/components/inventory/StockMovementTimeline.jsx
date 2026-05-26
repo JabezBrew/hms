@@ -158,9 +158,11 @@ function StockMovementTimelineItem({
     : '';
 
   return (
-    <div
+    <button
+      type="button"
+      disabled={!onClick}
       className={cn(
-        'relative flex gap-4',
+        'relative flex w-full gap-4 text-left disabled:cursor-default',
         onClick && 'cursor-pointer hover:bg-muted/30 -mx-2 px-2 py-1 rounded-lg transition-colors'
       )}
       onClick={onClick}
@@ -253,7 +255,7 @@ function StockMovementTimelineItem({
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
