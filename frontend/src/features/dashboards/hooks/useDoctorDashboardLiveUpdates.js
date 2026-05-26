@@ -85,22 +85,23 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
       return undefined;
     }
 
+    let isActive = true;
     const ws = stream === 'clinic'
       ? new ClinicDashboardWebSocket(wsToken)
       : new DoctorDashboardWebSocket(wsToken);
     wsRef.current = ws;
 
-    ws.on('connection.open', () => {
+    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
       setIsConnected(true);
       setConnectionError(null);
     });
 
-    ws.on('connection.close', ({ code }) => {
+    const unsubscribeConnectionClose = ws.on('connection.close', ({ code }) => {
       setIsConnected(false);
       if ((code === 4001 || code === 4003) && refreshAccessToken) {
         refreshAccessToken()
           .then((freshToken) => {
-            if (freshToken) {
+            if (isActive && freshToken) {
               setWsToken(freshToken);
             }
           })
@@ -108,11 +109,11 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
       }
     });
 
-    ws.on('connection.error', ({ error }) => {
+    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
       setConnectionError(error || new Error('WebSocket connection failed'));
     });
 
-    ws.on('connection.failed', () => {
+    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
@@ -169,12 +170,19 @@ export function useDoctorDashboardLiveUpdates(options = {}) {
       }
     };
 
-    ws.on('dashboard.invalidate', handleDashboardEvent);
-    ws.on('dashboard.projection_freshness', handleDashboardEvent);
+    const unsubscribeDashboardInvalidate = ws.on('dashboard.invalidate', handleDashboardEvent);
+    const unsubscribeProjectionFreshness = ws.on('dashboard.projection_freshness', handleDashboardEvent);
 
     ws.connect();
 
     return () => {
+      isActive = false;
+      unsubscribeConnectionOpen();
+      unsubscribeConnectionClose();
+      unsubscribeConnectionError();
+      unsubscribeConnectionFailed();
+      unsubscribeDashboardInvalidate();
+      unsubscribeProjectionFreshness();
       ws.disconnect();
       wsRef.current = null;
       setIsConnected(false);

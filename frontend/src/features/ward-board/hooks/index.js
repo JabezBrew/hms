@@ -441,20 +441,21 @@ export function useWardBoardLiveUpdates(options = {}) {
       return undefined;
     }
 
+    let isActive = true;
     const ws = new WardBoardWebSocket(wsToken, { wardScope: normalizedWardScope });
     wsRef.current = ws;
 
-    ws.on('connection.open', () => {
+    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
       setIsConnected(true);
       setConnectionError(null);
     });
 
-    ws.on('connection.close', ({ code }) => {
+    const unsubscribeConnectionClose = ws.on('connection.close', ({ code }) => {
       setIsConnected(false);
       if ((code === 4001 || code === 4003) && refreshAccessToken) {
         refreshAccessToken()
           .then((freshToken) => {
-            if (freshToken) {
+            if (isActive && freshToken) {
               setWsToken(freshToken);
             }
           })
@@ -462,11 +463,11 @@ export function useWardBoardLiveUpdates(options = {}) {
       }
     });
 
-    ws.on('connection.error', ({ error }) => {
+    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
       setConnectionError(error || new Error('WebSocket connection failed'));
     });
 
-    ws.on('connection.failed', () => {
+    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
       setConnectionError(new Error('WebSocket reconnection attempts exhausted'));
     });
 
@@ -493,15 +494,25 @@ export function useWardBoardLiveUpdates(options = {}) {
       queryClient.invalidateQueries({ queryKey: wardBoardKeys.lists() });
     };
 
-    ws.on('ward_board.invalidate', handleWardBoardEvent);
-    ws.on('ward_board.task_state_changed', handleWardBoardEvent);
-    ws.on('ward_board.task_updated', handleWardBoardEvent);
-    ws.on('ward_board.queue_status_updated', handleWardBoardEvent);
-    ws.on('ward_board.projection_freshness', handleWardBoardEvent);
+    const unsubscribeWardBoardInvalidate = ws.on('ward_board.invalidate', handleWardBoardEvent);
+    const unsubscribeTaskStateChanged = ws.on('ward_board.task_state_changed', handleWardBoardEvent);
+    const unsubscribeTaskUpdated = ws.on('ward_board.task_updated', handleWardBoardEvent);
+    const unsubscribeQueueStatusUpdated = ws.on('ward_board.queue_status_updated', handleWardBoardEvent);
+    const unsubscribeProjectionFreshness = ws.on('ward_board.projection_freshness', handleWardBoardEvent);
 
     ws.connect();
 
     return () => {
+      isActive = false;
+      unsubscribeConnectionOpen();
+      unsubscribeConnectionClose();
+      unsubscribeConnectionError();
+      unsubscribeConnectionFailed();
+      unsubscribeWardBoardInvalidate();
+      unsubscribeTaskStateChanged();
+      unsubscribeTaskUpdated();
+      unsubscribeQueueStatusUpdated();
+      unsubscribeProjectionFreshness();
       ws.disconnect();
       wsRef.current = null;
       setIsConnected(false);

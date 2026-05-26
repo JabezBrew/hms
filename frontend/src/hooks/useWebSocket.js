@@ -91,30 +91,30 @@ export function useAlertWebSocket(options = {}) {
     wsRef.current = ws;
 
     // Connection handlers
-    ws.on('connection.open', () => {
+    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
       setIsConnected(true);
       setConnectionError(null);
     });
 
-    ws.on('connection.close', () => {
+    const unsubscribeConnectionClose = ws.on('connection.close', () => {
       setIsConnected(false);
     });
 
-    ws.on('connection.error', ({ error }) => {
+    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
       setConnectionError(error);
     });
 
-    ws.on('connection.failed', () => {
+    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
       setConnectionError(new Error('Max reconnection attempts reached'));
     });
 
     // Alert handlers - use refs to get latest callback without re-running effect
-    ws.on('alert.new', ({ alert }) => {
+    const unsubscribeAlertNew = ws.on('alert.new', ({ alert }) => {
       setAlerts((prev) => [alert, ...prev].slice(0, 50)); // Keep last 50
       onAlertRef.current?.(alert);
     });
 
-    ws.on('alert.acknowledged', ({ alert_id, acknowledged_by }) => {
+    const unsubscribeAlertAcknowledged = ws.on('alert.acknowledged', ({ alert_id, acknowledged_by }) => {
       setAlerts((prev) =>
         prev.map((a) =>
           a.id === alert_id ? { ...a, is_acknowledged: true, acknowledged_by } : a
@@ -123,7 +123,7 @@ export function useAlertWebSocket(options = {}) {
       onAcknowledgedRef.current?.({ alert_id, acknowledged_by });
     });
 
-    ws.on('alert.escalated', ({ alert, previous_severity }) => {
+    const unsubscribeAlertEscalated = ws.on('alert.escalated', ({ alert, previous_severity }) => {
       setAlerts((prev) =>
         prev.map((a) => (a.id === alert.id ? alert : a))
       );
@@ -135,6 +135,13 @@ export function useAlertWebSocket(options = {}) {
 
     // Cleanup on unmount
     return () => {
+      unsubscribeConnectionOpen();
+      unsubscribeConnectionClose();
+      unsubscribeConnectionError();
+      unsubscribeConnectionFailed();
+      unsubscribeAlertNew();
+      unsubscribeAlertAcknowledged();
+      unsubscribeAlertEscalated();
       ws.disconnect();
       wsRef.current = null;
     };
@@ -237,21 +244,21 @@ export function useVitalsWebSocket(patientId, options = {}) {
     const ws = new VitalsWebSocket(patientId, token);
     wsRef.current = ws;
 
-    ws.on('connection.open', () => {
+    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
       setIsConnected(true);
     });
 
-    ws.on('connection.close', () => {
+    const unsubscribeConnectionClose = ws.on('connection.close', () => {
       setIsConnected(false);
     });
 
-    ws.on('vitals.new', ({ vitals }) => {
+    const unsubscribeVitalsNew = ws.on('vitals.new', ({ vitals }) => {
       setLatestVitals(vitals);
       setVitalsHistory((prev) => [vitals, ...prev].slice(0, 20)); // Keep last 20
       onVitalsRef.current?.(vitals);
     });
 
-    ws.on('vitals.critical', ({ vitals, alert }) => {
+    const unsubscribeVitalsCritical = ws.on('vitals.critical', ({ vitals, alert }) => {
       setLatestVitals(vitals);
       setVitalsHistory((prev) => [vitals, ...prev].slice(0, 20));
       onVitalsRef.current?.(vitals);
@@ -261,6 +268,10 @@ export function useVitalsWebSocket(patientId, options = {}) {
     ws.connect();
 
     return () => {
+      unsubscribeConnectionOpen();
+      unsubscribeConnectionClose();
+      unsubscribeVitalsNew();
+      unsubscribeVitalsCritical();
       ws.disconnect();
       wsRef.current = null;
     };
@@ -364,25 +375,25 @@ export function useNotificationWebSocket(options = {}) {
     wsRef.current = ws;
 
     // Connection handlers
-    ws.on('connection.open', () => {
+    const unsubscribeConnectionOpen = ws.on('connection.open', () => {
       setIsConnected(true);
       setConnectionError(null);
     });
 
-    ws.on('connection.close', () => {
+    const unsubscribeConnectionClose = ws.on('connection.close', () => {
       setIsConnected(false);
     });
 
-    ws.on('connection.error', ({ error }) => {
+    const unsubscribeConnectionError = ws.on('connection.error', ({ error }) => {
       setConnectionError(error);
     });
 
-    ws.on('connection.failed', () => {
+    const unsubscribeConnectionFailed = ws.on('connection.failed', () => {
       setConnectionError(new Error('Max reconnection attempts reached'));
     });
 
     // Notification handler - use ref to get latest callback without re-running effect
-    ws.on('notification.new', ({ notification }) => {
+    const unsubscribeNotificationNew = ws.on('notification.new', ({ notification }) => {
       setNotifications((prev) => [notification, ...prev].slice(0, 50)); // Keep last 50
 
       // Invalidate React Query cache to refresh counts
@@ -398,6 +409,11 @@ export function useNotificationWebSocket(options = {}) {
 
     // Cleanup on unmount
     return () => {
+      unsubscribeConnectionOpen();
+      unsubscribeConnectionClose();
+      unsubscribeConnectionError();
+      unsubscribeConnectionFailed();
+      unsubscribeNotificationNew();
       ws.disconnect();
       wsRef.current = null;
     };

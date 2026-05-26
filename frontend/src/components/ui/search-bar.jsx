@@ -41,11 +41,17 @@ const SearchBar = ({
 
   // Focus input when popover opens
   useEffect(() => {
-    if (open && inputRef.current) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
+    if (!open || !inputRef.current) {
+      return undefined;
     }
+
+    const focusTimer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+
+    return () => {
+      clearTimeout(focusTimer);
+    };
   }, [open]);
 
   // Handle input change
