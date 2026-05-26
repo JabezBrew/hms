@@ -28,6 +28,7 @@ import {
  * @param {string} className - Additional classes for the trigger button
  */
 export function TimePicker({
+  id,
   value,
   onChange,
   disabled = false,
@@ -93,6 +94,7 @@ export function TimePicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           variant="outline"
           className={cn(
             "w-full justify-start text-left font-mono text-sm",
@@ -102,7 +104,7 @@ export function TimePicker({
           )}
           disabled={disabled}
         >
-          <Clock className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+          <Clock className="mr-2 size-3.5 text-muted-foreground" />
           {formatDisplay() || <span className="text-muted-foreground">{placeholder}</span>}
         </Button>
       </PopoverTrigger>

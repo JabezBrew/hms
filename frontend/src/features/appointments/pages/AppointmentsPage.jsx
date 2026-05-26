@@ -26,9 +26,19 @@ import { clinicsApi } from '@/features/clinics/api';
 import { useClinicWaitlist } from '@/features/referrals/hooks';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TimePicker } from '@/components/ui/time-picker';
 import { PageHeader } from '@/shared/components/page/PageHeader';
 import { PageShell } from '@/shared/components/page/PageShell';
 import { PageState } from '@/shared/components/page/PageState';
@@ -36,6 +46,21 @@ import { usePageMeta } from '@/shared/hooks/usePageMeta';
 import { keyWith } from '@/shared/lib/queryKeys';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const EMPTY_SELECT_VALUE = '__none__';
+const ANY_SERVICE_VALUE = '__any_service__';
+
+function isoDateFromDate(date) {
+  if (!date) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromIso(value) {
+  if (!value) return undefined;
+  return new Date(`${value}T00:00:00`);
+}
 
 const initialSessionForm = () => ({
   name: '',
@@ -228,62 +253,78 @@ function SessionForm({
         </div>
         <div>
           <Label htmlFor="session-clinic">Clinic</Label>
-          <select
-            id="session-clinic"
-            value={form.clinic_id}
-            onChange={(event) => onField('clinic_id', event.target.value)}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <Select
+            value={form.clinic_id || EMPTY_SELECT_VALUE}
+            onValueChange={(value) => onField('clinic_id', value === EMPTY_SELECT_VALUE ? '' : value)}
           >
-            <option value="">Select clinic</option>
-            {clinics.map((clinic) => (
-              <option key={clinic.id} value={clinic.id}>
-                {clinic.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="session-clinic" className="w-full">
+              <SelectValue placeholder="Select clinic" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={EMPTY_SELECT_VALUE}>Select clinic</SelectItem>
+              {clinics.map((clinic) => (
+                <SelectItem key={clinic.id} value={clinic.id}>
+                  {clinic.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="session-service">Service</Label>
-          <select
-            id="session-service"
-            value={form.service_id}
-            onChange={(event) => onField('service_id', event.target.value)}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <Select
+            value={form.service_id || ANY_SERVICE_VALUE}
+            onValueChange={(value) => onField('service_id', value === ANY_SERVICE_VALUE ? '' : value)}
             disabled={servicesLoading}
           >
-            <option value="">Any service</option>
-            {services.map((service) => (
-              <option key={service.id} value={service.id}>
-                {service.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="session-service" className="w-full">
+              <SelectValue placeholder="Any service" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANY_SERVICE_VALUE}>Any service</SelectItem>
+              {services.map((service) => (
+                <SelectItem key={service.id} value={service.id}>
+                  {service.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="session-mode">Mode</Label>
+          <Select value={form.mode} onValueChange={(value) => onField('mode', value)}>
+            <SelectTrigger id="session-mode" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="capacity_block">Capacity block</SelectItem>
+              <SelectItem value="fixed_slot">Fixed slots</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="session-date">Date</Label>
-          <Input
+          <DatePicker
             id="session-date"
-            type="date"
-            value={form.date}
-            onChange={(event) => onField('date', event.target.value)}
+            date={dateFromIso(form.date)}
+            setDate={(date) => onField('date', isoDateFromDate(date))}
+            placeholder="Select date"
           />
         </div>
         <div>
           <Label htmlFor="session-start">Start</Label>
-          <Input
+          <TimePicker
             id="session-start"
-            type="time"
             value={form.start_time}
-            onChange={(event) => onField('start_time', event.target.value)}
+            onChange={(value) => onField('start_time', value)}
           />
         </div>
         <div>
           <Label htmlFor="session-end">End</Label>
-          <Input
+          <TimePicker
             id="session-end"
-            type="time"
             value={form.end_time}
-            onChange={(event) => onField('end_time', event.target.value)}
+            onChange={(value) => onField('end_time', value)}
           />
         </div>
         <div>
@@ -296,6 +337,40 @@ function SessionForm({
             onChange={(event) => onField('capacity', event.target.value)}
           />
         </div>
+        {form.mode === 'fixed_slot' ? (
+          <div>
+            <Label htmlFor="session-slot-minutes">Slot minutes</Label>
+            <Input
+              id="session-slot-minutes"
+              type="number"
+              min="1"
+              value={form.slot_minutes}
+              onChange={(event) => onField('slot_minutes', event.target.value)}
+            />
+          </div>
+        ) : null}
+        <div className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-border px-3">
+          <Label htmlFor="session-overbooking" className="font-mono text-xs">
+            Allow overbooking
+          </Label>
+          <Switch
+            id="session-overbooking"
+            checked={Boolean(form.allow_overbooking)}
+            onCheckedChange={(checked) => onField('allow_overbooking', checked)}
+          />
+        </div>
+        {form.allow_overbooking ? (
+          <div>
+            <Label htmlFor="session-overbook-limit">Overbook limit</Label>
+            <Input
+              id="session-overbook-limit"
+              type="number"
+              min="0"
+              value={form.overbook_limit}
+              onChange={(event) => onField('overbook_limit', event.target.value)}
+            />
+          </div>
+        ) : null}
       </div>
       <div className="mt-4 flex justify-end">
         <Button type="submit" disabled={createSession.isPending} className="gap-2">
@@ -371,45 +446,46 @@ function ExceptionForm({
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-2">
           <Label htmlFor="exception-session">Session</Label>
-          <select
-            id="exception-session"
-            value={form.session_id}
-            onChange={(event) => onField('session_id', event.target.value)}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          <Select
+            value={form.session_id || EMPTY_SELECT_VALUE}
+            onValueChange={(value) => onField('session_id', value === EMPTY_SELECT_VALUE ? '' : value)}
           >
-            <option value="">Select session</option>
-            {sessions.map((session) => (
-              <option key={session.id} value={session.id}>
-                {session.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="exception-session" className="w-full">
+              <SelectValue placeholder="Select session" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={EMPTY_SELECT_VALUE}>Select session</SelectItem>
+              {sessions.map((session) => (
+                <SelectItem key={session.id} value={session.id}>
+                  {session.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="exception-date">Date</Label>
-          <Input
+          <DatePicker
             id="exception-date"
-            type="date"
-            value={form.date}
-            onChange={(event) => onField('date', event.target.value)}
+            date={dateFromIso(form.date)}
+            setDate={(date) => onField('date', isoDateFromDate(date))}
+            placeholder="Select date"
           />
         </div>
         <div>
           <Label htmlFor="exception-start">Start</Label>
-          <Input
+          <TimePicker
             id="exception-start"
-            type="time"
             value={form.start_time}
-            onChange={(event) => onField('start_time', event.target.value)}
+            onChange={(value) => onField('start_time', value)}
           />
         </div>
         <div>
           <Label htmlFor="exception-end">End</Label>
-          <Input
+          <TimePicker
             id="exception-end"
-            type="time"
             value={form.end_time}
-            onChange={(event) => onField('end_time', event.target.value)}
+            onChange={(value) => onField('end_time', value)}
           />
         </div>
         <div className="lg:col-span-4">
