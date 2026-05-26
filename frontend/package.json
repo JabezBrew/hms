@@ -65,6 +65,7 @@
     "react-dom": "^18.3.1",
     "react-helmet-async": "^2.0.5",
     "react-hook-form": "^7.55.0",
+    "react-is": "^18.3.1",
     "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^7.13.1",
     "recharts": "^3.7.0",
@@ -95,10 +96,10 @@
     "globals": "^15.15.0",
     "jsdom": "^23.0.1",
     "msw": "^2.0.11",
+    "react-doctor": "^0.2.6",
     "rollup-plugin-visualizer": "^5.14.0",
     "sharp": "^0.34.5",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18",
-    "react-doctor": "^0.2.6"
+    "vitest": "^4.0.18"
   }
 }
