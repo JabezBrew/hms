@@ -2,7 +2,7 @@
  * DutyTypesTab - Manage department duty types
  * Chronicle Design System styling
  */
-import { useState, useEffect } from 'react';
+import { useId, useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,7 @@ import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
 export function DutyTypesTab() {
+  const fieldId = useId();
   const { isLoading: unitsLoading, departments, unitById } = useUnitOptions();
   const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
   const [showInactive, setShowInactive] = useState(false);
@@ -409,15 +410,17 @@ export function DutyTypesTab() {
               </InlineField>
               <InlineField label="Options">
                 <div className="space-y-3 pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label htmlFor={`${fieldId}-requires-time-range`} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
+                      id={`${fieldId}-requires-time-range`}
                       checked={formState.requires_time_range}
                       onCheckedChange={(value) => setFormState((prev) => ({ ...prev, requires_time_range: Boolean(value) }))}
                     />
                     <span className="text-sm">Requires time range</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label htmlFor={`${fieldId}-duty-type-active`} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
+                      id={`${fieldId}-duty-type-active`}
                       checked={formState.is_active}
                       onCheckedChange={(value) => setFormState((prev) => ({ ...prev, is_active: Boolean(value) }))}
                     />

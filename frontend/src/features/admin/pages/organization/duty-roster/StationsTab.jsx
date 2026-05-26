@@ -2,7 +2,7 @@
  * StationsTab - Manage department stations
  * Chronicle Design System styling
  */
-import { useState, useEffect } from 'react';
+import { useId, useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,7 @@ import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
 export function StationsTab() {
+  const fieldId = useId();
   const { isLoading: unitsLoading, departments, unitById } = useUnitOptions();
   const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
   const [showInactive, setShowInactive] = useState(false);
@@ -309,8 +310,9 @@ export function StationsTab() {
               </InlineField>
               <InlineField label="Status">
                 <div className="pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label htmlFor={`${fieldId}-station-active`} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
+                      id={`${fieldId}-station-active`}
                       checked={formState.is_active}
                       onCheckedChange={(value) => setFormState((prev) => ({ ...prev, is_active: Boolean(value) }))}
                     />

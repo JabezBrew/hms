@@ -2,7 +2,7 @@
  * RosterPatternSlotsTab - Manage roster pattern slots
  * Chronicle Design System styling
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useId, useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,7 @@ import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
 export function RosterPatternSlotsTab() {
+  const fieldId = useId();
   const { isLoading: unitsLoading, departments, getTeamOptions, unitById } = useUnitOptions();
   const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
   const [selectedPlan, setSelectedPlan] = useState('');
@@ -512,8 +513,8 @@ export function RosterPatternSlotsTab() {
             </FieldRow>
             <InlineField label="Status">
               <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={formState.is_active} onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))} />
+                <label htmlFor={`${fieldId}-slot-active`} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox id={`${fieldId}-slot-active`} checked={formState.is_active} onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))} />
                   <span className="text-sm">Active</span>
                 </label>
               </div>

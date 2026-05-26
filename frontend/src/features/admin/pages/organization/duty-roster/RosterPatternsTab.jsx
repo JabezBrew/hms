@@ -2,7 +2,7 @@
  * RosterPatternsTab - Manage roster patterns
  * Chronicle Design System styling
  */
-import { useState, useEffect } from 'react';
+import { useId, useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,7 @@ import { useUnitOptions } from './useUnitOptions';
 import { EmptyState, RosterHeader, InlineField, FieldRow } from './components';
 
 export function RosterPatternsTab() {
+  const fieldId = useId();
   const { isLoading: unitsLoading, departments } = useUnitOptions();
   const [selectedDepartment, setSelectedDepartment] = useState(SELECT_ALL);
   const [selectedPlan, setSelectedPlan] = useState('');
@@ -326,8 +327,9 @@ export function RosterPatternsTab() {
             </FieldRow>
             <InlineField label="Status">
               <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label htmlFor={`${fieldId}-pattern-active`} className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
+                    id={`${fieldId}-pattern-active`}
                     checked={formState.is_active}
                     onCheckedChange={(value) => setFormState((prev) => ({ ...prev, is_active: Boolean(value) }))}
                   />

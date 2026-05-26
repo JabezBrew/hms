@@ -3,7 +3,7 @@
  * Manages teams, duty types, and rotation rules
  * Chronicle Design System styling
  */
-import { useState, useMemo } from 'react';
+import { useId, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -220,6 +220,7 @@ function TeamsPanel({ unitId, teams }) {
  * Duty Types panel
  */
 function DutyTypesPanel({ departmentId }) {
+  const fieldId = useId();
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -495,20 +496,22 @@ function DutyTypesPanel({ departmentId }) {
           <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-duty-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Name
                 </label>
                 <Input
+                  id={`${fieldId}-duty-name`}
                   value={formState.name}
                   onChange={(e) => setFormState((p) => ({ ...p, name: e.target.value }))}
                   placeholder="OBS Clinic"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-duty-code`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Code
                 </label>
                 <Input
+                  id={`${fieldId}-duty-code`}
                   value={formState.code}
                   onChange={(e) => setFormState((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
                   placeholder="OBS"
@@ -519,14 +522,14 @@ function DutyTypesPanel({ departmentId }) {
 
             {/* Category Selector */}
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-duty-category`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Category
               </label>
               <Select
                 value={formState.category}
                 onValueChange={(v) => setFormState((p) => ({ ...p, category: v }))}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id={`${fieldId}-duty-category`} className="w-full">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent className="z-[200]">
@@ -544,9 +547,9 @@ function DutyTypesPanel({ departmentId }) {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <p id={`${fieldId}-applicable-days-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Applicable Days
-                </label>
+                </p>
                 <div className="flex gap-1">
                   <button
                     type="button"
@@ -578,7 +581,7 @@ function DutyTypesPanel({ departmentId }) {
                   </button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div role="group" aria-labelledby={`${fieldId}-applicable-days-label`} className="flex flex-wrap gap-2">
                 {DAYS_OF_WEEK.map((day) => (
                   <button
                     key={day.value}
@@ -598,8 +601,9 @@ function DutyTypesPanel({ departmentId }) {
             </div>
 
             <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label htmlFor={`${fieldId}-is-24-hour`} className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
+                  id={`${fieldId}-is-24-hour`}
                   checked={formState.is_24_hour}
                   onCheckedChange={(v) => setFormState((p) => ({ ...p, is_24_hour: Boolean(v) }))}
                 />
@@ -609,10 +613,11 @@ function DutyTypesPanel({ departmentId }) {
               {!formState.is_24_hour && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <label htmlFor={`${fieldId}-start-time`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Start Time
                     </label>
                     <Input
+                      id={`${fieldId}-start-time`}
                       type="time"
                       value={formState.start_time}
                       onChange={(e) => setFormState((p) => ({ ...p, start_time: e.target.value }))}
@@ -620,10 +625,11 @@ function DutyTypesPanel({ departmentId }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <label htmlFor={`${fieldId}-end-time`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       End Time
                     </label>
                     <Input
+                      id={`${fieldId}-end-time`}
                       type="time"
                       value={formState.end_time}
                       onChange={(e) => setFormState((p) => ({ ...p, end_time: e.target.value }))}
@@ -644,14 +650,14 @@ function DutyTypesPanel({ departmentId }) {
 
                 {/* Clinic Selector */}
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-clinic-link`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Link to Clinic
                   </label>
                   <Select
                     value={formState.clinic || ''}
                     onValueChange={(v) => setFormState((p) => ({ ...p, clinic: v }))}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id={`${fieldId}-clinic-link`} className="w-full">
                       <SelectValue placeholder="Select a clinic" />
                     </SelectTrigger>
                     <SelectContent className="z-[200]">
@@ -671,10 +677,11 @@ function DutyTypesPanel({ departmentId }) {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <label htmlFor={`${fieldId}-slot-duration`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Slot Duration (minutes)
                     </label>
                     <Input
+                      id={`${fieldId}-slot-duration`}
                       type="number"
                       min="5"
                       max="480"
@@ -691,10 +698,11 @@ function DutyTypesPanel({ departmentId }) {
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <label htmlFor={`${fieldId}-max-patients`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Patients/Slot
                     </label>
                     <Input
+                      id={`${fieldId}-max-patients`}
                       type="number"
                       min="1"
                       max="20"
@@ -714,9 +722,9 @@ function DutyTypesPanel({ departmentId }) {
                 {/* Breaks Editor */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <p id={`${fieldId}-breaks-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Breaks
-                    </label>
+                    </p>
                     <Button
                       type="button"
                       variant="outline"
@@ -742,6 +750,7 @@ function DutyTypesPanel({ departmentId }) {
                       {formState.breaks.map((brk, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                           <Input
+                            aria-label={`Break ${idx + 1} start time`}
                             type="time"
                             value={brk.start}
                             onChange={(e) => {
@@ -753,6 +762,7 @@ function DutyTypesPanel({ departmentId }) {
                           />
                           <span className="text-muted-foreground">to</span>
                           <Input
+                            aria-label={`Break ${idx + 1} end time`}
                             type="time"
                             value={brk.end}
                             onChange={(e) => {
@@ -785,10 +795,11 @@ function DutyTypesPanel({ departmentId }) {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-display-order`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Display Order
                 </label>
                 <Input
+                  id={`${fieldId}-display-order`}
                   type="number"
                   min="0"
                   value={formState.display_order}
@@ -797,8 +808,9 @@ function DutyTypesPanel({ departmentId }) {
                 />
               </div>
               <div className="space-y-2 pt-6">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label htmlFor={`${fieldId}-duty-active`} className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
+                    id={`${fieldId}-duty-active`}
                     checked={formState.is_active}
                     onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))}
                   />
@@ -853,6 +865,7 @@ function DutyTypesPanel({ departmentId }) {
  * Rotation Rules panel
  */
 function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
+  const fieldId = useId();
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -1078,10 +1091,11 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
 
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-rule-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Rule Name
               </label>
               <Input
+                id={`${fieldId}-rule-name`}
                 value={formState.name}
                 onChange={(e) => setFormState((p) => ({ ...p, name: e.target.value }))}
                 placeholder="OBS Clinic Weekday Rotation"
@@ -1089,14 +1103,14 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-duty-type`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Duty Type
               </label>
               <Select
                 value={formState.duty_type}
                 onValueChange={(v) => setFormState((p) => ({ ...p, duty_type: v }))}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${fieldId}-duty-type`}>
                   <SelectValue placeholder="Select duty type" />
                 </SelectTrigger>
                 <SelectContent className="z-[200]">
@@ -1110,14 +1124,14 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-rule-type`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Rule Type
               </label>
               <Select
                 value={formState.rule_type}
                 onValueChange={(v) => setFormState((p) => ({ ...p, rule_type: v }))}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${fieldId}-rule-type`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="z-[200]">
@@ -1135,10 +1149,10 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
 
             {formState.rule_type === 'sequential' && (
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <p id={`${fieldId}-team-sequence-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Team Sequence (click to toggle)
-                </label>
-                <div className="flex flex-wrap gap-2">
+                </p>
+                <div role="group" aria-labelledby={`${fieldId}-team-sequence-label`} className="flex flex-wrap gap-2">
                   {teams.map((team) => (
                     <button
                       key={team.id}
@@ -1165,10 +1179,10 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
 
             {formState.rule_type === 'fixed_weekly' && (
               <div className="space-y-3">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <p id={`${fieldId}-day-assignments-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Day Assignments (click to assign)
-                </label>
-                <div className="border rounded-lg overflow-hidden">
+                </p>
+                <div role="group" aria-labelledby={`${fieldId}-day-assignments-label`} className="border rounded-lg overflow-hidden">
                   {/* Header row with team names */}
                   <div className="grid bg-muted/50 border-b" style={{ gridTemplateColumns: `60px repeat(${teams.length}, 1fr)` }}>
                     <div className="p-2 text-[10px] font-mono uppercase text-muted-foreground border-r">Day</div>
@@ -1226,8 +1240,9 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
             )}
 
             <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label htmlFor={`${fieldId}-rotation-active`} className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
+                  id={`${fieldId}-rotation-active`}
                   checked={formState.is_active}
                   onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))}
                 />
@@ -1281,6 +1296,7 @@ function RotationRulesPanel({ departmentId, teams, dutyTypes }) {
  * Validation Rules Panel - Manage configurable validation constraints
  */
 function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
+  const fieldId = useId();
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // Item to delete
@@ -1480,10 +1496,11 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-validation-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Rule Name
               </label>
               <Input
+                id={`${fieldId}-validation-name`}
                 value={formState.name}
                 onChange={(e) => setFormState((p) => ({ ...p, name: e.target.value }))}
                 placeholder="e.g., No back-to-back weekends"
@@ -1491,14 +1508,14 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-validation-rule-type`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Rule Type
               </label>
               <Select
                 value={formState.rule_type}
                 onValueChange={(v) => setFormState((p) => ({ ...p, rule_type: v, params: {} }))}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${fieldId}-validation-rule-type`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="z-[200]">
@@ -1522,14 +1539,14 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             {/* Apply To - not shown for linked_duty_no_consecutive which uses duty_type_ids param */}
             {formState.rule_type !== 'linked_duty_no_consecutive' && (
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-validation-apply-to`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Apply To
                 </label>
                 <Select
                   value={formState.duty_type || '_all_'}
                   onValueChange={(v) => setFormState((p) => ({ ...p, duty_type: v === '_all_' ? '' : v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id={`${fieldId}-validation-apply-to`}>
                     <SelectValue placeholder="All duty types" />
                   </SelectTrigger>
                   <SelectContent className="z-[200]">
@@ -1547,10 +1564,11 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             {/* Dynamic params based on rule type */}
             {formState.rule_type === 'no_consecutive_days' && (
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-validation-days-apart`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Days Apart
                 </label>
                 <Input
+                  id={`${fieldId}-validation-days-apart`}
                   type="number"
                   min={1}
                   max={6}
@@ -1570,10 +1588,10 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
 
             {formState.rule_type === 'day_pair_exclusion' && (
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <p id={`${fieldId}-excluded-day-pairs-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Excluded Day Pairs
-                </label>
-                <div className="space-y-2">
+                </p>
+                <div role="group" aria-labelledby={`${fieldId}-excluded-day-pairs-label`} className="space-y-2">
                   {(formState.params.pairs || []).map((pair, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <Select
@@ -1584,7 +1602,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                           setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
                         }}
                       >
-                        <SelectTrigger className="w-24">
+                        <SelectTrigger aria-label={`Excluded day pair ${idx + 1} first day`} className="w-24">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="z-[200]">
@@ -1602,7 +1620,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                           setFormState((p) => ({ ...p, params: { ...p.params, pairs: newPairs } }));
                         }}
                       >
-                        <SelectTrigger className="w-24">
+                        <SelectTrigger aria-label={`Excluded day pair ${idx + 1} second day`} className="w-24">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="z-[200]">
@@ -1644,10 +1662,11 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             {formState.rule_type === 'max_per_period' && (
               <>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-validation-max-duties`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Maximum Duties
                   </label>
                   <Input
+                    id={`${fieldId}-validation-max-duties`}
                     type="number"
                     min={1}
                     max={10}
@@ -1661,7 +1680,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-validation-period`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Period
                   </label>
                   <Select
@@ -1670,7 +1689,7 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                       setFormState((p) => ({ ...p, params: { ...p.params, period: v } }))
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id={`${fieldId}-validation-period`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="z-[200]">
@@ -1685,10 +1704,10 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             {formState.rule_type === 'team_day_exclusion' && (
               <>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <p id={`${fieldId}-excluded-teams-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Excluded Teams
-                  </label>
-                  <div className="flex flex-wrap gap-2">
+                  </p>
+                  <div role="group" aria-labelledby={`${fieldId}-excluded-teams-label`} className="flex flex-wrap gap-2">
                     {teams.map((team) => (
                       <button
                         key={team.id}
@@ -1713,10 +1732,10 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <p id={`${fieldId}-excluded-days-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Excluded Days
-                  </label>
-                  <div className="flex flex-wrap gap-2">
+                  </p>
+                  <div role="group" aria-labelledby={`${fieldId}-excluded-days-label`} className="flex flex-wrap gap-2">
                     {DAYS_OF_WEEK.map((day) => (
                       <button
                         key={day.value}
@@ -1746,13 +1765,13 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             {formState.rule_type === 'linked_duty_no_consecutive' && (
               <>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <p id={`${fieldId}-linked-duty-types-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Linked Duty Types
-                  </label>
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     Select duty types that should be treated as linked for consecutive day checking.
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div role="group" aria-labelledby={`${fieldId}-linked-duty-types-label`} className="flex flex-wrap gap-2">
                     {dutyTypes.map((dt) => (
                       <button
                         key={dt.id}
@@ -1780,10 +1799,11 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-linked-days-apart`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Days Apart
                   </label>
                   <Input
+                    id={`${fieldId}-linked-days-apart`}
                     type="number"
                     min={1}
                     max={6}
@@ -1803,14 +1823,14 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             )}
 
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-validation-severity`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Severity
               </label>
               <Select
                 value={formState.severity}
                 onValueChange={(v) => setFormState((p) => ({ ...p, severity: v }))}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${fieldId}-validation-severity`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="z-[200]">
@@ -1831,8 +1851,9 @@ function ValidationRulesPanel({ departmentId, teams, dutyTypes }) {
             </div>
 
             <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label htmlFor={`${fieldId}-validation-active`} className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
+                  id={`${fieldId}-validation-active`}
                   checked={formState.is_active}
                   onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))}
                 />

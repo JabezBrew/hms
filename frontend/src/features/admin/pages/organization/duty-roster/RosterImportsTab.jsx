@@ -2,7 +2,7 @@
  * RosterImportsTab - CSV import functionality
  * Chronicle Design System styling
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,7 @@ import {
 } from './components';
 
 export function RosterImportsTab() {
+  const fieldId = useId();
   const previewDepartmentImport = useDepartmentRosterImportPreview();
   const applyDepartmentImport = useDepartmentRosterImportApply();
   const previewTeamImport = useTeamRosterImportPreview();
@@ -235,8 +236,8 @@ export function RosterImportsTab() {
               )}
 
               <div className="flex flex-wrap items-center gap-4 pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={departmentApplyRows} onCheckedChange={(v) => setDepartmentApplyRows(Boolean(v))} />
+                <label htmlFor={`${fieldId}-department-apply-rows`} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox id={`${fieldId}-department-apply-rows`} checked={departmentApplyRows} onCheckedChange={(v) => setDepartmentApplyRows(Boolean(v))} />
                   <span className="text-sm">Apply validated rows</span>
                 </label>
                 <div className="flex items-center gap-2">
@@ -357,8 +358,8 @@ export function RosterImportsTab() {
               )}
 
               <div className="flex flex-wrap items-center gap-4 pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={teamApplyRows} onCheckedChange={(v) => setTeamApplyRows(Boolean(v))} />
+                <label htmlFor={`${fieldId}-team-apply-rows`} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox id={`${fieldId}-team-apply-rows`} checked={teamApplyRows} onCheckedChange={(v) => setTeamApplyRows(Boolean(v))} />
                   <span className="text-sm">Apply validated rows</span>
                 </label>
                 <div className="flex items-center gap-2">

@@ -2,7 +2,7 @@
  * ClinicsPanel - Manages clinics for a department
  * Used in OrganizationPage unit detail view
  */
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
@@ -57,6 +57,7 @@ import ClinicRosterWizardDialog from './ClinicRosterWizardDialog';
  * ClinicsPanel - Displays and manages clinics for a unit (department)
  */
 export function ClinicsPanel({ unitId, unitType }) {
+  const fieldId = useId();
   const [showForm, setShowForm] = useState(false);
   const [editingClinic, setEditingClinic] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -384,20 +385,22 @@ export function ClinicsPanel({ unitId, unitType }) {
           <div className="space-y-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-clinic-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Name *
                 </label>
                 <Input
+                  id={`${fieldId}-clinic-name`}
                   value={formState.name}
                   onChange={(e) => setFormState((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Cardiology Clinic"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-clinic-code`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Code *
                 </label>
                 <Input
+                  id={`${fieldId}-clinic-code`}
                   value={formState.code}
                   onChange={(e) => setFormState((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
                   placeholder="CARDIO"
@@ -407,10 +410,11 @@ export function ClinicsPanel({ unitId, unitType }) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              <label htmlFor={`${fieldId}-clinic-description`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                 Description
               </label>
               <Textarea
+                id={`${fieldId}-clinic-description`}
                 value={formState.description}
                 onChange={(e) => setFormState((p) => ({ ...p, description: e.target.value }))}
                 placeholder="Brief description of the clinic..."
@@ -419,9 +423,10 @@ export function ClinicsPanel({ unitId, unitType }) {
             </div>
 
 	            <div className="space-y-3">
-	              <label className="flex items-center gap-2 cursor-pointer">
-	                <Checkbox
-	                  checked={formState.operates_24_hours}
+		              <label htmlFor={`${fieldId}-clinic-24-hours`} className="flex items-center gap-2 cursor-pointer">
+		                <Checkbox
+		                  id={`${fieldId}-clinic-24-hours`}
+		                  checked={formState.operates_24_hours}
 	                  onCheckedChange={(v) => setFormState((p) => ({ ...p, operates_24_hours: Boolean(v) }))}
 	                />
 	                <span className="text-sm">24-hour operation</span>
@@ -430,10 +435,11 @@ export function ClinicsPanel({ unitId, unitType }) {
               {!formState.operates_24_hours && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <label htmlFor={`${fieldId}-opening-time`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Opening Time
                     </label>
                     <Input
+                      id={`${fieldId}-opening-time`}
                       type="time"
                       value={formState.operating_hours_start}
                       onChange={(e) => setFormState((p) => ({ ...p, operating_hours_start: e.target.value }))}
@@ -441,10 +447,11 @@ export function ClinicsPanel({ unitId, unitType }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <label htmlFor={`${fieldId}-closing-time`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Closing Time
                     </label>
                     <Input
+                      id={`${fieldId}-closing-time`}
                       type="time"
                       value={formState.operating_hours_end}
                       onChange={(e) => setFormState((p) => ({ ...p, operating_hours_end: e.target.value }))}
@@ -457,9 +464,9 @@ export function ClinicsPanel({ unitId, unitType }) {
 
 	            <div className="grid gap-4 sm:grid-cols-2">
 	              <div className="space-y-2">
-	                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-	                  Booking Mode
-	                </label>
+		                <label htmlFor={`${fieldId}-booking-mode`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+		                  Booking Mode
+		                </label>
 	                <Select
 	                  value={formState.booking_mode}
 	                  onValueChange={(v) => {
@@ -472,7 +479,7 @@ export function ClinicsPanel({ unitId, unitType }) {
 	                    }));
 	                  }}
 	                >
-	                  <SelectTrigger className="font-mono">
+		                  <SelectTrigger id={`${fieldId}-booking-mode`} className="font-mono">
 	                    <SelectValue placeholder="Select booking mode" />
 	                  </SelectTrigger>
 	                  <SelectContent className="z-[200]">
@@ -490,9 +497,9 @@ export function ClinicsPanel({ unitId, unitType }) {
 	              </div>
 
 	              <div className="space-y-2">
-	                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-	                  Assignment Timing
-	                </label>
+		                <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+		                  Assignment Timing
+		                </p>
 	                <div className="rounded-md border bg-muted/20 px-3 py-2">
 	                  <span className="font-mono text-xs">{formState.assignment_timing}</span>
 	                </div>
@@ -503,16 +510,18 @@ export function ClinicsPanel({ unitId, unitType }) {
 	            </div>
 
 	            <div className="flex items-center gap-6 pt-2">
-	              <label className="flex items-center gap-2 cursor-pointer">
-	                <Checkbox
-	                  checked={formState.accepts_walk_ins}
+		              <label htmlFor={`${fieldId}-accepts-walk-ins`} className="flex items-center gap-2 cursor-pointer">
+		                <Checkbox
+		                  id={`${fieldId}-accepts-walk-ins`}
+		                  checked={formState.accepts_walk_ins}
                   onCheckedChange={(v) => setFormState((p) => ({ ...p, accepts_walk_ins: Boolean(v) }))}
                 />
                 <span className="text-sm">Accepts walk-ins</span>
               </label>
 
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label htmlFor={`${fieldId}-clinic-active`} className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
+                  id={`${fieldId}-clinic-active`}
                   checked={formState.is_active}
                   onCheckedChange={(v) => setFormState((p) => ({ ...p, is_active: Boolean(v) }))}
                 />
@@ -576,11 +585,11 @@ export function ClinicsPanel({ unitId, unitType }) {
 	            </div>
 
 	            <div className="space-y-2">
-	              <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-	                Clinic Session Duty Type
-	              </label>
-	              <Select value={linkDutyTypeId} onValueChange={setLinkDutyTypeId}>
-	                <SelectTrigger className="font-mono">
+		              <label htmlFor={`${fieldId}-link-duty-type`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+		                Clinic Session Duty Type
+		              </label>
+		              <Select value={linkDutyTypeId} onValueChange={setLinkDutyTypeId}>
+		                <SelectTrigger id={`${fieldId}-link-duty-type`} className="font-mono">
 	                  <SelectValue placeholder="Select duty type" />
 	                </SelectTrigger>
 	                <SelectContent className="z-[200]">

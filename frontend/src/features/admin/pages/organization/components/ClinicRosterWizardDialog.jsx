@@ -9,7 +9,7 @@
  *
  * This keeps the user in a single flow instead of bouncing between Clinic and Roster UIs.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -120,6 +120,7 @@ function StepPill({ active, children }) {
 }
 
 export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, unitType, existingClinic = null }) {
+  const fieldId = useId();
   const canHaveClinics = unitType === 'department' || unitType === 'division';
   const isEditClinic = Boolean(existingClinic?.id);
 
@@ -652,10 +653,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-clinic-name`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Clinic Name {!isEditClinic && '*'}
                   </label>
                   <Input
+                    id={`${fieldId}-clinic-name`}
                     value={clinic.name}
                     onChange={(e) => setClinic((p) => ({ ...p, name: e.target.value }))}
                     placeholder="Cardiology Clinic (Tue AM)"
@@ -663,10 +665,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-clinic-code`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Clinic Code {!isEditClinic && '*'}
                   </label>
                   <Input
+                    id={`${fieldId}-clinic-code`}
                     value={clinic.code}
                     onChange={(e) => setClinic((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
                     placeholder="CARDIO-TUE"
@@ -677,10 +680,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
               </div>
 
               <div className="space-y-2">
-                <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <label htmlFor={`${fieldId}-clinic-description`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   Description (Optional)
                 </label>
                 <Textarea
+                  id={`${fieldId}-clinic-description`}
                   value={clinic.description}
                   onChange={(e) => setClinic((p) => ({ ...p, description: e.target.value }))}
                   placeholder="Short operational description..."
@@ -690,16 +694,18 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label htmlFor={`${fieldId}-clinic-walk-ins`} className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
+                    id={`${fieldId}-clinic-walk-ins`}
                     checked={clinic.accepts_walk_ins}
                     onCheckedChange={(v) => setClinic((p) => ({ ...p, accepts_walk_ins: Boolean(v) }))}
                     disabled={isEditClinic}
                   />
                   <span className="text-sm">Accepts walk-ins</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label htmlFor={`${fieldId}-clinic-waitlist`} className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
+                    id={`${fieldId}-clinic-waitlist`}
                     checked={clinic.waitlist_enabled}
                     onCheckedChange={(v) => setClinic((p) => ({ ...p, waitlist_enabled: Boolean(v) }))}
                     disabled={isEditClinic}
@@ -716,11 +722,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                 <div className="rounded-xl border border-border bg-card/50 p-4">
                   {existingClinicDutyTypes.length > 1 && (
                     <div className="mb-4 space-y-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <label htmlFor={`${fieldId}-template-choice`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         Select template
                       </label>
                       <Select value={dutyTypeChoiceId} onValueChange={setDutyTypeChoiceId}>
-                        <SelectTrigger className="font-mono">
+                        <SelectTrigger id={`${fieldId}-template-choice`} className="font-mono">
                           <SelectValue placeholder="Select duty type template" />
                         </SelectTrigger>
                         <SelectContent className="z-[200]">
@@ -768,14 +774,14 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                 <>
                   <div className="grid gap-4 sm:grid-cols-4">
                     <div className="space-y-2 sm:col-span-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <label htmlFor={`${fieldId}-template-day`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         Day of week
                       </label>
                       <Select
                         value={String(template.day_of_week)}
                         onValueChange={(v) => setTemplate((p) => ({ ...p, day_of_week: Number(v) }))}
                       >
-                        <SelectTrigger className="font-mono">
+                        <SelectTrigger id={`${fieldId}-template-day`} className="font-mono">
                           <SelectValue placeholder="Select day" />
                         </SelectTrigger>
                         <SelectContent className="z-[200]">
@@ -788,10 +794,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <label htmlFor={`${fieldId}-template-start`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         Start
                       </label>
                       <Input
+                        id={`${fieldId}-template-start`}
                         type="time"
                         value={template.start_time}
                         onChange={(e) => setTemplate((p) => ({ ...p, start_time: e.target.value }))}
@@ -799,10 +806,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <label htmlFor={`${fieldId}-template-end`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         End
                       </label>
                       <Input
+                        id={`${fieldId}-template-end`}
                         type="time"
                         value={template.end_time}
                         onChange={(e) => setTemplate((p) => ({ ...p, end_time: e.target.value }))}
@@ -813,10 +821,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
 
                   <div className="grid gap-4 sm:grid-cols-4">
                     <div className="space-y-2 sm:col-span-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <label htmlFor={`${fieldId}-slot-duration`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         Slot duration (minutes)
                       </label>
                       <Input
+                        id={`${fieldId}-slot-duration`}
                         type="number"
                         min="5"
                         max="480"
@@ -826,10 +835,11 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       />
                     </div>
                     <div className="space-y-2 sm:col-span-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <label htmlFor={`${fieldId}-max-patients`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                         Max patients per slot
                       </label>
                       <Input
+                        id={`${fieldId}-max-patients`}
                         type="number"
                         min="1"
                         max="20"
@@ -861,12 +871,12 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
               ) : mode === 'team' ? (
                 <>
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <p id={`${fieldId}-team-rotation-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Team rotation (add in order)
-                    </label>
+                    </p>
                     <div className="flex gap-2">
                       <Select value={teamToAdd} onValueChange={setTeamToAdd}>
-                        <SelectTrigger className="font-mono">
+                        <SelectTrigger aria-labelledby={`${fieldId}-team-rotation-label`} className="font-mono">
                           <SelectValue placeholder={teamOptions.length ? 'Select team' : 'No teams found'} />
                         </SelectTrigger>
                         <SelectContent className="z-[200]">
@@ -913,11 +923,12 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
               ) : (
                 <>
                   <div className="space-y-2">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <p id={`${fieldId}-practitioner-rotation-label`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                       Practitioner rotation (search, then add in order)
-                    </label>
+                    </p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <Input
+                        aria-labelledby={`${fieldId}-practitioner-rotation-label`}
                         value={staffQuery}
                         onChange={(e) => setStaffQuery(e.target.value)}
                         placeholder="Search practitioner (min 2 chars)"
@@ -925,7 +936,7 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
                       />
                       <div className="flex gap-2">
                         <Select value={selectedPractitionerId} onValueChange={setSelectedPractitionerId}>
-                          <SelectTrigger className="font-mono">
+                          <SelectTrigger aria-labelledby={`${fieldId}-practitioner-rotation-label`} className="font-mono">
                             <SelectValue
                               placeholder={
                                 staffQuery.trim().length < 2
@@ -983,23 +994,23 @@ export default function ClinicRosterWizardDialog({ open, onOpenChange, unitId, u
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-date-from`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Date from
                   </label>
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="font-mono" />
+                  <Input id={`${fieldId}-date-from`} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="font-mono" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor={`${fieldId}-date-to`} className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Date to
                   </label>
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="font-mono" />
+                  <Input id={`${fieldId}-date-to`} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="font-mono" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                     Publish
-                  </label>
-                  <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 cursor-pointer">
-                    <Checkbox checked={publishNow} onCheckedChange={(v) => setPublishNow(Boolean(v))} />
+                  </p>
+                  <label htmlFor={`${fieldId}-publish-now`} className="flex h-10 items-center gap-2 rounded-md border border-border px-3 cursor-pointer">
+                    <Checkbox id={`${fieldId}-publish-now`} checked={publishNow} onCheckedChange={(v) => setPublishNow(Boolean(v))} />
                     <span className="text-sm">Publish roster now</span>
                   </label>
                 </div>
