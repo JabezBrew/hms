@@ -70,7 +70,17 @@ const chronicleStartupState = vi.hoisted(() => ({
   error: null,
 }))
 
+const timelineHookState = vi.hoisted(() => ({
+  calls: [],
+  entries: [],
+  totalCount: 0,
+}))
+
 const workspaceHostState = vi.hoisted(() => ({
+  lastProps: null,
+}))
+
+const summarySidebarState = vi.hoisted(() => ({
   lastProps: null,
 }))
 
@@ -90,14 +100,22 @@ vi.mock('@/features/patients/hooks/usePatientQueries', () => ({
       refetch: vi.fn(),
     }
   },
-  usePatientChronicleTimeline: () => ({
-    data: { pages: [{ results: [] }] },
-    fetchNextPage: vi.fn(),
-    hasNextPage: false,
-    isFetchingNextPage: false,
-    isLoading: false,
-    refetch: vi.fn(),
-  }),
+  usePatientChronicleTimeline: (patientId, params, options) => {
+    timelineHookState.calls.push({ patientId, params, options })
+    return {
+      data: {
+        pages: [{
+          results: timelineHookState.entries,
+          count: timelineHookState.totalCount || timelineHookState.entries.length,
+        }],
+      },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    }
+  },
 }))
 
 vi.mock('@/lib/auth', () => ({
@@ -115,8 +133,8 @@ vi.mock('@/hooks/useTimelineQueries', () => ({
     isLoading: false,
     refetch: vi.fn(),
   }),
-  flattenTimelinePages: () => [],
-  getTimelineTotalCount: () => 0,
+  flattenTimelinePages: (data) => data?.pages?.flatMap((page) => page.results || []) || [],
+  getTimelineTotalCount: (data) => data?.pages?.[0]?.count || 0,
   useInvalidateTimeline: () => vi.fn(),
 }))
 
@@ -190,7 +208,10 @@ vi.mock('@/features/patients/chronicle/ward-round/WardRoundMode', () => ({
 }))
 
 vi.mock('@/components/chronicle/ClinicalSummarySidebar', () => ({
-  default: () => <div>Clinical summary</div>,
+  default: (props) => {
+    summarySidebarState.lastProps = props
+    return <div>Clinical summary</div>
+  },
 }))
 
 vi.mock('@/components/chronicle/TimelineEntry', () => ({
@@ -257,6 +278,9 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     vi.clearAllMocks()
     chronicleHookState.calls = []
     chronicleStartupState.calls = []
+    timelineHookState.calls = []
+    timelineHookState.entries = []
+    timelineHookState.totalCount = 0
     chronicleHookState.data = {
       active_medications: [],
       allergies: [],
@@ -300,6 +324,7 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
     }
     chronicleStartupState.error = null
     workspaceHostState.lastProps = null
+    summarySidebarState.lastProps = null
     patientHookState.data = {
       id: 'patient-1',
       name: 'Ama Mensah',
@@ -441,6 +466,93 @@ describe('PatientChroniclePage Rust V2 workflow guards', () => {
 
     expect(await screen.findByTestId('ward-round-mode')).toHaveTextContent('with admission')
     expect(screen.getByTestId('active-workspace')).toHaveTextContent('none')
+  })
+
+  it('passes recent vitals and lab results as separate sidebar sections', async () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    chronicleStartupState.data = {
+      ...chronicleStartupState.data,
+      latest_vitals: {
+        id: 'vitals-1',
+        recorded_at: '2026-05-12T08:40:00Z',
+        temperature: '37.2',
+        heart_rate: '88',
+      },
+      lab_results: [{
+        id: 'lab-1',
+        test_name: 'WBC',
+        value: '6.1',
+        unit: '10^9/L',
+        entered_at: '2026-05-12T09:10:00Z',
+      }],
+    }
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(summarySidebarState.lastProps?.vitals).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'Temp', value: '37.2' }),
+          expect.objectContaining({ name: 'HR', value: '88' }),
+        ]),
+      )
+    })
+    expect(summarySidebarState.lastProps.labResults).toEqual([
+      expect.objectContaining({ name: 'WBC', value: '6.1' }),
+    ])
+    expect(summarySidebarState.lastProps.vitals).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'WBC' })]),
+    )
+  })
+
+  it('fetches the authoritative Rust timeline when the startup all-history seed is empty', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    chronicleStartupState.data = {
+      ...chronicleStartupState.data,
+      timeline: {
+        results: [],
+        has_next: false,
+        next_cursor: null,
+        page_size: 20,
+        count: 0,
+      },
+    }
+
+    renderPage()
+
+    expect(timelineHookState.calls.at(-1)).toEqual(
+      expect.objectContaining({
+        patientId: 'patient-1',
+        params: expect.objectContaining({
+          type: 'all',
+          limit: 20,
+          encounterId: undefined,
+        }),
+        options: expect.objectContaining({
+          enabled: true,
+          initialPage: undefined,
+        }),
+      }),
+    )
+  })
+
+  it('uses entry timestamps for visit group dates when encounter metadata has no start time', () => {
+    window.__HMS_RUNTIME_CONFIG__ = { apiMode: 'rust-v2' }
+    timelineHookState.entries = [{
+      id: 'note-1',
+      type: 'progress_note',
+      entry_type: 'note',
+      encounter_id: 'encounter-1',
+      title: 'Morning review',
+      timestamp: '2026-05-12T09:00:00Z',
+      data: { assessment: 'Stable overnight' },
+    }]
+    timelineHookState.totalCount = 1
+
+    renderPage()
+
+    expect(screen.getByText('May 12, 2026')).toBeInTheDocument()
+    expect(screen.queryByText('Unknown date')).not.toBeInTheDocument()
   })
 
   it('does not expose unsupported break-glass access in Rust V2 mode', () => {

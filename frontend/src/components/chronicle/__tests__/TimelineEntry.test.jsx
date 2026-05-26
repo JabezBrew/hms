@@ -106,4 +106,28 @@ describe('TimelineEntry note expansion', () => {
     expect(screen.getByText('Blood Pressure: 124/82 | Pain Score: 3')).toBeInTheDocument();
     expect(screen.getByText('Pain improved after analgesia')).toBeInTheDocument();
   });
+
+  it('renders vital signs with fallback timestamps and oxygen saturation fields', () => {
+    render(
+      <TimelineEntry
+        entry={{
+          id: 'vitals-1',
+          type: 'vitals',
+          recorded_at: '2026-05-12T09:15:00Z',
+          data: {
+            temperature: '37.2',
+            blood_pressure_systolic: '124',
+            blood_pressure_diastolic: '82',
+            heart_rate: '88',
+            oxygen_saturation: '97',
+            respiratory_rate: '18',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/May 12, 2026/)).toBeInTheDocument();
+    expect(screen.getByText('124/82')).toBeInTheDocument();
+    expect(screen.getByText('97%')).toBeInTheDocument();
+  });
 });

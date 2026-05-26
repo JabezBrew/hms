@@ -1,12 +1,10 @@
 import AlertTriangle from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
-import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import FileWarning from 'lucide-react/dist/esm/icons/file-warning.js';
 import Droplet from 'lucide-react/dist/esm/icons/droplet.js';
 import ArrowDownCircle from 'lucide-react/dist/esm/icons/circle-arrow-down.js';
 import ArrowUpCircle from 'lucide-react/dist/esm/icons/circle-arrow-up.js';
-import CreditCard from 'lucide-react/dist/esm/icons/credit-card.js';
 import BarChart3 from 'lucide-react/dist/esm/icons/chart-column.js';
 import { cn } from "@/lib/utils";
 
@@ -14,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { useTodayFluidBalance } from "@/features/nursing/hooks";
 import { InvoiceChronicleCard } from "@/components/billing";
 import { PatientCareTeamCompact } from "@/components/chronicle/PatientCareTeamCard";
+
+const EMPTY_ARRAY = Object.freeze([]);
 
 /**
  * ClinicalSummarySidebar - Always-visible patient context panel
@@ -26,16 +26,18 @@ import { PatientCareTeamCompact } from "@/components/chronicle/PatientCareTeamCa
  */
 const ClinicalSummarySidebar = ({
   patient,
-  allergies = [],
-  problems = [],
-  medications = [],
-  labResults = [],
+  allergies = EMPTY_ARRAY,
+  problems = EMPTY_ARRAY,
+  medications = EMPTY_ARRAY,
+  vitals = EMPTY_ARRAY,
+  labResults = EMPTY_ARRAY,
   encounter,
   onViewVitalsTrends,
   onViewFluidTrends,
   className
 }) => {
   const normalizedAllergies = Array.isArray(allergies) ? allergies : [];
+  const normalizedProblems = normalizeProblems(problems);
   // Check if patient is admitted (has active admission)
   // Check multiple fields for backward compatibility
   const isAdmitted = patient?.local_data?.current_admission_id ||
@@ -63,14 +65,26 @@ const ClinicalSummarySidebar = ({
         </>
       )}
 
-      {/* Section: Recent Vitals */}
-      <LabResultsSection results={labResults} onViewTrends={onViewVitalsTrends} />
+      {/* Section: Allergies */}
+      <AllergiesSection allergies={normalizedAllergies} />
 
       {/* Divider */}
       <div className="divider-gradient" />
 
-      {/* Section: Allergies */}
-      <AllergiesSection allergies={normalizedAllergies} />
+      {/* Section: Recent Vitals */}
+      <VitalsSection vitals={vitals} onViewTrends={onViewVitalsTrends} />
+
+      {/* Divider */}
+      <div className="divider-gradient" />
+
+      {/* Section: Active Problems */}
+      <ProblemsSection problems={normalizedProblems} />
+
+      {/* Divider */}
+      <div className="divider-gradient" />
+
+      {/* Section: Current Medications */}
+      <MedicationsSection medications={medications} />
 
       {/* Section: Fluid Balance - Only for admitted patients */}
       {isAdmitted && patientId && (
@@ -80,17 +94,9 @@ const ClinicalSummarySidebar = ({
         </>
       )}
 
-      {/* Divider */}
+      {/* Section: Recent Labs */}
       <div className="divider-gradient" />
-
-      {/* Section: Active Problems */}
-      <ProblemsSection problems={problems} />
-
-      {/* Divider */}
-      <div className="divider-gradient" />
-
-      {/* Section: Current Medications */}
-      <MedicationsSection medications={medications} />
+      <LabResultsSection results={labResults} />
 
       {/* Section: Billing Summary */}
       {patientId && (
@@ -103,10 +109,57 @@ const ClinicalSummarySidebar = ({
   );
 };
 
+function hasDisplayValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function getProblemName(problem) {
+  if (typeof problem === 'string') {
+    return problem;
+  }
+
+  return problem?.name
+    || problem?.label
+    || problem?.title
+    || problem?.description
+    || problem?.diagnosis
+    || problem?.condition
+    || null;
+}
+
+function normalizeProblems(problems = EMPTY_ARRAY) {
+  if (!Array.isArray(problems)) {
+    return [];
+  }
+
+  return problems
+    .flatMap((problem) => {
+      const name = getProblemName(problem);
+      if (!hasDisplayValue(name)) {
+        return [];
+      }
+
+      const normalizedProblem = typeof problem === 'string'
+        ? { id: problem, name }
+        : { ...problem, name };
+
+      return [normalizedProblem];
+    });
+}
+
+function getMedicationName(medication) {
+  return medication?.name
+    || medication?.medication
+    || medication?.medication_name
+    || medication?.medication_display
+    || null;
+}
+
 /**
  * ProblemsSection - Active problems list with severity indicators
  */
 const ProblemsSection = ({ problems }) => {
+  const normalizedProblems = normalizeProblems(problems);
   const getSeverityColor = (severity) => {
     switch (severity) {
       case 'critical':
@@ -134,17 +187,17 @@ const ProblemsSection = ({ problems }) => {
           Active Problems
         </h3>
         <span className="font-mono text-xs text-primary">
-          {problems.length}
+          {normalizedProblems.length}
         </span>
       </header>
 
-      {problems.length === 0 ? (
+      {normalizedProblems.length === 0 ? (
         <p className="text-sm text-muted-foreground">No active problems</p>
       ) : (
         <ul className="space-y-2">
-          {problems.map((problem, i) => (
+          {normalizedProblems.map((problem) => (
             <li
-              key={problem.id || i}
+              key={problem.id || problem.name}
               className={cn(
                 "flex items-start gap-3 p-3 rounded-lg",
                 "bg-card/50 border border-border",
@@ -157,7 +210,7 @@ const ProblemsSection = ({ problems }) => {
               )} />
               <div className="min-w-0 flex-1">
                 <p className="text-foreground/90 text-sm font-medium truncate">
-                  {problem.name || problem.description}
+                  {problem.name}
                 </p>
                 {getSeverityLabel(problem) && (
                   <p className="text-muted-foreground text-xs mt-0.5">
@@ -178,8 +231,11 @@ const ProblemsSection = ({ problems }) => {
  * MedicationsSection - Current medications list
  */
 const MedicationsSection = ({ medications, maxVisible = 5 }) => {
-  const visibleMeds = medications.slice(0, maxVisible);
-  const remainingCount = medications.length - maxVisible;
+  const normalizedMedications = Array.isArray(medications)
+    ? medications.filter((medication) => hasDisplayValue(getMedicationName(medication)))
+    : [];
+  const visibleMeds = normalizedMedications.slice(0, maxVisible);
+  const remainingCount = normalizedMedications.length - maxVisible;
 
   return (
     <section>
@@ -188,32 +244,38 @@ const MedicationsSection = ({ medications, maxVisible = 5 }) => {
           Active Medications
         </h3>
         <span className="font-mono text-xs text-primary">
-          {medications.length}
+          {normalizedMedications.length}
         </span>
       </header>
 
-      {medications.length === 0 ? (
+      {normalizedMedications.length === 0 ? (
         <p className="text-sm text-muted-foreground">No active medications</p>
       ) : (
         <ul className="space-y-1">
-          {visibleMeds.map((med, i) => (
-            <li
-              key={med.id || i}
-              className={cn(
-                "px-3 py-2 rounded-lg text-sm",
-                "text-foreground/80",
-                "hover:bg-card/50 transition-colors cursor-pointer",
-                "flex items-center gap-2"
-              )}
-            >
-              <Pill className="h-3 w-3 text-muted-foreground shrink-0" />
-              <span className="truncate">
-                {med.name}
-                {med.dose && ` ${med.dose}`}
-                {med.frequency && ` ${med.frequency}`}
-              </span>
-            </li>
-          ))}
+          {visibleMeds.map((med) => {
+            const medicationName = getMedicationName(med);
+            const dose = med.dose || med.dosage;
+            const frequency = med.frequency || med.frequency_display;
+
+            return (
+              <li
+                key={med.id || medicationName}
+                className={cn(
+                  "px-3 py-2 rounded-lg text-sm",
+                  "text-foreground/80",
+                  "hover:bg-card/50 transition-colors cursor-pointer",
+                  "flex items-center gap-2"
+                )}
+              >
+                <Pill className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="truncate">
+                  {medicationName}
+                  {dose && ` ${dose}`}
+                  {frequency && ` ${frequency}`}
+                </span>
+              </li>
+            );
+          })}
           {remainingCount > 0 && (
             <li className={cn(
               "px-3 py-2 text-sm font-mono cursor-pointer",
@@ -262,7 +324,7 @@ const AllergiesSection = ({ allergies }) => {
       </header>
 
       <div className="flex flex-wrap gap-2">
-        {allergies.map((allergy, i) => {
+        {allergies.map((allergy) => {
           const allergyName = typeof allergy === 'string'
             ? allergy
             : allergy.name || allergy.allergen_name || allergy.substance || allergy.allergen;
@@ -270,7 +332,7 @@ const AllergiesSection = ({ allergies }) => {
 
           return (
             <span
-              key={i}
+              key={`${allergyName}-${severity || 'allergy'}`}
               className={cn(
                 "px-2 py-1 rounded font-mono text-xs border",
                 severity === 'severe'
@@ -288,21 +350,39 @@ const AllergiesSection = ({ allergies }) => {
   );
 };
 
-/**
- * LabResultsSection - Recent lab results with abnormal highlighting
- */
-const LabResultsSection = ({ results = [], maxVisible = 4, onViewTrends }) => {
-  const visibleResults = results.slice(0, maxVisible);
+function formatSidebarTimestamp(timestamp, fallback = 'Recent') {
+  if (!timestamp) {
+    return fallback;
+  }
 
-  // Get the most recent timestamp
-  const latestDate = results[0]?.timestamp
-    ? new Date(results[0].timestamp).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-    : 'Recent';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return fallback;
+  }
+
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function getAbnormalDirectionSymbol(direction) {
+  if (String(direction || '').includes('high')) {
+    return '↑';
+  }
+  if (String(direction || '').includes('low')) {
+    return '↓';
+  }
+  return '!';
+}
+
+/**
+ * VitalsSection - Recent vital signs with abnormal highlighting
+ */
+const VitalsSection = ({ vitals = EMPTY_ARRAY, maxVisible = 6, onViewTrends }) => {
+  const visibleVitals = Array.isArray(vitals) ? vitals.slice(0, maxVisible) : [];
 
   return (
     <section>
@@ -324,35 +404,35 @@ const LabResultsSection = ({ results = [], maxVisible = 4, onViewTrends }) => {
           ) : null}
         </div>
         <time className="block font-mono text-[10px] text-muted-foreground/70">
-          {results.length ? latestDate : 'No vitals'}
+          {visibleVitals.length ? formatSidebarTimestamp(visibleVitals[0]?.timestamp) : 'No vitals'}
         </time>
       </header>
 
-      {visibleResults.length > 0 ? (
+      {visibleVitals.length > 0 ? (
         <div className="grid grid-cols-2 gap-2">
-          {visibleResults.map((result, i) => (
+          {visibleVitals.map((vital) => (
             <div
-              key={result.id || i}
+              key={vital.id || `${vital.name}-${vital.value}-${vital.timestamp || 'vital'}`}
               className={cn(
                 "p-3 rounded-lg border",
-                result.is_abnormal
+                vital.is_abnormal
                   ? "bg-primary/5 border-primary/30"
                   : "bg-card/50 border-border"
               )}
             >
               <div className={cn(
                 "font-mono text-lg",
-                result.is_abnormal ? "text-primary" : "text-foreground"
+                vital.is_abnormal ? "text-primary" : "text-foreground"
               )}>
-                {result.value}
-                {result.is_abnormal && (
+                {vital.value}
+                {vital.is_abnormal && (
                   <span className="text-xs ml-1">
-                    {result.abnormal_direction === 'high' ? '↑' : '↓'}
+                    {getAbnormalDirectionSymbol(vital.abnormal_direction)}
                   </span>
                 )}
               </div>
               <div className="font-mono text-[10px] text-muted-foreground">
-                {result.name} {result.unit && `(${result.unit})`}
+                {vital.name} {vital.unit && `(${vital.unit})`}
               </div>
             </div>
           ))}
@@ -361,6 +441,63 @@ const LabResultsSection = ({ results = [], maxVisible = 4, onViewTrends }) => {
         <p className="text-sm text-muted-foreground">No vitals recorded yet.</p>
       )}
 
+    </section>
+  );
+};
+
+/**
+ * LabResultsSection - Recent lab results with abnormal highlighting
+ */
+const LabResultsSection = ({ results = EMPTY_ARRAY, maxVisible = 4 }) => {
+  const visibleResults = Array.isArray(results) ? results.slice(0, maxVisible) : [];
+
+  return (
+    <section>
+      <header className="mb-4 space-y-1">
+        <div className="flex items-center justify-between">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            Recent Labs
+          </h3>
+          <span className="font-mono text-xs text-primary">
+            {Array.isArray(results) ? results.length : 0}
+          </span>
+        </div>
+        <time className="block font-mono text-[10px] text-muted-foreground/70">
+          {visibleResults.length ? formatSidebarTimestamp(visibleResults[0]?.timestamp) : 'No labs'}
+        </time>
+      </header>
+
+      {visibleResults.length > 0 ? (
+        <ul className="space-y-2">
+          {visibleResults.map((result) => (
+            <li
+              key={result.id || `${result.name}-${result.value}-${result.timestamp || 'lab'}`}
+              className={cn(
+                "flex items-center justify-between gap-3 rounded-lg border px-3 py-2",
+                result.is_abnormal
+                  ? "bg-amber-500/5 border-amber-500/30"
+                  : "bg-card/50 border-border"
+              )}
+            >
+              <span className="min-w-0 truncate text-sm text-foreground/80">
+                {result.name}
+              </span>
+              <span className={cn(
+                "shrink-0 font-mono text-xs",
+                result.is_abnormal ? "text-amber-600" : "text-muted-foreground"
+              )}>
+                {result.value ?? 'Resulted'}
+                {result.unit ? ` ${result.unit}` : ''}
+                {result.is_abnormal && (
+                  <span className="ml-1">{getAbnormalDirectionSymbol(result.abnormal_direction)}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">No recent labs recorded.</p>
+      )}
     </section>
   );
 };
@@ -496,7 +633,7 @@ const FluidBalanceSection = ({ patientId, onViewTrends }) => {
 /**
  * MiniClinicalSummary - Compact version for inline use
  */
-const MiniClinicalSummary = ({ allergies = [], problems = [] }) => {
+const MiniClinicalSummary = ({ allergies = EMPTY_ARRAY, problems = EMPTY_ARRAY }) => {
   const topProblems = problems.slice(0, 3);
 
   return (
@@ -507,9 +644,12 @@ const MiniClinicalSummary = ({ allergies = [], problems = [] }) => {
           <span className="font-mono text-[10px] uppercase tracking-wider text-destructive">
             Allergies:
           </span>
-          {allergies.map((a, i) => (
-            <span key={i} className="badge-chronicle-rose text-[10px]">
-              {typeof a === 'string' ? a : a.name}
+          {allergies.map((allergy) => (
+            <span
+              key={typeof allergy === 'string' ? allergy : allergy.id || allergy.name}
+              className="badge-chronicle-rose text-[10px]"
+            >
+              {typeof allergy === 'string' ? allergy : allergy.name}
             </span>
           ))}
         </div>
@@ -527,10 +667,13 @@ const MiniClinicalSummary = ({ allergies = [], problems = [] }) => {
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             Dx:
           </span>
-          {topProblems.map((p, i) => (
-            <span key={i} className="text-xs text-foreground/80">
-              {typeof p === 'string' ? p : p.name}
-              {i < topProblems.length - 1 && ','}
+          {topProblems.map((problem, index) => (
+            <span
+              key={typeof problem === 'string' ? problem : problem.id || problem.name}
+              className="text-xs text-foreground/80"
+            >
+              {typeof problem === 'string' ? problem : problem.name}
+              {index < topProblems.length - 1 && ','}
             </span>
           ))}
         </div>
@@ -545,6 +688,7 @@ export {
   ProblemsSection,
   MedicationsSection,
   AllergiesSection,
+  VitalsSection,
   LabResultsSection,
   FluidBalanceSection,
   MiniClinicalSummary

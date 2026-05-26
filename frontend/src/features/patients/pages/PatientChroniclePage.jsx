@@ -94,22 +94,213 @@ const CHRONICLE_TYPE_MAPPING = {
   lab_result: 'labs',
 };
 
-function getEncounterKind(encounter) {
-  const encounterType = encounter?.encounter_type || encounter?.type;
-  return typeof encounterType === 'string' ? encounterType.toLowerCase() : 'outpatient';
+const VITAL_SIDEBAR_FIELDS = [
+  {
+    keys: ['temperature'],
+    name: 'Temp',
+    unit: '°C',
+    abnormal: (value) => {
+      const temp = Number.parseFloat(value);
+      if (!Number.isFinite(temp)) return null;
+      if (temp > 38) return 'high';
+      if (temp < 36) return 'low';
+      return null;
+    },
+  },
+  {
+    keys: ['heart_rate', 'pulse'],
+    name: 'HR',
+    unit: 'bpm',
+    abnormal: (value) => {
+      const heartRate = Number.parseInt(value, 10);
+      if (!Number.isFinite(heartRate)) return null;
+      if (heartRate > 100) return 'high';
+      if (heartRate < 60) return 'low';
+      return null;
+    },
+  },
+  {
+    keys: ['blood_pressure'],
+    name: 'BP',
+    unit: 'mmHg',
+    abnormal: (value, vitals) => {
+      const parts = String(value || '').split('/');
+      const systolic = Number.parseInt(vitals?.blood_pressure_systolic ?? parts[0], 10);
+      const diastolic = Number.parseInt(vitals?.blood_pressure_diastolic ?? parts[1], 10);
+      if (Number.isFinite(systolic) && (systolic > 140 || systolic < 90)) {
+        return systolic > 140 ? 'high' : 'low';
+      }
+      if (Number.isFinite(diastolic) && (diastolic > 90 || diastolic < 60)) {
+        return diastolic > 90 ? 'high' : 'low';
+      }
+      return null;
+    },
+  },
+  {
+    keys: ['oxygen_saturation', 'spo2'],
+    name: 'SpO2',
+    unit: '%',
+    abnormal: (value) => {
+      const spo2 = Number.parseInt(value, 10);
+      if (!Number.isFinite(spo2)) return null;
+      return spo2 < 95 ? 'low' : null;
+    },
+  },
+  {
+    keys: ['respiratory_rate'],
+    name: 'RR',
+    unit: '/min',
+    abnormal: (value) => {
+      const respiratoryRate = Number.parseInt(value, 10);
+      if (!Number.isFinite(respiratoryRate)) return null;
+      if (respiratoryRate > 20) return 'high';
+      if (respiratoryRate < 12) return 'low';
+      return null;
+    },
+  },
+  {
+    keys: ['pain_level', 'pain_score'],
+    name: 'Pain',
+    unit: '/10',
+    abnormal: (value) => {
+      const pain = Number.parseInt(value, 10);
+      if (!Number.isFinite(pain)) return null;
+      return pain >= 7 ? 'high' : null;
+    },
+  },
+];
+
+function hasDisplayValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
 }
 
-function formatEncounterDateRange(encounter) {
-  const start = encounter?.start_time
-    ? new Date(encounter.start_time).toLocaleDateString('en-US', {
+function firstDisplayValue(source, keys) {
+  for (const key of keys) {
+    if (hasDisplayValue(source?.[key])) {
+      return source[key];
+    }
+  }
+  return null;
+}
+
+function normalizeLatestVitalsForSidebar(latestVitals) {
+  if (!latestVitals) {
+    return [];
+  }
+
+  const timestamp = latestVitals.recorded_at
+    || latestVitals.measured_at
+    || latestVitals.timestamp
+    || latestVitals.created_at
+    || null;
+
+  return VITAL_SIDEBAR_FIELDS.flatMap((field) => {
+    const value = firstDisplayValue(latestVitals, field.keys);
+    if (!hasDisplayValue(value)) {
+      return [];
+    }
+
+    const abnormalDirection = field.abnormal?.(value, latestVitals) || null;
+    return [{
+      id: `${field.name}-${latestVitals.id || timestamp || value}`,
+      name: field.name,
+      value,
+      unit: field.unit,
+      timestamp,
+      is_abnormal: Boolean(abnormalDirection),
+      abnormal_direction: abnormalDirection,
+    }];
+  });
+}
+
+function normalizeLabResultsForSidebar(results) {
+  if (!Array.isArray(results)) {
+    return [];
+  }
+
+  return results.map((result) => ({
+    id: result.id,
+    name: result.name || result.test_name || result.title || result.order_number || 'Lab result',
+    value: result.value ?? result.result_value ?? result.status_display ?? result.status ?? null,
+    unit: result.unit || result.result_unit || null,
+    timestamp: result.timestamp || result.entered_at || result.completed_at || result.ordered_at || result.created_at || null,
+    is_abnormal: result.is_abnormal === true || ['low', 'high', 'abnormal', 'critical_low', 'critical_high'].includes(result.flag),
+    abnormal_direction: result.abnormal_direction || result.flag || null,
+  })).filter((result) => hasDisplayValue(result.name) || hasDisplayValue(result.value));
+}
+
+function hasSeedableTimelinePage(page) {
+  return Array.isArray(page?.results) && page.results.length > 0;
+}
+
+function getEncounterKind(encounter) {
+  const encounterType = encounter?.encounter_type || encounter?.type;
+  return typeof encounterType === 'string' ? encounterType.toLowerCase() : null;
+}
+
+function getEntryTimestamp(entry) {
+  return entry?.timestamp
+    || entry?.occurred_at
+    || entry?.recorded_at
+    || entry?.measured_at
+    || entry?.created_at
+    || entry?.updated_at
+    || entry?.data?.timestamp
+    || entry?.data?.recorded_at
+    || entry?.data?.measured_at
+    || entry?.data?.created_at
+    || entry?.data?.updated_at
+    || null;
+}
+
+function toTimestampMs(value) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function sortEntriesByTimestampDesc(entries = []) {
+  return [...entries].sort((a, b) => {
+    const timestampA = toTimestampMs(getEntryTimestamp(a)) || 0;
+    const timestampB = toTimestampMs(getEntryTimestamp(b)) || 0;
+    return timestampB - timestampA;
+  });
+}
+
+function firstValidTimestamp(...values) {
+  return values.find((value) => toTimestampMs(value) !== null) || null;
+}
+
+function getEncounterDisplayStart(encounter, fallbackTimestamp = null) {
+  return firstValidTimestamp(
+    encounter?.start_time,
+    encounter?.started_at,
+    encounter?.date,
+    encounter?.created_at,
+    fallbackTimestamp,
+  );
+}
+
+function getEncounterDisplayEnd(encounter) {
+  return firstValidTimestamp(encounter?.end_time, encounter?.ended_at);
+}
+
+function formatEncounterDateRange(encounter, fallbackTimestamp = null) {
+  const startTimestamp = getEncounterDisplayStart(encounter, fallbackTimestamp);
+  const endTimestamp = getEncounterDisplayEnd(encounter);
+  const start = startTimestamp
+    ? new Date(startTimestamp).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
       })
     : 'Unknown date';
 
-  const end = encounter?.end_time
-    ? new Date(encounter.end_time).toLocaleDateString('en-US', {
+  const end = endTimestamp
+    ? new Date(endTimestamp).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       })
@@ -118,17 +309,35 @@ function formatEncounterDateRange(encounter) {
   return end && end !== start ? `${start} - ${end}` : start;
 }
 
+function getEncounterTitle(encounter) {
+  const encounterKind = getEncounterKind(encounter);
+
+  if (encounterKind === 'inpatient' || encounterKind === 'admission' || encounterKind === 'hospitalization') {
+    return 'Inpatient Admission';
+  }
+  if (encounterKind === 'emergency') {
+    return 'Emergency Visit';
+  }
+  if (encounterKind === 'outpatient') {
+    return 'Outpatient Visit';
+  }
+
+  return 'Documented Visit';
+}
+
 function formatEncounterScopeLabel(encounter, activeEncounterId) {
   if (!encounter) {
     return 'Select visit';
   }
 
   const encounterKind = getEncounterKind(encounter);
-  const encounterTypeLabel = encounterKind === 'inpatient'
+  const encounterTypeLabel = encounterKind === 'inpatient' || encounterKind === 'admission' || encounterKind === 'hospitalization'
     ? 'Inpatient'
     : encounterKind === 'emergency'
       ? 'Emergency'
-      : 'Outpatient';
+      : encounterKind === 'outpatient'
+        ? 'Outpatient'
+        : 'Documented';
 
   const details = [formatEncounterDateRange(encounter)];
 
@@ -445,7 +654,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     }
 
     return encounters.find((encounter) => (
-      getEncounterKind(encounter) === 'outpatient'
+      (getEncounterKind(encounter) || 'outpatient') === 'outpatient'
       && encounter.status === 'planned'
       && activeOutpatientVisitStatuses.has(encounter.outpatient_visit_status)
     )) || null;
@@ -590,101 +799,14 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Get latest vitals from context
   const latestVitals = chronicleContext?.latest_vitals;
-  // Use primitive values for memoization to avoid object reference issues
-  const vitalsId = latestVitals?.id;
-  const vitalsRecordedAt = latestVitals?.recorded_at;
+  const recentVitals = useMemo(() => (
+    normalizeLatestVitalsForSidebar(latestVitals)
+  ), [latestVitals]);
 
-  // Transform latest_vitals from context into labResults format for sidebar
   const labResults = useMemo(() => {
     const shapedLabs = chronicleContext?.lab_results || chronicleContext?.summaries?.labs || [];
-    if (Array.isArray(shapedLabs) && shapedLabs.length > 0) {
-      return shapedLabs.map((result) => ({
-        id: result.id,
-        name: result.name || result.test_name,
-        value: result.value,
-        unit: result.unit,
-        timestamp: result.timestamp || result.entered_at,
-        is_abnormal: result.is_abnormal === true,
-        abnormal_direction: result.abnormal_direction || null,
-      }));
-    }
-
-    // Early return using the primitives we already checked
-    if (!vitalsId || !latestVitals) return [];
-
-    const results = [];
-    const timestamp = vitalsRecordedAt;
-
-    if (latestVitals.temperature) {
-      const temp = parseFloat(latestVitals.temperature);
-      results.push({
-        id: `temp-${vitalsId}`,
-        name: 'Temp',
-        value: latestVitals.temperature,
-        unit: '°C',
-        timestamp,
-        is_abnormal: temp > 38 || temp < 36,
-        abnormal_direction: temp > 38 ? 'high' : 'low',
-      });
-    }
-
-    if (latestVitals.heart_rate) {
-      const hr = parseInt(latestVitals.heart_rate);
-      results.push({
-        id: `hr-${vitalsId}`,
-        name: 'HR',
-        value: latestVitals.heart_rate,
-        unit: 'bpm',
-        timestamp,
-        is_abnormal: hr > 100 || hr < 60,
-        abnormal_direction: hr > 100 ? 'high' : 'low',
-      });
-    }
-
-    if (latestVitals.blood_pressure) {
-      const parts = latestVitals.blood_pressure.split('/');
-      const systolic = parts.length > 0 ? Number(parts[0]) : null;
-      const bpAbnormal = systolic != null && !isNaN(systolic) && (systolic > 140 || systolic < 90);
-      results.push({
-        id: `bp-${vitalsId}`,
-        name: 'BP',
-        value: latestVitals.blood_pressure,
-        unit: 'mmHg',
-        timestamp,
-        is_abnormal: bpAbnormal,
-        abnormal_direction: bpAbnormal ? (systolic > 140 ? 'high' : 'low') : null,
-      });
-    }
-
-    if (latestVitals.oxygen_saturation) {
-      const spo2 = parseInt(latestVitals.oxygen_saturation);
-      results.push({
-        id: `spo2-${vitalsId}`,
-        name: 'SpO2',
-        value: latestVitals.oxygen_saturation,
-        unit: '%',
-        timestamp,
-        is_abnormal: spo2 < 95,
-        abnormal_direction: 'low',
-      });
-    }
-
-    if (latestVitals.respiratory_rate) {
-      const rr = parseInt(latestVitals.respiratory_rate);
-      results.push({
-        id: `rr-${vitalsId}`,
-        name: 'RR',
-        value: latestVitals.respiratory_rate,
-        unit: '/min',
-        timestamp,
-        is_abnormal: rr > 20 || rr < 12,
-        abnormal_direction: rr > 20 ? 'high' : 'low',
-      });
-    }
-
-    return results;
-    // Use primitive vitalsId as dependency - will only re-run when vitals actually change
-  }, [chronicleContext?.lab_results, chronicleContext?.summaries?.labs, vitalsId, vitalsRecordedAt, latestVitals]);
+    return normalizeLabResultsForSidebar(shapedLabs);
+  }, [chronicleContext?.lab_results, chronicleContext?.summaries?.labs]);
 
   // Map filter to API type
   // Fetch timeline with infinite scroll
@@ -699,7 +821,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     && chronicleTimelineParams.type === 'all'
     && !chronicleTimelineParams.search
     && !chronicleTimelineParams.encounterId
-    && chronicleContext?.timeline;
+    && hasSeedableTimelinePage(chronicleContext?.timeline);
   const rustTimelineQuery = usePatientChronicleTimeline(id, chronicleTimelineParams, {
     enabled: !isWardRoundMode && rustV2Mode && canFetchClinical && !!resolvedVisitScope && !!chronicleContext && !canSeedRustTimeline,
     initialPage: canSeedRustTimeline ? chronicleContext.timeline : undefined,
@@ -758,6 +880,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     return flatEntries.map(entry => {
       // Map entry_type to display type
       let displayType = entry.type;
+      const normalizedTimestamp = getEntryTimestamp(entry);
 
       // Handle prescription type
       if (entry.entry_type === 'prescription') {
@@ -769,11 +892,13 @@ const PatientChroniclePage = ({ defaultAction }) => {
         return {
           ...entry,
           type: 'vitals',
+          timestamp: normalizedTimestamp,
           data: {
             temperature: entry.data.temperature,
             blood_pressure: entry.data.blood_pressure,
             heart_rate: entry.data.heart_rate,
-            spo2: entry.data.oxygen_saturation,
+            spo2: entry.data.spo2 || entry.data.oxygen_saturation,
+            oxygen_saturation: entry.data.oxygen_saturation || entry.data.spo2,
             respiratory_rate: entry.data.respiratory_rate,
             pain_level: entry.data.pain_level,
           }
@@ -785,6 +910,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
         return {
           ...entry,
           type: 'medication',
+          timestamp: normalizedTimestamp,
           data: {
             ...entry.data,  // Preserve all original data including status, id, etc.
             name: entry.data.medication_name,
@@ -799,6 +925,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
       return {
         ...entry,
         type: displayType,
+        timestamp: normalizedTimestamp,
       };
     });
   }, [timelineData]);
@@ -849,7 +976,9 @@ const PatientChroniclePage = ({ defaultAction }) => {
     const encounterMap = new Map();
     if (encounters) {
       encounters.forEach(enc => {
-        encounterMap.set(enc.id, enc);
+        if (enc?.id !== null && enc?.id !== undefined) {
+          encounterMap.set(String(enc.id), enc);
+        }
       });
     }
 
@@ -863,7 +992,12 @@ const PatientChroniclePage = ({ defaultAction }) => {
     const encounterEntries = new Map();
 
     filteredEntries.forEach(entry => {
-      const encounterId = entry.encounter_id || entry.encounter?.id;
+      const encounterId = normalizeExpansionId(
+        entry.encounter_id
+          || entry.encounter?.id
+          || entry.data?.encounter_id
+          || entry.data?.encounter?.id
+      );
 
       if (encounterId) {
         if (!encounterEntries.has(encounterId)) {
@@ -877,23 +1011,33 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
     // Convert to array and attach encounter details
     encounterEntries.forEach((entries, encounterId) => {
+      const sortedEntries = sortEntriesByTimestampDesc(entries);
+      const fallbackTimestamp = getEntryTimestamp(sortedEntries[0]);
       // Get encounter details from map or from first entry
-      const encounter = encounterMap.get(encounterId) ||
-                       entries[0]?.encounter ||
-                       { id: encounterId, type: 'unknown', status: 'unknown' };
+      const sourceEncounter = encounterMap.get(encounterId)
+        || sortedEntries[0]?.encounter
+        || {};
+      const encounter = {
+        ...sourceEncounter,
+        id: sourceEncounter.id || encounterId,
+        start_time: getEncounterDisplayStart(sourceEncounter, fallbackTimestamp),
+        end_time: getEncounterDisplayEnd(sourceEncounter),
+      };
 
       groups.encounters.push({
         encounter,
-        entries: entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        entries: sortedEntries
       });
     });
 
     // Sort encounters by start_time (most recent first)
     groups.encounters.sort((a, b) => {
-      const dateA = new Date(a.encounter.start_time || a.entries[0]?.timestamp);
-      const dateB = new Date(b.encounter.start_time || b.entries[0]?.timestamp);
+      const dateA = toTimestampMs(a.encounter.start_time || getEntryTimestamp(a.entries[0])) || 0;
+      const dateB = toTimestampMs(b.encounter.start_time || getEntryTimestamp(b.entries[0])) || 0;
       return dateB - dateA;
     });
+
+    groups.unlinked = sortEntriesByTimestampDesc(groups.unlinked);
 
     return groups;
   }, [filteredEntries, encounters]);
@@ -929,6 +1073,8 @@ const PatientChroniclePage = ({ defaultAction }) => {
     areEncountersLoading,
     expansionSeedKey,
     encounterGroupCount,
+    groupedByEncounter.encounters,
+    groupedByEncounter.unlinked,
     unlinkedEntryCount,
   ]);
 
@@ -1612,6 +1758,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
               problems={rustV2Mode ? problemSummaries : []}
               medications={medications}
               allergies={allergies}
+              vitals={recentVitals}
               labResults={labResults}
               encounter={activeEncounter}
               onViewVitalsTrends={() => handleViewTrends('vitals')}
@@ -1757,6 +1904,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                       { key: 'lab_result', label: 'Labs', icon: TestTube }
                     ].map(filter => (
                       <button
+                        type="button"
                         key={filter.key}
                         onClick={() => setActiveFilter(filter.key)}
                         data-onboarding={
@@ -1824,65 +1972,69 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 const isExpanded = normalizedEncounterId
                   ? expandedEncounters.has(normalizedEncounterId)
                   : false;
-                const dateRange = formatEncounterDateRange(encounter);
+                const dateRange = formatEncounterDateRange(encounter, getEntryTimestamp(entries[0]));
                 const encounterKind = getEncounterKind(encounter);
-                const typeIcon = encounterKind === 'inpatient' ? Building2 : Calendar;
+                const typeIcon = ['inpatient', 'admission', 'hospitalization'].includes(encounterKind) ? Building2 : Calendar;
                 const TypeIcon = typeIcon;
 
                 return (
                   <div key={encounter.id} className="overflow-hidden rounded-lg border border-border bg-card">
                     {/* Encounter Header */}
-                    <button
-                      onClick={() => toggleEncounter(normalizedEncounterId)}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                      )}
+                    <div className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50">
+                      <button
+                        type="button"
+                        onClick={() => toggleEncounter(normalizedEncounterId)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                        )}
 
-                      <div className={cn(
-                        "rounded-lg p-2",
-                        encounterKind === 'inpatient' ? "bg-blue-500/10" : "bg-amber-500/10"
-                      )}>
-                        <TypeIcon className={cn(
-                          "h-4 w-4",
-                          encounterKind === 'inpatient' ? "text-blue-500" : "text-amber-500"
-                        )} />
-                      </div>
+                        <div className={cn(
+                          "rounded-lg p-2",
+                          ['inpatient', 'admission', 'hospitalization'].includes(encounterKind) ? "bg-blue-500/10" : "bg-amber-500/10"
+                        )}>
+                          <TypeIcon className={cn(
+                            "h-4 w-4",
+                            ['inpatient', 'admission', 'hospitalization'].includes(encounterKind) ? "text-blue-500" : "text-amber-500"
+                          )} />
+                        </div>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium capitalize">
-                            {encounter.encounter_type === 'inpatient' ? 'Inpatient Admission' :
-                             encounter.encounter_type === 'emergency' ? 'Emergency Visit' : 'Outpatient Visit'}
-                          </span>
-                          <span className={cn(
-                            "rounded-full px-2 py-0.5 font-mono text-xs",
-                            encounter.status === 'finished' && "bg-muted text-muted-foreground",
-                            encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
-                            encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
-                          )}>
-                            {encounter.status}
-                          </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium capitalize">
+                              {getEncounterTitle(encounter)}
+                            </span>
+                            {encounter.status && (
+                              <span className={cn(
+                                "rounded-full px-2 py-0.5 font-mono text-xs",
+                                encounter.status === 'finished' && "bg-muted text-muted-foreground",
+                                encounter.status === 'in-progress' && "bg-green-500/10 text-green-600",
+                                encounter.status === 'cancelled' && "bg-red-500/10 text-red-600"
+                              )}>
+                                {encounter.status}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{dateRange}</span>
+                            {encounter.practitioner_name && (
+                              <>
+                                <span>•</span>
+                                <span>{encounter.practitioner_name}</span>
+                              </>
+                            )}
+                            {encounter.location && (
+                              <>
+                                <span>•</span>
+                                <span>{encounter.location}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{dateRange}</span>
-                          {encounter.practitioner_name && (
-                            <>
-                              <span>•</span>
-                              <span>{encounter.practitioner_name}</span>
-                            </>
-                          )}
-                          {encounter.location && (
-                            <>
-                              <span>•</span>
-                              <span>{encounter.location}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      </button>
 
                       <div className="flex items-center gap-2">
                         <div className="hidden xl:flex items-center gap-1">
@@ -1916,7 +2068,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                           {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
                         </span>
                       </div>
-                    </button>
+                    </div>
 
                     {/* Encounter Entries — CSS-hidden instead of unmount to avoid animation replay */}
                     <div className={cn("space-y-3 border-t border-border px-4 py-3", !isExpanded && "hidden")}>
@@ -1945,6 +2097,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
                 <div className="overflow-hidden rounded-lg border border-dashed border-border bg-card/50">
                   {/* Unlinked Header */}
                   <button
+                    type="button"
                     onClick={() => toggleEncounter('unlinked')}
                     className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
                   >

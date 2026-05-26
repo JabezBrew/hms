@@ -186,6 +186,18 @@ const TimelineEntry = ({
 
   const config = entryConfig[entry.type] || entryConfig.progress_note;
   const Icon = config.icon;
+  const entryTimestamp = entry.timestamp
+    || entry.occurred_at
+    || entry.recorded_at
+    || entry.measured_at
+    || entry.created_at
+    || entry.updated_at
+    || entry.data?.timestamp
+    || entry.data?.recorded_at
+    || entry.data?.measured_at
+    || entry.data?.created_at
+    || entry.data?.updated_at
+    || null;
 
   // ============================================
   // Time formatting
@@ -397,7 +409,7 @@ const TimelineEntry = ({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <time className="font-mono text-xs text-primary">
-              {formatTime(entry.timestamp)}
+              {formatTime(entryTimestamp)}
             </time>
             <span className={getBadgeClass(config.color)}>
               <Icon className="h-3 w-3 mr-1 inline" />
@@ -524,18 +536,23 @@ const TimelineEntry = ({
 const VitalsContent = ({ vitals }) => {
   if (!vitals) return null;
 
+  const bloodPressure = vitals.blood_pressure
+    || (vitals.blood_pressure_systolic && vitals.blood_pressure_diastolic
+      ? `${vitals.blood_pressure_systolic}/${vitals.blood_pressure_diastolic}`
+      : null);
+
   const vitalItems = [
     { label: 'Temp', value: vitals.temperature, unit: '°C' },
-    { label: 'BP', value: vitals.blood_pressure, unit: '' },
-    { label: 'HR', value: vitals.heart_rate, unit: ' bpm' },
-    { label: 'SpO2', value: vitals.spo2, unit: '%' },
+    { label: 'BP', value: bloodPressure, unit: '' },
+    { label: 'HR', value: vitals.heart_rate || vitals.pulse, unit: ' bpm' },
+    { label: 'SpO2', value: vitals.spo2 || vitals.oxygen_saturation, unit: '%' },
     { label: 'RR', value: vitals.respiratory_rate, unit: '/min' },
-  ].filter(item => item.value);
+  ].filter(item => item.value !== null && item.value !== undefined && String(item.value).trim() !== '');
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-      {vitalItems.map((item, i) => (
-        <div key={i} className="p-2 rounded-lg bg-background/50">
+      {vitalItems.map((item) => (
+        <div key={item.label} className="p-2 rounded-lg bg-background/50">
           <div className="font-mono text-lg text-foreground">
             {item.value}{item.unit}
           </div>
@@ -651,9 +668,9 @@ const LabResultContent = ({ result }) => {
           {results
             .filter(r => r.is_abnormal || r.is_critical)
             .slice(0, 3)
-            .map((r, i) => (
+            .map((r) => (
               <div
-                key={i}
+                key={r.id || r.test_id || r.test_name || `${r.value}-${r.unit}-${r.reference_range || 'result'}`}
                 className={cn(
                   "flex items-center justify-between px-2 py-1 rounded text-sm",
                   r.is_critical ? "bg-rose-50 dark:bg-rose-900/10" : "bg-amber-50 dark:bg-amber-900/10"
@@ -707,9 +724,9 @@ const LabResultContent = ({ result }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
-              {results.map((r, i) => (
+              {results.map((r) => (
                 <tr
-                  key={i}
+                  key={r.id || r.test_id || r.test_name || `${r.value}-${r.unit}-${r.reference_range || 'result'}`}
                   className={cn(
                     "transition-colors",
                     r.is_critical && "bg-rose-50/50 dark:bg-rose-900/10",
@@ -758,6 +775,7 @@ const LabResultContent = ({ result }) => {
       {/* Expand/collapse toggle */}
       {results && results.length > 0 && (
         <button
+          type="button"
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-mono transition-colors"
         >
@@ -1196,8 +1214,8 @@ const NotePreview = ({ entry }) => {
       )}
 
       {/* Show extracted preview items */}
-      {previewItems.map((item, i) => (
-        <div key={i}>
+      {previewItems.map((item) => (
+        <div key={`${item.label}-${item.preview}`}>
           <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground/70">
             {item.label}:{' '}
           </span>
