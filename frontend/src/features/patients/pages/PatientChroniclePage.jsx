@@ -372,6 +372,48 @@ function formatEncounterScopeLabel(encounter, activeEncounterId) {
   return `${prefix} visit - ${details.join(' • ')}`;
 }
 
+function isNoteTimelineEntry(entry) {
+  const type = entry?.type || entry?.entry_type;
+  return [
+    'progress_note',
+    'soap_note',
+    'admission_note',
+    'discharge_note',
+    'consult_note',
+    'consultation_note',
+    'nursing_note',
+    'note',
+  ].includes(type);
+}
+
+function getTimelineEntryTitle(entry) {
+  return entry?.title
+    || entry?.summary
+    || entry?.data?.title
+    || entry?.data?.note_type
+    || entry?.data?.template_title
+    || entry?.type
+    || entry?.entry_type
+    || 'Clinical entry';
+}
+
+function compactMedicationDetail(medication) {
+  return [
+    medication?.dosage || medication?.dose,
+    medication?.route || medication?.route_display,
+    medication?.frequency || medication?.frequency_display,
+  ].filter(hasDisplayValue).join(' • ');
+}
+
+function compactLabDetail(lab) {
+  return [
+    hasDisplayValue(lab?.value) ? `${lab.value}${lab?.unit ? ` ${lab.unit}` : ''}` : null,
+    lab?.timestamp
+      ? new Date(lab.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : null,
+  ].filter(hasDisplayValue).join(' • ');
+}
+
 /**
  * PatientChroniclePage - Magazine-style patient health record view
  *
@@ -826,7 +868,10 @@ const PatientChroniclePage = ({ defaultAction }) => {
   }, [id]);
 
   // Use chronicle context data directly - no more legacy fallback needed
-  const medications = chronicleContext?.active_medications || chronicleContext?.summaries?.medications || [];
+  const medications = useMemo(
+    () => chronicleContext?.active_medications || chronicleContext?.summaries?.medications || [],
+    [chronicleContext?.active_medications, chronicleContext?.summaries?.medications],
+  );
   const parsedAllergies = chronicleContext?.allergies || chronicleContext?.summaries?.allergies || [];
 
   // Get latest vitals from context
@@ -1209,6 +1254,58 @@ const PatientChroniclePage = ({ defaultAction }) => {
 
   // Get total count for display
   const totalCount = useMemo(() => getTimelineTotalCount(timelineDisplayData), [timelineDisplayData]);
+  const mobileWorkspaceContext = useMemo(() => {
+    const sortedTimelineEntries = sortEntriesByTimestampDesc(timelineEntries);
+    const contextEncounter = chartContextEncounter || activeEncounter || null;
+    const recentNotes = sortedTimelineEntries
+      .filter(isNoteTimelineEntry)
+      .slice(0, 3)
+      .map((entry, index) => ({
+        id: entry.id || `${entry.type || entry.entry_type || 'note'}-${getEntryTimestamp(entry) || index}`,
+        title: getTimelineEntryTitle(entry),
+        kind: entry.type || entry.entry_type || 'note',
+        status: entry.status || entry.data?.status || null,
+        timestamp: getEntryTimestamp(entry),
+      }));
+
+    return {
+      patientName,
+      entryCount: totalCount,
+      visitLabel: isAllVisitsScope
+        ? 'All history'
+        : formatEncounterScopeLabel(contextEncounter, activeEncounter?.id),
+      encounter: contextEncounter ? {
+        id: contextEncounter.id,
+        title: getEncounterTitle(contextEncounter),
+        status: contextEncounter.status || null,
+        dateRange: formatEncounterDateRange(contextEncounter),
+      } : null,
+      latestVitals: recentVitals.slice(0, 6),
+      medications: medications.slice(0, 4).map((medication, index) => ({
+        id: medication.id || medication.medication_id || `${medication.name || medication.medication_name || 'med'}-${index}`,
+        name: medication.name || medication.medication_name || medication.drug_name || 'Medication',
+        detail: compactMedicationDetail(medication),
+      })),
+      labs: labResults.slice(0, 4).map((lab, index) => ({
+        id: lab.id || `${lab.name || 'lab'}-${lab.timestamp || index}`,
+        name: lab.name,
+        detail: compactLabDetail(lab),
+        flag: lab.abnormal_direction || (lab.is_abnormal ? 'abnormal' : null),
+      })),
+      recentNotes,
+      lastUpdated: sortedTimelineEntries[0] ? getEntryTimestamp(sortedTimelineEntries[0]) : null,
+    };
+  }, [
+    activeEncounter,
+    chartContextEncounter,
+    isAllVisitsScope,
+    labResults,
+    medications,
+    patientName,
+    recentVitals,
+    timelineEntries,
+    totalCount,
+  ]);
 
   useEffect(() => {
     if (!visitParam || !resolvedVisitScope || visitParam === resolvedVisitScope) {
@@ -1476,6 +1573,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     editNoteData,
     requestedDischargeAdmissionId,
     requestedTreatmentSheetAdmissionId,
+    mobileContext: mobileWorkspaceContext,
     onClose: handleSlideOverClose,
     onNoteCreated: handleNoteCreated,
     onVitalsRecorded: handleVitalsRecorded,
@@ -1501,6 +1599,7 @@ const PatientChroniclePage = ({ defaultAction }) => {
     editNoteData,
     requestedDischargeAdmissionId,
     requestedTreatmentSheetAdmissionId,
+    mobileWorkspaceContext,
     handleSlideOverClose,
     handleNoteCreated,
     handleVitalsRecorded,

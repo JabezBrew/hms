@@ -4,6 +4,7 @@ import {
   buildChronicleWorkspaceProps,
   chronicleWorkspaceLoaders,
 } from '@/features/patients/chronicle/workspaceRegistry';
+import MobileWorkspaceContextDock from '@/features/patients/components/MobileWorkspaceContextDock';
 
 const chronicleWorkspaceComponents = Object.freeze(
   Object.fromEntries(
@@ -32,6 +33,10 @@ const ChronicleWorkspaceHost = ({ activeWorkspace, workspaceContext }) => {
   return (
     <Suspense fallback={null}>
       <WorkspaceComponent {...workspaceProps} />
+      <MobileWorkspaceContextDock
+        activeWorkspace={activeWorkspace}
+        context={workspaceContext.mobileContext}
+      />
     </Suspense>
   );
 };
