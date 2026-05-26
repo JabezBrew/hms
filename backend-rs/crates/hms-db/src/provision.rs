@@ -4,7 +4,7 @@ use anyhow::ensure;
 use argon2::{Argon2, PasswordHasher};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use hms_domain::admin::{AuthorityAppointmentStatus, CommitteeStatus, OrgUnitType, PositionStatus};
 use hms_domain::auth::PatientDataVisibility;
 use hms_domain::billing::{BillingRuleType, ServiceKind};
@@ -18,7 +18,9 @@ use hms_domain::patients::{PatientAdministrativeStatus, PatientContextKind, Sex}
 use hms_domain::ward::{BedStatus, WardStatus};
 use password_hash::SaltString;
 use rand_core::{OsRng, RngCore};
+use serde_json::json;
 use sha2::{Digest, Sha256};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::codec;
@@ -69,6 +71,33 @@ pub const DEFAULT_POSITION_ADMIN_ID: u128 = 0xa0000000000000000000000000000020;
 pub const DEFAULT_AUTHORITY_APPOINTMENT_ID: u128 = 0xa0000000000000000000000000000030;
 pub const DEFAULT_COMMITTEE_ID: u128 = 0xa0000000000000000000000000000040;
 pub const DEFAULT_NOTIFICATION_ID: u128 = 0xb0000000000000000000000000000001;
+
+const DEMO_WARD_ID: u128 = 0xd1000000000000000000000000000001;
+const DEMO_SECTION_ID: u128 = 0xd1000000000000000000000000000010;
+const DEMO_BED_BASE_ID: u128 = 0xd1100000000000000000000000000000;
+const DEMO_PATIENT_BASE_ID: u128 = 0xd2000000000000000000000000000000;
+const DEMO_CONTEXT_BASE_ID: u128 = 0xd2100000000000000000000000000000;
+const DEMO_ADMISSION_BASE_ID: u128 = 0xd3000000000000000000000000000000;
+const DEMO_NURSING_TASK_BASE_ID: u128 = 0xd3100000000000000000000000000000;
+const DEMO_MED_ADMIN_BASE_ID: u128 = 0xd3200000000000000000000000000000;
+const DEMO_TREATMENT_SHEET_BASE_ID: u128 = 0xd3300000000000000000000000000000;
+const DEMO_NOTE_BASE_ID: u128 = 0xd4000000000000000000000000000000;
+const DEMO_NOTE_VERSION_BASE_ID: u128 = 0xd4100000000000000000000000000000;
+const DEMO_PROBLEM_BASE_ID: u128 = 0xd4200000000000000000000000000000;
+const DEMO_ALLERGY_BASE_ID: u128 = 0xd4300000000000000000000000000000;
+const DEMO_PRESCRIPTION_BASE_ID: u128 = 0xd4400000000000000000000000000000;
+const DEMO_CHART_ENTRY_BASE_ID: u128 = 0xd4500000000000000000000000000000;
+const DEMO_LAB_ORDER_BASE_ID: u128 = 0xd5000000000000000000000000000000;
+const DEMO_LAB_SPECIMEN_BASE_ID: u128 = 0xd5100000000000000000000000000000;
+const DEMO_LAB_RESULT_BASE_ID: u128 = 0xd5200000000000000000000000000000;
+const DEMO_INVOICE_BASE_ID: u128 = 0xd6000000000000000000000000000000;
+const DEMO_INVOICE_LINE_BASE_ID: u128 = 0xd6100000000000000000000000000000;
+const DEMO_PAYMENT_BASE_ID: u128 = 0xd6200000000000000000000000000000;
+const DEMO_RECEIPT_BASE_ID: u128 = 0xd6300000000000000000000000000000;
+const DEMO_NHIS_CLAIM_BASE_ID: u128 = 0xd6400000000000000000000000000000;
+const DEMO_WARD_ROUND_BASE_ID: u128 = 0xd7000000000000000000000000000000;
+const DEMO_WARD_ROUND_ACTION_BASE_ID: u128 = 0xd7100000000000000000000000000000;
+const DEMO_WARD_ROUND_LINK_BASE_ID: u128 = 0xd7200000000000000000000000000000;
 
 #[derive(Clone, Debug)]
 pub struct BaselineProvisioning {
@@ -205,6 +234,49 @@ impl BaselineProvisioning {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DemoSeedProfile {
+    Smoke,
+    Small,
+}
+
+impl DemoSeedProfile {
+    pub fn parse(value: &str) -> anyhow::Result<Option<Self>> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "0" | "false" | "no" | "off" | "none" => Ok(None),
+            "1" | "true" | "yes" | "on" | "smoke" => Ok(Some(Self::Smoke)),
+            "small" => Ok(Some(Self::Small)),
+            _ => anyhow::bail!("HMS_DEMO_SEED_PROFILE must be smoke, small, or disabled"),
+        }
+    }
+
+    fn config(self) -> DemoSeedConfig {
+        match self {
+            Self::Smoke => DemoSeedConfig { patient_count: 2 },
+            Self::Small => DemoSeedConfig { patient_count: 4 },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DemoSeedConfig {
+    patient_count: usize,
+}
+
+impl DemoSeedConfig {
+    fn validate(self) -> anyhow::Result<()> {
+        ensure!(
+            self.patient_count > 0,
+            "demo patient_count must be greater than zero"
+        );
+        ensure!(
+            self.patient_count <= demo_patient_archetypes().len(),
+            "demo patient_count exceeds available archetypes"
+        );
+        Ok(())
+    }
+}
+
 pub async fn provision_baseline(
     pool: &PgPool,
     baseline: &BaselineProvisioning,
@@ -232,6 +304,1770 @@ pub async fn provision_baseline(
         seed_patient_contexts(pool, baseline).await?;
     }
     Ok(())
+}
+
+pub async fn provision_demo_seed(
+    pool: &PgPool,
+    baseline: &BaselineProvisioning,
+    profile: DemoSeedProfile,
+) -> anyhow::Result<()> {
+    let config = profile.config();
+    config.validate()?;
+
+    let _guard = PROVISION_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    let mut tx = pool.begin().await?;
+    delete_demo_seed_graph(&mut tx, baseline.facility_id).await?;
+    seed_demo_ward_resources(&mut tx, baseline, config).await?;
+    seed_demo_patient_graph(&mut tx, baseline, config).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn delete_demo_seed_graph(
+    transaction: &mut Transaction<'_, Postgres>,
+    facility_id: Uuid,
+) -> anyhow::Result<()> {
+    let cleanup_statements = [
+        r#"
+        WITH demo_invoices AS (
+            SELECT invoices.id
+            FROM invoices
+            JOIN patients ON patients.id = invoices.patient_id
+            WHERE invoices.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+        )
+        DELETE FROM receipts
+        USING demo_invoices
+        WHERE receipts.facility_id = $1
+          AND receipts.invoice_id = demo_invoices.id
+        "#,
+        r#"
+        WITH demo_invoices AS (
+            SELECT invoices.id
+            FROM invoices
+            JOIN patients ON patients.id = invoices.patient_id
+            WHERE invoices.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+        )
+        DELETE FROM payments
+        USING demo_invoices
+        WHERE payments.facility_id = $1
+          AND payments.invoice_id = demo_invoices.id
+        "#,
+        r#"
+        WITH demo_claims AS (
+            SELECT nhis_claims.id
+            FROM nhis_claims
+            JOIN invoices ON invoices.id = nhis_claims.invoice_id
+            JOIN patients ON patients.id = invoices.patient_id
+            WHERE nhis_claims.facility_id = $1
+              AND invoices.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND nhis_claims.claim_number ~ '^DEMO-CLM-[0-9]{4}$'
+        )
+        DELETE FROM nhis_batch_claims
+        USING demo_claims
+        WHERE nhis_batch_claims.facility_id = $1
+          AND nhis_batch_claims.claim_id = demo_claims.id
+        "#,
+        r#"
+        WITH demo_invoices AS (
+            SELECT invoices.id
+            FROM invoices
+            JOIN patients ON patients.id = invoices.patient_id
+            WHERE invoices.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+        )
+        DELETE FROM nhis_claims
+        USING demo_invoices
+        WHERE nhis_claims.facility_id = $1
+          AND nhis_claims.invoice_id = demo_invoices.id
+          AND nhis_claims.claim_number ~ '^DEMO-CLM-[0-9]{4}$'
+        "#,
+        r#"
+        WITH demo_invoices AS (
+            SELECT invoices.id
+            FROM invoices
+            JOIN patients ON patients.id = invoices.patient_id
+            WHERE invoices.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+              AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+        )
+        DELETE FROM invoice_lines
+        USING demo_invoices
+        WHERE invoice_lines.facility_id = $1
+          AND invoice_lines.invoice_id = demo_invoices.id
+        "#,
+        r#"
+        DELETE FROM invoices
+        USING patients
+        WHERE invoices.facility_id = $1
+          AND patients.facility_id = $1
+          AND invoices.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+          AND invoices.invoice_number ~ '^DEMO-[0-9]{6}$'
+        "#,
+        r#"
+        WITH demo_rounds AS (
+            SELECT ward_rounds.id
+            FROM ward_rounds
+            JOIN patients ON patients.id = ward_rounds.patient_id
+            WHERE ward_rounds.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        )
+        DELETE FROM ward_round_artifact_links
+        USING demo_rounds
+        WHERE ward_round_artifact_links.facility_id = $1
+          AND ward_round_artifact_links.ward_round_id = demo_rounds.id
+        "#,
+        r#"
+        WITH demo_rounds AS (
+            SELECT ward_rounds.id
+            FROM ward_rounds
+            JOIN patients ON patients.id = ward_rounds.patient_id
+            WHERE ward_rounds.facility_id = $1
+              AND patients.facility_id = $1
+              AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        )
+        DELETE FROM ward_round_actions
+        USING demo_rounds
+        WHERE ward_round_actions.facility_id = $1
+          AND ward_round_actions.ward_round_id = demo_rounds.id
+        "#,
+        r#"
+        DELETE FROM ward_rounds
+        USING patients
+        WHERE ward_rounds.facility_id = $1
+          AND patients.facility_id = $1
+          AND ward_rounds.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM lab_orders
+        USING patients
+        WHERE lab_orders.facility_id = $1
+          AND patients.facility_id = $1
+          AND lab_orders.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM admission_cases
+        USING patients
+        WHERE admission_cases.facility_id = $1
+          AND patients.facility_id = $1
+          AND admission_cases.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM encounter_care_team_assignments
+        USING encounters, patients
+        WHERE encounter_care_team_assignments.encounter_id = encounters.id
+          AND encounters.facility_id = $1
+          AND patients.facility_id = $1
+          AND encounters.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM encounters
+        USING patients
+        WHERE encounters.facility_id = $1
+          AND patients.facility_id = $1
+          AND encounters.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM clinical_notes
+        USING patients
+        WHERE clinical_notes.facility_id = $1
+          AND patients.facility_id = $1
+          AND clinical_notes.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM patient_problems
+        USING patients
+        WHERE patient_problems.facility_id = $1
+          AND patients.facility_id = $1
+          AND patient_problems.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM patient_allergies
+        USING patients
+        WHERE patient_allergies.facility_id = $1
+          AND patients.facility_id = $1
+          AND patient_allergies.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM prescriptions
+        USING patients
+        WHERE prescriptions.facility_id = $1
+          AND patients.facility_id = $1
+          AND prescriptions.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM chart_entries
+        USING patients
+        WHERE chart_entries.facility_id = $1
+          AND patients.facility_id = $1
+          AND chart_entries.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM patient_contexts
+        USING patients
+        WHERE patient_contexts.facility_id = $1
+          AND patients.facility_id = $1
+          AND patient_contexts.patient_id = patients.id
+          AND patients.patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM patients
+        WHERE facility_id = $1
+          AND patient_code ~ '^DEMO-[0-9]{4}$'
+        "#,
+        r#"
+        DELETE FROM beds
+        USING wards
+        WHERE beds.facility_id = $1
+          AND wards.facility_id = $1
+          AND beds.ward_id = wards.id
+          AND wards.code LIKE 'demo-%'
+          AND beds.bed_code LIKE 'DEMO-%'
+        "#,
+        r#"
+        DELETE FROM ward_sections
+        USING wards
+        WHERE ward_sections.facility_id = $1
+          AND wards.facility_id = $1
+          AND ward_sections.ward_id = wards.id
+          AND wards.code LIKE 'demo-%'
+          AND ward_sections.code LIKE 'DEMO-%'
+        "#,
+        r#"
+        DELETE FROM wards
+        WHERE facility_id = $1
+          AND code LIKE 'demo-%'
+        "#,
+    ];
+
+    for statement in cleanup_statements {
+        sqlx::query(statement)
+            .bind(facility_id)
+            .execute(&mut **transaction)
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn seed_demo_ward_resources(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    config: DemoSeedConfig,
+) -> anyhow::Result<()> {
+    let ward_id = Uuid::from_u128(DEMO_WARD_ID);
+    let section_id = Uuid::from_u128(DEMO_SECTION_ID);
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let patients = demo_patient_archetypes();
+
+    sqlx::query(
+        r#"
+        INSERT INTO wards (id, facility_id, code, name, status)
+        VALUES ($1, $2, 'demo-medical', 'Demo Medical Ward', 'active')
+        ON CONFLICT (facility_id, code) DO UPDATE
+        SET id = EXCLUDED.id,
+            name = EXCLUDED.name,
+            status = EXCLUDED.status,
+            updated_at = now()
+        "#,
+    )
+    .bind(ward_id)
+    .bind(baseline.facility_id)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO ward_sections (
+            id,
+            facility_id,
+            ward_id,
+            code,
+            name,
+            status,
+            created_by_user_id
+        )
+        VALUES ($1, $2, $3, 'DEMO-A', 'Demo Acute Section', 'active', $4)
+        ON CONFLICT (ward_id, code) DO UPDATE
+        SET id = EXCLUDED.id,
+            name = EXCLUDED.name,
+            status = EXCLUDED.status,
+            created_by_user_id = EXCLUDED.created_by_user_id,
+            updated_at = now()
+        "#,
+    )
+    .bind(section_id)
+    .bind(baseline.facility_id)
+    .bind(ward_id)
+    .bind(owner_user_id)
+    .execute(&mut **transaction)
+    .await?;
+
+    for bed_ordinal in 1..=config.patient_count as u32 {
+        let occupied = patients
+            .iter()
+            .take(config.patient_count)
+            .any(|patient| patient.bed_ordinal == Some(bed_ordinal));
+        sqlx::query(
+            r#"
+            INSERT INTO beds (
+                id,
+                facility_id,
+                ward_id,
+                section_id,
+                bed_code,
+                status,
+                created_by_user_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (ward_id, bed_code) DO UPDATE
+            SET id = EXCLUDED.id,
+                section_id = EXCLUDED.section_id,
+                status = EXCLUDED.status,
+                created_by_user_id = EXCLUDED.created_by_user_id,
+                updated_at = now()
+            "#,
+        )
+        .bind(demo_uuid(DEMO_BED_BASE_ID, bed_ordinal))
+        .bind(baseline.facility_id)
+        .bind(ward_id)
+        .bind(section_id)
+        .bind(format!("DEMO-{bed_ordinal:02}"))
+        .bind(if occupied { "occupied" } else { "available" })
+        .bind(owner_user_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn seed_demo_patient_graph(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    config: DemoSeedConfig,
+) -> anyhow::Result<()> {
+    let patients = demo_patient_archetypes();
+    for patient in patients.iter().take(config.patient_count) {
+        seed_demo_patient(transaction, baseline, patient).await?;
+        seed_demo_chronicle_entries(transaction, baseline, patient).await?;
+        seed_demo_laboratory_path(transaction, baseline, patient).await?;
+        seed_demo_billing_path(transaction, baseline, patient).await?;
+        if patient.admission_status.is_some() {
+            seed_demo_admission_path(transaction, baseline, patient).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn seed_demo_patient(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    patient: &DemoPatientArchetype,
+) -> anyhow::Result<()> {
+    let patient_id = patient.patient_id();
+    let created_at = demo_time(i64::from(patient.ordinal));
+    sqlx::query(
+        r#"
+        INSERT INTO patients (
+            id,
+            facility_id,
+            patient_code,
+            first_name,
+            last_name,
+            date_of_birth,
+            sex,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $8)
+        ON CONFLICT (facility_id, patient_code) DO UPDATE
+        SET id = EXCLUDED.id,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            date_of_birth = EXCLUDED.date_of_birth,
+            sex = EXCLUDED.sex,
+            status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(patient_id)
+    .bind(baseline.facility_id)
+    .bind(patient.patient_code)
+    .bind(patient.first_name)
+    .bind(patient.last_name)
+    .bind(demo_date(patient.date_of_birth))
+    .bind(codec::encode(patient.sex.clone())?)
+    .bind(created_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO patient_contexts (
+            id,
+            facility_id,
+            user_id,
+            patient_id,
+            context_kind,
+            label,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+        ON CONFLICT (user_id, patient_id, context_kind) DO UPDATE
+        SET label = EXCLUDED.label,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_CONTEXT_BASE_ID, patient.ordinal))
+    .bind(baseline.facility_id)
+    .bind(Uuid::from_u128(OWNER_USER_ID))
+    .bind(patient_id)
+    .bind(codec::encode(PatientContextKind::Assigned)?)
+    .bind(format!("demo-seed: {}", patient.archetype_label))
+    .bind(created_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO patient_chronicle_read_models (
+            patient_id,
+            facility_id,
+            summary_status,
+            latest_event_at,
+            updated_at
+        )
+        VALUES ($1, $2, 'active', $3, $3)
+        ON CONFLICT (patient_id) DO UPDATE
+        SET summary_status = EXCLUDED.summary_status,
+            latest_event_at = EXCLUDED.latest_event_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(patient_id)
+    .bind(baseline.facility_id)
+    .bind(demo_time(300 + i64::from(patient.ordinal)))
+    .execute(&mut **transaction)
+    .await?;
+
+    Ok(())
+}
+
+async fn seed_demo_chronicle_entries(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    patient: &DemoPatientArchetype,
+) -> anyhow::Result<()> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let patient_id = patient.patient_id();
+    let note_id = patient.note_id();
+    let note_time = demo_time(20 + i64::from(patient.ordinal));
+
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_notes (
+            id,
+            facility_id,
+            patient_id,
+            encounter_id,
+            note_type,
+            title,
+            body,
+            status,
+            version,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, NULL, $4, $5, $6, 'signed', 1, $7, $8, $8)
+        ON CONFLICT (id) DO UPDATE
+        SET note_type = EXCLUDED.note_type,
+            title = EXCLUDED.title,
+            body = EXCLUDED.body,
+            status = EXCLUDED.status,
+            version = EXCLUDED.version,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(note_id)
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(patient.note_type)
+    .bind(patient.note_title)
+    .bind(patient.note_body)
+    .bind(owner_user_id)
+    .bind(note_time)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO clinical_note_versions (
+            id,
+            note_id,
+            version,
+            body,
+            created_by_user_id,
+            created_at
+        )
+        VALUES ($1, $2, 1, $3, $4, $5)
+        ON CONFLICT (note_id, version) DO UPDATE
+        SET body = EXCLUDED.body,
+            created_by_user_id = EXCLUDED.created_by_user_id,
+            created_at = EXCLUDED.created_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_NOTE_VERSION_BASE_ID, patient.ordinal))
+    .bind(note_id)
+    .bind(patient.note_body)
+    .bind(owner_user_id)
+    .bind(note_time)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO patient_problems (
+            id,
+            facility_id,
+            patient_id,
+            label,
+            status,
+            onset_date,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $7)
+        ON CONFLICT (id) DO UPDATE
+        SET label = EXCLUDED.label,
+            status = EXCLUDED.status,
+            onset_date = EXCLUDED.onset_date,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_PROBLEM_BASE_ID, patient.ordinal))
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(patient.problem_label)
+    .bind(demo_date(patient.problem_onset))
+    .bind(owner_user_id)
+    .bind(demo_time(30 + i64::from(patient.ordinal)))
+    .execute(&mut **transaction)
+    .await?;
+
+    if let Some(allergy) = patient.allergy {
+        sqlx::query(
+            r#"
+            INSERT INTO patient_allergies (
+                id,
+                facility_id,
+                patient_id,
+                substance,
+                reaction,
+                severity,
+                status,
+                created_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $8)
+            ON CONFLICT (id) DO UPDATE
+            SET substance = EXCLUDED.substance,
+                reaction = EXCLUDED.reaction,
+                severity = EXCLUDED.severity,
+                status = EXCLUDED.status,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(demo_uuid(DEMO_ALLERGY_BASE_ID, patient.ordinal))
+        .bind(baseline.facility_id)
+        .bind(patient_id)
+        .bind(allergy.substance)
+        .bind(allergy.reaction)
+        .bind(allergy.severity)
+        .bind(owner_user_id)
+        .bind(demo_time(31 + i64::from(patient.ordinal)))
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO prescriptions (
+            id,
+            facility_id,
+            patient_id,
+            medication_name,
+            dose,
+            frequency,
+            status,
+            prescribed_at,
+            created_by_user_id,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $7)
+        ON CONFLICT (id) DO UPDATE
+        SET medication_name = EXCLUDED.medication_name,
+            dose = EXCLUDED.dose,
+            frequency = EXCLUDED.frequency,
+            status = EXCLUDED.status,
+            prescribed_at = EXCLUDED.prescribed_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(patient.prescription_id())
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(patient.medication_name)
+    .bind(patient.medication_dose)
+    .bind(patient.medication_frequency)
+    .bind(demo_time(40 + i64::from(patient.ordinal)))
+    .bind(owner_user_id)
+    .execute(&mut **transaction)
+    .await?;
+
+    for (entry_index, (entry_type, value, unit)) in [
+        ("blood_pressure", patient.blood_pressure, Some("mmHg")),
+        ("pulse", patient.pulse, Some("bpm")),
+        ("oxygen_saturation", patient.oxygen_saturation, Some("%")),
+        ("temperature", patient.temperature, Some("C")),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sqlx::query(
+            r#"
+            INSERT INTO chart_entries (
+                id,
+                facility_id,
+                patient_id,
+                entry_type,
+                measured_at,
+                value,
+                unit,
+                created_by_user_id,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $5)
+            ON CONFLICT (id) DO UPDATE
+            SET entry_type = EXCLUDED.entry_type,
+                measured_at = EXCLUDED.measured_at,
+                value = EXCLUDED.value,
+                unit = EXCLUDED.unit,
+                created_by_user_id = EXCLUDED.created_by_user_id
+            "#,
+        )
+        .bind(demo_uuid(
+            DEMO_CHART_ENTRY_BASE_ID,
+            patient.ordinal * 10 + entry_index as u32 + 1,
+        ))
+        .bind(baseline.facility_id)
+        .bind(patient_id)
+        .bind(entry_type)
+        .bind(demo_time(
+            50 + i64::from(patient.ordinal * 10 + entry_index as u32),
+        ))
+        .bind(value)
+        .bind(unit)
+        .bind(owner_user_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn seed_demo_laboratory_path(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    patient: &DemoPatientArchetype,
+) -> anyhow::Result<()> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let patient_id = patient.patient_id();
+    let lab_order_id = patient.lab_order_id();
+    let specimen_id = patient.lab_specimen_id();
+    let order_time = demo_time(90 + i64::from(patient.ordinal));
+
+    sqlx::query(
+        r#"
+        INSERT INTO lab_orders (
+            id,
+            facility_id,
+            patient_id,
+            priority,
+            status,
+            ordered_by_user_id,
+            ordered_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'verified', $5, $6, $6)
+        ON CONFLICT (id) DO UPDATE
+        SET priority = EXCLUDED.priority,
+            status = EXCLUDED.status,
+            ordered_by_user_id = EXCLUDED.ordered_by_user_id,
+            ordered_at = EXCLUDED.ordered_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(lab_order_id)
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(patient.lab_priority)
+    .bind(owner_user_id)
+    .bind(order_time)
+    .execute(&mut **transaction)
+    .await?;
+
+    let mut lab_results = vec![DemoLabResult {
+        test_id: Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID),
+        value: patient.fbc_value,
+        unit: Some("g/dL"),
+    }];
+    if let Some(value) = patient.malaria_result {
+        lab_results.push(DemoLabResult {
+            test_id: Uuid::from_u128(DEFAULT_LAB_TEST_MALARIA_ID),
+            value,
+            unit: Some("parasites/ul"),
+        });
+    }
+
+    for result in &lab_results {
+        sqlx::query(
+            r#"
+            INSERT INTO lab_order_tests (order_id, test_id)
+            VALUES ($1, $2)
+            ON CONFLICT (order_id, test_id) DO NOTHING
+            "#,
+        )
+        .bind(lab_order_id)
+        .bind(result.test_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO lab_specimens (
+            id,
+            facility_id,
+            order_id,
+            patient_id,
+            specimen_type,
+            status,
+            collected_by_user_id,
+            collected_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'blood', 'collected', $5, $6, $6)
+        ON CONFLICT (id) DO UPDATE
+        SET status = EXCLUDED.status,
+            collected_by_user_id = EXCLUDED.collected_by_user_id,
+            collected_at = EXCLUDED.collected_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(specimen_id)
+    .bind(baseline.facility_id)
+    .bind(lab_order_id)
+    .bind(patient_id)
+    .bind(owner_user_id)
+    .bind(demo_time(100 + i64::from(patient.ordinal)))
+    .execute(&mut **transaction)
+    .await?;
+
+    for (index, result) in lab_results.iter().enumerate() {
+        sqlx::query(
+            r#"
+            INSERT INTO lab_results (
+                id,
+                facility_id,
+                order_id,
+                specimen_id,
+                patient_id,
+                test_id,
+                value,
+                unit,
+                status,
+                entered_by_user_id,
+                entered_at,
+                verified_by_user_id,
+                verified_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'verified', $9, $10, $9, $11, $11)
+            ON CONFLICT (specimen_id, test_id) DO UPDATE
+            SET value = EXCLUDED.value,
+                unit = EXCLUDED.unit,
+                status = EXCLUDED.status,
+                entered_by_user_id = EXCLUDED.entered_by_user_id,
+                entered_at = EXCLUDED.entered_at,
+                verified_by_user_id = EXCLUDED.verified_by_user_id,
+                verified_at = EXCLUDED.verified_at,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(demo_uuid(
+            DEMO_LAB_RESULT_BASE_ID,
+            patient.ordinal * 10 + index as u32 + 1,
+        ))
+        .bind(baseline.facility_id)
+        .bind(lab_order_id)
+        .bind(specimen_id)
+        .bind(patient_id)
+        .bind(result.test_id)
+        .bind(result.value)
+        .bind(result.unit)
+        .bind(owner_user_id)
+        .bind(demo_time(
+            110 + i64::from(patient.ordinal * 10 + index as u32),
+        ))
+        .bind(demo_time(
+            120 + i64::from(patient.ordinal * 10 + index as u32),
+        ))
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn seed_demo_billing_path(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    patient: &DemoPatientArchetype,
+) -> anyhow::Result<()> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let patient_id = patient.patient_id();
+    let invoice_id = patient.invoice_id();
+    let issued_at = demo_time(160 + i64::from(patient.ordinal));
+
+    sqlx::query(
+        r#"
+        INSERT INTO invoices (
+            id,
+            facility_id,
+            patient_id,
+            invoice_number,
+            status,
+            gross_amount_minor,
+            paid_amount_minor,
+            currency,
+            issued_by_user_id,
+            issued_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'GHS', $8, $9, $9)
+        ON CONFLICT (facility_id, invoice_number) DO UPDATE
+        SET patient_id = EXCLUDED.patient_id,
+            status = EXCLUDED.status,
+            gross_amount_minor = EXCLUDED.gross_amount_minor,
+            paid_amount_minor = EXCLUDED.paid_amount_minor,
+            issued_by_user_id = EXCLUDED.issued_by_user_id,
+            issued_at = EXCLUDED.issued_at,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(invoice_id)
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(format!("DEMO-{:06}", patient.ordinal))
+    .bind(patient.invoice_status)
+    .bind(patient.invoice_amount_minor)
+    .bind(patient.paid_amount_minor)
+    .bind(owner_user_id)
+    .bind(issued_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO invoice_lines (
+            id,
+            facility_id,
+            invoice_id,
+            service_price_id,
+            description,
+            quantity,
+            unit_amount_minor,
+            line_amount_minor,
+            currency,
+            created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 1, $6, $6, 'GHS', $7)
+        ON CONFLICT (id) DO UPDATE
+        SET service_price_id = EXCLUDED.service_price_id,
+            description = EXCLUDED.description,
+            unit_amount_minor = EXCLUDED.unit_amount_minor,
+            line_amount_minor = EXCLUDED.line_amount_minor
+        "#,
+    )
+    .bind(demo_uuid(DEMO_INVOICE_LINE_BASE_ID, patient.ordinal))
+    .bind(baseline.facility_id)
+    .bind(invoice_id)
+    .bind(Uuid::from_u128(DEFAULT_PRICE_LAB_FBC_ID))
+    .bind(format!("Demo {} care bundle", patient.archetype_label))
+    .bind(patient.invoice_amount_minor)
+    .bind(issued_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    if patient.paid_amount_minor > 0 {
+        let receipt_number = format!("DEMO-RCPT-{:04}", patient.ordinal);
+        let payment_id = demo_uuid(DEMO_PAYMENT_BASE_ID, patient.ordinal);
+        sqlx::query(
+            r#"
+            INSERT INTO payments (
+                id,
+                facility_id,
+                invoice_id,
+                cash_session_id,
+                receipt_number,
+                amount_minor,
+                currency,
+                method,
+                status,
+                recorded_by_user_id,
+                paid_at
+            )
+            VALUES ($1, $2, $3, NULL, $4, $5, 'GHS', 'cash', 'recorded', $6, $7)
+            ON CONFLICT (facility_id, receipt_number) DO UPDATE
+            SET amount_minor = EXCLUDED.amount_minor,
+                status = EXCLUDED.status,
+                recorded_by_user_id = EXCLUDED.recorded_by_user_id,
+                paid_at = EXCLUDED.paid_at
+            "#,
+        )
+        .bind(payment_id)
+        .bind(baseline.facility_id)
+        .bind(invoice_id)
+        .bind(&receipt_number)
+        .bind(patient.paid_amount_minor)
+        .bind(owner_user_id)
+        .bind(demo_time(170 + i64::from(patient.ordinal)))
+        .execute(&mut **transaction)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO receipts (
+                id,
+                facility_id,
+                payment_id,
+                invoice_id,
+                receipt_number,
+                amount_minor,
+                currency,
+                issued_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, 'GHS', $7)
+            ON CONFLICT (facility_id, receipt_number) DO UPDATE
+            SET amount_minor = EXCLUDED.amount_minor,
+                issued_at = EXCLUDED.issued_at
+            "#,
+        )
+        .bind(demo_uuid(DEMO_RECEIPT_BASE_ID, patient.ordinal))
+        .bind(baseline.facility_id)
+        .bind(payment_id)
+        .bind(invoice_id)
+        .bind(receipt_number)
+        .bind(patient.paid_amount_minor)
+        .bind(demo_time(171 + i64::from(patient.ordinal)))
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    if let Some(claim_status) = patient.claim_status {
+        sqlx::query(
+            r#"
+            INSERT INTO nhis_claims (
+                id,
+                facility_id,
+                invoice_id,
+                patient_id,
+                claim_number,
+                status,
+                amount_minor,
+                payer_receivable_minor,
+                patient_liability_minor,
+                written_off_minor,
+                currency,
+                created_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 0, 0, 'GHS', $8, $9, $9)
+            ON CONFLICT (facility_id, claim_number) DO UPDATE
+            SET status = EXCLUDED.status,
+                amount_minor = EXCLUDED.amount_minor,
+                payer_receivable_minor = EXCLUDED.payer_receivable_minor,
+                patient_liability_minor = EXCLUDED.patient_liability_minor,
+                written_off_minor = EXCLUDED.written_off_minor,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(demo_uuid(DEMO_NHIS_CLAIM_BASE_ID, patient.ordinal))
+        .bind(baseline.facility_id)
+        .bind(invoice_id)
+        .bind(patient_id)
+        .bind(format!("DEMO-CLM-{:04}", patient.ordinal))
+        .bind(claim_status)
+        .bind(patient.invoice_amount_minor - patient.paid_amount_minor)
+        .bind(owner_user_id)
+        .bind(demo_time(180 + i64::from(patient.ordinal)))
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn seed_demo_admission_path(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    patient: &DemoPatientArchetype,
+) -> anyhow::Result<()> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let patient_id = patient.patient_id();
+    let ward_id = Uuid::from_u128(DEMO_WARD_ID);
+    let bed_id = patient
+        .bed_ordinal
+        .map(|ordinal| demo_uuid(DEMO_BED_BASE_ID, ordinal));
+    let admission_id = patient.admission_id();
+    let admitted_at = demo_time(200 + i64::from(patient.ordinal));
+
+    sqlx::query(
+        r#"
+        INSERT INTO admission_cases (
+            id,
+            facility_id,
+            patient_id,
+            ward_id,
+            bed_id,
+            status,
+            admitted_at,
+            attending_user_id,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $7, $7)
+        ON CONFLICT (id) DO UPDATE
+        SET ward_id = EXCLUDED.ward_id,
+            bed_id = EXCLUDED.bed_id,
+            status = EXCLUDED.status,
+            admitted_at = EXCLUDED.admitted_at,
+            attending_user_id = EXCLUDED.attending_user_id,
+            created_by_user_id = EXCLUDED.created_by_user_id,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(admission_id)
+    .bind(baseline.facility_id)
+    .bind(patient_id)
+    .bind(ward_id)
+    .bind(bed_id)
+    .bind(patient.admission_status.expect("admission status exists"))
+    .bind(admitted_at)
+    .bind(owner_user_id)
+    .execute(&mut **transaction)
+    .await?;
+
+    for (task_index, (task_type, title, instruction)) in [
+        (
+            "observation",
+            "Four-hourly observations",
+            patient.nursing_observation_instruction,
+        ),
+        (
+            "ward_round",
+            "Prepare for ward round",
+            "Have recent vitals, labs, and medication chart ready for review.",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sqlx::query(
+            r#"
+            INSERT INTO nursing_tasks (
+                id,
+                facility_id,
+                admission_case_id,
+                patient_id,
+                ward_id,
+                task_type,
+                title,
+                instruction,
+                status,
+                due_at,
+                assigned_to_user_id,
+                created_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $10, $11, $11)
+            ON CONFLICT (id) DO UPDATE
+            SET task_type = EXCLUDED.task_type,
+                title = EXCLUDED.title,
+                instruction = EXCLUDED.instruction,
+                status = EXCLUDED.status,
+                due_at = EXCLUDED.due_at,
+                assigned_to_user_id = EXCLUDED.assigned_to_user_id,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(demo_uuid(
+            DEMO_NURSING_TASK_BASE_ID,
+            patient.ordinal * 10 + task_index as u32 + 1,
+        ))
+        .bind(baseline.facility_id)
+        .bind(admission_id)
+        .bind(patient_id)
+        .bind(ward_id)
+        .bind(task_type)
+        .bind(title)
+        .bind(instruction)
+        .bind(demo_time(
+            220 + i64::from(patient.ordinal * 10 + task_index as u32),
+        ))
+        .bind(owner_user_id)
+        .bind(admitted_at)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO medication_administrations (
+            id,
+            facility_id,
+            admission_case_id,
+            patient_id,
+            medication_name,
+            scheduled_at,
+            administered_at,
+            status,
+            administered_by_user_id,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, NULL, 'scheduled', NULL, $7, $8, $8)
+        ON CONFLICT (id) DO UPDATE
+        SET medication_name = EXCLUDED.medication_name,
+            scheduled_at = EXCLUDED.scheduled_at,
+            status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_MED_ADMIN_BASE_ID, patient.ordinal))
+    .bind(baseline.facility_id)
+    .bind(admission_id)
+    .bind(patient_id)
+    .bind(patient.medication_name)
+    .bind(demo_time(240 + i64::from(patient.ordinal)))
+    .bind(owner_user_id)
+    .bind(admitted_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO treatment_sheets (
+            id,
+            facility_id,
+            admission_case_id,
+            patient_id,
+            sheet_date,
+            status,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, DATE '2026-05-20', 'active', $5, $6, $6)
+        ON CONFLICT (admission_case_id, sheet_date) DO UPDATE
+        SET status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(demo_uuid(DEMO_TREATMENT_SHEET_BASE_ID, patient.ordinal))
+    .bind(baseline.facility_id)
+    .bind(admission_id)
+    .bind(patient_id)
+    .bind(owner_user_id)
+    .bind(admitted_at)
+    .execute(&mut **transaction)
+    .await?;
+
+    seed_demo_ward_rounds(transaction, baseline, patient).await
+}
+
+async fn seed_demo_ward_rounds(
+    transaction: &mut Transaction<'_, Postgres>,
+    baseline: &BaselineProvisioning,
+    patient: &DemoPatientArchetype,
+) -> anyhow::Result<()> {
+    let owner_user_id = Uuid::from_u128(OWNER_USER_ID);
+    let patient_id = patient.patient_id();
+    let admission_id = patient.admission_id();
+    let committed_round_id = demo_uuid(DEMO_WARD_ROUND_BASE_ID, patient.ordinal * 10 + 1);
+    let draft_round_id = demo_uuid(DEMO_WARD_ROUND_BASE_ID, patient.ordinal * 10 + 2);
+
+    for (round_id, status, signed_at, rendered_note, note_sections) in [
+        (
+            committed_round_id,
+            "committed",
+            Some(demo_time(260 + i64::from(patient.ordinal))),
+            Some("Synthetic ward round summary. Continue current inpatient plan."),
+            json!({
+                "interval_history": "Synthetic patient reports modest improvement overnight.",
+                "examination": "Vitals reviewed from chart. No emergency features recorded.",
+                "assessment": patient.problem_label,
+                "plan": patient.ward_round_plan,
+                "clinical_readiness_blockers": []
+            }),
+        ),
+        (
+            draft_round_id,
+            "draft",
+            None,
+            None,
+            json!({
+                "interval_history": "Review pending for the next ward round.",
+                "examination": null,
+                "assessment": null,
+                "plan": "Confirm labs and nursing observations before signing.",
+                "clinical_readiness_blockers": ["Await review"]
+            }),
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO ward_rounds (
+                id,
+                facility_id,
+                patient_id,
+                admission_case_id,
+                status,
+                version,
+                note_sections,
+                review_rail,
+                rendered_note,
+                signed_by_user_id,
+                signed_at,
+                created_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, $9, $11, $11)
+            ON CONFLICT (id) DO UPDATE
+            SET status = EXCLUDED.status,
+                note_sections = EXCLUDED.note_sections,
+                review_rail = EXCLUDED.review_rail,
+                rendered_note = EXCLUDED.rendered_note,
+                signed_by_user_id = EXCLUDED.signed_by_user_id,
+                signed_at = EXCLUDED.signed_at,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(round_id)
+        .bind(baseline.facility_id)
+        .bind(patient_id)
+        .bind(admission_id)
+        .bind(status)
+        .bind(note_sections)
+        .bind(json!({
+            "active_medication_count": 1,
+            "open_lab_order_count": 0,
+            "open_nursing_task_count": 2,
+            "discharge_blocker_count": 0
+        }))
+        .bind(rendered_note)
+        .bind(owner_user_id)
+        .bind(signed_at)
+        .bind(demo_time(250 + i64::from(patient.ordinal)))
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    let committed_actions = [
+        DemoWardRoundAction {
+            ordinal: 1,
+            action_type: "prescription",
+            title: patient.medication_name,
+            instruction: None,
+            payload: json!({
+                "prescription_id": patient.prescription_id(),
+                "medication_name": patient.medication_name,
+                "dose": patient.medication_dose,
+                "frequency": patient.medication_frequency,
+                "status": "active"
+            }),
+            committed_resource_type: Some("prescription"),
+            committed_resource_id: Some(patient.prescription_id()),
+            link_title: Some(patient.medication_name),
+        },
+        DemoWardRoundAction {
+            ordinal: 2,
+            action_type: "lab_order",
+            title: "Review demo FBC",
+            instruction: Some("Review verified FBC result before discharge planning."),
+            payload: json!({
+                "test_ids": [Uuid::from_u128(DEFAULT_LAB_TEST_FBC_ID)],
+                "panel_ids": [],
+                "priority": patient.lab_priority
+            }),
+            committed_resource_type: Some("lab_order"),
+            committed_resource_id: Some(patient.lab_order_id()),
+            link_title: Some("Demo lab order"),
+        },
+        DemoWardRoundAction {
+            ordinal: 3,
+            action_type: "nursing_task",
+            title: "Continue observation chart",
+            instruction: Some(patient.nursing_observation_instruction),
+            payload: json!({
+                "title": "Continue observation chart",
+                "instruction": patient.nursing_observation_instruction,
+                "due_at": demo_time(280 + i64::from(patient.ordinal)),
+                "task_type": "ward_round",
+                "assigned_to_user_id": null
+            }),
+            committed_resource_type: Some("nursing_task"),
+            committed_resource_id: Some(demo_uuid(
+                DEMO_NURSING_TASK_BASE_ID,
+                patient.ordinal * 10 + 1,
+            )),
+            link_title: Some("Continue observation chart"),
+        },
+    ];
+
+    for action in committed_actions {
+        seed_demo_ward_round_action(
+            transaction,
+            baseline.facility_id,
+            patient,
+            committed_round_id,
+            "committed",
+            action,
+        )
+        .await?;
+    }
+
+    seed_demo_ward_round_action(
+        transaction,
+        baseline.facility_id,
+        patient,
+        draft_round_id,
+        "draft",
+        DemoWardRoundAction {
+            ordinal: 9,
+            action_type: "nursing_task",
+            title: "Draft next-shift check",
+            instruction: Some("Confirm symptoms, intake, and urine output at next review."),
+            payload: json!({
+                "title": "Draft next-shift check",
+                "instruction": "Confirm symptoms, intake, and urine output at next review.",
+                "due_at": demo_time(320 + i64::from(patient.ordinal)),
+                "task_type": "ward_round",
+                "assigned_to_user_id": null
+            }),
+            committed_resource_type: None,
+            committed_resource_id: None,
+            link_title: None,
+        },
+    )
+    .await
+}
+
+async fn seed_demo_ward_round_action(
+    transaction: &mut Transaction<'_, Postgres>,
+    facility_id: Uuid,
+    patient: &DemoPatientArchetype,
+    ward_round_id: Uuid,
+    status: &'static str,
+    action: DemoWardRoundAction,
+) -> anyhow::Result<()> {
+    let action_id = demo_uuid(
+        DEMO_WARD_ROUND_ACTION_BASE_ID,
+        patient.ordinal * 100 + action.ordinal,
+    );
+    sqlx::query(
+        r#"
+        INSERT INTO ward_round_actions (
+            id,
+            facility_id,
+            ward_round_id,
+            patient_id,
+            admission_case_id,
+            action_type,
+            status,
+            title,
+            instruction,
+            payload,
+            committed_resource_type,
+            committed_resource_id,
+            created_by_user_id,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+        ON CONFLICT (id) DO UPDATE
+        SET action_type = EXCLUDED.action_type,
+            status = EXCLUDED.status,
+            title = EXCLUDED.title,
+            instruction = EXCLUDED.instruction,
+            payload = EXCLUDED.payload,
+            committed_resource_type = EXCLUDED.committed_resource_type,
+            committed_resource_id = EXCLUDED.committed_resource_id,
+            updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(action_id)
+    .bind(facility_id)
+    .bind(ward_round_id)
+    .bind(patient.patient_id())
+    .bind(patient.admission_id())
+    .bind(action.action_type)
+    .bind(status)
+    .bind(action.title)
+    .bind(action.instruction)
+    .bind(action.payload)
+    .bind(action.committed_resource_type)
+    .bind(action.committed_resource_id)
+    .bind(Uuid::from_u128(OWNER_USER_ID))
+    .bind(demo_time(
+        270 + i64::from(patient.ordinal * 10 + action.ordinal),
+    ))
+    .execute(&mut **transaction)
+    .await?;
+
+    if let (Some(resource_type), Some(resource_id), Some(title)) = (
+        action.committed_resource_type,
+        action.committed_resource_id,
+        action.link_title,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO ward_round_artifact_links (
+                id,
+                facility_id,
+                ward_round_id,
+                action_id,
+                patient_id,
+                admission_case_id,
+                resource_type,
+                resource_id,
+                title,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (ward_round_id, resource_type, resource_id) DO UPDATE
+            SET title = EXCLUDED.title,
+                action_id = EXCLUDED.action_id
+            "#,
+        )
+        .bind(demo_uuid(
+            DEMO_WARD_ROUND_LINK_BASE_ID,
+            patient.ordinal * 100 + action.ordinal,
+        ))
+        .bind(facility_id)
+        .bind(ward_round_id)
+        .bind(action_id)
+        .bind(patient.patient_id())
+        .bind(patient.admission_id())
+        .bind(resource_type)
+        .bind(resource_id)
+        .bind(title)
+        .bind(demo_time(
+            275 + i64::from(patient.ordinal * 10 + action.ordinal),
+        ))
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+struct DemoPatientArchetype {
+    ordinal: u32,
+    patient_code: &'static str,
+    first_name: &'static str,
+    last_name: &'static str,
+    date_of_birth: (i32, u32, u32),
+    sex: Sex,
+    archetype_label: &'static str,
+    note_type: &'static str,
+    note_title: &'static str,
+    note_body: &'static str,
+    problem_label: &'static str,
+    problem_onset: (i32, u32, u32),
+    allergy: Option<DemoAllergy>,
+    medication_name: &'static str,
+    medication_dose: &'static str,
+    medication_frequency: &'static str,
+    blood_pressure: &'static str,
+    pulse: &'static str,
+    oxygen_saturation: &'static str,
+    temperature: &'static str,
+    fbc_value: &'static str,
+    malaria_result: Option<&'static str>,
+    lab_priority: &'static str,
+    invoice_status: &'static str,
+    invoice_amount_minor: i64,
+    paid_amount_minor: i64,
+    claim_status: Option<&'static str>,
+    admission_status: Option<&'static str>,
+    bed_ordinal: Option<u32>,
+    nursing_observation_instruction: &'static str,
+    ward_round_plan: &'static str,
+}
+
+impl DemoPatientArchetype {
+    fn patient_id(&self) -> Uuid {
+        demo_uuid(DEMO_PATIENT_BASE_ID, self.ordinal)
+    }
+
+    fn admission_id(&self) -> Uuid {
+        demo_uuid(DEMO_ADMISSION_BASE_ID, self.ordinal)
+    }
+
+    fn note_id(&self) -> Uuid {
+        demo_uuid(DEMO_NOTE_BASE_ID, self.ordinal)
+    }
+
+    fn prescription_id(&self) -> Uuid {
+        demo_uuid(DEMO_PRESCRIPTION_BASE_ID, self.ordinal)
+    }
+
+    fn lab_order_id(&self) -> Uuid {
+        demo_uuid(DEMO_LAB_ORDER_BASE_ID, self.ordinal)
+    }
+
+    fn lab_specimen_id(&self) -> Uuid {
+        demo_uuid(DEMO_LAB_SPECIMEN_BASE_ID, self.ordinal)
+    }
+
+    fn invoice_id(&self) -> Uuid {
+        demo_uuid(DEMO_INVOICE_BASE_ID, self.ordinal)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DemoAllergy {
+    substance: &'static str,
+    reaction: Option<&'static str>,
+    severity: &'static str,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DemoLabResult {
+    test_id: Uuid,
+    value: &'static str,
+    unit: Option<&'static str>,
+}
+
+#[derive(Debug)]
+struct DemoWardRoundAction {
+    ordinal: u32,
+    action_type: &'static str,
+    title: &'static str,
+    instruction: Option<&'static str>,
+    payload: serde_json::Value,
+    committed_resource_type: Option<&'static str>,
+    committed_resource_id: Option<Uuid>,
+    link_title: Option<&'static str>,
+}
+
+fn demo_patient_archetypes() -> Vec<DemoPatientArchetype> {
+    vec![
+        DemoPatientArchetype {
+            ordinal: 1,
+            patient_code: "DEMO-0001",
+            first_name: "Afia",
+            last_name: "Sarpong",
+            date_of_birth: (1988, 4, 12),
+            sex: Sex::Female,
+            archetype_label: "respiratory inpatient",
+            note_type: "admission_note",
+            note_title: "Demo admission summary",
+            note_body: "Synthetic admission note: fever and cough improving after initial treatment. No real patient data.",
+            problem_label: "Community-acquired pneumonia with malaria rule-out",
+            problem_onset: (2026, 5, 18),
+            allergy: Some(DemoAllergy {
+                substance: "Penicillin",
+                reaction: Some("rash"),
+                severity: "moderate",
+            }),
+            medication_name: "Ceftriaxone",
+            medication_dose: "1 g",
+            medication_frequency: "daily",
+            blood_pressure: "124/78",
+            pulse: "96",
+            oxygen_saturation: "94",
+            temperature: "37.8",
+            fbc_value: "10.8",
+            malaria_result: Some("0"),
+            lab_priority: "urgent",
+            invoice_status: "partially_paid",
+            invoice_amount_minor: 18_500,
+            paid_amount_minor: 5_000,
+            claim_status: Some("submitted"),
+            admission_status: Some("admitted"),
+            bed_ordinal: Some(1),
+            nursing_observation_instruction: "Record temperature, pulse, respiratory rate, and oxygen saturation every four hours.",
+            ward_round_plan: "Continue antibiotics, review oxygen saturation trend, and repeat observations before evening handoff.",
+        },
+        DemoPatientArchetype {
+            ordinal: 2,
+            patient_code: "DEMO-0002",
+            first_name: "Kojo",
+            last_name: "Asante",
+            date_of_birth: (1975, 11, 3),
+            sex: Sex::Male,
+            archetype_label: "hypertension review",
+            note_type: "progress_note",
+            note_title: "Demo hypertension review",
+            note_body: "Synthetic outpatient review: blood pressure above target, adherence counselling completed. No real patient data.",
+            problem_label: "Essential hypertension",
+            problem_onset: (2024, 2, 6),
+            allergy: None,
+            medication_name: "Amlodipine",
+            medication_dose: "10 mg",
+            medication_frequency: "daily",
+            blood_pressure: "156/94",
+            pulse: "82",
+            oxygen_saturation: "98",
+            temperature: "36.7",
+            fbc_value: "13.2",
+            malaria_result: None,
+            lab_priority: "routine",
+            invoice_status: "paid",
+            invoice_amount_minor: 7_500,
+            paid_amount_minor: 7_500,
+            claim_status: None,
+            admission_status: None,
+            bed_ordinal: None,
+            nursing_observation_instruction: "Recheck blood pressure after rest and document counselling points.",
+            ward_round_plan: "No active admission.",
+        },
+        DemoPatientArchetype {
+            ordinal: 3,
+            patient_code: "DEMO-0003",
+            first_name: "Esi",
+            last_name: "Owusu",
+            date_of_birth: (1994, 8, 22),
+            sex: Sex::Female,
+            archetype_label: "maternity observation",
+            note_type: "progress_note",
+            note_title: "Demo maternity observation",
+            note_body: "Synthetic maternity observation note: stable after overnight monitoring. No real patient data.",
+            problem_label: "Third-trimester observation",
+            problem_onset: (2026, 5, 19),
+            allergy: None,
+            medication_name: "Ferrous sulfate",
+            medication_dose: "200 mg",
+            medication_frequency: "daily",
+            blood_pressure: "118/72",
+            pulse: "88",
+            oxygen_saturation: "99",
+            temperature: "36.6",
+            fbc_value: "11.1",
+            malaria_result: None,
+            lab_priority: "routine",
+            invoice_status: "issued",
+            invoice_amount_minor: 12_000,
+            paid_amount_minor: 0,
+            claim_status: Some("draft"),
+            admission_status: Some("discharge_pending"),
+            bed_ordinal: Some(3),
+            nursing_observation_instruction: "Monitor bleeding, pain score, and fetal movement report during each shift.",
+            ward_round_plan: "Confirm discharge readiness after nursing education and billing clearance.",
+        },
+        DemoPatientArchetype {
+            ordinal: 4,
+            patient_code: "DEMO-0004",
+            first_name: "Nana",
+            last_name: "Yeboah",
+            date_of_birth: (2018, 1, 9),
+            sex: Sex::Male,
+            archetype_label: "pediatric malaria follow-up",
+            note_type: "progress_note",
+            note_title: "Demo pediatric follow-up",
+            note_body: "Synthetic pediatric review: fever settled and oral intake improving. No real patient data.",
+            problem_label: "Uncomplicated malaria follow-up",
+            problem_onset: (2026, 5, 17),
+            allergy: Some(DemoAllergy {
+                substance: "Co-trimoxazole",
+                reaction: Some("itching"),
+                severity: "mild",
+            }),
+            medication_name: "Artemether-lumefantrine",
+            medication_dose: "20/120 mg",
+            medication_frequency: "twice daily",
+            blood_pressure: "98/62",
+            pulse: "104",
+            oxygen_saturation: "97",
+            temperature: "37.1",
+            fbc_value: "10.5",
+            malaria_result: Some("120"),
+            lab_priority: "routine",
+            invoice_status: "paid",
+            invoice_amount_minor: 6_000,
+            paid_amount_minor: 6_000,
+            claim_status: None,
+            admission_status: None,
+            bed_ordinal: None,
+            nursing_observation_instruction: "Document temperature and oral intake at follow-up.",
+            ward_round_plan: "No active admission.",
+        },
+    ]
+}
+
+fn demo_uuid(base: u128, ordinal: u32) -> Uuid {
+    Uuid::from_u128(base + u128::from(ordinal))
+}
+
+fn demo_date(value: (i32, u32, u32)) -> NaiveDate {
+    NaiveDate::from_ymd_opt(value.0, value.1, value.2).expect("static demo seed date is valid")
+}
+
+fn demo_time(offset_minutes: i64) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2026-05-20T08:00:00Z")
+        .expect("static demo seed timestamp is valid")
+        .with_timezone(&Utc)
+        + Duration::minutes(offset_minutes)
 }
 
 pub async fn provision_performance_seed(

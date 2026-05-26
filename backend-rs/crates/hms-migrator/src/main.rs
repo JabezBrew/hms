@@ -2,7 +2,8 @@ use std::env;
 
 use anyhow::{bail, Context};
 use hms_db::provision::{
-    provision_baseline, provision_performance_seed, BaselineProvisioning, PerformanceSeedScale,
+    provision_baseline, provision_demo_seed, provision_performance_seed, BaselineProvisioning,
+    DemoSeedProfile, PerformanceSeedScale,
 };
 use hms_domain::deployment::DeploymentProfile;
 use uuid::Uuid;
@@ -35,18 +36,28 @@ async fn main() -> anyhow::Result<()> {
         .transpose()?
         .unwrap_or(false);
     let performance_seed_scale = performance_seed_scale_from_env()?;
+    let demo_seed_profile = demo_seed_profile_from_env()?;
 
     let environment = env::var("HMS_ENV").unwrap_or_else(|_| "development".to_owned());
     if performance_seed_is_forbidden(&environment, performance_seed_scale) {
         bail!("HMS_PERF_SEED_SCALE is not allowed when HMS_ENV=production");
     }
+    if demo_seed_is_forbidden(&environment, demo_seed_profile) {
+        bail!("demo data seeding is not allowed when HMS_ENV=production");
+    }
 
-    if provision_baseline_requested || performance_seed_scale.is_some() {
+    if provision_baseline_requested
+        || performance_seed_scale.is_some()
+        || demo_seed_profile.is_some()
+    {
         provision_baseline(&pool, &baseline).await?;
     }
 
     if let Some(seed_scale) = performance_seed_scale {
         provision_performance_seed(&pool, &baseline, seed_scale.config()).await?;
+    }
+    if let Some(demo_profile) = demo_seed_profile {
+        provision_demo_seed(&pool, &baseline, demo_profile).await?;
     }
 
     if env::var("HMS_SEARCH_INDEX_REBUILD")
@@ -71,11 +82,29 @@ fn performance_seed_scale_from_env() -> anyhow::Result<Option<PerformanceSeedSca
         .map(Option::flatten)
 }
 
+fn demo_seed_profile_from_env() -> anyhow::Result<Option<DemoSeedProfile>> {
+    if let Some(profile) = env::var("HMS_DEMO_SEED_PROFILE").ok() {
+        return DemoSeedProfile::parse(&profile);
+    }
+
+    let seed_demo_data = env::var("HMS_SEED_DEMO_DATA")
+        .ok()
+        .as_deref()
+        .map(|value| parse_bool(value, "HMS_SEED_DEMO_DATA"))
+        .transpose()?
+        .unwrap_or(false);
+    Ok(seed_demo_data.then_some(DemoSeedProfile::Smoke))
+}
+
 fn performance_seed_is_forbidden(
     environment: &str,
     seed_scale: Option<PerformanceSeedScale>,
 ) -> bool {
     seed_scale.is_some() && environment.eq_ignore_ascii_case("production")
+}
+
+fn demo_seed_is_forbidden(environment: &str, seed_profile: Option<DemoSeedProfile>) -> bool {
+    seed_profile.is_some() && environment.eq_ignore_ascii_case("production")
 }
 
 fn baseline_from_env(profile: DeploymentProfile) -> anyhow::Result<BaselineProvisioning> {
@@ -106,12 +135,7 @@ fn baseline_from_env(profile: DeploymentProfile) -> anyhow::Result<BaselineProvi
         owner_display_name: env::var("HMS_BOOTSTRAP_ADMIN_NAME")
             .unwrap_or_else(|_| "HMS Owner".to_owned()),
         owner_password: owner_password.unwrap_or_else(|| "ChangeMe123!".to_owned()),
-        seed_demo_patients: env::var("HMS_SEED_DEMO_DATA")
-            .ok()
-            .as_deref()
-            .map(|value| parse_bool(value, "HMS_SEED_DEMO_DATA"))
-            .transpose()?
-            .unwrap_or(false),
+        seed_demo_patients: false,
         ops_operator_emails: env::var("HMS_OPS_OPERATOR_EMAILS")
             .unwrap_or_default()
             .split(',')
@@ -161,6 +185,24 @@ mod tests {
             Some(PerformanceSeedScale::Large)
         ));
         assert!(!performance_seed_is_forbidden("production", None));
+    }
+
+    #[test]
+    fn demo_seed_is_blocked_before_writes_in_production() {
+        assert!(demo_seed_is_forbidden(
+            "production",
+            Some(DemoSeedProfile::Smoke)
+        ));
+        assert!(demo_seed_is_forbidden(
+            "PRODUCTION",
+            Some(DemoSeedProfile::Small)
+        ));
+        assert!(!demo_seed_is_forbidden("development", None));
+        assert!(!demo_seed_is_forbidden(
+            "development",
+            Some(DemoSeedProfile::Small)
+        ));
+        assert!(!demo_seed_is_forbidden("production", None));
     }
 }
 
