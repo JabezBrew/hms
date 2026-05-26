@@ -1,6 +1,6 @@
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId } from "react";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
 import { normalizeApiResults } from "@/lib/utils";
@@ -28,6 +28,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [patients, setPatients] = useState([]);
+  const listboxId = useId();
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Function to get patient initials for avatar
@@ -126,6 +127,8 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            aria-controls={listboxId}
+            aria-haspopup="listbox"
             className="w-full justify-between"
           >
             {selectedPatient ? (
@@ -154,7 +157,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
               className="h-9"
             />
             {isLoading ? (
-              <CommandList>
+              <CommandList id={listboxId}>
                 <CommandGroup>
                   {Array.from({ length: 3 }).map((_, index) => (
                     <div key={`skeleton-item-${index}`} className="flex items-center p-2">
@@ -168,7 +171,7 @@ const PatientSelector = ({ onPatientSelect, selectedPatient, placeholder = "Sele
                 </CommandGroup>
               </CommandList>
             ) : (
-              <CommandList>
+              <CommandList id={listboxId}>
                 <CommandEmpty>
                   {searchQuery.length < 2
                     ? "Type at least 2 characters to search"

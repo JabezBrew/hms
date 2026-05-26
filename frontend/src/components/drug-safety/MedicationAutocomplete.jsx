@@ -2,7 +2,7 @@ import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
 import Pill from 'lucide-react/dist/esm/icons/pill.js';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-circle.js';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ export function MedicationAutocomplete({
 }) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const listboxId = useId();
   const debouncedQuery = useDebounce(searchQuery, 300);
 
   const { data: searchResults, isLoading, isFetching } = useDrugSearch(debouncedQuery, {
@@ -65,6 +66,8 @@ export function MedicationAutocomplete({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
+          aria-haspopup="listbox"
           className={cn('w-full justify-between', className)}
           disabled={disabled}
         >
@@ -80,7 +83,7 @@ export function MedicationAutocomplete({
             onValueChange={setSearchQuery}
             className="font-mono text-sm"
           />
-          <CommandList className="max-h-[300px]">
+          <CommandList id={listboxId} className="max-h-[300px]">
             {showLoading && (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-sky-600" />

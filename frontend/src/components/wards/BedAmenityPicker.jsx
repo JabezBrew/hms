@@ -9,7 +9,7 @@ import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import Shield from 'lucide-react/dist/esm/icons/shield.js';
 import Accessibility from 'lucide-react/dist/esm/icons/accessibility.js';
 import X from 'lucide-react/dist/esm/icons/x.js';
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 
 import { useAmenities } from '@/features/wards/hooks/useWardQueries';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +47,7 @@ export function BedAmenityPicker({
   className
 }) {
   const [open, setOpen] = useState(false);
+  const listboxId = useId();
   const { data: amenities = [], isLoading } = useAmenities({ is_active: true });
 
   // Group amenities by category
@@ -105,6 +106,8 @@ export function BedAmenityPicker({
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            aria-controls={listboxId}
+            aria-haspopup="listbox"
             className="justify-between"
             disabled={isLoading}
           >
@@ -129,7 +132,7 @@ export function BedAmenityPicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[400px] p-0" align="start">
-          <div className="max-h-[400px] overflow-y-auto">
+          <div id={listboxId} className="max-h-[400px] overflow-y-auto">
             {Object.entries(groupedAmenities).map(([category, items]) => {
               if (items.length === 0) return null;
 

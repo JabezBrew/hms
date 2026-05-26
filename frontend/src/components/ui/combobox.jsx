@@ -1,6 +1,6 @@
 import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronsUpDown from 'lucide-react/dist/esm/icons/chevrons-up-down.js';
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,13 +36,15 @@ const Combobox = ({
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef(null);
+  const listboxId = useId();
 
   // Focus input when popover opens
   useEffect(() => {
     if (open && inputRef.current) {
-      setTimeout(() => {
+      const focusTimer = setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
+      return () => clearTimeout(focusTimer);
     }
   }, [open]);
 
@@ -63,6 +65,8 @@ const Combobox = ({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
+          aria-haspopup="listbox"
           className={cn(
             "w-full justify-between",
             !value && "text-muted-foreground",
@@ -89,7 +93,7 @@ const Combobox = ({
             className="h-9"
           />
           <ScrollArea style={{ maxHeight }}>
-            <CommandList>
+            <CommandList id={listboxId}>
               <CommandEmpty>{isLoading ? "Searching..." : emptyMessage}</CommandEmpty>
               <CommandGroup>
                 {options.map(opt => (

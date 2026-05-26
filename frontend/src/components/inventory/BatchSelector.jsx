@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useId, useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -142,6 +142,7 @@ export function BatchSelector({
   className,
 }) {
   const [open, setOpen] = useState(false);
+  const listboxId = useId();
 
   // Sort batches by FEFO
   const sortedBatches = useMemo(() => sortByFEFO(batches), [batches]);
@@ -231,6 +232,8 @@ export function BatchSelector({
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            aria-controls={listboxId}
+            aria-haspopup="listbox"
             className={cn(
               'w-full justify-between font-normal',
               selectedBatches.length === 0 && 'text-muted-foreground'
@@ -276,7 +279,7 @@ export function BatchSelector({
               </div>
             )}
           </div>
-          <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
+          <div id={listboxId} className="max-h-[300px] overflow-y-auto p-2 space-y-1">
             {sortedBatches.map((batch, index) => (
               <BatchOption
                 key={batch.id}

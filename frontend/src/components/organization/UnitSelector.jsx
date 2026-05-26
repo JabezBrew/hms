@@ -11,7 +11,7 @@ import Check from 'lucide-react/dist/esm/icons/check.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
-import { useState, useMemo } from 'react';
+import { useId, useState, useMemo } from 'react';
 
 import { cn } from '@/lib/utils';
 import {
@@ -45,6 +45,7 @@ export function UnitSelector({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const listboxId = useId();
 
   // Build query params
   const queryParams = useMemo(() => {
@@ -107,6 +108,8 @@ export function UnitSelector({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
+          aria-haspopup="listbox"
           disabled={disabled}
           className={cn('w-full justify-between', className)}
         >
@@ -125,7 +128,7 @@ export function UnitSelector({
               className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
-          <CommandList>
+          <CommandList id={listboxId}>
             {isLoading ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
                 Loading units...
