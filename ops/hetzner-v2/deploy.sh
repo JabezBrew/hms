@@ -7,6 +7,8 @@ COMPOSE_FILE="${COMPOSE_FILE:-$KIT_DIR/compose.yml}"
 ENV_FILE="${ENV_FILE:-$KIT_DIR/.env}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
+PUBLIC_HEALTH_TIMEOUT="${PUBLIC_HEALTH_TIMEOUT:-30}"
+PUBLIC_HEALTHCHECK_MODE="${PUBLIC_HEALTHCHECK_MODE:-auto}"
 SKIP_PULL="${SKIP_PULL:-false}"
 SKIP_BACKUP="${SKIP_BACKUP:-false}"
 SKIP_HEALTHCHECK="${SKIP_HEALTHCHECK:-false}"
@@ -20,7 +22,7 @@ Deploy the Rust HMS V2 stack from /opt/hms.
 Options:
   --skip-pull          Do not run git pull --ff-only.
   --skip-backup        Skip the required production backup gate.
-  --skip-healthcheck   Skip the public HTTPS readiness check.
+  --skip-healthcheck   Skip the public HTTPS edge readiness check.
   -h, --help           Show this help.
 
 Environment overrides:
@@ -29,6 +31,8 @@ Environment overrides:
   HEALTH_TIMEOUT       Default: 180 seconds
   HEALTH_INTERVAL      Default: 5 seconds
   HEALTHCHECK_URL      Default: https://$CLIENT_DOMAIN/api/v2/health/ready
+  PUBLIC_HEALTH_TIMEOUT Default: 30 seconds
+  PUBLIC_HEALTHCHECK_MODE auto|required|skip. Default: auto
 EOF
 }
 
@@ -124,25 +128,54 @@ wait_for_service() {
   exit 1
 }
 
-wait_for_http() {
+wait_for_public_http() {
   url="$1"
   timeout="$2"
+  mode="$3"
   elapsed=0
+  last_status=1
+
+  case "$mode" in
+    auto|required|skip)
+      ;;
+    *)
+      printf 'Invalid PUBLIC_HEALTHCHECK_MODE: %s (expected auto, required, or skip)\n' "$mode" >&2
+      exit 1
+      ;;
+  esac
+
+  if [ "$mode" = "skip" ]; then
+    printf 'Skipped public edge health check because PUBLIC_HEALTHCHECK_MODE=skip.\n'
+    return 0
+  fi
 
   while [ "$elapsed" -le "$timeout" ]; do
     if curl -fsS "$url" >/dev/null 2>&1; then
-      printf 'Health check passed: %s\n' "$url"
+      printf 'Public edge health check passed: %s\n' "$url"
+      return 0
+    else
+      last_status="$?"
+    fi
+
+    if [ "$mode" = "auto" ] && [ "$last_status" -eq 6 ]; then
+      printf 'Public edge health check skipped: hostname does not resolve yet (%s).\n' "$url" >&2
       return 0
     fi
+
     sleep "$HEALTH_INTERVAL"
     elapsed=$((elapsed + HEALTH_INTERVAL))
   done
 
-  printf 'Health check failed after %s seconds: %s\n' "$timeout" "$url" >&2
-  compose ps >&2 || true
-  compose logs --tail=80 caddy >&2 || true
-  compose logs --tail=80 hms-api >&2 || true
-  exit 1
+  if [ "$mode" = "required" ]; then
+    printf 'Public edge health check failed after %s seconds: %s\n' "$timeout" "$url" >&2
+    compose ps >&2 || true
+    compose logs --tail=80 caddy >&2 || true
+    compose logs --tail=80 hms-api >&2 || true
+    exit 1
+  fi
+
+  printf 'WARNING: public edge health check did not pass after %s seconds: %s (curl exit %s).\n' "$timeout" "$url" "$last_status" >&2
+  printf 'Deployment continues because PUBLIC_HEALTHCHECK_MODE=auto. Use required for DNS/Cloudflare cutover gates.\n' >&2
 }
 
 cd "$ROOT_DIR"
@@ -212,11 +245,11 @@ step 'Container status'
 compose ps
 
 if [ "$SKIP_HEALTHCHECK" = "true" ]; then
-  printf 'Skipped public health check.\n'
+  printf 'Skipped public edge health check.\n'
 else
   healthcheck_url="${HEALTHCHECK_URL:-https://$client_domain/api/v2/health/ready}"
-  step 'Checking public readiness endpoint'
-  wait_for_http "$healthcheck_url" "$HEALTH_TIMEOUT"
+  step "Checking public edge readiness endpoint ($PUBLIC_HEALTHCHECK_MODE)"
+  wait_for_public_http "$healthcheck_url" "$PUBLIC_HEALTH_TIMEOUT" "$PUBLIC_HEALTHCHECK_MODE"
 fi
 
 step 'Deployment complete'

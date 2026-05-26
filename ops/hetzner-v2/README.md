@@ -57,10 +57,31 @@ ops/hetzner-v2/deploy.sh
 
 The deploy script validates Compose, starts Postgres/Redis/PgBouncer, runs the
 backup gate for production, builds images, runs `hms-migrator`, starts
-`hms-api`, `hms-worker`, frontend, and Caddy, then checks:
+`hms-api`, `hms-worker`, frontend, and Caddy, then checks the public edge URL
+when configured:
 
 ```text
 https://<client-domain>/api/v2/health/ready
+```
+
+Public DNS and Cloudflare are not treated as the only source of deployment
+truth. Container health, migrations, and Caddy readiness prove the VPS deploy;
+the public URL proves DNS/Cloudflare cutover. Configure the public edge check
+with:
+
+```text
+PUBLIC_HEALTHCHECK_MODE=auto      # default; warn/skip if DNS or Cloudflare is not ready
+PUBLIC_HEALTHCHECK_MODE=required  # fail unless the public URL passes; use for cutover
+PUBLIC_HEALTHCHECK_MODE=skip      # never check the public URL
+PUBLIC_HEALTH_TIMEOUT=30
+```
+
+You can also override the checked URL for temporary Cloudflare hostnames:
+
+```bash
+HEALTHCHECK_URL=https://staging.example.com/api/v2/health/ready \
+PUBLIC_HEALTHCHECK_MODE=required \
+ops/hetzner-v2/deploy.sh
 ```
 
 ## Migrations and Provisioning
@@ -246,3 +267,5 @@ Before cutover:
 - `npm run perf:bundle-budget`
 - `docker compose --env-file ops/hetzner-v2/.env -f ops/hetzner-v2/compose.yml config -q`
 - a successful production backup and a tested restore drill
+- `PUBLIC_HEALTHCHECK_MODE=required ops/hetzner-v2/deploy.sh` after DNS and
+  Cloudflare proxy records resolve to the VPS
